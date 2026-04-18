@@ -7254,6 +7254,29 @@ export class SubtaskExecutionEngine {
           console.log('[SubtaskEngine] 📋 小红书平台默认使用 5-card 详尽模式');
         }
 
+        // 🔥🔥🔥 行业案例库：按需检索（仅写作任务）
+        // 从任务指令+前序分析结果提取关键词，按相关度检索案例
+        // 不自动推荐：无相关案例时跳过，避免无关案例污染提示词
+        let _industryCasesText = '';
+        try {
+          const { industryCaseService } = await import('./industry-case-service');
+          const _caseInstruction = task.taskDescription || '';
+          if (_caseInstruction.length > 5) {
+            const _matchedCases = await industryCaseService.recommendCases(
+              _caseInstruction,
+              task.fromParentsExecutor === 'insurance-xiaohongshu' ? 'xiaohongshu' : undefined
+            );
+            if (_matchedCases.length > 0) {
+              _industryCasesText = industryCaseService.formatCasesForPrompt(_matchedCases);
+              console.log('[SubtaskEngine] 📚 行业案例检索成功:', _matchedCases.length, '条');
+            } else {
+              console.log('[SubtaskEngine] 📚 行业案例检索无匹配结果，跳过注入');
+            }
+          }
+        } catch (_caseErr) {
+          console.warn('[SubtaskEngine] 📚 行业案例检索失败（不影响主流程）:', _caseErr);
+        }
+
         insuranceDAssembledResult = await promptAssemblerService.assemblePrompt({
           workspaceId: task.workspaceId || undefined,
           executorType, // 🔥 传递 executorType 决定加载哪个提示词文件
@@ -7275,8 +7298,8 @@ export class SubtaskExecutionEngine {
           priorStepOutput: _priorStepOutput || undefined,
           // 🔥🔥🔥 【P0修复】传递小红书卡片数量模式（优先从内容模板读取，兼容旧数据）
           cardCountMode: _derivedCardCountMode,
-          // 🔥🔥🔥 行业案例库：自动根据任务指令推荐保险行业案例
-          industry: 'insurance', // 当前系统仅支持保险行业，后续可从 metadata 扩展
+          // 🔥🔥🔥 行业案例库：按需检索的预格式化文本（由上方逻辑检索后传入）
+          industryCases: _industryCasesText || undefined,
         });
 
         agentPrompt = insuranceDAssembledResult.fixedBasePrompt; // 固定基础部分作为 agentPrompt
@@ -7322,7 +7345,7 @@ export class SubtaskExecutionEngine {
           has_core_anchor: insuranceDAssembledResult.assemblyMetadata.hasCoreAnchor,
           has_user_opinion: insuranceDAssembledResult.assemblyMetadata.hasUserOpinion,
           material_count: insuranceDAssembledResult.assemblyMetadata.materialCount,
-          industry_case_count: insuranceDAssembledResult.assemblyMetadata.industryCaseCount, // 🔥 行业案例数量
+          has_industry_cases: insuranceDAssembledResult.assemblyMetadata.hasIndustryCases, // 🔥 行业案例
         });
       } else {
         agentPrompt = loadAgentPrompt(task.fromParentsExecutor);
