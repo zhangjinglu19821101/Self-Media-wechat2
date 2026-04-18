@@ -41,7 +41,9 @@ export interface PromptAssemblyOptions {
   confirmedOutline?: string;    // Phase 3: 用户确认后的大纲内容（全文子任务使用）
   relatedMaterials?: string;    // 🔥 关联素材补充区（软参考，灵活整合）
   priorStepOutput?: string;     // 🔴 前序步骤执行结果（大纲/调研等，由 buildExecutionContext 构建）
-  imageCountMode?: '3-card' | '5-card' | '7-card'; // 🔥 小红书卡片数量模式
+  cardCountMode?: '3-card' | '5-card' | '7-card'; // 🔥🔥🔥 小红书卡片数量模式（统一命名，与数据库字段一致）
+  /** @deprecated 使用 cardCountMode 代替 */
+  imageCountMode?: '3-card' | '5-card' | '7-card'; // 兼容旧字段
 }
 
 /**
@@ -484,16 +486,17 @@ export class PromptAssemblerService {
       }
     }
 
-    // 🔥🔥🔥 【新增】小红书卡片数量模式
-    if (options.imageCountMode && options.executorType === 'insurance-xiaohongshu') {
+    // 🔥🔥🔥 【修复】小红书卡片数量模式（统一使用 cardCountMode，兼容旧的 imageCountMode）
+    const effectiveCardCountMode = options.cardCountMode || options.imageCountMode;
+    if (effectiveCardCountMode && options.executorType === 'insurance-xiaohongshu') {
       const cardCountMap: Record<string, { count: number; desc: string }> = {
         '3-card': { count: 3, desc: '封面 + 1个要点 + 结尾（极简版，信息精炼）' },
         '5-card': { count: 5, desc: '封面 + 3个要点 + 结尾（标准版，信息适中）' },
         '7-card': { count: 7, desc: '封面 + 5个要点 + 结尾（详尽版，信息丰富）' },
       };
-      const cardConfig = cardCountMap[options.imageCountMode] || cardCountMap['5-card'];
+      const cardConfig = cardCountMap[effectiveCardCountMode] || cardCountMap['5-card'];
       result += '### 小红书卡片数量要求\n\n';
-      result += `**图片模式**：${options.imageCountMode}（${cardConfig.desc}）\n\n`;
+      result += `**图片模式**：${effectiveCardCountMode}（${cardConfig.desc}）\n\n`;
       result += `⚠️ **必须输出 ${cardConfig.count - 2} 个要点（points）**：\n`;
       result += `- 封面卡片（1个）：标题 + 副标题\n`;
       result += `- 要点卡片（${cardConfig.count - 2}个）：每个要点包含 title（渲染到图上）和 content（文字区展开）\n`;

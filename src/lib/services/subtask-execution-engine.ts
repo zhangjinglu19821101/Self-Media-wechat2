@@ -7155,8 +7155,9 @@ export class SubtaskExecutionEngine {
           templateId: _templateIdForPlatform,
           // 🔴 前序步骤执行结果（大纲/调研/合规校验等，由 buildExecutionContext 构建）
           priorStepOutput: _priorStepOutput || undefined,
-          // 🔥🔥🔥 【修复】传递小红书卡片数量模式（3-card/5-card/7-card）
-          imageCountMode: taskMetadata?.imageCountMode as '3-card' | '5-card' | '7-card' | undefined,
+          // 🔥🔥🔥 【修复】传递小红书卡片数量模式（统一从内容模板读取，兼容旧数据）
+          // 优先级：1. 内容模板的 cardCountMode  2. metadata 中的 imageCountMode（兼容）
+          cardCountMode: taskMetadata?.imageCountMode as '3-card' | '5-card' | '7-card' | undefined,
         });
 
         agentPrompt = insuranceDAssembledResult.fixedBasePrompt; // 固定基础部分作为 agentPrompt

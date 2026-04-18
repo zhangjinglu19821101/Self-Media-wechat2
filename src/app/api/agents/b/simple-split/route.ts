@@ -150,6 +150,23 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // 🔥🔥🔥 【修复】从内容模板推导卡片数量模式（统一数据结构，不再需要单独的 imageCountMode）
+    // 设计原则：contentTemplateId 是唯一来源，cardCountMode/densityStyle 等信息从模板读取
+    // 注意：如果用户手动选择了 imageCountMode（前端传入），也存储到 metadata 供执行引擎使用
+    let derivedImageCountMode: '3-card' | '5-card' | '7-card' | undefined = imageCountMode;
+    if (!derivedImageCountMode && contentTemplateId) {
+      try {
+        const { contentTemplateService } = await import('@/lib/services/content-template-service');
+        const contentTemplate = await contentTemplateService.getTemplate(contentTemplateId, workspaceId);
+        if (contentTemplate?.cardCountMode) {
+          derivedImageCountMode = contentTemplate.cardCountMode as '3-card' | '5-card' | '7-card';
+          console.log(`🔵 [Agent B 简化拆解] 🔥 从内容模板推导 cardCountMode: ${derivedImageCountMode}（模板: ${contentTemplate.name}）`);
+        }
+      } catch (tplErr) {
+        console.warn('[simple-split] ⚠️ 读取内容模板失败:', tplErr);
+      }
+    }
+
     // 1. 如果有临时会话 ID，先删除旧的子任务（替换逻辑）
     if (tempSessionId) {
       console.log('🔵 [Agent B 简化拆解] 替换逻辑：删除旧的子任务，tempSessionId:', tempSessionId);
@@ -286,7 +303,7 @@ export async function POST(request: NextRequest) {
                 platformGroupTotal: effectiveAccountIds.length, // 总共几组
                 platformLabel: accountInfo.platformLabel, // 平台显示名称
                 platform: accountInfo.platform, // 🔴 平台标识（供 user_preview_edit 等虚拟执行器使用）
-                ...(imageCountMode ? { imageCountMode } : {}), // 🔥 小红书图片模式
+                ...(derivedImageCountMode ? { imageCountMode: derivedImageCountMode } : {}), // 🔥 小红书图片模式（从内容模板推导或前端传入）
                 ...(contentTemplateId ? { contentTemplateId } : {}), // 🔥🔥 内容模板ID
               },
               createdAt: new Date(),
@@ -359,7 +376,7 @@ export async function POST(request: NextRequest) {
             accountIds: singleAccountId ? [singleAccountId] : [],
             ...(singleAccountId && platformLabel ? { platformLabel } : {}),
             ...(singlePlatform ? { platform: singlePlatform } : {}), // 🔴 平台标识（供虚拟执行器使用）
-            ...(imageCountMode ? { imageCountMode } : {}), // 🔥 小红书图片模式
+            ...(derivedImageCountMode ? { imageCountMode: derivedImageCountMode } : {}), // 🔥 小红书图片模式（从内容模板推导或前端传入）
             ...(contentTemplateId ? { contentTemplateId } : {}), // 🔥🔥 内容模板ID
           },
           createdAt: new Date(),

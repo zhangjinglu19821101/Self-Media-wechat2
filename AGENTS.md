@@ -1036,3 +1036,35 @@
    - **验证结果**:
      - 定时任务执行成功，无数据库连接错误
      - 服务健康检查通过
+52. **小红书卡片数量模式统一（cardCountMode）**:
+   - **问题**: `imageCountMode` 和 `contentTemplate.cardCountMode` 是同一个概念，存在两套字段导致数据流混乱
+   - **设计原则**: 统一数据结构，使用 `contentTemplateId` 作为唯一来源
+   - **修复方案**:
+     - 前端只传 `contentTemplateId`（内容模板ID）
+     - 后端从内容模板推导 `cardCountMode`（3-card/5-card/7-card）
+     - `PromptAssemblyOptions` 新增 `cardCountMode` 字段，兼容旧的 `imageCountMode`
+   - **修复文件**:
+     - `src/app/api/agents/b/simple-split/route.ts`: 从内容模板推导卡片数量模式
+     - `src/lib/services/prompt-assembler-service.ts`: 参数重命名 + 兼容旧字段
+     - `src/lib/services/subtask-execution-engine.ts`: 传递 `cardCountMode` 而非 `imageCountMode`
+   - **数据流**:
+     ```
+     用户选择内容模板（如"5卡-详尽风"）
+       → contentTemplateId 存入 metadata
+         → 执行引擎从内容模板读取 cardCountMode
+           → PromptAssemblerService 生成提示词（要求输出 3 个要点）
+             → insurance-xiaohongshu 输出对应数量的 points
+     ```
+   - **效果**: 用户选择"5卡-详尽风"模板后，预览会正确显示 5 张图片（封面+3要点+结尾）
+53. **添加步骤按钮无反应修复**:
+   - **问题**: 点击"添加步骤"按钮后没有反应
+   - **根因**: 
+     - `addPlatformSubTask` 添加的新任务 `title` 是空字符串
+     - `HorizontalFlowDiagram` 过滤掉了 `title.trim()` 为空的任务
+   - **修复**:
+     - 移除 `HorizontalFlowDiagram` 中的过滤逻辑，显示所有任务
+     - `addPlatformSubTask` 新任务添加默认标题"新步骤"
+     - 添加后自动选中新任务并打开编辑面板
+   - **修复文件**:
+     - `src/components/creation-guide/horizontal-flow-diagram.tsx`
+     - `src/app/full-home/page.tsx`
