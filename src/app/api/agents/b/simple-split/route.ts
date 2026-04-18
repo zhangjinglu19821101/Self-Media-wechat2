@@ -153,13 +153,18 @@ export async function POST(request: NextRequest) {
     // 🔥🔥🔥 【修复】从内容模板推导卡片数量模式（统一数据结构，不再需要单独的 imageCountMode）
     // 设计原则：contentTemplateId 是唯一来源，cardCountMode/densityStyle 等信息从模板读取
     // 注意：如果用户手动选择了 imageCountMode（前端传入），也存储到 metadata 供执行引擎使用
-    let derivedImageCountMode: '3-card' | '5-card' | '7-card' | undefined = imageCountMode;
+    const VALID_CARD_COUNT_MODES = ['3-card', '5-card', '7-card'] as const;
+    type CardCountMode = typeof VALID_CARD_COUNT_MODES[number];
+    
+    let derivedImageCountMode: CardCountMode | undefined = imageCountMode as CardCountMode | undefined;
+    // 🔥 P1修复：类型守卫确保 cardCountMode 是有效值
     if (!derivedImageCountMode && contentTemplateId) {
       try {
         const { contentTemplateService } = await import('@/lib/services/content-template-service');
         const contentTemplate = await contentTemplateService.getTemplate(contentTemplateId, workspaceId);
-        if (contentTemplate?.cardCountMode) {
-          derivedImageCountMode = contentTemplate.cardCountMode as '3-card' | '5-card' | '7-card';
+        // 🔥 类型守卫：只有有效的 cardCountMode 才能赋值
+        if (contentTemplate?.cardCountMode && VALID_CARD_COUNT_MODES.includes(contentTemplate.cardCountMode as CardCountMode)) {
+          derivedImageCountMode = contentTemplate.cardCountMode as CardCountMode;
           console.log(`🔵 [Agent B 简化拆解] 🔥 从内容模板推导 cardCountMode: ${derivedImageCountMode}（模板: ${contentTemplate.name}）`);
         }
       } catch (tplErr) {

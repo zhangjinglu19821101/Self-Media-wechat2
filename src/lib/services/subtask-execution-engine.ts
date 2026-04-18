@@ -7136,6 +7136,30 @@ export class SubtaskExecutionEngine {
           { hasImageStructureRules: _hasImageStructureRules }
         );
 
+        // 🔥🔥🔥 【P0修复】提前读取内容模板，获取 cardCountMode 和 promptInstruction
+        // cardCountMode 优先级：1. 内容模板的 cardCountMode  2. metadata 中的 imageCountMode（兼容旧数据）
+        const VALID_CARD_COUNT_MODES = ['3-card', '5-card', '7-card'] as const;
+        type CardCountMode = typeof VALID_CARD_COUNT_MODES[number];
+        
+        let _contentTpl: any = null;
+        let _contentTemplateService: any = null;
+        let _derivedCardCountMode: CardCountMode | undefined = taskMetadata?.imageCountMode as CardCountMode | undefined;
+
+        if (taskMetadata?.contentTemplateId) {
+          try {
+            const { contentTemplateService } = await import('./content-template-service');
+            _contentTemplateService = contentTemplateService;
+            _contentTpl = await contentTemplateService.getTemplate(taskMetadata.contentTemplateId, task.workspaceId);
+            // 🔥 从内容模板推导 cardCountMode（优先级高于 metadata.imageCountMode）
+            if (_contentTpl?.cardCountMode && VALID_CARD_COUNT_MODES.includes(_contentTpl.cardCountMode as CardCountMode)) {
+              _derivedCardCountMode = _contentTpl.cardCountMode as CardCountMode;
+              console.log('[SubtaskEngine] 📋 从内容模板获取 cardCountMode:', _derivedCardCountMode);
+            }
+          } catch (_tplErr) {
+            console.warn('[SubtaskEngine] ⚠️ 读取内容模板失败:', _tplErr);
+          }
+        }
+
         insuranceDAssembledResult = await promptAssemblerService.assemblePrompt({
           workspaceId: task.workspaceId || undefined,
           executorType, // 🔥 传递 executorType 决定加载哪个提示词文件
@@ -7155,31 +7179,24 @@ export class SubtaskExecutionEngine {
           templateId: _templateIdForPlatform,
           // 🔴 前序步骤执行结果（大纲/调研/合规校验等，由 buildExecutionContext 构建）
           priorStepOutput: _priorStepOutput || undefined,
-          // 🔥🔥🔥 【修复】传递小红书卡片数量模式（统一从内容模板读取，兼容旧数据）
-          // 优先级：1. 内容模板的 cardCountMode  2. metadata 中的 imageCountMode（兼容）
-          cardCountMode: taskMetadata?.imageCountMode as '3-card' | '5-card' | '7-card' | undefined,
+          // 🔥🔥🔥 【P0修复】传递小红书卡片数量模式（优先从内容模板读取，兼容旧数据）
+          cardCountMode: _derivedCardCountMode,
         });
 
         agentPrompt = insuranceDAssembledResult.fixedBasePrompt; // 固定基础部分作为 agentPrompt
 
         // 🔥🔥 Phase 2-2: 注入内容模板精简指令到 insurance-d Prompt
         // 注意：必须在 agentPrompt 赋值之后，否则会被覆盖
-        if (taskMetadata?.contentTemplateId) {
-          try {
-            const { contentTemplateService } = await import('./content-template-service');
-            const _contentTpl = await contentTemplateService.getTemplate(taskMetadata.contentTemplateId, task.workspaceId);
-            if (_contentTpl?.promptInstruction) {
-              // 将精简指令追加到 agentPrompt 末尾（作为最高优先级图文分工指导）
-              // 内容模板指令与用户观点不互斥，两者叠加注入
-              const _templateInstruction = `\n\n【📝 图文分工模板（来自参考笔记分析）】\n${_contentTpl.promptInstruction}\n请严格按照此分工规则分配图片内容和正文内容。`;
-              agentPrompt = agentPrompt + _templateInstruction;
-              // 记录使用次数
-              contentTemplateService.recordUse(taskMetadata.contentTemplateId).catch(() => {});
-              console.log('[SubtaskEngine] 📝 已注入内容模板精简指令到insurance-d Prompt:', _contentTpl.promptInstruction);
-            }
-          } catch (_tplErr) {
-            console.warn('[SubtaskEngine] ⚠️ 注入内容模板指令失败:', _tplErr);
+        if (_contentTpl?.promptInstruction) {
+          // 将精简指令追加到 agentPrompt 末尾（作为最高优先级图文分工指导）
+          // 内容模板指令与用户观点不互斥，两者叠加注入
+          const _templateInstruction = `\n\n【📝 图文分工模板（来自参考笔记分析）】\n${_contentTpl.promptInstruction}\n请严格按照此分工规则分配图片内容和正文内容。`;
+          agentPrompt = agentPrompt + _templateInstruction;
+          // 记录使用次数
+          if (taskMetadata?.contentTemplateId && _contentTemplateService) {
+            _contentTemplateService.recordUse(taskMetadata.contentTemplateId).catch(() => {});
           }
+          console.log('[SubtaskEngine] 📝 已注入内容模板精简指令到insurance-d Prompt:', _contentTpl.promptInstruction);
         }
 
         // Phase 6: inject platform-specific config into insurance-d Prompt

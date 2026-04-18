@@ -1068,3 +1068,22 @@
    - **修复文件**:
      - `src/components/creation-guide/horizontal-flow-diagram.tsx`
      - `src/app/full-home/page.tsx`
+54. **P0/P1 技术评审修复（cardCountMode 数据流完善）**:
+   - **P0 问题**: 执行引擎未从内容模板读取 cardCountMode
+     - **现象**: `subtask-execution-engine.ts` 只读取 `metadata.imageCountMode`，未从内容模板读取
+     - **风险**: 其他入口创建任务时可能没有 `imageCountMode`，导致功能失效
+     - **修复**: 提前读取内容模板，从模板获取 `cardCountMode`（优先级高于 metadata）
+   - **P1 问题**: 类型断言不安全
+     - **现象**: `contentTemplate.cardCountMode as '3-card' | '5-card' | '7-card'` 未校验值有效性
+     - **风险**: 数据库存在非法值时会导致类型不安全
+     - **修复**: 添加类型守卫 `VALID_CARD_COUNT_MODES.includes()` 确保只有有效值才能赋值
+   - **修复文件**:
+     - `src/lib/services/subtask-execution-engine.ts`: 提前读取内容模板，获取 cardCountMode 和 promptInstruction
+     - `src/app/api/agents/b/simple-split/route.ts`: 添加类型守卫
+   - **数据流完善**:
+     ```
+     执行引擎获取 cardCountMode:
+       1. 优先从内容模板读取（符合"内容模板是唯一来源"原则）
+       2. 兜底从 metadata.imageCountMode 读取（兼容旧数据）
+       3. 类型守卫确保值有效（3-card/5-card/7-card）
+     ```
