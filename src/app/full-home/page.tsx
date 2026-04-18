@@ -2287,123 +2287,6 @@ export default function HomePage() {
                         </div>
                       )}
 
-                      {/* 案例引用 Tab */}
-                      {activeGuideTab === 'case' && (
-                        <div className="space-y-4">
-                          <div className="flex items-center justify-between mb-1">
-                            <div className="flex items-center gap-2">
-                              <span className="text-sm font-medium text-slate-700">选择行业案例</span>
-                              <span className="text-xs text-slate-400">增强文章说服力和真实感</span>
-                            </div>
-                            <Button variant="ghost" size="sm" onClick={handleRecommendCases} disabled={loadingRecommendedCases || !mainInstruction.trim()} className="h-8 px-3 text-xs text-emerald-600 hover:text-emerald-700">
-                              {loadingRecommendedCases ? <Loader2 className="w-3.5 h-3.5 animate-spin mr-1.5" /> : <Sparkles className="w-3.5 h-3.5 mr-1.5" />}
-                              推荐案例
-                            </Button>
-                          </div>
-
-                          {!mainInstruction.trim() && (
-                            <div className="text-center py-6 text-sm text-slate-400">
-                              请先输入任务指令，系统将根据指令推荐最相关的案例
-                            </div>
-                          )}
-
-                          {/* 已选案例 Badge */}
-                          {selectedCases.length > 0 && (
-                            <div className="flex flex-wrap gap-2 p-3 bg-emerald-50 rounded-lg">
-                              {selectedCases.map(c => (
-                                <Badge
-                                  key={c.id}
-                                  variant="secondary"
-                                  className="text-sm bg-emerald-100 text-emerald-700 border-emerald-200 cursor-pointer hover:bg-emerald-200 gap-1.5 pr-2"
-                                  onClick={() => toggleCaseSelection(c)}
-                                >
-                                  {c.title.length > 15 ? c.title.slice(0, 15) + '...' : c.title}
-                                  <span className="text-emerald-400 hover:text-red-400 text-sm">×</span>
-                                </Badge>
-                              ))}
-                            </div>
-                          )}
-
-                          {/* 推荐案例列表 */}
-                          {recommendedCases.length > 0 && (
-                            <div className="space-y-2">
-                              <div className="text-xs font-medium text-emerald-600 flex items-center gap-1">
-                                <Sparkles className="w-3 h-3" />
-                                根据指令推荐的最相关案例（点击查看详情或选择）
-                              </div>
-                              {recommendedCases.map((c) => {
-                                const isSelected = selectedCaseIds.includes(c.id);
-                                return (
-                                  <div
-                                    key={c.id}
-                                    className={`relative px-4 py-3 rounded-xl border-2 transition-all ${
-                                      isSelected
-                                        ? 'border-emerald-400 bg-emerald-50'
-                                        : 'border-slate-200 bg-white hover:border-slate-300'
-                                    }`}
-                                  >
-                                    <div className="flex items-start justify-between gap-2">
-                                      <div 
-                                        className="flex-1 min-w-0 cursor-pointer"
-                                        onClick={() => setViewingCase(c)}
-                                      >
-                                        <div className="flex items-center gap-2">
-                                          <span className={`font-medium text-sm ${isSelected ? 'text-emerald-700' : 'text-slate-700'}`}>
-                                            {c.title}
-                                          </span>
-                                          {isSelected && <CheckCircle2 className="w-4 h-4 text-emerald-500 flex-shrink-0" />}
-                                        </div>
-                                        <div className="text-xs text-slate-500 mt-1 line-clamp-2">
-                                          {c.protagonist && <span>{c.protagonist} | </span>}
-                                          {c.background}
-                                        </div>
-                                        <div className="flex flex-wrap gap-1 mt-1.5">
-                                          {c.productTags.slice(0, 3).map(tag => (
-                                            <span key={tag} className="text-[10px] px-1.5 py-0.5 rounded bg-blue-50 text-blue-600">{tag}</span>
-                                          ))}
-                                          {c.crowdTags.slice(0, 2).map(tag => (
-                                            <span key={tag} className="text-[10px] px-1.5 py-0.5 rounded bg-purple-50 text-purple-600">{tag}</span>
-                                          ))}
-                                        </div>
-                                      </div>
-                                      {/* 操作按钮 */}
-                                      <div className="flex flex-col gap-1.5 flex-shrink-0">
-                                        <button
-                                          type="button"
-                                          onClick={() => setViewingCase(c)}
-                                          className="text-[10px] px-2 py-1 rounded border border-slate-200 text-slate-500 hover:bg-slate-50 transition-colors"
-                                        >
-                                          详情
-                                        </button>
-                                        <button
-                                          type="button"
-                                          onClick={() => toggleCaseSelection(c)}
-                                          className={`text-[10px] px-2 py-1 rounded transition-colors ${
-                                            isSelected
-                                              ? 'bg-emerald-100 text-emerald-700 border border-emerald-300'
-                                              : 'bg-emerald-500 text-white hover:bg-emerald-600'
-                                          }`}
-                                        >
-                                          {isSelected ? '已选' : '选择'}
-                                        </button>
-                                      </div>
-                                    </div>
-                                  </div>
-                                );
-                              })}
-                            </div>
-                          )}
-
-                          {/* 无推荐结果 */}
-                          {mainInstruction.trim() && !loadingRecommendedCases && recommendedCases.length === 0 && (
-                            <div className="text-center py-8 text-sm text-slate-400">
-                              {hasSearchedCases
-                                ? '未找到与指令相关的案例，当前案例库覆盖的险种：意外险、医疗险、重疾险、财产险、雇主责任险'
-                                : '点击上方「推荐案例」按钮，获取与指令相关的行业案例'}
-                            </div>
-                          )}
-                        </div>
-                      )}
                     </div>
                   </div>
                   )}
@@ -2667,6 +2550,124 @@ export default function HomePage() {
                                   ))}
                                 </div>
                               )}
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {/* 案例引用 Tab */}
+                      {activeGuideTab === 'case' && (
+                        <div className="space-y-4">
+                          <div className="flex items-center justify-between mb-1">
+                            <div className="flex items-center gap-2">
+                              <span className="text-sm font-medium text-slate-700">选择行业案例</span>
+                              <span className="text-xs text-slate-400">增强文章说服力和真实感</span>
+                            </div>
+                            <Button variant="ghost" size="sm" onClick={handleRecommendCases} disabled={loadingRecommendedCases || !mainInstruction.trim()} className="h-8 px-3 text-xs text-emerald-600 hover:text-emerald-700">
+                              {loadingRecommendedCases ? <Loader2 className="w-3.5 h-3.5 animate-spin mr-1.5" /> : <Sparkles className="w-3.5 h-3.5 mr-1.5" />}
+                              推荐案例
+                            </Button>
+                          </div>
+
+                          {!mainInstruction.trim() && (
+                            <div className="text-center py-6 text-sm text-slate-400">
+                              请先输入任务指令，系统将根据指令推荐最相关的案例
+                            </div>
+                          )}
+
+                          {/* 已选案例 Badge */}
+                          {selectedCases.length > 0 && (
+                            <div className="flex flex-wrap gap-2 p-3 bg-emerald-50 rounded-lg">
+                              {selectedCases.map(c => (
+                                <Badge
+                                  key={c.id}
+                                  variant="secondary"
+                                  className="text-sm bg-emerald-100 text-emerald-700 border-emerald-200 cursor-pointer hover:bg-emerald-200 gap-1.5 pr-2"
+                                  onClick={() => toggleCaseSelection(c)}
+                                >
+                                  {c.title.length > 15 ? c.title.slice(0, 15) + '...' : c.title}
+                                  <span className="text-emerald-400 hover:text-red-400 text-sm">×</span>
+                                </Badge>
+                              ))}
+                            </div>
+                          )}
+
+                          {/* 推荐案例列表 */}
+                          {recommendedCases.length > 0 && (
+                            <div className="space-y-2">
+                              <div className="text-xs font-medium text-emerald-600 flex items-center gap-1">
+                                <Sparkles className="w-3 h-3" />
+                                根据指令推荐的最相关案例（点击查看详情或选择）
+                              </div>
+                              {recommendedCases.map((c) => {
+                                const isSelected = selectedCaseIds.includes(c.id);
+                                return (
+                                  <div
+                                    key={c.id}
+                                    className={`relative px-4 py-3 rounded-xl border-2 transition-all ${
+                                      isSelected
+                                        ? 'border-emerald-400 bg-emerald-50'
+                                        : 'border-slate-200 bg-white hover:border-slate-300'
+                                    }`}
+                                  >
+                                    <div className="flex items-start justify-between gap-2">
+                                      <div 
+                                        className="flex-1 min-w-0 cursor-pointer"
+                                        onClick={() => setViewingCase(c)}
+                                      >
+                                        <div className="flex items-center gap-2">
+                                          <span className={`font-medium text-sm ${isSelected ? 'text-emerald-700' : 'text-slate-700'}`}>
+                                            {c.title}
+                                          </span>
+                                          {isSelected && <CheckCircle2 className="w-4 h-4 text-emerald-500 flex-shrink-0" />}
+                                        </div>
+                                        <div className="text-xs text-slate-500 mt-1 line-clamp-2">
+                                          {c.protagonist && <span>{c.protagonist} | </span>}
+                                          {c.background}
+                                        </div>
+                                        <div className="flex flex-wrap gap-1 mt-1.5">
+                                          {c.productTags.slice(0, 3).map(tag => (
+                                            <span key={tag} className="text-[10px] px-1.5 py-0.5 rounded bg-blue-50 text-blue-600">{tag}</span>
+                                          ))}
+                                          {c.crowdTags.slice(0, 2).map(tag => (
+                                            <span key={tag} className="text-[10px] px-1.5 py-0.5 rounded bg-purple-50 text-purple-600">{tag}</span>
+                                          ))}
+                                        </div>
+                                      </div>
+                                      {/* 操作按钮 */}
+                                      <div className="flex flex-col gap-1.5 flex-shrink-0">
+                                        <button
+                                          type="button"
+                                          onClick={() => setViewingCase(c)}
+                                          className="text-[10px] px-2 py-1 rounded border border-slate-200 text-slate-500 hover:bg-slate-50 transition-colors"
+                                        >
+                                          详情
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={() => toggleCaseSelection(c)}
+                                          className={`text-[10px] px-2 py-1 rounded transition-colors ${
+                                            isSelected
+                                              ? 'bg-emerald-100 text-emerald-700 border border-emerald-300'
+                                              : 'bg-emerald-500 text-white hover:bg-emerald-600'
+                                          }`}
+                                        >
+                                          {isSelected ? '已选' : '选择'}
+                                        </button>
+                                      </div>
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
+
+                          {/* 无推荐结果 */}
+                          {mainInstruction.trim() && !loadingRecommendedCases && recommendedCases.length === 0 && (
+                            <div className="text-center py-8 text-sm text-slate-400">
+                              {hasSearchedCases
+                                ? '未找到与指令相关的案例，当前案例库覆盖的险种：意外险、医疗险、重疾险、财产险、雇主责任险'
+                                : '点击上方「推荐案例」按钮，获取与指令相关的行业案例'}
                             </div>
                           )}
                         </div>
