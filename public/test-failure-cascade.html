@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>失败状态级联测试</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100 min-h-screen p-8">
+  <div class="max-w-4xl mx-auto">
+    <h1 class="text-3xl font-bold text-gray-800 mb-8">🧪 失败状态级联测试</h1>
+
+    <!-- 场景选择 -->
+    <div class="bg-white rounded-lg shadow-md p-6 mb-6">
+      <h2 class="text-xl font-semibold mb-4">测试场景</h2>
+      <div class="space-y-4">
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-2">选择场景</label>
+          <select id="scenario" class="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500">
+            <option value="task_failure">场景 1：任务失败 → 级联更新所有指令和子任务</option>
+            <option value="command_failure">场景 2：指令失败 → 级联更新所有子任务</option>
+          </select>
+        </div>
+
+        <div id="taskIdField">
+          <label class="block text-sm font-medium text-gray-700 mb-2">任务ID</label>
+          <input type="text" id="taskId" placeholder="例如：task-user-to-B-1770699956142"
+            class="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500">
+        </div>
+
+        <div id="commandIdField" class="hidden">
+          <label class="block text-sm font-medium text-gray-700 mb-2">指令ID</label>
+          <input type="text" id="commandId" placeholder="例如：cmd-task-20260222-001-01"
+            class="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500">
+        </div>
+
+        <button onclick="runTest()" 
+          class="w-full bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700 transition-colors">
+          运行测试
+        </button>
+      </div>
+    </div>
+
+    <!-- 测试结果 -->
+    <div id="result" class="hidden bg-white rounded-lg shadow-md p-6">
+      <h2 class="text-xl font-semibold mb-4">测试结果</h2>
+      <div id="resultContent"></div>
+    </div>
+
+    <!-- 测试说明 -->
+    <div class="bg-white rounded-lg shadow-md p-6 mt-6">
+      <h2 class="text-xl font-semibold mb-4">📋 测试说明</h2>
+      <div class="space-y-4 text-sm text-gray-600">
+        <div>
+          <h3 class="font-medium text-gray-800">场景 1：任务失败级联</h3>
+          <ul class="list-disc list-inside mt-2">
+            <li>当 agentTasks.taskStatus = 'failed' 时</li>
+            <li>→ 所有关联的 commandResults.executionStatus = 'failed'</li>
+            <li>→ 所有关联的 agentSubTasks.status = 'failed'</li>
+          </ul>
+        </div>
+        <div>
+          <h3 class="font-medium text-gray-800">场景 2：指令失败级联</h3>
+          <ul class="list-disc list-inside mt-2">
+            <li>当 commandResults.executionStatus = 'failed' 时</li>
+            <li>→ 所有关联的 agentSubTasks.status = 'failed'</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // 场景切换
+    document.getElementById('scenario').addEventListener('change', function() {
+      const taskIdField = document.getElementById('taskIdField');
+      const commandIdField = document.getElementById('commandIdField');
+
+      if (this.value === 'task_failure') {
+        taskIdField.classList.remove('hidden');
+        commandIdField.classList.add('hidden');
+      } else {
+        taskIdField.classList.add('hidden');
+        commandIdField.classList.remove('hidden');
+      }
+    });
+
+    // 运行测试
+    async function runTest() {
+      const scenario = document.getElementById('scenario').value;
+      const taskId = document.getElementById('taskId').value;
+      const commandId = document.getElementById('commandId').value;
+      const resultDiv = document.getElementById('result');
+      const resultContent = document.getElementById('resultContent');
+
+      // 验证参数
+      if (scenario === 'task_failure' && !taskId) {
+        alert('请输入任务ID');
+        return;
+      }
+
+      if (scenario === 'command_failure' && !commandId) {
+        alert('请输入指令ID');
+        return;
+      }
+
+      // 显示加载状态
+      resultDiv.classList.remove('hidden');
+      resultContent.innerHTML = '<div class="text-center py-4"><div class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div><p class="mt-2 text-gray-600">测试运行中...</p></div>';
+
+      try {
+        // 发送测试请求
+        const response = await fetch('/api/test/failure-cascade', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            scenario,
+            taskId: scenario === 'task_failure' ? taskId : undefined,
+            commandId: scenario === 'command_failure' ? commandId : undefined,
+          }),
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+          throw new Error(data.error || '测试失败');
+        }
+
+        // 显示结果
+        displayResult(data);
+      } catch (error) {
+        resultContent.innerHTML = `
+          <div class="bg-red-50 border border-red-200 text-red-800 rounded-md p-4">
+            <p class="font-medium">测试失败</p>
+            <p class="mt-1">${error.message}</p>
+          </div>
+        `;
+      }
+    }
+
+    // 显示结果
+    function displayResult(data) {
+      const resultContent = document.getElementById('resultContent');
+      const { success, scenario, message, data: resultData } = data;
+
+      let html = `
+        <div class="space-y-4">
+          <div class="${success ? 'bg-green-50 border border-green-200 text-green-800' : 'bg-red-50 border border-red-200 text-red-800'} rounded-md p-4">
+            <p class="font-medium">${message}</p>
+          </div>
+      `;
+
+      // 显示级联前后对比
+      if (resultData.cascadeBefore && resultData.cascadeAfter) {
+        html += `
+          <div class="border border-gray-200 rounded-md p-4">
+            <h3 class="font-medium text-gray-800 mb-3">级联前后对比</h3>
+            
+            <div class="grid grid-cols-2 gap-4">
+              <div>
+                <h4 class="text-sm font-medium text-gray-600 mb-2">级联前</h4>
+                <div class="bg-gray-50 rounded p-3 text-sm">
+                  <p>指令数量: ${resultData.cascadeBefore.commandsCount || 0}</p>
+                  <p>子任务数量: ${resultData.cascadeBefore.subTasksCount || 0}</p>
+                  ${resultData.cascadeBefore.commandsStatus ? 
+                    `<p class="mt-2">指令状态: ${resultData.cascadeBefore.commandsStatus.map(c => c.status).join(', ')}</p>` : ''}
+                  ${resultData.cascadeBefore.subTasksStatus ? 
+                    `<p>子任务状态: ${resultData.cascadeBefore.subTasksStatus.map(s => s.status).join(', ')}</p>` : ''}
+                </div>
+              </div>
+              <div>
+                <h4 class="text-sm font-medium text-gray-600 mb-2">级联后</h4>
+                <div class="bg-green-50 rounded p-3 text-sm">
+                  <p>指令数量: ${resultData.cascadeAfter.commandsCount || 0}</p>
+                  <p>子任务数量: ${resultData.cascadeAfter.subTasksCount || 0}</p>
+                  ${resultData.cascadeAfter.commandsStatus ? 
+                    `<p class="mt-2">指令状态: ${resultData.cascadeAfter.commandsStatus.map(c => c.status).join(', ')}</p>` : ''}
+                  ${resultData.cascadeAfter.subTasksStatus ? 
+                    `<p>子任务状态: ${resultData.cascadeAfter.subTasksStatus.map(s => s.status).join(', ')}</p>` : ''}
+                </div>
+              </div>
+            </div>
+          </div>
+        `;
+      }
+
+      // 显示统计信息
+      if (resultData.summary) {
+        html += `
+          <div class="bg-blue-50 border border-blue-200 rounded-md p-4">
+            <h3 class="font-medium text-gray-800 mb-2">统计信息</h3>
+            <div class="grid grid-cols-2 gap-4 text-sm">
+              <div>
+                <p class="text-gray-600">失败指令数: <span class="font-bold text-red-600">${resultData.summary.failedCommandsCount || 0}</span> / ${resultData.summary.totalCommandsCount || 0}</p>
+                <p class="text-gray-600 mt-1">失败子任务数: <span class="font-bold text-red-600">${resultData.summary.failedSubTasksCount || 0}</span> / ${resultData.summary.totalSubTasksCount || 0}</p>
+              </div>
+              <div>
+                <p class="text-gray-600">任务ID: <span class="font-mono text-xs">${resultData.taskId || resultData.relatedTaskId || '-'}</span></p>
+                <p class="text-gray-600 mt-1">指令ID: <span class="font-mono text-xs">${resultData.commandId || '-'}</span></p>
+              </div>
+            </div>
+          </div>
+        `;
+      }
+
+      html += '</div>';
+      resultContent.innerHTML = html;
+    }
+  </script>
+</body>
+</html>

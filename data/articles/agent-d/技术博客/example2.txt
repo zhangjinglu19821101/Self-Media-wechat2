@@ -1,0 +1,23 @@
+深入理解 React Server Components
+
+React 18 引入了 Server Components（服务器组件），这是一个重大的架构改进。
+
+什么是 Server Components？
+- 在服务器端渲染
+- 直接访问数据库和 API
+- 不发送 JavaScript 到客户端
+
+基本用法：
+```tsx
+// app/posts/page.tsx
+async function PostsList() {
+  const posts = await db.posts.findMany();
+  return (
+    <div>
+      {posts.map(post => <PostCard key={post.id} post={post} />)}
+    </div>
+  );
+}
+```
+
+Server Components 是 React 的核心特性，合理使用可以显著提升应用性能。

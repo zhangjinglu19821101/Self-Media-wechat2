@@ -1,0 +1,24 @@
+ChatGPT 原理解析
+
+ChatGPT 是基于 GPT-3.5 架构的大语言模型，通过强化学习从人类反馈（RLHF）进行训练。
+
+核心架构包括：
+1. Transformer 解码器
+2. 位置编码
+3. 多头注意力机制
+
+```python
+import torch
+import torch.nn as nn
+
+class TransformerDecoder(nn.Module):
+    def __init__(self, vocab_size, d_model=768):
+        super().__init__()
+        self.embedding = nn.Embedding(vocab_size, d_model)
+        self.decoder = nn.TransformerDecoder(
+            nn.TransformerDecoderLayer(d_model),
+            num_layers=12
+        )
+```
+
+ChatGPT 通过 RLHF 技术实现了与人类的自然交互，是当前最先进的对话系统之一。

@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>定时任务缓存测试</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-900 text-white min-h-screen p-8">
+  <div class="max-w-4xl mx-auto">
+    <h1 class="text-3xl font-bold mb-6">🧪 定时任务缓存测试</h1>
+    
+    <div class="space-y-6">
+      <!-- 清空缓存 -->
+      <div class="bg-gray-800 rounded-lg p-4">
+        <h2 class="text-xl font-semibold mb-4">操作</h2>
+        <div class="flex gap-4">
+          <button id="clearCache" class="bg-red-600 hover:bg-red-700 px-4 py-2 rounded">
+            🧹 清空缓存
+          </button>
+          <button id="test1" class="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded">
+            📝 测试：5 个相同任务
+          </button>
+          <button id="test2" class="bg-green-600 hover:bg-green-700 px-4 py-2 rounded">
+            📝 测试：5 个不同任务
+          </button>
+          <button id="test3" class="bg-purple-600 hover:bg-purple-700 px-4 py-2 rounded">
+            📝 测试：重复相同任务
+          </button>
+        </div>
+      </div>
+
+      <!-- 结果显示 -->
+      <div class="bg-gray-800 rounded-lg p-4">
+        <h2 class="text-xl font-semibold mb-4">结果</h2>
+        <div id="results" class="space-y-4">
+          <p class="text-gray-400">点击上方按钮开始测试...</p>
+        </div>
+      </div>
+
+      <!-- 日志 -->
+      <div class="bg-gray-800 rounded-lg p-4">
+        <h2 class="text-xl font-semibold mb-4">日志</h2>
+        <pre id="logs" class="bg-black p-4 rounded text-sm overflow-auto max-h-96 text-green-400">
+          等待日志...
+        </pre>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const logs = document.getElementById('logs');
+    const results = document.getElementById('results');
+
+    function log(message) {
+      const time = new Date().toLocaleTimeString();
+      logs.textContent = `[${time}] ${message}\n` + logs.textContent;
+    }
+
+    function showResult(data) {
+      results.innerHTML = `
+        <div class="bg-gray-700 rounded p-4">
+          <h3 class="font-semibold mb-2">${data.message}</h3>
+          <div class="grid grid-cols-2 gap-4 text-sm">
+            <div>
+              <span class="text-gray-400">总任务数:</span> ${data.data.totalTasks}
+            </div>
+            <div>
+              <span class="text-gray-400">总耗时:</span> ${data.data.totalDuration}ms
+            </div>
+            <div>
+              <span class="text-gray-400">平均耗时:</span> ${data.data.averageDuration}ms
+            </div>
+            <div>
+              <span class="text-gray-400">缓存命中次数:</span> ${data.data.cacheHitCount}
+            </div>
+            <div>
+              <span class="text-gray-400">缓存未命中次数:</span> ${data.data.cacheMissCount}
+            </div>
+            <div class="text-green-400">
+              <span class="text-gray-400">缓存命中率:</span> ${data.data.cacheHitRate}%
+            </div>
+          </div>
+          <div class="mt-4">
+            <h4 class="font-semibold mb-2">任务详情:</h4>
+            <table class="w-full text-sm">
+              <thead>
+                <tr class="border-b">
+                  <th class="text-left py-2">任务 ID</th>
+                  <th class="text-left py-2">任务名称</th>
+                  <th class="text-left py-2">耗时</th>
+                  <th class="text-left py-2">缓存</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${data.data.results.map(r => `
+                  <tr class="border-b">
+                    <td class="py-2">${r.taskId}</td>
+                    <td class="py-2">${r.taskName}</td>
+                    <td class="py-2">${r.duration}ms</td>
+                    <td class="py-2 ${r.isCacheHit ? 'text-green-400' : 'text-red-400'}">
+                      ${r.isCacheHit ? '✅ 命中' : '❌ 未命中'}
+                    </td>
+                  </tr>
+                `).join('')}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      `;
+    }
+
+    document.getElementById('clearCache').addEventListener('click', async () => {
+      log('🧹 清空缓存...');
+      try {
+        const response = await fetch('/api/test/cron-cache', { method: 'DELETE' });
+        const data = await response.json();
+        log(`✅ ${data.message}`);
+      } catch (error) {
+        log(`❌ 清空缓存失败: ${error.message}`);
+      }
+    });
+
+    document.getElementById('test1').addEventListener('click', async () => {
+      log('📝 测试：5 个相同任务...');
+      try {
+        const response = await fetch('/api/test/cron-cache', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ taskCount: 5, sameTask: true })
+        });
+        const data = await response.json();
+        log(`✅ ${data.message}`);
+        showResult(data);
+      } catch (error) {
+        log(`❌ 测试失败: ${error.message}`);
+      }
+    });
+
+    document.getElementById('test2').addEventListener('click', async () => {
+      log('📝 测试：5 个不同任务...');
+      try {
+        const response = await fetch('/api/test/cron-cache', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ taskCount: 5, sameTask: false })
+        });
+        const data = await response.json();
+        log(`✅ ${data.message}`);
+        showResult(data);
+      } catch (error) {
+        log(`❌ 测试失败: ${error.message}`);
+      }
+    });
+
+    document.getElementById('test3').addEventListener('click', async () => {
+      log('📝 测试：重复相同任务...');
+      // 先清空缓存
+      await fetch('/api/test/cron-cache', { method: 'DELETE' });
+      log('🧹 缓存已清空');
+
+      // 第一次处理
+      log('第一次处理 5 个相同任务...');
+      const response1 = await fetch('/api/test/cron-cache', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ taskCount: 5, sameTask: true })
+      });
+      const data1 = await response1.json();
+      log(`✅ 第一次: 缓存命中率 ${data1.data.cacheHitRate}%`);
+
+      // 第二次处理（应该全部命中缓存）
+      log('第二次处理 5 个相同任务...');
+      const response2 = await fetch('/api/test/cron-cache', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ taskCount: 5, sameTask: true })
+      });
+      const data2 = await response2.json();
+      log(`✅ 第二次: 缓存命中率 ${data2.data.cacheHitRate}%`);
+
+      showResult(data2);
+    });
+
+    log('✅ 页面加载完成');
+  </script>
+</body>
+</html>

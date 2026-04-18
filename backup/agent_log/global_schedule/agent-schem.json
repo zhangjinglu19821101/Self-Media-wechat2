@@ -1,0 +1,81 @@
+{
+  "version": "1.0.0",
+  "lastUpdated": "2026-02-06T10:50:00.000Z",
+  "agents": [
+    {
+      "agentId": "B",
+      "agentName": "Agent B - 合规规则维护智能体",
+      "tasks": [
+        {
+          "taskId": "B-compliance-rules-update",
+          "taskName": "微信公众号合规规则更新",
+          "schedule": "weekly",
+          "scheduleConfig": {
+            "dayOfWeek": 6,
+            "hour": 6,
+            "minute": 0
+          },
+          "status": "completed",
+          "lastExecutedAt": "2026-02-06T18:31:29.879Z",
+          "nextExecutionAt": "2026-02-13T18:31:29.879Z",
+          "outputPath": "./backup/agent_log/AgentB/合规规则/",
+          "outputFileName": "微信公众号合规规则_迭代版_YYYYMMDD.md",
+          "dependencies": [],
+          "createdAt": "2026-02-06T10:50:00.000Z",
+          "completedAt": "2026-02-06T18:31:29.879Z",
+          "executionLog": "唤醒指令已发送，等待Agent反馈"
+        }
+      ]
+    },
+    {
+      "agentId": "insurance-d",
+      "agentName": "insurance-d - 保险新媒体内容创作智能体",
+      "tasks": [
+        {
+          "taskId": "insurance-d-draft-generation",
+          "taskName": "保险新媒体文章初稿生成",
+          "schedule": "daily",
+          "scheduleConfig": {
+            "hour": 6,
+            "minute": 0
+          },
+          "status": "pending",
+          "lastExecutedAt": "2026-02-07T06:00:31.723Z",
+          "nextExecutionAt": "2026-02-07T22:00:00.000Z",
+          "outputPath": "./backup/agent_log/insurance-d/文章初稿/",
+          "outputFileName": "保险新媒体文章初稿_YYYYMMDD.md",
+          "dependencies": [],
+          "createdAt": "2026-02-06T10:50:00.000Z",
+          "completedAt": "2026-02-07T06:00:31.723Z",
+          "executionLog": "唤醒指令已发送，等待Agent反馈"
+        },
+        {
+          "taskId": "insurance-d-compliance-check",
+          "taskName": "文章合规校验+自主修正+终稿生成",
+          "schedule": "daily",
+          "scheduleConfig": {
+            "hour": 7,
+            "minute": 0
+          },
+          "status": "pending",
+          "lastExecutedAt": "2026-02-07T07:00:31.736Z",
+          "nextExecutionAt": "2026-02-07T23:00:00.000Z",
+          "outputPaths": {
+            "finalDraft": "./backup/agent_log/insurance-d/文章终稿/",
+            "complianceRecord": "./backup/agent_log/insurance-d/校验记录/"
+          },
+          "outputFileNames": {
+            "finalDraft": "保险新媒体文章终稿_YYYYMMDD.md",
+            "complianceRecord": "文章合规校验记录_YYYYMMDD.md"
+          },
+          "dependencies": [
+            "insurance-d-draft-generation"
+          ],
+          "createdAt": "2026-02-06T10:50:00.000Z",
+          "completedAt": "2026-02-07T07:00:31.736Z",
+          "executionLog": "唤醒指令已发送，等待Agent反馈"
+        }
+      ]
+    }
+  ]
+}
