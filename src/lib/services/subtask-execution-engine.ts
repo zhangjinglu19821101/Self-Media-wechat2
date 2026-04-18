@@ -1266,6 +1266,16 @@ export class SubtaskExecutionEngine {
       }
       articleTitle = this.extractArticleTitleFromResultData(effectiveWritingTask.resultData, effectiveWritingTask.taskTitle);
       platform = getPlatformForExecutor(effectiveWritingTask.fromParentsExecutor);
+      
+      // 🔥🔥🔥 【修复】小红书需要传递完整的 resultData（JSON对象），而不仅仅是 resultText
+      // 因为前端预览组件需要解析 points 数组来渲染多张卡片
+      // resultText 只是纯文本正文，不包含 points 数组
+      if (platform === 'xiaohongshu' && effectiveWritingTask.resultData) {
+        // 将完整的 resultData 传递给前端，让前端可以解析完整的 JSON 结构
+        articleContent = typeof effectiveWritingTask.resultData === 'string' 
+          ? effectiveWritingTask.resultData 
+          : JSON.stringify(effectiveWritingTask.resultData);
+      }
     }
 
     console.log('[SubtaskEngine] 👁️ 前序写作任务信息:', {

@@ -1101,3 +1101,28 @@
      - 校验结果是 fail 也返回 COMPLETE，整改由下一个节点处理
    - **修复文件**:
      - `src/lib/agents/prompts/agent-b-business-controller.ts`: 重写校验结果解读规则
+56. **小红书预览卡片数量修复**: 修复预览修改节点只显示一张图片的问题
+   - **问题现象**: 小红书预览修改节点只显示一张图片，而非按内容模板显示多张卡片
+   - **根因分析**: 
+     - 虚拟执行器（user_preview_edit）从写作任务获取内容时，只获取了 `resultText`（纯文本正文）
+     - 纯文本正文不包含 `points` 数组
+     - 前端预览组件解析后 `points` 为空数组，导致只显示封面卡
+   - **修复方案**: 
+     - 对于小红书平台，虚拟执行器传递完整的 `resultData`（JSON对象）
+     - 前端预览组件可以正确解析 `platformData.points` 数组
+     - 卡片数量 = 封面卡(1) + 要点卡(points.length) + 结尾卡(1)
+   - **数据流修复**:
+     ```
+     写作任务输出：
+       resultData = { isCompleted, result: { content, articleTitle, platformData: { points: [...] } } }
+     
+     虚拟执行器获取：
+       旧逻辑: articleContent = resultText（纯文本正文，无 points）
+       新逻辑: articleContent = resultData（完整 JSON，含 points）
+     
+     前端预览组件解析：
+       parseXhsContent(resultData) → { points: [...], ... }
+       渲染：封面卡 + points.length 个要点卡 + 结尾卡
+     ```
+   - **修复文件**:
+     - `src/lib/services/subtask-execution-engine.ts`: 虚拟执行器对小红书传递完整 resultData
