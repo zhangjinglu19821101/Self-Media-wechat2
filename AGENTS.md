@@ -1095,8 +1095,9 @@
      - 校验结果是信息性参考，记录在 reviewComment 中传递给下一个节点
      - 合规问题的整改由流程中的下一个节点处理（如合规整改任务）
    - **修复方案**: 修改 Agent B 提示词中的校验结果解读规则（使用正面表述）
-     - 执行 Agent 说完成了（isTaskDown=true）→ 直接返回 COMPLETE
-     - 校验结果记录在 reviewComment 中供下一个节点参考
+     - 执行 Agent 说完成了（isTaskDown=true）→ 检查 selfEvaluation 是否与声明一致
+     - 一致：返回 COMPLETE，校验结果记录在 reviewComment 中
+     - 不一致：返回 NEED_USER，让用户介入处理
      - 校验结果是 fail 也返回 COMPLETE，整改由下一个节点处理
    - **修复文件**:
      - `src/lib/agents/prompts/agent-b-business-controller.ts`: 重写校验结果解读规则

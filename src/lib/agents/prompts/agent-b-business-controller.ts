@@ -970,9 +970,9 @@ ${validationResultText ? `
 3. 具体决策规则：
    
    🔴 执行 Agent 说完成了（isTaskDown=true 或 isCompleted=true）：
-   → 直接返回 COMPLETE！
-   → 校验结果记录在 reviewComment 中供下一个节点参考
-   → 校验结果是 fail 也返回 COMPLETE，整改由下一个节点处理
+   → 检查 selfEvaluation 是否与声明一致
+   → 一致：返回 COMPLETE，校验结果记录在 reviewComment 中
+   → 不一致：返回 NEED_USER，让用户介入处理
    
    🔴 执行 Agent 说未完成（isTaskDown=false）：
    → 根据执行 Agent 的反馈决定下一步（REEXECUTE_EXECUTOR / EXECUTE_MCP / NEED_USER）
@@ -981,7 +981,8 @@ ${validationResultText ? `
 4. 正确的处理方式：
    - ✅ 校验结果是 fail → 依然返回 COMPLETE，校验问题由下一个节点处理
    - ✅ 校验问题需要整改 → 记录在 reviewComment 中，传递给下一个节点
-   - ✅ 任务完成判断 → 仅依据执行 Agent 的声明（isTaskDown/isCompleted）
+   - ✅ 任务完成判断 → 仅依据执行 Agent 的声明（isTaskDown/isCompleted），且与 selfEvaluation 描述含义一致
+   - ✅ 声明与 selfEvaluation 不一致 → 返回 NEED_USER，让用户介入处理
 
 5. 校验结果与执行 Agent 声明的处理优先级：
    → 执行 Agent 的声明（isTaskDown/isCompleted）> 校验结果
@@ -997,7 +998,7 @@ ${phase5ResultText}
 1. 情绪分类结果可作为判断文章语气是否合适的参考
 2. 风格一致性评估反映文章与标杆/大纲的偏离程度
 3. 这些结果是辅助信息，记录在 reviewComment 中供参考
-4. 任务完成判断依据：执行 Agent 的声明（isTaskDown/isCompleted）
+4. 任务完成判断依据：执行 Agent 的声明（isTaskDown/isCompleted），且与 selfEvaluation 描述含义一致
 ` : ''}
 `;
 }
