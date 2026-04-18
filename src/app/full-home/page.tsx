@@ -725,13 +725,16 @@ export default function HomePage() {
 
   /** 向平台分组添加子任务 */
   const addPlatformSubTask = (accountId: string) => {
+    // 生成新任务 ID（提前生成，用于后续选中）
+    const newTaskId = `new-${accountId}-${Date.now()}`;
+    
     setPlatformSubTaskGroups(groups => groups.map(g => {
       if (g.accountId !== accountId) return g;
       return { ...g, subTasks: [
         ...g.subTasks,
         {
-          id: `${g.platform}-${accountId}-${Date.now()}`,
-          title: '',
+          id: newTaskId,
+          title: '新步骤',
           description: '',
           executor: 'B',
           orderIndex: g.subTasks.length + 1,
@@ -739,6 +742,10 @@ export default function HomePage() {
         },
       ]};
     }));
+    
+    // 自动选中新添加的任务
+    setSelectedNodeId(newTaskId);
+    setSelectedGroupAccountId(accountId);
   };
 
   /** 从平台分组中删除子任务 */

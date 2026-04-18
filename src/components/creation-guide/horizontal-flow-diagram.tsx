@@ -199,8 +199,9 @@ export function HorizontalFlowDiagram({
   onNodeSelect,
   onAdd,
 }: HorizontalFlowDiagramProps) {
-  // 有效子任务（标题非空）
-  const validTasks = subTasks.filter((t) => t.title.trim());
+  // 显示所有子任务（包括标题为空的，方便用户编辑）
+  // 空标题的任务显示为"未命名"
+  const displayTasks = subTasks;
 
   // 平台颜色
   const platformBadgeColors: Record<string, string> = {
@@ -227,7 +228,7 @@ export function HorizontalFlowDiagram({
           </Badge>
           <span className="text-sm text-slate-500 font-medium">{accountName}</span>
           <div className="flex items-center gap-1.5 text-xs text-slate-400 bg-slate-100 px-2 py-1 rounded-full">
-            <span className="font-semibold text-slate-600">{validTasks.length}</span>
+            <span className="font-semibold text-slate-600">{displayTasks.length}</span>
             <span>步</span>
           </div>
         </div>
@@ -244,7 +245,7 @@ export function HorizontalFlowDiagram({
       {/* 横向流程图节点 */}
       <div className="relative">
         <div className="flex items-center justify-start md:justify-center py-5 overflow-x-auto scrollbar-thin scrollbar-thumb-slate-300 scrollbar-track-transparent">
-          {validTasks.length === 0 ? (
+          {displayTasks.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-8 text-slate-400">
               <div className="w-12 h-12 rounded-full bg-slate-100 flex items-center justify-center mb-3">
                 <span className="text-xl">+</span>
@@ -253,12 +254,12 @@ export function HorizontalFlowDiagram({
             </div>
           ) : (
             <div className="flex items-center px-4">
-              {validTasks.map((task, index) => (
+              {displayTasks.map((task, index) => (
                 <FlowNode
                   key={task.id}
                   task={task}
                   index={index}
-                  total={validTasks.length}
+                  total={displayTasks.length}
                   isSelected={selectedNodeId === task.id}
                   onClick={() => onNodeSelect(task.id)}
                 />
@@ -273,7 +274,7 @@ export function HorizontalFlowDiagram({
       </div>
 
       {/* 流程路径预览 */}
-      {validTasks.length > 1 && (
+      {displayTasks.length > 1 && (
         <div className="mt-4 pt-3 border-t border-slate-200/60">
           <div className="flex items-center gap-2 text-xs text-slate-500">
             <span className="font-semibold text-slate-600 shrink-0 bg-slate-100 px-2 py-0.5 rounded">
@@ -281,10 +282,10 @@ export function HorizontalFlowDiagram({
             </span>
             <div className="flex-1 overflow-hidden">
               <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-hide">
-                {validTasks.map((t, idx) => (
+                {displayTasks.map((t, idx) => (
                   <span key={t.id} className="whitespace-nowrap flex items-center">
                     <span className="text-slate-700">{t.title || '未命名'}</span>
-                    {idx < validTasks.length - 1 && (
+                    {idx < displayTasks.length - 1 && (
                       <ArrowRight className="w-3 h-3 mx-1.5 text-slate-300 shrink-0" />
                     )}
                   </span>
