@@ -955,33 +955,33 @@ ${validationResultText ? `
 
 当你收到上方【📊 文章校验报告】时，请按以下规则理解：
 
-🔴🔴🔴 【核心原则】你的职责是判断"任务是否完成"，不是纠正文章问题！🔴🔴🔴
+🔴🔴🔴 【核心原则】你的职责是判断"任务是否完成"，合规整改交给下一个节点！🔴🔴🔴
 
 1. 你的身份定位：
-   - 你是流程审核者，只判断"执行 Agent 是否完成了它的任务"
-   - 你不是内容纠错者，不负责让文章变得完美
+   - 你是流程审核者，判断"执行 Agent 是否完成了它的任务"
    - 合规问题的整改由流程中的【下一个节点】负责（如合规整改任务）
+   - 你的审核结论是：任务完成 → COMPLETE，任务未完成 → 其他决策
 
 2. 校验结果的作用：
    - 校验结果是【信息性参考】，帮助你了解文章质量
-   - 校验结果【不是拦截依据】，不应该因为校验问题而拒绝完成任务
-   - 如果执行 Agent 说完成了（isTaskDown=true），就信任其判断，返回 COMPLETE
+   - 校验结果记录在 reviewComment 中，传递给下一个节点参考
+   - 执行 Agent 说完成了（isTaskDown=true），就信任其判断，返回 COMPLETE
 
 3. 具体决策规则：
    
    🔴 执行 Agent 说完成了（isTaskDown=true 或 isCompleted=true）：
    → 直接返回 COMPLETE！
-   → 校验结果仅作为参考信息，记录在 reviewComment 中即可
-   → 即使校验结果是 fail，也返回 COMPLETE，让下一个节点处理整改
+   → 校验结果记录在 reviewComment 中供下一个节点参考
+   → 校验结果是 fail 也返回 COMPLETE，整改由下一个节点处理
    
    🔴 执行 Agent 说未完成（isTaskDown=false）：
    → 根据执行 Agent 的反馈决定下一步（REEXECUTE_EXECUTOR / EXECUTE_MCP / NEED_USER）
    → 校验结果作为辅助参考
 
-4. 🚫 绝对不要做的事：
-   - ❌ 不要因为校验结果是 fail 就返回 REEXECUTE_EXECUTOR
-   - ❌ 不要试图让执行 Agent 立即修正校验问题
-   - ❌ 不要把校验问题当作任务未完成的依据
+4. 正确的处理方式：
+   - ✅ 校验结果是 fail → 依然返回 COMPLETE，校验问题由下一个节点处理
+   - ✅ 校验问题需要整改 → 记录在 reviewComment 中，传递给下一个节点
+   - ✅ 任务完成判断 → 仅依据执行 Agent 的声明（isTaskDown/isCompleted）
 
 5. 校验结果与执行 Agent 声明的处理优先级：
    → 执行 Agent 的声明（isTaskDown/isCompleted）> 校验结果
@@ -996,8 +996,8 @@ ${phase5ResultText}
 解读规则：
 1. 情绪分类结果可作为判断文章语气是否合适的参考
 2. 风格一致性评估反映文章与标杆/大纲的偏离程度
-3. 这些结果是辅助信息，不强制改变你的决策逻辑
-4. 如果风格一致性为 needs_improvement 且校验也 fail → 强烈建议 REEXECUTE_EXECUTOR
+3. 这些结果是辅助信息，记录在 reviewComment 中供参考
+4. 任务完成判断依据：执行 Agent 的声明（isTaskDown/isCompleted）
 ` : ''}
 `;
 }

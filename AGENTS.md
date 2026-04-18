@@ -1091,12 +1091,12 @@
    - **问题现象**: Agent B 收到合规校验结果后，如果发现文章存在合规问题，会拦截下来（返回 REEXECUTE_EXECUTOR）
    - **根因分析**: Agent B 的身份定位不清晰，误将"校验结果"当作"任务未完成"的依据
    - **设计原则**: 
-     - Agent B 的职责是判断"当前任务是否完成"，不是纠正文章问题
-     - 合规问题是信息性参考，不是拦截依据
+     - Agent B 的职责是判断"当前任务是否完成"，合规整改交给下一个节点
+     - 校验结果是信息性参考，记录在 reviewComment 中传递给下一个节点
      - 合规问题的整改由流程中的下一个节点处理（如合规整改任务）
-   - **修复方案**: 修改 Agent B 提示词中的校验结果解读规则
+   - **修复方案**: 修改 Agent B 提示词中的校验结果解读规则（使用正面表述）
      - 执行 Agent 说完成了（isTaskDown=true）→ 直接返回 COMPLETE
-     - 校验结果仅作为参考信息，记录在 reviewComment 中
-     - 即使校验结果是 fail，也返回 COMPLETE，让下一个节点处理整改
+     - 校验结果记录在 reviewComment 中供下一个节点参考
+     - 校验结果是 fail 也返回 COMPLETE，整改由下一个节点处理
    - **修复文件**:
      - `src/lib/agents/prompts/agent-b-business-controller.ts`: 重写校验结果解读规则
