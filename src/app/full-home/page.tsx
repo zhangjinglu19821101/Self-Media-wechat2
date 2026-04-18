@@ -111,6 +111,7 @@ interface CaseItem {
   insuranceAction: string;
   result: string;
   applicableProducts: string[];
+  applicableScenarios: string[];
   productTags: string[];
   crowdTags: string[];
   sceneTags: string[];
@@ -3196,6 +3197,22 @@ export default function HomePage() {
               
               {/* 标签 */}
               <div className="flex flex-wrap gap-2 pt-2">
+                {viewingCase.applicableProducts.length > 0 && (
+                  <div className="flex flex-wrap gap-1">
+                    <span className="text-xs text-slate-400">适用产品:</span>
+                    {viewingCase.applicableProducts.map(tag => (
+                      <span key={tag} className="text-[10px] px-2 py-0.5 rounded-full bg-sky-100 text-sky-700">{tag}</span>
+                    ))}
+                  </div>
+                )}
+                {viewingCase.applicableScenarios.length > 0 && (
+                  <div className="flex flex-wrap gap-1">
+                    <span className="text-xs text-slate-400">适用场景:</span>
+                    {viewingCase.applicableScenarios.map(tag => (
+                      <span key={tag} className="text-[10px] px-2 py-0.5 rounded-full bg-teal-100 text-teal-700">{tag}</span>
+                    ))}
+                  </div>
+                )}
                 {viewingCase.productTags.length > 0 && (
                   <div className="flex flex-wrap gap-1">
                     <span className="text-xs text-slate-400">产品标签:</span>

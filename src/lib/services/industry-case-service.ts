@@ -200,6 +200,9 @@ function parseCaseBlock(caseBlock: string, categoryName: string, categoryKeyword
 
 /**
  * 从文本中提取标签
+ * 
+ * 匹配策略：按关键词长度降序匹配，长词优先（避免"寿险"先于"增额终身寿险"匹配）
+ * 同义词扩展：匹配到长词时，自动关联短词（如"增额终身寿险" → 同时匹配"寿险"）
  */
 function extractTags(text: string, additionalKeywords: string[]): string[] {
   const tags: string[] = [];
@@ -220,12 +223,44 @@ function extractTags(text: string, additionalKeywords: string[]): string[] {
     '车险', '农业保险', '碳保险', '宠物保险', '定制保险', '旅行险', '航意险'
   ];
   
-  // 合并关键词
-  const allKeywords = [...productKeywords, ...additionalKeywords];
+  // 同义词映射：长词 → 关联的短词标签（用于扩大匹配范围）
+  const synonymMap: Record<string, string[]> = {
+    '增额终身寿险': ['寿险', '终身寿险', '增额寿'],
+    '终身寿险': ['寿险'],
+    '定期寿险': ['寿险'],
+    '增额寿': ['寿险'],
+    '定额寿险': ['寿险'],
+    '养老年金': ['年金险', '年金'],
+    '教育金': ['年金险'],
+    '百万医疗险': ['医疗险'],
+    '意外伤害险': ['意外险'],
+    '意外医疗': ['意外险', '医疗险'],
+    '住院医疗': ['医疗险'],
+    '门诊医疗': ['医疗险'],
+    '重大疾病险': ['重疾险'],
+    '大病险': ['重疾险'],
+    '企业财产险': ['财产险'],
+    '家庭财产险': ['财产险'],
+    '家财险': ['财产险'],
+    '雇主责任险': ['财产险'],
+  };
+  
+  // 合并关键词，按长度降序排列（长词优先匹配）
+  const allKeywords = [...productKeywords, ...additionalKeywords]
+    .sort((a, b) => b.length - a.length);
   
   for (const keyword of allKeywords) {
     if (text.includes(keyword) && !tags.includes(keyword)) {
       tags.push(keyword);
+      // 同义词扩展：匹配到长词时，同时添加关联的短词标签
+      const synonyms = synonymMap[keyword];
+      if (synonyms) {
+        for (const syn of synonyms) {
+          if (!tags.includes(syn)) {
+            tags.push(syn);
+          }
+        }
+      }
     }
   }
   
@@ -249,6 +284,63 @@ function extractCrowdTags(text: string): string[] {
     }
   }
   return tags;
+}
+
+/**
+ * 中文文本分词：先用关键词表正向最大匹配分词，再按空格拆分
+ * 
+ * 例如 "增额终身寿险产品测评" → ["增额终身寿险", "产品", "测评"]
+ * 例如 "重疾险 医疗险" → ["重疾险", "医疗险"]
+ */
+function tokenizeChineseText(text: string): string[] {
+  const tokens: string[] = [];
+  
+  // 所有已知关键词（按长度降序，长词优先匹配）
+  const allKnownKeywords = [
+    // 产品关键词
+    '意外险', '意外伤害险', '意外医疗',
+    '重疾险', '重大疾病险', '大病险', '医疗险', '百万医疗险', '住院医疗', '门诊医疗',
+    '寿险', '终身寿险', '定期寿险', '增额寿', '增额终身寿险', '定额寿险',
+    '年金险', '年金', '养老年金', '教育金',
+    '财产险', '企业财产险', '家庭财产险', '家财险',
+    '雇主责任险', '公众责任险', '职业责任险',
+    '车险', '农业保险', '碳保险', '宠物保险', '定制保险', '旅行险', '航意险',
+    // 人群关键词
+    '上班族', '学生', '老年人', '儿童', '中年', '年轻群体', '高收入',
+    '工薪阶层', '企业主', '小微企业', '高净值', '退休', '家庭经济支柱',
+    '户外爱好者', '网红', '主播', '明星',
+    // 通用关键词
+    '保险', '理赔', '投保', '保费', '保额', '免赔', '续保',
+    '产品', '测评', '对比', '推荐', '避坑', '踩坑', '攻略',
+  ].sort((a, b) => b.length - a.length);
+  
+  // 先按空格/标点拆分，再对每个片段做正向最大匹配
+  const segments = text.split(/[\s,，、|｜：:；;。！!？?]+/);
+  
+  for (const segment of segments) {
+    if (!segment) continue;
+    
+    let remaining = segment;
+    while (remaining.length > 0) {
+      let matched = false;
+      // 尝试从已知关键词中匹配（长词优先）
+      for (const keyword of allKnownKeywords) {
+        if (remaining.startsWith(keyword)) {
+          tokens.push(keyword);
+          remaining = remaining.slice(keyword.length);
+          matched = true;
+          break;
+        }
+      }
+      if (!matched) {
+        // 无匹配：跳过一个字符
+        // 但把单个有意义的中文字也作为 token（如"好"、"贵"等）
+        remaining = remaining.slice(1);
+      }
+    }
+  }
+  
+  return tokens.filter(t => t.length > 0);
 }
 
 /**
@@ -317,8 +409,9 @@ export async function searchCases(params: CaseSearchParams): Promise<CaseMatchRe
     .orderBy(desc(industryCaseLibrary.useCount))
     .limit(100); // 获取最多100条用于相关度计算
   
-  // 计算相关度分数并过滤
-  const results: CaseMatchResult[] = [];
+  // 分桶收集：精确匹配 vs 无关案例（兜底候选）
+  const matchedResults: CaseMatchResult[] = [];
+  const fallbackResults: CaseMatchResult[] = [];
   
   for (const caseItem of allCases) {
     let relevanceScore = 0;
@@ -351,9 +444,12 @@ export async function searchCases(params: CaseSearchParams): Promise<CaseMatchRe
     if (keywords) {
       const searchText = `${caseItem.title} ${caseItem.background} ${caseItem.result}`.toLowerCase();
       const productTagsText = (caseItem.productTags as string[]).join(' ').toLowerCase();
-      const keywordList = keywords.toLowerCase().split(/\s+/);
+      
+      // 中文分词策略：先用关键词表正向最大匹配分词，再按空格拆分
+      const keywordList = tokenizeChineseText(keywords.toLowerCase());
       
       for (const keyword of keywordList) {
+        if (!keyword) continue;
         // 在文本内容中搜索
         if (searchText.includes(keyword)) {
           relevanceScore += 1;
@@ -365,10 +461,7 @@ export async function searchCases(params: CaseSearchParams): Promise<CaseMatchRe
       }
     }
     
-    // 如果有匹配条件但没有匹配到，记录但不过滤（允许兜底推荐）
-    // 只有当没有任何搜索条件时才跳过（理论上不会发生）
-    
-    results.push({
+    const caseResult: CaseMatchResult = {
       id: caseItem.id,
       title: caseItem.title,
       protagonist: caseItem.protagonist || '',
@@ -382,14 +475,27 @@ export async function searchCases(params: CaseSearchParams): Promise<CaseMatchRe
       sceneTags: caseItem.sceneTags as string[],
       emotionTags: caseItem.emotionTags as string[],
       relevanceScore,
-    });
+    };
+    
+    // 有相关度 → 精确匹配桶；无相关度 → 兜底候选桶
+    if (relevanceScore > 0) {
+      matchedResults.push(caseResult);
+    } else {
+      fallbackResults.push(caseResult);
+    }
   }
   
-  // 按相关度排序
-  results.sort((a, b) => b.relevanceScore - a.relevanceScore);
+  // 精确匹配按相关度降序
+  matchedResults.sort((a, b) => b.relevanceScore - a.relevanceScore);
+  
+  // 兜底策略：精确匹配不足 limit 条时，用热门案例补充（已按 useCount 降序）
+  const finalResults = [
+    ...matchedResults,
+    ...fallbackResults.slice(0, Math.max(limit - matchedResults.length, 0)),
+  ];
   
   // 应用分页
-  return results.slice(offset, offset + limit);
+  return finalResults.slice(offset, offset + limit);
 }
 
 /**
