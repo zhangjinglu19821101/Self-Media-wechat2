@@ -204,11 +204,20 @@ function parseCaseBlock(caseBlock: string, categoryName: string, categoryKeyword
 function extractTags(text: string, additionalKeywords: string[]): string[] {
   const tags: string[] = [];
   
-  // 保险产品关键词
+  // 保险产品关键词（包含同义词映射）
   const productKeywords = [
-    '意外险', '重疾险', '医疗险', '百万医疗险', '寿险', '年金险',
-    '财产险', '企业财产险', '家庭财产险', '雇主责任险', '车险',
-    '农业保险', '碳保险', '宠物保险', '定制保险'
+    // 意外险类
+    '意外险', '意外伤害险', '意外医疗',
+    // 健康险类
+    '重疾险', '重大疾病险', '大病险', '医疗险', '百万医疗险', '住院医疗', '门诊医疗',
+    // 寿险类（包含同义词）
+    '寿险', '终身寿险', '定期寿险', '增额寿', '增额终身寿险', '定额寿险', '年金险', '年金', '养老年金', '教育金',
+    // 财产险类
+    '财产险', '企业财产险', '家庭财产险', '家财险',
+    // 责任险类
+    '雇主责任险', '公众责任险', '职业责任险',
+    // 其他
+    '车险', '农业保险', '碳保险', '宠物保险', '定制保险', '旅行险', '航意险'
   ];
   
   // 合并关键词
@@ -356,10 +365,8 @@ export async function searchCases(params: CaseSearchParams): Promise<CaseMatchRe
       }
     }
     
-    // 如果有匹配条件但没有匹配到，跳过
-    if ((productTags?.length || crowdTags?.length || sceneTags?.length || keywords) && relevanceScore === 0) {
-      continue;
-    }
+    // 如果有匹配条件但没有匹配到，记录但不过滤（允许兜底推荐）
+    // 只有当没有任何搜索条件时才跳过（理论上不会发生）
     
     results.push({
       id: caseItem.id,
