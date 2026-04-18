@@ -26,6 +26,8 @@ const PUBLIC_PATHS = [
   '/api/check-',        // 检查类 API（开发调试用）
   '/api/clear-',        // 清理类 API（开发调试用）
   '/api/capability',    // 能力列表（公共）
+  '/api/cases/init',    // 案例初始化（一次性导入）
+  '/api/cases/recommend', // 案例推荐（内部调用）
   '/api/xiaohongshu-preview', // 小红书预览数据 API（Playwright 截图用）
   '/xiaohongshu-preview', // 小红书预览页面（Agent T MCP 截图用）
 ];

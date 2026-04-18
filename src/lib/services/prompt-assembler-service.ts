@@ -14,6 +14,7 @@ import { readFile } from 'fs/promises';
 import path from 'path';
 import { digitalAssetService, USER_RULE_TYPE_LABELS, STYLE_RULE_TYPE_LABELS } from './digital-asset-service';
 import type { UserExclusiveRule, StyleRule, SampleArticle } from './digital-asset-service';
+import { industryCaseService } from './industry-case-service';
 
 // ========== 类型定义 ==========
 
@@ -44,6 +45,8 @@ export interface PromptAssemblyOptions {
   cardCountMode?: '3-card' | '5-card' | '7-card'; // 🔥🔥🔥 小红书卡片数量模式（统一命名，与数据库字段一致）
   /** @deprecated 使用 cardCountMode 代替 */
   imageCountMode?: '3-card' | '5-card' | '7-card'; // 兼容旧字段
+  industryCaseIds?: string[];   // 🔥 行业案例ID列表（用户手动选择）
+  industry?: string;            // 🔥 行业类型（insurance/education/healthcare等），用于案例推荐
 }
 
 /**
@@ -80,6 +83,8 @@ export interface AssembledPrompt {
     materialCount: number;
     hasConfirmedOutline?: boolean; // Phase 3
     hasPriorStepOutput?: boolean;  // 🔴 前序步骤结果
+    industryCaseCount?: number;    // 🔥 行业案例数量
+    hasIndustryCases?: boolean;    // 🔥 是否有行业案例
   };
 }
 
@@ -504,6 +509,11 @@ export class PromptAssemblerService {
       result += `输出 JSON 中 platformData.points 数组长度必须为 ${cardConfig.count - 2}，不可多不可少。\n\n`;
     }
 
+    // 3.5 🔥 行业案例库推荐（在素材之前，作为增强说服力的案例素材）
+    // 注：案例数据在 assemblePrompt 中异步获取，这里直接使用格式化后的文本
+    // 如果 options.industryCaseIds 有值，会在 assemblePrompt 中优先检索这些案例
+    // 如果 options.industry 有值，会根据任务指令自动推荐相关案例
+
     // 4. 素材
     if (options.materials && options.materials.length > 0) {
       result += `### 本篇关键素材（${options.materials.length} 个，必须优先使用，不编造无依据内容）\n\n`;
@@ -542,6 +552,47 @@ export class PromptAssemblerService {
    * 最终提示词 = 固定基础提示词 + 用户专属动态规则 + 本次创作需求
    */
   async assemblePrompt(options: PromptAssemblyOptions = {}): Promise<AssembledPrompt> {
+    // 🔥 异步获取案例数据
+    let industryCasesText = '';
+    let industryCaseCount = 0;
+    
+    try {
+      // 优先使用用户手动选择的案例
+      if (options.industryCaseIds && options.industryCaseIds.length > 0) {
+        const casesResult = await industryCaseService.searchCases({
+          ids: options.industryCaseIds,
+          limit: 5,
+        });
+        if (casesResult.cases.length > 0) {
+          industryCasesText = industryCaseService.formatCasesForPrompt(casesResult.cases);
+          industryCaseCount = casesResult.cases.length;
+        }
+      } 
+      // 如果没有手动选择，但指定了行业，则自动推荐
+      else if (options.industry && options.taskInstruction) {
+        const casesResult = await industryCaseService.recommendCases({
+          instruction: options.taskInstruction,
+          industry: options.industry,
+          limit: 3,
+        });
+        if (casesResult.cases.length > 0) {
+          industryCasesText = industryCaseService.formatCasesForPrompt(casesResult.cases);
+          industryCaseCount = casesResult.cases.length;
+        }
+      }
+    } catch (error) {
+      console.error('[PromptAssembler] 案例检索失败，跳过:', error);
+      // 案例检索失败不影响主流程
+    }
+
+    // 将格式化后的案例文本注入到 options 中
+    const enhancedOptions = {
+      ...options,
+      relatedMaterials: options.relatedMaterials 
+        ? `${options.relatedMaterials}\n\n${industryCasesText}`
+        : industryCasesText,
+    };
+
     const [
       fixedBasePrompt,
       { userExclusiveRules, styleRules, sampleArticles, availableMaterials }
@@ -554,7 +605,7 @@ export class PromptAssemblerService {
     // 格式化各部分
     const userExclusiveRulesSection = this.formatUserExclusiveRules(userExclusiveRules);
     const styleRulesSection = this.formatStyleRules(styleRules);
-    const currentTaskText = this.formatCurrentTask(options, availableMaterials);
+    const currentTaskText = this.formatCurrentTask(enhancedOptions, availableMaterials);
 
     // M4: 拼接顺序对齐需求文档 3.2.3
     // 最终提示词 = 固定基础提示词 + 用户专属动态规则 + 本次创作需求
@@ -584,6 +635,8 @@ export class PromptAssemblerService {
         materialCount: (options.materials?.length ?? 0) || availableMaterials.length,
         hasConfirmedOutline: !!options.confirmedOutline, // Phase 3
         hasPriorStepOutput: !!options.priorStepOutput,    // 🔴 前序步骤结果
+        industryCaseCount,    // 🔥 行业案例数量
+        hasIndustryCases: industryCaseCount > 0, // 🔥 是否有行业案例
       },
     };
   }

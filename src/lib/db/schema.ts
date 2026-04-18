@@ -1400,3 +1400,6 @@ export * from './schema/article-hashes';
 
 // 小红书卡片图片表
 export * from './schema/xhs-cards';
+
+// 行业案例库表
+export * from './schema/industry-case-library';
