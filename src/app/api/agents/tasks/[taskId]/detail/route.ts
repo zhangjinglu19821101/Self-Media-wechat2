@@ -7,8 +7,12 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { agentSubTasks, dailyTask, agentSubTasksStepHistory } from '@/lib/db/schema';
 import { agentSubTasksMcpExecutions } from '@/lib/db/schema/agent-sub-tasks-mcp-executions';
-import { eq, and, desc } from 'drizzle-orm';
+import { eq, and, desc, lt } from 'drizzle-orm';
 import { getWorkspaceId } from '@/lib/auth/context';
+// 🔥🔥🔥 新增：导入平台渲染数据提取器
+import { extractPlatformRenderData } from '@/lib/platform-render/extractors';
+// 🔥🔥🔥 新增：导入 agent-registry 工具函数
+import { isWritingAgent, getPlatformForExecutor } from '@/lib/agents/agent-registry';
 
 export async function GET(
   request: NextRequest,
@@ -119,9 +123,12 @@ export async function GET(
       progress = 0;
     }
 
-    // 🔥 5.5 如果当前任务没有文章内容，从 order_index-1 的任务获取
+    // 🔥🔥🔥 5.6 如果当前任务没有文章内容，从 order_index-1 的任务获取
+    // 🔥🔥🔥 【架构改造】同时提取 platformRenderData
     let articleContent = subTask.resultText || '';
     let articleTitle = subTask.taskTitle;
+    let platformRenderData = null;
+    let platform = subTask.metadata?.platform || '';
     
     if (!articleContent && subTask.orderIndex > 1) {
       console.log(`📖 当前任务无内容，尝试从 order_index=${subTask.orderIndex - 1} 获取文章内容...`);
@@ -139,8 +146,84 @@ export async function GET(
         console.log(`✅ 从前置任务获取到文章内容，长度: ${articleContent.length}`);
       }
     }
+    
+    // 🔥🔥🔥 5.7 提取 platformRenderData（供前端渲染平台专属UI）
+    // 策略：
+    // 1. 当前任务是写作任务 → 直接从 resultData 提取
+    // 2. 当前任务是预览/合规等节点 → 从同组写作任务提取
+    const executor = subTask.fromParentsExecutor;
+    const isWritingTask = isWritingAgent(executor);
+    
+    console.log(`[TaskDetail] 提取 platformRenderData:`, {
+      taskId: subTask.id,
+      executor,
+      isWritingTask,
+      orderIndex: subTask.orderIndex,
+    });
+    
+    // 优先从当前任务的 resultData 提取
+    if (isWritingTask && subTask.resultData) {
+      const platformType = getPlatformForExecutor(executor);
+      if (platformType) {
+        try {
+          const taskMetadata = typeof subTask.metadata === 'object' && subTask.metadata !== null
+            ? subTask.metadata as Record<string, unknown>
+            : {};
+          platformRenderData = extractPlatformRenderData(platformType, subTask.resultData, taskMetadata);
+          console.log(`[TaskDetail] ✅ 从当前任务提取 platformRenderData:`, {
+            hasData: !!platformRenderData,
+            keys: platformRenderData ? Object.keys(platformRenderData) : [],
+            cardsCount: platformRenderData && 'cards' in platformRenderData 
+              ? (platformRenderData.cards as unknown[])?.length 
+              : 0,
+          });
+        } catch (extractErr) {
+          console.warn(`[TaskDetail] ⚠️ 提取 platformRenderData 失败:`, extractErr);
+        }
+      }
+    }
+    
+    // 如果当前任务没有 resultData，尝试从同组写作任务获取
+    if (!platformRenderData && !isWritingTask) {
+      try {
+        // 查找同组的写作任务
+        const allTasks = await db
+          .select()
+          .from(agentSubTasks)
+          .where(
+            and(
+              eq(agentSubTasks.commandResultId, subTask.commandResultId),
+              lt(agentSubTasks.orderIndex, subTask.orderIndex)
+            )
+          )
+          .orderBy(desc(agentSubTasks.orderIndex));
+        
+        const writingTask = allTasks.find(t => isWritingAgent(t.fromParentsExecutor));
+        
+        if (writingTask && writingTask.resultData) {
+          const platformType = getPlatformForExecutor(writingTask.fromParentsExecutor);
+          if (platformType) {
+            try {
+              const taskMetadata = typeof subTask.metadata === 'object' && subTask.metadata !== null
+                ? subTask.metadata as Record<string, unknown>
+                : {};
+              platformRenderData = extractPlatformRenderData(platformType, writingTask.resultData, taskMetadata);
+              console.log(`[TaskDetail] ✅ 从同组写作任务提取 platformRenderData:`, {
+                writingTaskId: writingTask.id,
+                hasData: !!platformRenderData,
+                keys: platformRenderData ? Object.keys(platformRenderData) : [],
+              });
+            } catch (extractErr) {
+              console.warn(`[TaskDetail] ⚠️ 从同组写作任务提取 platformRenderData 失败:`, extractErr);
+            }
+          }
+        }
+      } catch (err) {
+        console.warn(`[TaskDetail] ⚠️ 查找同组写作任务失败:`, err);
+      }
+    }
 
-    // 6. 构建返回数据
+    // 🔥 6. 构建返回数据
     const taskDetail = {
       id: subTask.id,
       taskTitle: subTask.taskTitle,
@@ -176,6 +259,9 @@ export async function GET(
       resultData: subTask.resultData ? (
         typeof subTask.resultData === 'string' ? JSON.parse(subTask.resultData) : subTask.resultData
       ) : null,
+      // 🔥🔥🔥 【架构改造】返回 platformRenderData（供前端渲染平台专属UI）
+      platformRenderData,
+      platform,
     };
 
     return NextResponse.json({

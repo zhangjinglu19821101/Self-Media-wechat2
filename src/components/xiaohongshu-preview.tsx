@@ -155,7 +155,64 @@ export function XiaohongshuPreview({
             const task = data.data?.task;
             const stepHistory = data.data?.stepHistory || [];
 
-            // 尝试从多个来源提取小红书 JSON
+            // 🔥🔥🔥 【架构改造】优先使用 platformRenderData
+            const platformRenderData = task?.platformRenderData;
+            if (platformRenderData && platformRenderData.platform === 'xiaohongshu') {
+              console.log('[XiaohongshuPreview] ✅ 使用 platformRenderData:', {
+                cardCountMode: platformRenderData.cardCountMode,
+                cardsCount: platformRenderData.cards?.length || 0,
+              });
+              
+              // 从 platformRenderData 构建 XiaohongshuContent
+              const cards = platformRenderData.cards || [];
+              const coverCard = cards[0] as { title?: string; content?: string } | undefined;
+              const pointCards = cards.slice(1, -1) as Array<{ title?: string; content?: string }>;
+              const endingCard = cards[cards.length - 1] as { title?: string; content?: string } | undefined;
+              
+              const xhsContent: XiaohongshuContent = {
+                title: platformRenderData.articleTitle || coverCard?.title || '',
+                articleTitle: platformRenderData.articleTitle,
+                fullText: platformRenderData.textContent || '',
+                content: platformRenderData.textContent || '',
+                points: pointCards.map(card => ({
+                  title: card?.title || '',
+                  content: card?.content || '',
+                })),
+                intro: coverCard?.content,
+                conclusion: endingCard?.content,
+                tags: platformRenderData.tags || [],
+              };
+              
+              setContent(xhsContent);
+              
+              // 🔥 P1-3: 尝试加载已持久化的卡片图片（从 OSS）
+              if (actualTaskId) {
+                setLoadingPersistedCards(true);
+                try {
+                  const cardsResponse = await fetch(
+                    `/api/xiaohongshu/generate-cards?subTaskId=${actualTaskId}`,
+                    { headers: { 'x-workspace-id': workspaceId } }
+                  );
+                  if (cardsResponse.ok) {
+                    const cardsData = await cardsResponse.json();
+                    if (cardsData.success && cardsData.cards?.length > 0) {
+                      setPersistedCards(cardsData.cards);
+                      console.log('[XiaohongshuPreview] 已加载持久化卡片:', cardsData.cards.length, '张');
+                    }
+                  }
+                } catch (cardsErr) {
+                  console.warn('[XiaohongshuPreview] 加载持久化卡片失败:', cardsErr);
+                } finally {
+                  setLoadingPersistedCards(false);
+                }
+              }
+              
+              loadingRef.current = false;
+              setLoading(false);
+              return;
+            }
+
+            // 兜底：从 stepHistory / resultData 提取内容（旧逻辑）
             let rawContent: string | object | null = null;
 
             for (const step of stepHistory) {
