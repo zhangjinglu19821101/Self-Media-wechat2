@@ -7275,6 +7275,8 @@ export class SubtaskExecutionEngine {
           priorStepOutput: _priorStepOutput || undefined,
           // 🔥🔥🔥 【P0修复】传递小红书卡片数量模式（优先从内容模板读取，兼容旧数据）
           cardCountMode: _derivedCardCountMode,
+          // 🔥🔥🔥 行业案例库：自动根据任务指令推荐保险行业案例
+          industry: 'insurance', // 当前系统仅支持保险行业，后续可从 metadata 扩展
         });
 
         agentPrompt = insuranceDAssembledResult.fixedBasePrompt; // 固定基础部分作为 agentPrompt
@@ -7320,6 +7322,7 @@ export class SubtaskExecutionEngine {
           has_core_anchor: insuranceDAssembledResult.assemblyMetadata.hasCoreAnchor,
           has_user_opinion: insuranceDAssembledResult.assemblyMetadata.hasUserOpinion,
           material_count: insuranceDAssembledResult.assemblyMetadata.materialCount,
+          industry_case_count: insuranceDAssembledResult.assemblyMetadata.industryCaseCount, // 🔥 行业案例数量
         });
       } else {
         agentPrompt = loadAgentPrompt(task.fromParentsExecutor);
