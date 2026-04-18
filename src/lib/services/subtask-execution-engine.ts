@@ -9597,68 +9597,133 @@ ${resultData.executionSummary}
                     
                     console.log('[SubtaskEngine] 🎨 生成卡片数量:', cards.length);
                     
-                    // 上传卡片图片到存储（使用环境变量确定路径）
-                    const cardUrls: string[] = [];
-                    const fs = await import('fs');
-                    const path = await import('path');
-                    
-                    // 根据环境变量决定存储路径
-                    // 开发环境：COZE_WORKSPACE_PATH/public/xhs-cards
-                    // 生产环境：/tmp/xhs-cards（唯一可写目录）
-                    const workspacePath = process.env.COZE_WORKSPACE_PATH || '/workspace/projects';
-                    const isProduction = process.env.COZE_PROJECT_ENV === 'PROD';
-                    const baseDir = isProduction ? '/tmp' : workspacePath;
-                    const uploadDir = path.join(baseDir, 'public', 'xhs-cards');
-                    
-                    if (!fs.existsSync(uploadDir)) {
-                      fs.mkdirSync(uploadDir, { recursive: true });
-                    }
-                    
-                    for (let i = 0; i < cards.length; i++) {
-                      try {
-                        const filename = `${savedArticle.articleId}_card_${i + 1}.png`;
-                        const filepath = path.join(uploadDir, filename);
-                        fs.writeFileSync(filepath, cards[i].imageBuffer);
-                        // 返回相对于 public 的 URL 路径
-                        cardUrls.push(`/xhs-cards/${filename}`);
-                        console.log('[SubtaskEngine] 🎨 卡片已保存:', filepath);
-                      } catch (uploadErr) {
-                        console.error('[SubtaskEngine] ❌ 卡片保存失败:', uploadErr);
-                      }
-                    }
-                    
-                    // 生产环境警告：/tmp 目录可能被定期清理
-                    if (isProduction && cardUrls.length > 0) {
-                      console.warn('[SubtaskEngine] ⚠️ 小红书卡片保存在 /tmp，可能被系统定期清理，建议后续迁移到对象存储');
-                    }
-                    
-                    // 将卡片URL和全文存入文章 metadata
-                    if (cardUrls.length > 0) {
-                      const { db } = await import('@/lib/db');
-                      const { articleContent: articleContentTable } = await import('@/lib/db/schema');
-                      const { eq } = await import('drizzle-orm');
+                    // 🔥 P0修复：上传卡片图片到 OSS 对象存储（而非本地文件系统）
+                    // 旧逻辑将卡片保存到 /tmp，生产环境必定丢失且无法HTTP访问
+                    // 新逻辑使用 uploadXhsCardGroup 写入 xhs_cards + xhs_card_groups 表，
+                    // 前端通过 GET /api/xiaohongshu/generate-cards?subTaskId=xxx 获取签名URL
+                    try {
+                      const { uploadXhsCardGroup } = await import('./xhs-storage-service');
                       
-                      // 保存 fullText + cardUrls 到文章的 extInfo 字段
-                      const existingContent = await db.select()
+                      // 确定每张卡片的类型（cover / point / ending）
+                      const cardTypes: Array<'cover' | 'point' | 'ending'> = ['cover'];
+                      const pointCount = cards.length - 2; // 减去封面和结尾
+                      for (let pi = 0; pi < pointCount; pi++) {
+                        cardTypes.push('point');
+                      }
+                      cardTypes.push('ending');
+                      
+                      // 写入 xhs_cards + xhs_card_groups 表（OSS 持久化）
+                      const uploadResult = await uploadXhsCardGroup(
+                        cards.map((card, index) => ({
+                          base64: card.base64,
+                          cardType: cardTypes[index] || 'point',
+                          title: index === 0
+                            ? xhsData.title
+                            : index === cards.length - 1
+                              ? xhsData.conclusion
+                              : xhsData.points[index - 1]?.title,
+                          content: index === 0
+                            ? xhsData.intro
+                            : index === cards.length - 1
+                              ? (xhsData.tags || []).join(' ')
+                              : xhsData.points[index - 1]?.content,
+                        })),
+                        subTasks[0].id,  // subTaskId = 写作子任务ID
+                        {
+                          cardCountMode: imageCountMode,
+                          gradientScheme: undefined, // 自定义配色由 card-service 内部处理
+                          articleTitle: xhsData.title,
+                          articleIntro: xhsData.intro,
+                          workspaceId: subTasks[0].workspaceId,
+                          commandResultId: subTasks[0].commandResultId || undefined,
+                        }
+                      );
+                      
+                      console.log('[SubtaskEngine] 🎨 卡片已上传到OSS:', {
+                        groupId: uploadResult.groupId,
+                        totalCards: uploadResult.totalCards,
+                      });
+                      
+                      // 将 OSS key 和全文存入文章 extInfo
+                      const { db: _db } = await import('@/lib/db');
+                      const { articleContent: articleContentTable } = await import('@/lib/db/schema');
+                      const { eq: _eq } = await import('drizzle-orm');
+                      
+                      const existingContent = await _db.select()
                         .from(articleContentTable)
-                        .where(eq(articleContentTable.articleId, savedArticle.articleId))
+                        .where(_eq(articleContentTable.articleId, savedArticle.articleId))
                         .limit(1);
                       
                       if (existingContent.length > 0) {
                         const existingExt = (existingContent[0] as any).extInfo || {};
-                        await db.update(articleContentTable)
+                        await _db.update(articleContentTable)
                           .set({
                             extInfo: {
                               ...existingExt,
-                              xhsCardUrls: cardUrls,
+                              // 🔥 存储OSS key（永久有效），而非签名URL（会过期）
+                              xhsCardStorageKeys: uploadResult.cards.map(c => c.storageKey),
+                              xhsCardGroupId: uploadResult.groupId,
                               xhsFullText: xhsData.fullText || '',
                               xhsTags: xhsData.tags || [],
                               xhsIntro: xhsData.intro || '',
                             },
                           } as any)
-                          .where(eq(articleContentTable.articleId, savedArticle.articleId));
+                          .where(_eq(articleContentTable.articleId, savedArticle.articleId));
                         
-                        console.log('[SubtaskEngine] 🎨 小红书卡片URL已保存到文章extInfo, urls:', cardUrls);
+                        console.log('[SubtaskEngine] 🎨 小红书卡片OSS key已保存到文章extInfo, groupId:', uploadResult.groupId);
+                      }
+                    } catch (ossErr) {
+                      // OSS上传失败不阻塞主流程，降级到本地文件存储
+                      console.error('[SubtaskEngine] ❌ 卡片OSS上传失败，降级到本地存储:', ossErr);
+                      
+                      const cardUrls: string[] = [];
+                      const fs = await import('fs');
+                      const path = await import('path');
+                      const workspacePath = process.env.COZE_WORKSPACE_PATH || '/workspace/projects';
+                      const isProduction = process.env.COZE_PROJECT_ENV === 'PROD';
+                      const baseDir = isProduction ? '/tmp' : workspacePath;
+                      const uploadDir = path.join(baseDir, 'public', 'xhs-cards');
+                      
+                      if (!fs.existsSync(uploadDir)) {
+                        fs.mkdirSync(uploadDir, { recursive: true });
+                      }
+                      
+                      for (let i = 0; i < cards.length; i++) {
+                        try {
+                          const filename = `${savedArticle.articleId}_card_${i + 1}.png`;
+                          const filepath = path.join(uploadDir, filename);
+                          fs.writeFileSync(filepath, cards[i].imageBuffer);
+                          cardUrls.push(`/xhs-cards/${filename}`);
+                        } catch (uploadErr) {
+                          console.error('[SubtaskEngine] ❌ 卡片本地保存失败:', uploadErr);
+                        }
+                      }
+                      
+                      // 本地降级时仍存路径到extInfo（兼容旧逻辑）
+                      if (cardUrls.length > 0) {
+                        const { db: _db2 } = await import('@/lib/db');
+                        const { articleContent: _act } = await import('@/lib/db/schema');
+                        const { eq: _eq2 } = await import('drizzle-orm');
+                        
+                        const existingContent = await _db2.select()
+                          .from(_act)
+                          .where(_eq2(_act.articleId, savedArticle.articleId))
+                          .limit(1);
+                        
+                        if (existingContent.length > 0) {
+                          const existingExt = (existingContent[0] as any).extInfo || {};
+                          await _db2.update(_act)
+                            .set({
+                              extInfo: {
+                                ...existingExt,
+                                xhsCardUrls: cardUrls,
+                                xhsFullText: xhsData.fullText || '',
+                                xhsTags: xhsData.tags || [],
+                                xhsIntro: xhsData.intro || '',
+                              },
+                            } as any)
+                            .where(_eq2(_act.articleId, savedArticle.articleId));
+                        }
                       }
                     }
                   } else {
