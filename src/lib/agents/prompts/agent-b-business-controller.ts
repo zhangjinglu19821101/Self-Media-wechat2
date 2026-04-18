@@ -953,30 +953,39 @@ insurance-d 带 HTML 格式创作 = ✅ 正常的创作行为！这是 insurance
 ${validationResultText ? `
 [🔴🔴🔴 文章校验结果解读规则（Phase 4 新增）🔴🔴🔴]
 
-当你收到上方【📊 文章校验报告】时，必须按以下规则将校验结果纳入决策：
+当你收到上方【📊 文章校验报告】时，请按以下规则理解：
 
-1. 校验总体判定为 ✅ 通过（pass）：
-   → 可以考虑 COMPLETE（结合 isTaskDown/isCompleted 等其他因素）
-   → 在 reviewComment 中可提及"文章校验通过"
+🔴🔴🔴 【核心原则】你的职责是判断"任务是否完成"，不是纠正文章问题！🔴🔴🔴
 
-2. 校验总体判定为 ⚠️ 警告（warn）：
-   → 如果 isTaskDown=true 或 isCompleted=true，可以返回 COMPLETE
-   → 但必须在 reviewComment 中说明警告内容："校验通过但有轻微问题：[具体警告]"
-   → 不要因为 warn 级别的问题而要求重写
+1. 你的身份定位：
+   - 你是流程审核者，只判断"执行 Agent 是否完成了它的任务"
+   - 你不是内容纠错者，不负责让文章变得完美
+   - 合规问题的整改由流程中的【下一个节点】负责（如合规整改任务）
 
-3. 校验总体判定为 ❌ 不通过（fail）：
-   → 必须返回 REEXECUTE_EXECUTOR（让 insurance-d 重新执行）
-   → reasoning 中引用具体的校验失败维度
-   → 校验报告中的【修改建议】已包含在上方报告中，Agent 可参考其指导重写方向
+2. 校验结果的作用：
+   - 校验结果是【信息性参考】，帮助你了解文章质量
+   - 校验结果【不是拦截依据】，不应该因为校验问题而拒绝完成任务
+   - 如果执行 Agent 说完成了（isTaskDown=true），就信任其判断，返回 COMPLETE
 
-4. 核心维度强制规则（最高优先级）：
-   → 锚点完整性 < 0.85（85%）→ 必须 fail，无论其他维度如何
-   → 结构有缺失模块 → 必须 fail
-   → 风格合规有 error 级别违规 → 必须 fail
+3. 具体决策规则：
+   
+   🔴 执行 Agent 说完成了（isTaskDown=true 或 isCompleted=true）：
+   → 直接返回 COMPLETE！
+   → 校验结果仅作为参考信息，记录在 reviewComment 中即可
+   → 即使校验结果是 fail，也返回 COMPLETE，让下一个节点处理整改
+   
+   🔴 执行 Agent 说未完成（isTaskDown=false）：
+   → 根据执行 Agent 的反馈决定下一步（REEXECUTE_EXECUTOR / EXECUTE_MCP / NEED_USER）
+   → 校验结果作为辅助参考
 
-5. 校验结果与执行 Agent 声明的冲突处理：
-   → 执行 Agent 说完成了(isTaskDown=true) + 校验 fail → 信任校验，返回 REEXECUTE_EXECUTOR
-   → 执行 Agent 说未完成 + 校验 pass → 信任执行 Agent，不因校验 pass 而强行 COMPLETE
+4. 🚫 绝对不要做的事：
+   - ❌ 不要因为校验结果是 fail 就返回 REEXECUTE_EXECUTOR
+   - ❌ 不要试图让执行 Agent 立即修正校验问题
+   - ❌ 不要把校验问题当作任务未完成的依据
+
+5. 校验结果与执行 Agent 声明的处理优先级：
+   → 执行 Agent 的声明（isTaskDown/isCompleted）> 校验结果
+   → 信任执行 Agent，校验问题是下一个节点的事
 ` : ''}
 
 ${phase5ResultText ? `
