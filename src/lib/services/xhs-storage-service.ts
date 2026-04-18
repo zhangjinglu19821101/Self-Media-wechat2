@@ -219,13 +219,20 @@ export async function uploadXhsCardGroup(
  * 
  * @param cardId - 卡片记录 ID
  * @param expireTime - 有效期（秒），默认 7 天
+ * @param workspaceId - 工作空间 ID（可选，用于权限验证）
  */
 export async function getCardSignedUrl(
   cardId: string,
-  expireTime: number = 604800
+  expireTime: number = 604800,
+  workspaceId?: string
 ): Promise<string | null> {
+  // 构建查询条件（P2-3 修复：支持 workspaceId 验证）
+  const whereCondition = workspaceId
+    ? and(eq(xhsCards.id, cardId), eq(xhsCards.workspaceId, workspaceId))
+    : eq(xhsCards.id, cardId);
+  
   // 查询卡片记录
-  const [card] = await db.select().from(xhsCards).where(eq(xhsCards.id, cardId)).limit(1);
+  const [card] = await db.select().from(xhsCards).where(whereCondition).limit(1);
   
   if (!card || card.status !== 'active') {
     return null;
@@ -244,20 +251,29 @@ export async function getCardSignedUrl(
  * 
  * @param cardIds - 卡片记录 ID 数组
  * @param expireTime - 有效期（秒），默认 7 天
+ * @param workspaceId - 工作空间 ID（可选，用于权限验证）
  */
 export async function getCardSignedUrls(
   cardIds: string[],
-  expireTime: number = 604800
+  expireTime: number = 604800,
+  workspaceId?: string
 ): Promise<Record<string, string>> {
   if (cardIds.length === 0) return {};
   
+  // 构建查询条件（P2-3 修复：支持 workspaceId 验证）
+  const whereCondition = workspaceId
+    ? and(
+        inArray(xhsCards.id, cardIds),
+        eq(xhsCards.status, 'active'),
+        eq(xhsCards.workspaceId, workspaceId)
+      )
+    : and(
+        inArray(xhsCards.id, cardIds),
+        eq(xhsCards.status, 'active')
+      );
+  
   // 查询卡片记录
-  const cards = await db.select().from(xhsCards).where(
-    and(
-      inArray(xhsCards.id, cardIds),
-      eq(xhsCards.status, 'active')
-    )
-  );
+  const cards = await db.select().from(xhsCards).where(whereCondition);
   
   const storage = getStorage();
   const result: Record<string, string> = {};
