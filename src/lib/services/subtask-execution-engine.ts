@@ -2939,14 +2939,16 @@ export class SubtaskExecutionEngine {
       });
       
       // 🔴🔴🔴 【修复】生成 resultText 字段（用于前序任务结果传递）
+      // 🔴 P0-1 修复：提取 resultDataToSave 为变量，避免重复创建对象
+      // 🔴 P0-2 修复：统一使用 getCurrentBeijingTime() 确保时间一致性
+      const resultDataToSave = {
+        ...agentTDecision,
+        updatedBy: 'agent_t_executor',
+        updatedAt: getCurrentBeijingTime().toISOString()
+      };
+      
       let agentTResultText = '';
       try {
-        // 构建 resultData 对象
-        const resultDataToSave = {
-          ...agentTDecision,
-          updatedBy: 'agent_t_executor',
-          updatedAt: new Date().toISOString()
-        };
         agentTResultText = this.extractResultTextFromResultData(resultDataToSave, task.fromParentsExecutor);
         console.log('[Agent T 执行追踪] ✅ resultText 提取成功:', {
           taskId: task.id,
@@ -2963,11 +2965,7 @@ export class SubtaskExecutionEngine {
         .update(agentSubTasks)
         .set({
           status: finalStatus,
-          resultData: JSON.stringify({
-            ...agentTDecision,
-            updatedBy: 'agent_t_executor',
-            updatedAt: new Date().toISOString()
-          }),
+          resultData: JSON.stringify(resultDataToSave),
           resultText: agentTResultText,  // 🔴 新增：保存文本化结果
           updatedAt: getCurrentBeijingTime(),
         })

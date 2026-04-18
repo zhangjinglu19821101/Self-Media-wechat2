@@ -1249,4 +1249,10 @@
            → 更新数据库: resultText = agentTResultText
      ```
    - **效果**: order_index=4 的合规校验结果可以正确传递到 order_index=5 的合规整改任务
+64. **代码评审修复（Agent T resultText 提取）**: P0 问题修复
+   - **P0-1 问题**: 代码重复 - `resultDataToSave` 对象在第 2945-2949 行和第 2966-2970 行被重复创建
+     - **修复**: 提取为变量，复用同一个对象
+   - **P0-2 问题**: 时间不一致 - `new Date().toISOString()` 和 `getCurrentBeijingTime()` 混用
+     - **修复**: 统一使用 `getCurrentBeijingTime().toISOString()` 确保时间一致性
+   - **修复文件**: `src/lib/services/subtask-execution-engine.ts`
 
