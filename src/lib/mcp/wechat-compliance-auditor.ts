@@ -362,6 +362,7 @@ export class WeChatComplianceAuditSimpleExecutor extends BaseMCPCapabilityExecut
 }
 
 // 注册执行器到工厂
+// 🧪 测试：数据库已禁用 ID=20，Agent T 只能选择 ID=21
 MCPCapabilityExecutorFactory.registerExecutor(new WeChatComplianceAuditExecutor());
 MCPCapabilityExecutorFactory.registerExecutor(new WeChatComplianceAuditSimpleExecutor());
 
