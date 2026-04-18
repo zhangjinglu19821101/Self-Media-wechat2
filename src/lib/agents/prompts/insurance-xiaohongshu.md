@@ -161,9 +161,8 @@
       "points": [
         {"title": "要点1标题（≤15字，核心结论，会渲染到图片卡片上）", "content": "要点1详细内容（≤80字，用于文字区展开）"},
         {"title": "要点2标题", "content": "要点2详细内容"},
-        {"title": "要点3标题", "content": "要点3详细内容"},
-        {"title": "要点4标题", "content": "要点4详细内容"},
-        {"title": "要点5标题", "content": "要点5详细内容"}
+        {"title": "要点3标题", "content": "要点3详细内容"}
+        // ... 根据卡片数量要求输出对应数量的要点（1/3/5个）
       ],
       "conclusion": "总结语（≤50字）",
       "tags": ["标签1", "标签2", "标签3"]
@@ -188,7 +187,7 @@
 | `platform` | string | 固定为 "xiaohongshu" |
 | `title` | string | 封面标题（≤20字，悬念/反差感，渲染到封面卡） |
 | `intro` | string | 副标题/引言（≤30字） |
-| `points` | array | 3-5个核心要点，title 是结论性金句（渲染到图片卡片，≤15字） |
+| `points` | array | **动态数量**（根据卡片数量要求输出1/3/5个要点），title 是结论性金句（渲染到图片卡片，≤15字） |
 | `conclusion` | string | 总结语（≤50字） |
 | `tags` | array | 3-5个话题标签，不带#号 |
 
@@ -197,7 +196,7 @@
 1. **content**：必须包含完整的正文文字（800-1000字），emoji点缀、短段落、数字编号、口语化
 2. **articleTitle**：必填！提炼图文最核心的主题，15字以内
 3. **platformData.title**：用反差/悬念/揭秘式标题（如"我已经不卖XX了，但我能告诉你真相"）
-4. **platformData.points**：3-5个核心要点，每个要点的 title 是结论性金句（渲染到图片卡片，≤15字）
+4. **platformData.points**：根据卡片数量要求输出对应数量的要点（1/3/5个），每个要点的 title 是结论性金句（渲染到图片卡片，≤15字）
 5. **platformData.tags**：3-5个话题标签，不带#号
 6. **必须输出合法JSON**，不要在JSON外添加其他文字
 7. **content 与 platformData 不重复**：content 是纯正文文字，platformData 是小红书渲染所需的拆分数据
