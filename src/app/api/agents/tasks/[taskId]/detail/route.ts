@@ -109,8 +109,6 @@ export async function GET(
 
     console.log(`🔧 查询到 ${mcpExecutions.length} 条 MCP 执行记录`);
 
-    console.log(`🔧 查询到 ${mcpExecutions.length} 条 MCP 执行记录`);
-
     // 5. 计算进度
     let progress = 0;
     if (subTask.status === 'completed') {
@@ -187,12 +185,14 @@ export async function GET(
     if (!platformRenderData && !isWritingTask) {
       try {
         // 查找同组的写作任务
+        // 🔥🔥🔥 P1-2 修复：添加 workspaceId 隔离，防止跨租户数据泄露
         const allTasks = await db
           .select()
           .from(agentSubTasks)
           .where(
             and(
               eq(agentSubTasks.commandResultId, subTask.commandResultId),
+              eq(agentSubTasks.workspaceId, workspaceId),  // 强制 workspace 隔离
               lt(agentSubTasks.orderIndex, subTask.orderIndex)
             )
           )
