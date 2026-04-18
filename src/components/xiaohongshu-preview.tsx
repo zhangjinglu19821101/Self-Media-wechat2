@@ -152,6 +152,9 @@ export function XiaohongshuPreview({
   const [touchStart, setTouchStart] = useState<number | null>(null);
   const [touchEnd, setTouchEnd] = useState<number | null>(null);
   
+  // 🔥 正文展开/收起状态
+  const [isFullTextExpanded, setIsFullTextExpanded] = useState(false);
+  
   // 🔥 P0 修复：使用 ref 防止重复加载
   const loadingRef = useRef(false);
   
@@ -414,15 +417,15 @@ export function XiaohongshuPreview({
                             {/* 封面卡 (第0页) */}
                             <div style={{ width: `${100 / totalCards}%` }} className="flex-shrink-0 px-1">
                               <div
-                                className="rounded-xl p-4 text-white min-h-[200px] flex flex-col justify-center"
+                                className="rounded-xl p-5 text-white min-h-[280px] flex flex-col justify-center"
                                 style={{
                                   background: `linear-gradient(135deg, ${GRADIENT_SCHEMES[0].from}, ${GRADIENT_SCHEMES[0].to})`,
                                 }}
                               >
                                 <div className="text-xs opacity-80 mb-2">📕 封面</div>
-                                <div className="text-lg font-bold leading-tight">{content.title}</div>
+                                <div className="text-xl font-bold leading-tight">{content.title}</div>
                                 {content.intro && (
-                                  <div className="text-sm opacity-90 mt-2">{content.intro}</div>
+                                  <div className="text-sm opacity-90 mt-3 leading-relaxed">{content.intro}</div>
                                 )}
                               </div>
                             </div>
@@ -433,7 +436,7 @@ export function XiaohongshuPreview({
                               return (
                                 <div key={idx} style={{ width: `${100 / totalCards}%` }} className="flex-shrink-0 px-1">
                                   <div
-                                    className="rounded-xl p-4 text-white min-h-[200px] flex flex-col justify-center"
+                                    className="rounded-xl p-5 text-white min-h-[280px] flex flex-col justify-center"
                                     style={{
                                       background: `linear-gradient(135deg, ${scheme.from}, ${scheme.to})`,
                                     }}
@@ -441,9 +444,9 @@ export function XiaohongshuPreview({
                                     <div className="text-xs opacity-80 mb-2">
                                       📌 要点 {idx + 1}
                                     </div>
-                                    <div className="text-base font-bold leading-tight">{point.title}</div>
+                                    <div className="text-lg font-bold leading-tight">{point.title}</div>
                                     {point.content && (
-                                      <div className="text-sm opacity-90 mt-2">{point.content}</div>
+                                      <div className="text-sm opacity-90 mt-3 leading-relaxed">{point.content}</div>
                                     )}
                                   </div>
                                 </div>
@@ -454,13 +457,13 @@ export function XiaohongshuPreview({
                             {content.conclusion && (
                               <div style={{ width: `${100 / totalCards}%` }} className="flex-shrink-0 px-1">
                                 <div
-                                  className="rounded-xl p-4 text-white min-h-[200px] flex flex-col justify-center"
+                                  className="rounded-xl p-5 text-white min-h-[280px] flex flex-col justify-center"
                                   style={{
                                     background: `linear-gradient(135deg, #f59e0b, #ef4444)`,
                                   }}
                                 >
                                   <div className="text-xs opacity-80 mb-2">✨ 结语</div>
-                                  <div className="text-base font-bold leading-tight">{content.conclusion}</div>
+                                  <div className="text-lg font-bold leading-tight">{content.conclusion}</div>
                                 </div>
                               </div>
                             )}
@@ -522,9 +525,22 @@ export function XiaohongshuPreview({
                   {(content.content || content.fullText) && (
                     <div className="border-t border-gray-100 pt-3">
                       <div className="text-xs text-gray-400 mb-2">📝 文字区内容</div>
-                      <div className="text-sm text-gray-800 leading-relaxed whitespace-pre-wrap max-h-32 overflow-y-auto">
+                      <div 
+                        className={`text-sm text-gray-800 leading-relaxed whitespace-pre-wrap overflow-hidden transition-all duration-300 ${
+                          isFullTextExpanded ? 'max-h-none' : 'max-h-40'
+                        }`}
+                      >
                         {content.content || content.fullText}
                       </div>
+                      {/* 展开/收起按钮 */}
+                      {((content.content || content.fullText)?.length || 0) > 150 && (
+                        <button
+                          onClick={() => setIsFullTextExpanded(!isFullTextExpanded)}
+                          className="text-xs text-red-500 font-medium mt-2 hover:text-red-600 transition-colors"
+                        >
+                          {isFullTextExpanded ? '收起全文 ▲' : '展开全文 ▼'}
+                        </button>
+                      )}
                     </div>
                   )}
 
