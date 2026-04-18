@@ -1150,3 +1150,21 @@
      - POST 生成卡片并持久化成功
      - GET 查询已持久化的卡片 URL 成功
      - 图片可通过签名 URL 正常访问
+
+58. **Agent B JSON 解析修复**: 修复贪婪正则匹配导致解析失败的问题
+   - **问题现象**: 
+     - `JSON 解析失败: Unexpected token '微', position: 4`
+     - 解析器尝试解析 `[微信公众号] 依据合...` 这样的非 JSON 内容
+   - **根因分析**: 
+     - `extractGenericJsonString` 方法中的正则 `/(\[[\s\S]*\])/` 过于贪婪
+     - 会匹配任何以 `[` 开头的文本，包括 `[微信公众号]`、`[小红书]` 等平台标签
+     - 这些平台标签来自 `buildPlatformContextPrefix` 函数生成的平台上下文前缀
+   - **修复方案**:
+     - 移除贪婪的数组匹配正则 `/(\[[\s\S]*\])/`
+     - 新增 `extractJsonArrayWithStackMatching` 方法，使用栈匹配精确提取 JSON 数组
+     - 验证数组内容必须以有效的 JSON 元素开头（`{`、`"`、`[`、数字、`true/false/null`）
+   - **警告优化**:
+     - 将 "JSON 字符串已标准化处理" 改为具体操作说明
+     - 例如 "JSON 标准化: 移除注释, 移除尾随逗号, 压缩空白"
+   - **修复文件**:
+     - `src/lib/utils/json-parser-enhancer.ts`: 移除贪婪正则，新增栈匹配方法

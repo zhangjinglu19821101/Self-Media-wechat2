@@ -282,6 +282,7 @@ export class JsonParserEnhancer {
   /**
    * 🔴 新增：通用的 JSON 字符串提取（不局限于 subTasks）
    * 🔧 修复：使用栈匹配代替贪婪正则，避免多 JSON 块干扰
+   * 🔴🔴🔴 2025-04-10 修复：移除贪婪的数组匹配正则，避免匹配到 [微信公众号] 等非 JSON 内容
    */
   private static extractGenericJsonString(text: string, warnings: string[]): string | null {
     // 1. 尝试多种提取模式
@@ -290,8 +291,9 @@ export class JsonParserEnhancer {
       { regex: /```json\s*\n([\s\S]*?)\n```/, name: '标准代码块' },
       // 2. ```\n...\n``` 简单代码块
       { regex: /```\s*\n([\s\S]*?)\n```/, name: '简单代码块' },
-      // 3. [ ... ] 直接 JSON 数组（通用）
-      { regex: /(\[[\s\S]*\])/, name: '直接 JSON 数组' },
+      // 🔴🔴🔴 修复：移除贪婪的数组匹配正则 `/(\[[\s\S]*\])/`
+      // 问题：该正则会匹配任何以 [ 开头的文本，如 [微信公众号]、[小红书] 等
+      // 解决：改用栈匹配精确提取 JSON 数组（见下方的 extractJsonArrayWithStackMatching）
     ];
 
     for (const { regex, name } of patterns) {
@@ -305,11 +307,116 @@ export class JsonParserEnhancer {
       }
     }
 
+    // 🔴 新增：使用栈匹配精确提取 JSON 数组
+    const arrayResult = this.extractJsonArrayWithStackMatching(text);
+    if (arrayResult) {
+      console.log(`🔍 [通用解析] 使用提取模式: 栈匹配 JSON 数组`);
+      return arrayResult;
+    }
+
     // 2. 🔧 修复：使用栈匹配精确提取 JSON 对象，避免贪婪匹配问题
     const stackResult = this.extractJsonWithStackMatching(text);
     if (stackResult) {
       console.log(`🔍 [通用解析] 使用提取模式: 栈匹配 JSON 对象`);
       return stackResult;
+    }
+
+    return null;
+  }
+
+  /**
+   * 🔴🔴🔴 新增：使用栈匹配精确提取 JSON 数组
+   * 解决贪婪正则 /(\[[\s\S]*\])/ 匹配到 [微信公众号] 等非 JSON 内容的问题
+   */
+  private static extractJsonArrayWithStackMatching(text: string): string | null {
+    // 找到第一个可能的 JSON 数组开始位置
+    const firstBracket = text.indexOf('[');
+    if (firstBracket === -1) {
+      return null;
+    }
+
+    // 从第一个 [ 开始尝试匹配
+    let depth = 0;
+    let inString = false;
+    let escape = false;
+    let start = -1;
+    let end = -1;
+
+    for (let i = firstBracket; i < text.length; i++) {
+      const char = text[i];
+
+      if (escape) {
+        escape = false;
+        continue;
+      }
+
+      if (char === '\\') {
+        escape = true;
+        continue;
+      }
+
+      if (char === '"') {
+        inString = !inString;
+        continue;
+      }
+
+      // 只在字符串外部处理括号
+      if (!inString) {
+        if (char === '[') {
+          if (depth === 0) {
+            start = i;
+          }
+          depth++;
+        } else if (char === ']') {
+          depth--;
+          if (depth === 0) {
+            end = i;
+            // 找到完整的 JSON 数组
+            let jsonCandidate = text.substring(start, end + 1);
+            
+            // 🔴🔴🔴 验证是否是有效的 JSON 数组
+            // 必须以 [{ 或 [" 或 [数字 或 [true/false/null 开头（跳过空白后）
+            const trimmed = jsonCandidate.substring(1).trim();
+            const isValidArrayStart = 
+              trimmed.startsWith('{') ||
+              trimmed.startsWith('"') ||
+              trimmed.startsWith('[') ||
+              /^[0-9]/.test(trimmed) ||
+              trimmed.startsWith('true') ||
+              trimmed.startsWith('false') ||
+              trimmed.startsWith('null');
+            
+            if (!isValidArrayStart) {
+              // 不是有效的 JSON 数组开头，继续搜索
+              depth = 0;
+              inString = false;
+              escape = false;
+              continue;
+            }
+            
+            // 尝试解析
+            if (this.isValidJson(jsonCandidate)) {
+              return jsonCandidate;
+            }
+            
+            // 尝试修复后解析
+            const repairedJson = this.repairCommonJsonErrors(jsonCandidate);
+            if (this.isValidJson(repairedJson)) {
+              console.log('[JsonParserEnhancer] ✅ JSON 数组修复成功');
+              return repairedJson;
+            }
+            
+            // 当前不是有效 JSON，继续寻找下一个可能的 JSON
+            depth = 0;
+            inString = false;
+            escape = false;
+          }
+        } else if (char === '{') {
+          // 嵌套对象，继续处理
+        } else if (char === '}') {
+          // 嵌套对象结束，继续处理
+        }
+      }
     }
 
     return null;
@@ -849,7 +956,24 @@ export class JsonParserEnhancer {
     cleaned = cleaned.replace(/\s+/g, ' ').trim();
 
     if (jsonStr !== cleaned) {
-      warnings.push('JSON 字符串已标准化处理');
+      // 🔴🔴🔴 优化：只在 JSON 实际被修改时才添加警告，并说明具体修改
+      const changes: string[] = [];
+      if (jsonStr.replace(/\/\/.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, '') !== jsonStr) {
+        changes.push('移除注释');
+      }
+      if (jsonStr.replace(/,\s*([}\]])/g, '$1') !== jsonStr) {
+        changes.push('移除尾随逗号');
+      }
+      if (this.smartHandleNewlines(jsonStr, []) !== jsonStr) {
+        changes.push('处理换行符');
+      }
+      if (jsonStr.replace(/\s+/g, ' ').trim() !== jsonStr) {
+        changes.push('压缩空白');
+      }
+      
+      if (changes.length > 0) {
+        warnings.push(`JSON 标准化: ${changes.join(', ')}`);
+      }
     }
 
     return cleaned;
