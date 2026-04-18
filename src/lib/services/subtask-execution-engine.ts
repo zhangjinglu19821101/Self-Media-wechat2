@@ -7158,7 +7158,7 @@ export class SubtaskExecutionEngine {
         );
 
         // 🔥🔥🔥 【P0修复】提前读取内容模板，获取 cardCountMode 和 promptInstruction
-        // cardCountMode 优先级：1. 内容模板的 cardCountMode  2. metadata 中的 imageCountMode（兼容旧数据）
+        // cardCountMode 优先级：1. 内容模板的 cardCountMode  2. metadata 中的 imageCountMode（兼容旧数据）3. 小红书默认 5-card
         const VALID_CARD_COUNT_MODES = ['3-card', '5-card', '7-card'] as const;
         type CardCountMode = typeof VALID_CARD_COUNT_MODES[number];
         
@@ -7179,6 +7179,13 @@ export class SubtaskExecutionEngine {
           } catch (_tplErr) {
             console.warn('[SubtaskEngine] ⚠️ 读取内容模板失败:', _tplErr);
           }
+        }
+
+        // 🔥🔥🔥 【P0修复】小红书平台默认使用 5-card 详尽模式
+        // 如果没有指定 cardCountMode，且执行者是小红书 Agent，默认使用 5-card
+        if (!_derivedCardCountMode && task.fromParentsExecutor === 'insurance-xiaohongshu') {
+          _derivedCardCountMode = '5-card';
+          console.log('[SubtaskEngine] 📋 小红书平台默认使用 5-card 详尽模式');
         }
 
         insuranceDAssembledResult = await promptAssemblerService.assemblePrompt({

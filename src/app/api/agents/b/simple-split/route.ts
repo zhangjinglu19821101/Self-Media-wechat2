@@ -172,6 +172,21 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // 🔥🔥🔥 【P0修复】为小红书平台设置默认卡片数量模式（5卡详尽）
+    // 如果用户没有选择内容模板，且没有手动指定 imageCountMode，默认使用 5 卡详尽模式
+    // 异步检查选中的账号中是否有小红书账号
+    if (!derivedImageCountMode && effectiveAccountIds.length > 0) {
+      // 批量查询账号平台信息
+      const accountPlatforms = await Promise.all(
+        effectiveAccountIds.map(accId => getAccountInfo(accId))
+      );
+      const hasXiaohongshuAccount = accountPlatforms.some(acc => acc.platform === 'xiaohongshu');
+      if (hasXiaohongshuAccount) {
+        derivedImageCountMode = '5-card';
+        console.log('🔵 [Agent B 简化拆解] 🔥 小红书平台默认使用 5-card 详尽模式');
+      }
+    }
+
     // 1. 如果有临时会话 ID，先删除旧的子任务（替换逻辑）
     if (tempSessionId) {
       console.log('🔵 [Agent B 简化拆解] 替换逻辑：删除旧的子任务，tempSessionId:', tempSessionId);
