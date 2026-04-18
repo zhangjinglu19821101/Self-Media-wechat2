@@ -22,7 +22,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { Loader2, Plus, Trash2, Send, Sparkles, ListTodo, CheckCircle2, XCircle, GripVertical, MoveUp, MoveDown, Maximize2, Minimize2, AlertTriangle, GitCompare, RefreshCw, FileText, Save, Eye, Home, BookmarkPlus, ExternalLink, BookOpen, Clock, Building2, X, HelpCircle, Settings, Rocket, Layers, ChevronDown, ChevronUp, Cpu, Brain, Workflow, Palette, PenTool, ArrowRight, Briefcase } from 'lucide-react';
+import { Loader2, Plus, Trash2, Send, Sparkles, ListTodo, CheckCircle2, XCircle, GripVertical, MoveUp, MoveDown, Maximize2, Minimize2, AlertTriangle, GitCompare, RefreshCw, FileText, Save, Eye, Home, BookmarkPlus, ExternalLink, BookOpen, Clock, Building2, X, HelpCircle, Settings, Rocket, Layers, ChevronDown, ChevronUp, Cpu, Brain, Workflow, Palette, PenTool, ArrowRight, Briefcase, Shield, Users } from 'lucide-react';
 import { toast } from 'sonner';
 import { AgentTaskListNormal } from '@/components/agent-task-list-normal';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
@@ -387,6 +387,7 @@ export default function HomePage() {
   const [selectedCases, setSelectedCases] = useState<CaseItem[]>([]);
   const [recommendedCases, setRecommendedCases] = useState<CaseItem[]>([]);
   const [loadingRecommendedCases, setLoadingRecommendedCases] = useState(false);
+  const [viewingCase, setViewingCase] = useState<CaseItem | null>(null); // 查看案例详情
 
   // 🔥 结构选择相关状态
   const [selectedStructure, setSelectedStructure] = useState<StructureTemplate>(() => getDefaultStructure());
@@ -2325,23 +2326,24 @@ export default function HomePage() {
                             <div className="space-y-2">
                               <div className="text-xs font-medium text-emerald-600 flex items-center gap-1">
                                 <Sparkles className="w-3 h-3" />
-                                根据指令推荐的最相关案例（点击选择）
+                                根据指令推荐的最相关案例（点击查看详情或选择）
                               </div>
                               {recommendedCases.map((c) => {
                                 const isSelected = selectedCaseIds.includes(c.id);
                                 return (
-                                  <button
+                                  <div
                                     key={c.id}
-                                    type="button"
-                                    onClick={() => toggleCaseSelection(c)}
-                                    className={`w-full text-left px-4 py-3 rounded-xl border-2 transition-all ${
+                                    className={`relative px-4 py-3 rounded-xl border-2 transition-all ${
                                       isSelected
                                         ? 'border-emerald-400 bg-emerald-50'
-                                        : 'border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50'
+                                        : 'border-slate-200 bg-white hover:border-slate-300'
                                     }`}
                                   >
                                     <div className="flex items-start justify-between gap-2">
-                                      <div className="flex-1 min-w-0">
+                                      <div 
+                                        className="flex-1 min-w-0 cursor-pointer"
+                                        onClick={() => setViewingCase(c)}
+                                      >
                                         <div className="flex items-center gap-2">
                                           <span className={`font-medium text-sm ${isSelected ? 'text-emerald-700' : 'text-slate-700'}`}>
                                             {c.title}
@@ -2361,8 +2363,29 @@ export default function HomePage() {
                                           ))}
                                         </div>
                                       </div>
+                                      {/* 操作按钮 */}
+                                      <div className="flex flex-col gap-1.5 flex-shrink-0">
+                                        <button
+                                          type="button"
+                                          onClick={() => setViewingCase(c)}
+                                          className="text-[10px] px-2 py-1 rounded border border-slate-200 text-slate-500 hover:bg-slate-50 transition-colors"
+                                        >
+                                          详情
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={() => toggleCaseSelection(c)}
+                                          className={`text-[10px] px-2 py-1 rounded transition-colors ${
+                                            isSelected
+                                              ? 'bg-emerald-100 text-emerald-700 border border-emerald-300'
+                                              : 'bg-emerald-500 text-white hover:bg-emerald-600'
+                                          }`}
+                                        >
+                                          {isSelected ? '已选' : '选择'}
+                                        </button>
+                                      </div>
                                     </div>
-                                  </button>
+                                  </div>
                                 );
                               })}
                             </div>
@@ -3100,6 +3123,133 @@ export default function HomePage() {
             >
               <CheckCircle2 className="w-4 h-4 mr-2" />
               确认创建
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* 案例详情弹窗 */}
+      <Dialog open={!!viewingCase} onOpenChange={(open) => !open && setViewingCase(null)}>
+        <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="text-lg font-bold text-slate-900 pr-8">
+              {viewingCase?.title}
+            </DialogTitle>
+            <DialogDescription className="text-sm text-slate-500 mt-1">
+              查看案例完整详情
+            </DialogDescription>
+          </DialogHeader>
+          
+          {viewingCase && (
+            <div className="space-y-4 py-2">
+              {/* 人物/主体 */}
+              {viewingCase.protagonist && (
+                <div className="space-y-1">
+                  <h4 className="text-sm font-semibold text-slate-700 flex items-center gap-1.5">
+                    <Users className="w-4 h-4 text-blue-500" />
+                    人物/主体
+                  </h4>
+                  <p className="text-sm text-slate-600 bg-slate-50 rounded-lg p-3 leading-relaxed">
+                    {viewingCase.protagonist}
+                  </p>
+                </div>
+              )}
+              
+              {/* 核心背景 */}
+              {viewingCase.background && (
+                <div className="space-y-1">
+                  <h4 className="text-sm font-semibold text-slate-700 flex items-center gap-1.5">
+                    <FileText className="w-4 h-4 text-amber-500" />
+                    核心背景
+                  </h4>
+                  <p className="text-sm text-slate-600 bg-amber-50/50 rounded-lg p-3 leading-relaxed">
+                    {viewingCase.background}
+                  </p>
+                </div>
+              )}
+              
+              {/* 保险方案 */}
+              {viewingCase.insuranceAction && (
+                <div className="space-y-1">
+                  <h4 className="text-sm font-semibold text-slate-700 flex items-center gap-1.5">
+                    <Shield className="w-4 h-4 text-emerald-500" />
+                    保险方案
+                  </h4>
+                  <p className="text-sm text-slate-600 bg-emerald-50/50 rounded-lg p-3 leading-relaxed">
+                    {viewingCase.insuranceAction}
+                  </p>
+                </div>
+              )}
+              
+              {/* 结果详情 */}
+              {viewingCase.result && (
+                <div className="space-y-1">
+                  <h4 className="text-sm font-semibold text-slate-700 flex items-center gap-1.5">
+                    <CheckCircle2 className="w-4 h-4 text-purple-500" />
+                    结果详情
+                  </h4>
+                  <p className="text-sm text-slate-600 bg-purple-50/50 rounded-lg p-3 leading-relaxed">
+                    {viewingCase.result}
+                  </p>
+                </div>
+              )}
+              
+              {/* 标签 */}
+              <div className="flex flex-wrap gap-2 pt-2">
+                {viewingCase.productTags.length > 0 && (
+                  <div className="flex flex-wrap gap-1">
+                    <span className="text-xs text-slate-400">产品标签:</span>
+                    {viewingCase.productTags.map(tag => (
+                      <span key={tag} className="text-[10px] px-2 py-0.5 rounded-full bg-blue-100 text-blue-700">{tag}</span>
+                    ))}
+                  </div>
+                )}
+                {viewingCase.crowdTags.length > 0 && (
+                  <div className="flex flex-wrap gap-1">
+                    <span className="text-xs text-slate-400">人群标签:</span>
+                    {viewingCase.crowdTags.map(tag => (
+                      <span key={tag} className="text-[10px] px-2 py-0.5 rounded-full bg-purple-100 text-purple-700">{tag}</span>
+                    ))}
+                  </div>
+                )}
+                {viewingCase.sceneTags.length > 0 && (
+                  <div className="flex flex-wrap gap-1">
+                    <span className="text-xs text-slate-400">场景标签:</span>
+                    {viewingCase.sceneTags.map(tag => (
+                      <span key={tag} className="text-[10px] px-2 py-0.5 rounded-full bg-green-100 text-green-700">{tag}</span>
+                    ))}
+                  </div>
+                )}
+                {viewingCase.emotionTags.length > 0 && (
+                  <div className="flex flex-wrap gap-1">
+                    <span className="text-xs text-slate-400">情绪标签:</span>
+                    {viewingCase.emotionTags.map(tag => (
+                      <span key={tag} className="text-[10px] px-2 py-0.5 rounded-full bg-rose-100 text-rose-700">{tag}</span>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+          
+          <DialogFooter className="flex gap-2 sm:gap-2">
+            <Button
+              variant="outline"
+              onClick={() => setViewingCase(null)}
+              className="flex-1"
+            >
+              关闭
+            </Button>
+            <Button
+              onClick={() => {
+                if (viewingCase) {
+                  toggleCaseSelection(viewingCase);
+                  setViewingCase(null);
+                }
+              }}
+              className={`flex-1 ${selectedCaseIds.includes(viewingCase?.id || '') ? 'bg-slate-500 hover:bg-slate-600' : 'bg-emerald-500 hover:bg-emerald-600'}`}
+            >
+              {viewingCase && selectedCaseIds.includes(viewingCase.id) ? '取消选择' : '选择此案例'}
             </Button>
           </DialogFooter>
         </DialogContent>
