@@ -3,8 +3,7 @@ import path from 'path';
 
 const nextConfig: NextConfig = {
   // 🔧 解决模块解析和缓存问题，消除多 lockfile 警告
-  outputFileTracingRoot: path.resolve(__dirname, './'),
-
+  // outputFileTracingRoot: path.resolve(__dirname, './'),
   // 🔧 配置文件监听，确保热更新正常
   webpack: (config) => {
     config.watchOptions = {
