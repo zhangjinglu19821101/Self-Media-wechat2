@@ -1,0 +1,5 @@
+知识库类型,存储内容（保险 + MCP 领域）,表结构设计（贴合你现有表）,智能体怎么用
+结构化业务规则库,保险行业发布规则（如公众号文章敏感词）、MCP 调用规则（如微信上传 token 有效期）,新增表domain_rule：id、rule_type（敏感词 /token）、rule_content（JSON）、scene（公众号 / 外网搜索）,insurance-d 判断任务合规性、Agent B 补全参数时参考
+领域案例库,成功案例（如 “上传保险科普文的最优参数”）、失败案例（如 “token 过期导致上传失败”）,新增表domain_case：id、task_content、capability_type、params、result、is_success、reason,智能体规避错误、复用最优参数
+领域术语库,保险行业专属词汇（如 “医疗险 / 重疾险”）、MCP 能力专属术语（如 “media_id/access_token”）,新增表domain_terminology：id、term、explain、scene,insurance-d 解析任务时精准识别关键词
+参数模板库,各 MCP 能力的领域专属参数模板（如 “保险公众号文章标题模板”）,关联capability_list新增字段param_template（JSON）,Agent B 生成参数时直接复用模板，无需重新推理

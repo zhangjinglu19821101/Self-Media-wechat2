@@ -1,0 +1,1 @@
+[Old tool call arguments content cleared]

@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "my-awesome-server": {
+      "command": "node",
+      "args": [
+        "/workspace/projects/src/lib/mcp/examples/complete-mcp-server.js"
+      ]
+    }
+  }
+}
