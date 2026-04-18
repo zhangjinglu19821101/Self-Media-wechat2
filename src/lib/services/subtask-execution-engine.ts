@@ -7282,18 +7282,13 @@ export class SubtaskExecutionEngine {
           const _userCaseIds: string[] = _metadata.caseIds || [];
 
           if (_userCaseIds.length > 0) {
-            // 优先：用户手动选择的案例
-            const _selectedCases = await industryCaseService.searchCases({
-              industry: 'insurance',
-              limit: 5,
-            });
-            // 按 caseIds 过滤（searchCases 不支持 ids 参数）
-            const _filtered = _selectedCases.filter(c => _userCaseIds.includes(c.id));
-            if (_filtered.length > 0) {
-              _industryCasesText = industryCaseService.formatCasesForPrompt(_filtered, 'manual');
-              console.log('[SubtaskEngine] 📚 用户选择案例:', _filtered.length, '条');
+            // 优先：用户手动选择的案例——直接按 ID 查询，不依赖 searchCases 的热门排序
+            const _selectedCases = await industryCaseService.getCasesByIds(_userCaseIds);
+            if (_selectedCases.length > 0) {
+              _industryCasesText = industryCaseService.formatCasesForPrompt(_selectedCases, 'manual');
+              console.log('[SubtaskEngine] 📚 用户选择案例:', _selectedCases.length, '条');
             } else {
-              console.log('[SubtaskEngine] 📚 用户选择案例未找到，降级为自动推荐');
+              console.log('[SubtaskEngine] 📚 用户选择案例ID未命中数据库，降级为自动推荐');
             }
           }
 

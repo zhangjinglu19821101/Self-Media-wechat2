@@ -516,6 +516,39 @@ export async function searchCases(params: CaseSearchParams): Promise<CaseMatchRe
 }
 
 /**
+ * 根据 ID 列表批量获取案例
+ * 
+ * 用于执行引擎获取用户手动选择的案例，直接按 ID 查询，不走 searchCases 的相关度排序逻辑。
+ * 
+ * @param caseIds 案例 ID 数组
+ * @returns 匹配的案例列表
+ */
+export async function getCasesByIds(caseIds: string[]): Promise<CaseMatchResult[]> {
+  if (caseIds.length === 0) return [];
+  
+  const cases = await db
+    .select()
+    .from(industryCaseLibrary)
+    .where(inArray(industryCaseLibrary.id, caseIds));
+  
+  return cases.map(c => ({
+    id: c.id,
+    title: c.title,
+    protagonist: c.protagonist || '',
+    background: c.background,
+    insuranceAction: c.insuranceAction || '',
+    result: c.result,
+    applicableProducts: c.applicableProducts as string[],
+    applicableScenarios: c.applicableScenarios as string[],
+    productTags: c.productTags as string[],
+    crowdTags: c.crowdTags as string[],
+    sceneTags: c.sceneTags as string[],
+    emotionTags: c.emotionTags as string[],
+    relevanceScore: 100, // 用户手动选择的案例，设为最高相关度
+  }));
+}
+
+/**
  * 根据指令推荐案例
  * 
  * @param instruction 用户指令
@@ -682,4 +715,5 @@ export const industryCaseService = {
   formatCasesForPrompt,
   importCases,
   getCaseStats,
+  getCasesByIds,
 };
