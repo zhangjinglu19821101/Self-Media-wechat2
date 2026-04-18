@@ -38,10 +38,12 @@ export interface ArticlePreviewEditorProps {
   taskId: string;
   /** 平台类型 */
   platform: PreviewPlatform;
-  /** 文章内容（由父组件传入） */
+  /** 文章内容（由父组件传入，纯文本正文） */
   articleContent?: string;
   /** 文章标题（由父组件传入） */
   articleTitle?: string;
+  /** 平台渲染数据（结构化，如小红书卡片数据） */
+  platformRenderData?: Record<string, unknown> | null;
   /** 是否可编辑 */
   canEdit?: boolean;
   /** 是否可跳过 */
@@ -88,6 +90,7 @@ export function ArticlePreviewEditor({
   platform,
   articleContent: initialContent,
   articleTitle: initialTitle,
+  platformRenderData: initialPlatformRenderData,
   canEdit = true,
   canSkip = true,
   onComplete,
@@ -95,6 +98,9 @@ export function ArticlePreviewEditor({
 }: ArticlePreviewEditorProps) {
   const [content, setContent] = useState(initialContent || '');
   const [title, setTitle] = useState(initialTitle || '');
+  const [platformRenderData, setPlatformRenderData] = useState<Record<string, unknown> | null>(
+    initialPlatformRenderData || null
+  );
   const [isEditing, setIsEditing] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isLoading, setIsLoading] = useState(!initialContent);
@@ -121,6 +127,8 @@ export function ArticlePreviewEditor({
         if (!cancelled && data.success) {
           setContent(data.data.articleContent || '');
           setTitle(data.data.articleTitle || '');
+          // 🔥🔥🔥 【架构改造】从 API 响应获取平台渲染数据
+          setPlatformRenderData(data.data.platformRenderData || null);
         } else if (!cancelled && !data.success) {
           toast.error('加载文章内容失败: ' + (data.error || '未知错误'));
         }
@@ -260,7 +268,10 @@ export function ArticlePreviewEditor({
           {platform === 'wechat_official' ? (
             <WechatHtmlPreview html={content} />
           ) : platform === 'xiaohongshu' ? (
-            <XiaohongshuContentPreview content={content} />
+            <XiaohongshuContentPreview 
+              content={content} 
+              platformRenderData={platformRenderData}
+            />
           ) : (
             <PlainTextPreview content={content} />
           )}
@@ -269,7 +280,11 @@ export function ArticlePreviewEditor({
         {isEditing && (
           <TabsContent value="edit" className="mt-0">
             {platform === 'xiaohongshu' ? (
-              <XiaohongshuContentEditor content={content} onChange={setContent} />
+              <XiaohongshuContentEditor 
+                content={content} 
+                platformRenderData={platformRenderData}
+                onChange={setContent} 
+              />
             ) : (
               <Textarea
                 value={content}
@@ -338,6 +353,79 @@ function WechatHtmlPreview({ html }: { html: string }) {
       </CardContent>
     </Card>
   );
+}
+
+// ============ 小红书渲染数据解析（platformRenderData 格式） ============
+
+/**
+ * 从 platformRenderData（后端提取器生成的结构化数据）解析为前端展示格式
+ * 
+ * platformRenderData 格式（来自 extractors.ts）：
+ * {
+ *   platform: 'xiaohongshu',
+ *   cardCountMode: '5-card',
+ *   cards: [{ type: 'cover', title, subtitle }, { type: 'point', title, content }, { type: 'ending', conclusion, tags }],
+ *   textContent: '正文',
+ *   articleTitle: '标题'
+ * }
+ */
+function parseXhsRenderData(
+  renderData: Record<string, unknown>,
+  fallbackText: string
+): XhsParsedContent {
+  const result: XhsParsedContent = { title: '', points: [], tags: [], fullText: '' };
+
+  // 从 cards 数组提取结构化数据
+  const cards = renderData.cards;
+  if (Array.isArray(cards)) {
+    for (const card of cards) {
+      if (typeof card !== 'object' || card === null) continue;
+      const c = card as Record<string, unknown>;
+      
+      if (c.type === 'cover') {
+        result.title = typeof c.title === 'string' ? c.title : '';
+        result.intro = typeof c.subtitle === 'string' ? c.subtitle : undefined;
+      } else if (c.type === 'point') {
+        result.points.push({
+          title: typeof c.title === 'string' ? c.title : '',
+          content: typeof c.content === 'string' ? c.content : '',
+        });
+      } else if (c.type === 'ending') {
+        result.conclusion = typeof c.conclusion === 'string' ? c.conclusion : undefined;
+        if (Array.isArray(c.tags)) {
+          result.tags = c.tags.filter((t: unknown) => typeof t === 'string') as string[];
+        }
+      }
+    }
+  } else {
+    // 🔥 兜底：platformRenderData 可能是 platformData 格式（旧路径传下来的）
+    if (renderData.platform === 'xiaohongshu') {
+      result.title = typeof renderData.title === 'string' ? renderData.title : '';
+      result.intro = typeof renderData.intro === 'string' ? renderData.intro : undefined;
+      if (Array.isArray(renderData.points)) {
+        result.points = renderData.points
+          .filter((p: unknown) => typeof p === 'object' && p !== null && typeof (p as Record<string, unknown>).title === 'string')
+          .map((p: unknown) => ({
+            title: (p as Record<string, unknown>).title as string,
+            content: typeof (p as Record<string, unknown>).content === 'string' ? (p as Record<string, unknown>).content as string : '',
+          }));
+      }
+      result.conclusion = typeof renderData.conclusion === 'string' ? renderData.conclusion : undefined;
+      if (Array.isArray(renderData.tags)) {
+        result.tags = renderData.tags.filter((t: unknown) => typeof t === 'string') as string[];
+      }
+    }
+  }
+
+  // 正文：优先从 platformRenderData.textContent，兜底用 fallbackText
+  result.fullText = typeof renderData.textContent === 'string' && renderData.textContent.length > 0
+    ? renderData.textContent
+    : fallbackText;
+  
+  // 标题
+  result.articleTitle = typeof renderData.articleTitle === 'string' ? renderData.articleTitle : '';
+
+  return result;
 }
 
 // ============ 小红书内容预览组件 ============
@@ -416,8 +504,19 @@ const GRADIENT_SCHEMES = [
   { from: '#f472b6', to: '#fb923c' },  // 珊瑚粉
 ];
 
-function XiaohongshuContentPreview({ content: rawContent }: { content: string }) {
-  const parsed = parseXhsContent(rawContent);
+function XiaohongshuContentPreview({ 
+  content: rawContent, 
+  platformRenderData 
+}: { 
+  content: string; 
+  platformRenderData?: Record<string, unknown> | null;
+}) {
+  // 🔥🔥🔥 【架构改造】优先使用 platformRenderData（结构化卡片数据）
+  // platformRenderData 由后端提取器从 resultData 中提取，包含完整的卡片信息
+  // 仅在 platformRenderData 不可用时，兜底从 articleContent（纯文本）解析
+  const parsed = platformRenderData 
+    ? parseXhsRenderData(platformRenderData, rawContent)
+    : parseXhsContent(rawContent);
   
   // 🔥🔥🔥 【P1修复】严谨计算卡片数量
   // 封面卡：title 或 intro 有值时才存在
@@ -442,6 +541,11 @@ function XiaohongshuContentPreview({ content: rawContent }: { content: string })
           {totalCards > 0 && (
             <div className="text-xs text-gray-400 text-center mb-2">
               📱 {totalCards}卡模式预览
+              {platformRenderData?.cardCountMode && (
+                <span className="ml-1 text-blue-400">
+                  (模板: {platformRenderData.cardCountMode as string})
+                </span>
+              )}
             </div>
           )}
 
@@ -538,8 +642,19 @@ function XiaohongshuContentPreview({ content: rawContent }: { content: string })
 
 // ============ 小红书内容编辑组件 ============
 
-function XiaohongshuContentEditor({ content: rawContent, onChange }: { content: string; onChange: (v: string) => void }) {
-  const parsed = parseXhsContent(rawContent);
+function XiaohongshuContentEditor({ 
+  content: rawContent, 
+  platformRenderData,
+  onChange 
+}: { 
+  content: string; 
+  platformRenderData?: Record<string, unknown> | null;
+  onChange: (v: string) => void; 
+}) {
+  // 🔥🔥🔥 【架构改造】优先使用 platformRenderData
+  const parsed = platformRenderData 
+    ? parseXhsRenderData(platformRenderData, rawContent)
+    : parseXhsContent(rawContent);
   const [title, setTitle] = useState(parsed.title);
   const [fullText, setFullText] = useState(parsed.fullText);
   const [points, setPoints] = useState(parsed.points);

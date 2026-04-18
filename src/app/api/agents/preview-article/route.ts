@@ -65,6 +65,8 @@ export async function GET(request: NextRequest) {
     let articleTitle = resultData.articleTitle || '';
     let platform = resultData.platform || '';
     const writingTaskId = resultData.writingTaskId || null;
+    // 🔥🔥🔥 【架构改造】平台渲染数据（独立于 articleContent 纯文本）
+    let platformRenderData = resultData.platformRenderData || null;
 
     // 3. 如果没有预存内容（兼容旧流程），从前序写作任务获取
     if (!articleContent) {
@@ -99,16 +101,32 @@ export async function GET(request: NextRequest) {
         const platformData = structuredResult?.resultContent?.platformData || 
                             structuredResult?.platformData;
         
-        // 对于小红书，返回完整 JSON（包含 title/intro/points/conclusion/tags）
+        // 🔥🔥🔥 【架构改造】使用平台渲染数据提取器
+        // 优先使用提取器获取结构化平台渲染数据
+        const writingPlatform = getPlatformForExecutor(writingTask.fromParentsExecutor);
+        if (writingPlatform && !platformRenderData) {
+          try {
+            const { extractPlatformRenderData } = await import('@/lib/platform-render/extractors');
+            const taskMetadata = typeof task.metadata === 'object' && task.metadata !== null
+              ? task.metadata as Record<string, unknown>
+              : {};
+            platformRenderData = extractPlatformRenderData(
+              writingPlatform,
+              writingTask.resultData,
+              taskMetadata
+            );
+          } catch (extractErr) {
+            console.warn('[Preview Article] 平台渲染数据提取失败:', extractErr);
+          }
+        }
+
+        // 对于小红书，articleContent 保持为纯文本（来自 resultText）
+        // 前端通过 platformRenderData 渲染卡片
         if (platformData && platformData.platform === 'xiaohongshu') {
-          articleContent = JSON.stringify({
-            isCompleted: true,
-            result: {
-              content: structuredResult?.resultContent?.content || writingTask.resultText || '',
-              articleTitle: structuredResult?.resultContent?.articleTitle || '',
-              platformData: platformData
-            }
-          });
+          // 🔥🔥🔥 【架构改造】articleContent 不再是 JSON 字符串，改为纯文本
+          // 旧逻辑：articleContent = JSON.stringify({...}) → 前端 parseXhsContent() 解析
+          // 新逻辑：articleContent = 纯文本正文，platformRenderData = 结构化卡片数据
+          articleContent = structuredResult?.resultContent?.content || writingTask.resultText || '';
           articleTitle = platformData.title || structuredResult?.resultContent?.articleTitle || '';
           platform = 'xiaohongshu';
         } else {
@@ -132,6 +150,10 @@ export async function GET(request: NextRequest) {
         writingTaskId,
         canEdit: resultData.canEdit !== false,
         canSkip: resultData.canSkip !== false,
+        // 🔥🔥🔥 【架构改造】返回平台渲染数据
+        // 前端组件根据此字段渲染平台专属UI（如小红书卡片）
+        // articleContent 保持纯文本，platformRenderData 提供结构化数据
+        platformRenderData,
       },
     });
   } catch (error) {

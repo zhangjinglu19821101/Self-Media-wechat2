@@ -1259,31 +1259,39 @@ export class SubtaskExecutionEngine {
     const effectiveWritingTask = writingTask || fallbackWritingTask;
     
     if (effectiveWritingTask) {
-      // 提取文章内容
+      // 提取文章内容（result_text 保持纯文本，不与平台渲染耦合）
       articleContent = effectiveWritingTask.resultText || '';
       if (!articleContent && effectiveWritingTask.resultData) {
         articleContent = this.extractResultTextFromResultData(effectiveWritingTask.resultData, effectiveWritingTask.fromParentsExecutor) || '';
       }
       articleTitle = this.extractArticleTitleFromResultData(effectiveWritingTask.resultData, effectiveWritingTask.taskTitle);
       platform = getPlatformForExecutor(effectiveWritingTask.fromParentsExecutor);
-      
-      // 🔥🔥🔥 【修复】小红书需要传递完整的 resultData（JSON对象），而不仅仅是 resultText
-      // 因为前端预览组件需要解析 points 数组来渲染多张卡片
-      // resultText 只是纯文本正文，不包含 points 数组
-      if (platform === 'xiaohongshu' && effectiveWritingTask.resultData) {
-        // 将完整的 resultData 传递给前端，让前端可以解析完整的 JSON 结构
-        articleContent = typeof effectiveWritingTask.resultData === 'string' 
-          ? effectiveWritingTask.resultData 
-          : JSON.stringify(effectiveWritingTask.resultData);
+    }
+
+    // 🔥🔥🔥 【架构改造】平台渲染数据提取
+    // result_text 是通用纯文本，不与平台渲染耦合
+    // 平台专属的渲染数据（如小红书卡片）通过 platformRenderData 独立传递
+    let platformRenderData: Record<string, unknown> | null = null;
+    if (effectiveWritingTask && platform) {
+      try {
+        const { extractPlatformRenderData } = await import('@/lib/platform-render/extractors');
+        platformRenderData = extractPlatformRenderData(
+          platform,
+          effectiveWritingTask.resultData,
+          (task.metadata as Record<string, unknown>) || {}
+        );
+      } catch (err) {
+        console.warn('[SubtaskEngine] ⚠️ 平台渲染数据提取失败，将使用纯文本兜底:', err);
       }
     }
 
     console.log('[SubtaskEngine] 👁️ 前序写作任务信息:', {
       writingTaskId: effectiveWritingTask?.id,
-      isCompleted: writingTask?.id === effectiveWritingTask?.id,  // 标记是否来自已完成任务
+      isCompleted: writingTask?.id === effectiveWritingTask?.id,
       hasContent: articleContent.length > 0,
       contentLength: articleContent.length,
       platform,
+      hasPlatformRenderData: !!platformRenderData,
     });
 
     // 3. 获取同组所有任务以确定平台信息（如果写作任务没找到平台）
@@ -1293,11 +1301,14 @@ export class SubtaskExecutionEngine {
     }
 
     // 4. 设置为 waiting_user，存入文章内容供前端预览
+    // articleContent = 纯文本正文（通用，与平台无关）
+    // platformRenderData = 平台渲染数据（结构化，按平台定义）
     const overrideResultData = {
       interactionType: 'preview_edit_article',
       articleContent,
       articleTitle,
       platform,
+      platformRenderData,  // 🔥 新增：平台专属渲染数据
       writingTaskId: writingTask?.id || null,
       canEdit: true,
       canSkip: true,
