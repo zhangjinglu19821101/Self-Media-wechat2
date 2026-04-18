@@ -1210,22 +1210,26 @@
    - **修改文件**:
      - `src/components/xiaohongshu-preview.tsx`: 卡片高度 + 正文展开/收起
    - **效果**: 卡片展示更饱满，正文阅读体验更佳
-62. **Agent B 合规校验结果处理修复**: 明确区分"MCP 调用失败"和"审核错误"
+62. **Agent B 合规校验结果处理修复（彻底修复）**: 明确区分"MCP 调用失败"和"审核错误"
    - **问题**: Agent B 把"合规校验MCP返回审核错误"当成执行失败，导致决策错误
-   - **根因**: 提示词中混淆了两个概念：
-     - "MCP 调用失败"：技术性失败（网络错误、超时等）
-     - "MCP 返回审核错误"：业务性结果（发现违规内容）
-   - **核心修复**:
-     - **MCP 执行历史判断规则**：明确区分 MCP 调用状态（success/failed）和 MCP 返回结果（审核通过/未通过）
-     - **合规校验任务处理**：MCP 调用成功 + 审核未通过 = COMPLETE（校验任务完成）
-     - **MCP 技术性失败处理**：使用 REEXECUTE_EXECUTOR（让 Agent T 重试），而非 EXECUTE_MCP
-   - **修改文件**:
-     - `src/lib/agents/prompts/agent-b-business-controller.ts`:
-       - 新增"核心区分：MCP 调用失败 vs MCP 返回审核错误"章节
+   - **根因分析**:
+     1. **提示词混淆**：提示词中混淆了"MCP 调用失败"和"审核未通过"两个概念
+     2. **🔴 关键问题**：`generateMcpNaturalLanguage` 方法把业务失败（审核未通过）错误标记为"❌ MCP 执行失败"！
+   - **修复内容**:
+     - **修复1：MCP 自然语言描述生成**（关键！）:
+       - 修改 `generateMcpNaturalLanguage` 方法
+       - 审核未通过：从"❌ MCP 执行失败"改为"✅ MCP 调用成功，审核结果: 未通过"
+       - 技术性失败：保持"❌ MCP 技术执行失败（需重试）"
+       - 新增 `getBusinessResultDescription` 方法处理业务结果描述
+     - **修复2：Agent B 提示词**:
+       - 新增"核心区分：MCP 调用状态 vs MCP 返回结果"章节
        - 新增"合规校验任务的特殊处理"章节
        - 新增"合规整改任务的特殊处理"章节
        - 修复示例：MCP 调用失败 → REEXECUTE_EXECUTOR
-       - 新增示例：MCP 调用成功 + 审核未通过 → COMPLETE
+       - 修复示例：MCP 调用成功 + 审核未通过 → COMPLETE
+   - **修改文件**:
+     - `src/lib/services/subtask-execution-engine.ts`: `generateMcpNaturalLanguage` 方法重构
+     - `src/lib/agents/prompts/agent-b-business-controller.ts`: 提示词修复
    - **效果**:
      - 合规校验 MCP 技术性失败 → Agent T 重试
      - 合规校验发现审核问题 → 完成校验，流转到整改节点

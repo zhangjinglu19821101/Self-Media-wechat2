@@ -3982,24 +3982,71 @@ export class SubtaskExecutionEngine {
 
   /**
    * 🔴 新增：生成 MCP 自然语言描述
+   * 
+   * 🔴🔴🔴 重要区分：MCP 调用状态 vs MCP 返回结果 🔴🔴🔴
+   * - MCP 调用状态（技术层面）：success / failed（HTTP 是否成功）
+   * - MCP 返回结果（业务层面）：审核通过 / 审核未通过
+   * 
+   * ⚠️ 审核未通过 ≠ MCP 执行失败！
+   * - 审核未通过 = MCP 调用成功 + 业务结果未通过
+   * - MCP 执行失败 = 网络错误、超时等技术性问题
    */
   private generateMcpNaturalLanguage(mcpAttempt: McpAttempt): string {
-    // 🔴 MCP 执行成功的自然语言描述
-    if (mcpAttempt.result.status === 'success' && mcpAttempt.result.data?.success === true) {
-      return '✅ MCP 执行成功！' + this.getSuccessDescription(mcpAttempt.result.data);
-    }
+    // 🔴🔴🔴 核心修复：区分 MCP 调用状态和业务结果 🔴🔴🔴
     
-    // 🔴 MCP 执行失败的自然语言描述
+    // 🔴 情况1：MCP 技术性失败（网络错误、超时等）
     if (mcpAttempt.result.status !== 'success') {
-      return '❌ MCP 执行失败！' + this.getFailureDescription(mcpAttempt.result);
+      return '❌ MCP 技术执行失败（需重试）！' + this.getFailureDescription(mcpAttempt.result);
     }
     
-    if (mcpAttempt.result.data?.success === false) {
-      return '❌ MCP 执行失败！' + this.getBusinessFailureDescription(mcpAttempt.result.data);
+    // 🔴 情况2：MCP 调用成功（status === 'success'）
+    // 无论业务结果是成功还是失败，MCP 调用本身是成功的
+    if (mcpAttempt.result.status === 'success') {
+      const data = mcpAttempt.result.data;
+      
+      // 🔴 子情况2.1：业务成功（data.success === true）
+      if (data?.success === true) {
+        return '✅ MCP 调用成功，业务结果: 通过！' + this.getSuccessDescription(data);
+      }
+      
+      // 🔴 子情况2.2：业务失败（审核未通过等）— 这是正常结果，不是执行失败！
+      if (data?.success === false) {
+        // 🔴 关键修复：审核未通过 = MCP 调用成功 + 业务结果未通过
+        const businessResult = this.getBusinessResultDescription(data);
+        return '✅ MCP 调用成功，' + businessResult;
+      }
+      
+      // 🔴 子情况2.3：没有明确的 success 字段
+      if (data?.approved !== undefined) {
+        // 兼容旧格式：approved 字段
+        return data.approved 
+          ? '✅ MCP 调用成功，审核结果: 通过！' + this.getSuccessDescription(data)
+          : '✅ MCP 调用成功，审核结果: 未通过（发现 ' + (data.issues?.length || 0) + ' 个问题）';
+      }
+      
+      // 🔴 子情况2.4：其他成功情况
+      return '✅ MCP 调用成功！' + this.getSuccessDescription(data || {});
     }
     
-    // 🔴 其他情况（HTTP 成功但没有明确的 success 字段）
+    // 🔴 其他情况（未知状态）
     return '⚠️ MCP 执行结果未知，需要人工判断';
+  }
+
+  /**
+   * 🔴 新增：获取业务结果描述（审核未通过等）
+   */
+  private getBusinessResultDescription(data: any): string {
+    // 合规审核未通过
+    if (data.approved === false || data.issues) {
+      return '审核结果: 未通过（发现 ' + (data.issues?.length || 0) + ' 个合规问题）';
+    }
+    
+    // 有错误信息
+    if (data.error || data.message) {
+      return '业务结果: ' + (data.error || data.message);
+    }
+    
+    return '业务结果: 未通过';
   }
 
   /**

@@ -447,8 +447,9 @@ MCP 执行历史中会显示两种信息：
    - ✅ 只判断: 执行 agent 说了什么 -> 映射到对应的决策
 
 3. 🔴 MCP 执行结果也是执行 agent 的一部分
-   - 如果 MCP 执行历史显示 success -> 执行 agent 已完成 -> 返回 COMPLETE！
-   - 如果 MCP 执行历史显示 failed -> 执行 agent 遇到了问题 -> 决策 EXECUTE_MCP（让 Agent T 处理）
+   - 如果 MCP 调用状态为 success -> 执行 agent 已完成 -> 返回 COMPLETE！
+   - 如果 MCP 调用状态为 failed（技术性失败）-> 需要重试 -> 决策 REEXECUTE_EXECUTOR
+   - ⚠️ 注意：审核未通过 ≠ MCP failed，审核未通过 = MCP success + 业务问题
 
 4. 🔴 只有在执行 agent 明确表示需要你帮助时，你才介入
    - 例如: 执行 agent 说"请 Agent B 帮忙处理 xxx"
