@@ -9604,6 +9604,11 @@ ${resultData.executionSummary}
                     try {
                       const { uploadXhsCardGroup } = await import('./xhs-storage-service');
                       
+                      // 🔥 P1修复：边界情况处理，确保至少有封面和结尾两张卡
+                      if (cards.length < 2) {
+                        throw new Error(`卡片数量不足：生成 ${cards.length} 张，至少需要 2 张（封面+结尾）`);
+                      }
+                      
                       // 确定每张卡片的类型（cover / point / ending）
                       const cardTypes: Array<'cover' | 'point' | 'ending'> = ['cover'];
                       const pointCount = cards.length - 2; // 减去封面和结尾

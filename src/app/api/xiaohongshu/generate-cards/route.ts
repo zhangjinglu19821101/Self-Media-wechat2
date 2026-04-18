@@ -139,6 +139,14 @@ export async function POST(request: NextRequest) {
 
       // 持久化存储
       if (persist && subTaskId) {
+        // 🔥 P1修复：边界情况处理，确保至少有封面和结尾两张卡
+        if (cards.length < 2) {
+          return NextResponse.json(
+            { error: `卡片数量不足：生成 ${cards.length} 张，至少需要 2 张（封面+结尾）` },
+            { status: 400 }
+          );
+        }
+        
         // 确定卡片类型
         const cardTypes: Array<'cover' | 'point' | 'ending'> = ['cover'];
         const pointCount = cards.length - 2; // 减去封面和结尾
@@ -151,7 +159,7 @@ export async function POST(request: NextRequest) {
         const uploadResult = await uploadXhsCardGroup(
           cards.map((card, index) => ({
             base64: card.base64,
-            cardType: cardTypes[index],
+            cardType: cardTypes[index] || 'point',  // 🔥 P1修复：添加兜底逻辑防止越界
             title: index === 0 ? title : (index === cards.length - 1 ? conclusion : points[index - 1]?.title),
             content: index === 0 ? intro : (index === cards.length - 1 ? tags?.join(' ') : points[index - 1]?.content),
           })),
