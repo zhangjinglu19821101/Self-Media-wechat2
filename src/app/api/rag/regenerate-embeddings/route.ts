@@ -3,7 +3,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireAuth } from '@/lib/auth/context';
 import { getChromaDB } from '@/lib/rag/chroma-client';
-import { generateBatchEmbeddings } from '@/lib/embedding/doubao-embedding';
+import { getPlatformEmbedding } from '@/lib/llm/factory';
 
 /**
  * POST /api/rag/regenerate-embeddings
@@ -69,10 +69,11 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // 批量生成向量
+    // 批量生成向量（使用平台 Embedding Client）
     console.log('[RegenerateEmbeddings] 开始生成向量...');
     const texts = documentsWithoutEmbedding.map((doc: any) => doc.text);
-    const embeddings = await generateBatchEmbeddings(texts);
+    const embeddingClient = getPlatformEmbedding();
+    const embeddings = await embeddingClient.embedTexts(texts);
 
     // 将向量添加到文档
     documentsWithoutEmbedding.forEach((doc: any, index: number) => {

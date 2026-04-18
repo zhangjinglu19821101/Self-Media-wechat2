@@ -2,7 +2,7 @@
 
 import { getChromaDB } from './chroma-client';
 import { DocumentProcessor, type DocumentMetadata } from './document-processor';
-import { generateBatchEmbeddings } from '@/lib/embedding/doubao-embedding';
+import { getPlatformEmbedding } from '@/lib/llm/factory';
 import type { DocumentChunk } from './types';
 
 export interface ImportProgress {
@@ -41,10 +41,11 @@ export class VectorImporter {
     // 分割文档
     const chunks = this.processor.splitIntoChunks(text, metadata);
 
-    // 为所有 chunks 生成向量
+    // 为所有 chunks 生成向量（使用平台 Embedding Client）
     console.log(`[VectorImporter] 为 ${chunks.length} 个 chunks 生成向量...`);
     const texts = chunks.map(chunk => chunk.text);
-    const embeddings = await generateBatchEmbeddings(texts);
+    const embeddingClient = getPlatformEmbedding();
+    const embeddings = await embeddingClient.embedTexts(texts);
 
     // 将向量添加到 chunks
     chunks.forEach((chunk, index) => {
@@ -95,10 +96,11 @@ export class VectorImporter {
     for (let i = 0; i < allChunks.length; i += batchSize) {
       const batch = allChunks.slice(i, i + batchSize);
 
-      // 为当前批次生成向量
+      // 为当前批次生成向量（使用平台 Embedding Client）
       console.log(`[VectorImporter] 为批次 ${i + 1}-${Math.min(i + batchSize, allChunks.length)} 生成向量...`);
       const texts = batch.map(chunk => chunk.text);
-      const embeddings = await generateBatchEmbeddings(texts);
+      const embeddingClient = getPlatformEmbedding();
+      const embeddings = await embeddingClient.embedTexts(texts);
 
       // 将向量添加到 chunks
       batch.forEach((chunk, index) => {

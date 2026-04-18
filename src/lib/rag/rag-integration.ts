@@ -4,7 +4,7 @@
 import { getChromaDB } from './chroma-client';
 import { queryAnalyzer } from './query-analyzer';
 import { contextBuilder } from './context-builder';
-import { generateEmbedding } from '@/lib/embedding/doubao-embedding';
+import { getPlatformEmbedding } from '@/lib/llm/factory';
 
 export interface RAGConfig {
   enabled: boolean;
@@ -107,9 +107,10 @@ export class RAGIntegration {
 
     // 检索相关文档
     try {
-      // 为查询文本生成向量
+      // 为查询文本生成向量（使用平台 Embedding Client）
       console.log(`[RAG] 正在生成查询向量...`);
-      const queryEmbedding = await generateEmbedding(query);
+      const embeddingClient = getPlatformEmbedding();
+      const queryEmbedding = await embeddingClient.embedText(query);
       console.log(`[RAG] 查询向量生成成功，维度: ${queryEmbedding.length}`);
 
       // 使用向量进行检索

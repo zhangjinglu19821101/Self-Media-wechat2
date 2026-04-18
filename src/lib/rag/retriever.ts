@@ -2,7 +2,7 @@
 
 import { getChromaDB } from './chroma-client';
 import { RAG_CONFIG } from './config';
-import { generateEmbedding } from '@/lib/embedding/doubao-embedding';
+import { getPlatformEmbedding } from '@/lib/llm/factory';
 import type { SearchResult, DocumentChunk } from './types';
 
 export interface RetrievalOptions {
@@ -37,8 +37,9 @@ export class VectorRetriever {
     const topK = options.topK || RAG_CONFIG.retrieval.topK;
     const minScore = options.minScore || RAG_CONFIG.retrieval.minScore;
 
-    // 为查询文本生成向量
-    const queryEmbedding = await generateEmbedding(query);
+    // 为查询文本生成向量（使用平台 Embedding Client）
+    const embeddingClient = getPlatformEmbedding();
+    const queryEmbedding = await embeddingClient.embedText(query);
 
     const chromaDB = getChromaDB();
     const results = await chromaDB.queryDocuments(collectionName, queryEmbedding, topK);

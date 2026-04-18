@@ -6,7 +6,7 @@
 import { db } from '@/lib/db';
 import { agentTasks } from '@/lib/db/schema';
 import { eq } from 'drizzle-orm';
-import { generateEmbedding } from '@/lib/embedding/doubao-embedding';
+import { getPlatformEmbedding } from '@/lib/llm/factory';
 
 // === 向量同步字段 ===
 export interface TaskVectorData {
@@ -56,8 +56,9 @@ export class TaskVectorSync {
     // 2. 生成向量文本
     const vectorText = this.generateVectorText(task);
 
-    // 3. 生成向量
-    const embedding = await generateEmbedding(vectorText);
+    // 3. 生成向量（使用平台 Embedding Client）
+    const embeddingClient = getPlatformEmbedding();
+    const embedding = await embeddingClient.embedText(vectorText);
 
     // 4. 存储到向量库（使用 FileVectorDB）
     // TODO: 实现 FileVectorDB 存储
@@ -82,8 +83,9 @@ export class TaskVectorSync {
    * 查询相似任务
    */
   static async findSimilarTasks(coreCommand: string, threshold: number = 0.8, limit: number = 5) {
-    // 1. 生成查询向量
-    const queryEmbedding = await generateEmbedding(`核心指令：${coreCommand}`);
+    // 1. 生成查询向量（使用平台 Embedding Client）
+    const embeddingClient = getPlatformEmbedding();
+    const queryEmbedding = await embeddingClient.embedText(`核心指令：${coreCommand}`);
 
     // 2. 在向量库中搜索
     // TODO: 实现 FileVectorDB 搜索

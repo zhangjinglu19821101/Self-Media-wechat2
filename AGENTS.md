@@ -1255,4 +1255,19 @@
    - **P0-2 问题**: 时间不一致 - `new Date().toISOString()` 和 `getCurrentBeijingTime()` 混用
      - **修复**: 统一使用 `getCurrentBeijingTime().toISOString()` 确保时间一致性
    - **修复文件**: `src/lib/services/subtask-execution-engine.ts`
+65. **RAG 向量检索 Embedding API 统一修复**: 解决合规校验任务报错"豆包 Embedding API 密钥未配置"的问题
+   - **问题现象**: 合规校验任务（order_index=4）执行时报错"豆包 Embedding API 密钥未配置"
+   - **根因分析**:
+     - 合规校验 MCP (`WeChatComplianceAuditExecutor`) 使用 RAG 向量检索
+     - RAG 向量检索 (`retriever.ts`) 调用 `generateEmbedding` 来自 `doubao-embedding.ts`
+     - `DoubaoEmbeddingService` 直接检查 `process.env.VOLCENGINE_API_KEY`，环境变量不存在则抛错
+     - 而 `style-similarity-service.ts` 已经使用了正确的 `EmbeddingClient`（来自 `coze-coding-dev-sdk`），可以正常工作
+   - **修复方案**: 将所有使用 `DoubaoEmbeddingService` 的地方改为使用 `getPlatformEmbedding()`（来自 `@/lib/llm/factory`）
+   - **修改文件**:
+     - `src/lib/rag/retriever.ts`: 使用 `getPlatformEmbedding().embedText()` 替代 `generateEmbedding()`
+     - `src/lib/rag/rag-integration.ts`: 同上
+     - `src/lib/services/task-vector-sync.ts`: 同上
+     - `src/lib/rag/vector-importer.ts`: 使用 `getPlatformEmbedding().embedTexts()` 替代 `generateBatchEmbeddings()`
+     - `src/app/api/rag/regenerate-embeddings/route.ts`: 同上
+   - **效果**: RAG 向量检索现在使用与 LLM 工厂统一的 Embedding Client，合规校验任务不再报错
 
