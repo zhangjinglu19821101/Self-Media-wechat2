@@ -1,13 +1,17 @@
 /**
  * 保险案例初始化 API
  * 
- * GET /api/cases/init-insurance-cases
+ * GET /api/cases/init-insurance-cases?reimport=1
  * 
  * 解析 assets 目录下的保险案例 MD 文件，导入到数据库
+ * reimport=1 时先清空旧数据再重新导入（用于修复重复数据）
  */
 
 import { NextRequest, NextResponse } from 'next/server';
 import { industryCaseService } from '@/lib/services/industry-case-service';
+import { db } from '@/lib/db';
+import { industryCaseLibrary } from '@/lib/db/schema';
+import { eq, sql } from 'drizzle-orm';
 import { join } from 'path';
 import { existsSync } from 'fs';
 
@@ -19,15 +23,31 @@ const CASE_FILES = [
 
 export async function GET(request: NextRequest) {
   try {
+    const { searchParams } = new URL(request.url);
+    const reimport = searchParams.get('reimport') === '1';
+    
     const workspacePath = process.env.COZE_WORKSPACE_PATH || '/workspace/projects';
     const assetsDir = join(workspacePath, 'assets');
     
     console.log('[CaseInit] 开始初始化保险案例...');
     console.log(`[CaseInit] 资源目录: ${assetsDir}`);
     
+    // 清空旧数据（reimport 模式）
+    let deletedCount = 0;
+    if (reimport) {
+      console.log('[CaseInit] reimport 模式：清空旧数据...');
+      const deleteResult = await db
+        .delete(industryCaseLibrary)
+        .where(eq(industryCaseLibrary.industry, 'insurance'))
+        .returning({ id: industryCaseLibrary.id });
+      deletedCount = deleteResult.length;
+      console.log(`[CaseInit] 已删除 ${deletedCount} 条旧数据`);
+    }
+    
     let totalSuccess = 0;
     let totalFailed = 0;
-    const fileResults: { file: string; success: number; failed: number }[] = [];
+    let totalSkipped = 0;
+    const fileResults: { file: string; success: number; failed: number; skipped: number }[] = [];
     
     for (const fileName of CASE_FILES) {
       const filePath = join(assetsDir, fileName);
@@ -46,15 +66,17 @@ export async function GET(request: NextRequest) {
         continue;
       }
       
-      // 导入数据库
+      // 导入数据库（含去重）
       const result = await industryCaseService.importCases(cases);
       totalSuccess += result.success;
       totalFailed += result.failed;
+      totalSkipped += result.skipped;
       
       fileResults.push({
         file: fileName,
         success: result.success,
         failed: result.failed,
+        skipped: result.skipped,
       });
     }
     
@@ -63,10 +85,12 @@ export async function GET(request: NextRequest) {
     
     return NextResponse.json({
       success: true,
-      message: '保险案例初始化完成',
+      message: reimport ? '保险案例重新导入完成' : '保险案例初始化完成',
       summary: {
+        deletedOld: deletedCount,
         totalSuccess,
         totalFailed,
+        totalSkipped,
         fileResults,
       },
       stats,

@@ -488,11 +488,28 @@ export async function searchCases(params: CaseSearchParams): Promise<CaseMatchRe
   // 精确匹配按相关度降序
   matchedResults.sort((a, b) => b.relevanceScore - a.relevanceScore);
   
-  // 兜底策略：精确匹配不足 limit 条时，用热门案例补充（已按 useCount 降序）
-  const finalResults = [
-    ...matchedResults,
-    ...fallbackResults.slice(0, Math.max(limit - matchedResults.length, 0)),
-  ];
+  // 兜底策略：仅在有关键词/标签搜索条件时才用热门案例补充
+  // 如果用户没有提供任何搜索条件，允许返回热门案例
+  const hasSearchConditions = !!(keywords || (productTags && productTags.length > 0) || (crowdTags && crowdTags.length > 0) || (sceneTags && sceneTags.length > 0));
+  
+  let finalResults: CaseMatchResult[];
+  if (hasSearchConditions && matchedResults.length > 0) {
+    // 有搜索条件且有匹配结果 → 匹配结果优先，不足时用热门补充
+    finalResults = [
+      ...matchedResults,
+      ...fallbackResults.slice(0, Math.max(limit - matchedResults.length, 0)),
+    ];
+  } else if (hasSearchConditions && matchedResults.length === 0) {
+    // 有搜索条件但无匹配结果 → 不返回不相关的热门案例，保持空列表
+    // 前端会显示"暂无匹配案例"的友好提示
+    finalResults = [];
+  } else {
+    // 无搜索条件 → 返回热门案例（浏览模式）
+    finalResults = [
+      ...matchedResults,
+      ...fallbackResults.slice(0, Math.max(limit - matchedResults.length, 0)),
+    ];
+  }
   
   // 应用分页
   return finalResults.slice(offset, offset + limit);
@@ -582,12 +599,30 @@ export function formatCasesForPrompt(cases: CaseMatchResult[], mode: 'manual' | 
  * @param workspaceId 工作空间ID
  * @returns 导入结果
  */
-export async function importCases(cases: any[], workspaceId?: string): Promise<{ success: number; failed: number }> {
+export async function importCases(cases: any[], workspaceId?: string): Promise<{ success: number; failed: number; skipped: number }> {
   let success = 0;
   let failed = 0;
+  let skipped = 0;
   
   for (const caseData of cases) {
     try {
+      // 去重检查：按 caseId + industry 判断是否已存在
+      const existing = await db
+        .select({ id: industryCaseLibrary.id })
+        .from(industryCaseLibrary)
+        .where(
+          and(
+            eq(industryCaseLibrary.caseId, caseData.caseId),
+            eq(industryCaseLibrary.industry, caseData.industry)
+          )
+        )
+        .limit(1);
+      
+      if (existing.length > 0) {
+        skipped++;
+        continue;
+      }
+      
       await db.insert(industryCaseLibrary).values({
         ...caseData,
         workspaceId,
@@ -600,8 +635,8 @@ export async function importCases(cases: any[], workspaceId?: string): Promise<{
     }
   }
   
-  console.log(`[CaseImport] 导入完成: 成功 ${success}, 失败 ${failed}`);
-  return { success, failed };
+  console.log(`[CaseImport] 导入完成: 成功 ${success}, 跳过(已存在) ${skipped}, 失败 ${failed}`);
+  return { success, failed, skipped };
 }
 
 /**

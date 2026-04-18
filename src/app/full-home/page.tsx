@@ -388,6 +388,7 @@ export default function HomePage() {
   const [selectedCases, setSelectedCases] = useState<CaseItem[]>([]);
   const [recommendedCases, setRecommendedCases] = useState<CaseItem[]>([]);
   const [loadingRecommendedCases, setLoadingRecommendedCases] = useState(false);
+  const [hasSearchedCases, setHasSearchedCases] = useState(false); // 是否已搜索过案例
   const [viewingCase, setViewingCase] = useState<CaseItem | null>(null); // 查看案例详情
 
   // 🔥 结构选择相关状态
@@ -952,10 +953,11 @@ export default function HomePage() {
       const data: any = await apiPost('/api/cases/recommend', { instruction: mainInstruction });
       const cases: CaseItem[] = data?.data?.cases || [];
       setRecommendedCases(cases);
+      setHasSearchedCases(true);
       if (cases.length > 0) {
         toast.success(`推荐了 ${cases.length} 条相关案例`);
       } else {
-        toast.info('暂无匹配案例');
+        toast.info('暂无匹配案例，当前案例库未覆盖该险种');
       }
     } catch (error) {
       console.error('推荐案例失败:', error);
@@ -2395,7 +2397,9 @@ export default function HomePage() {
                           {/* 无推荐结果 */}
                           {mainInstruction.trim() && !loadingRecommendedCases && recommendedCases.length === 0 && (
                             <div className="text-center py-8 text-sm text-slate-400">
-                              点击上方「推荐案例」按钮，获取与指令相关的行业案例
+                              {hasSearchedCases
+                                ? '未找到与指令相关的案例，当前案例库覆盖的险种：意外险、医疗险、重疾险、财产险、雇主责任险'
+                                : '点击上方「推荐案例」按钮，获取与指令相关的行业案例'}
                             </div>
                           )}
                         </div>
