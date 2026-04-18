@@ -37,6 +37,21 @@ const INTERNAL_API_TOKEN = process.env.INTERNAL_API_TOKEN || 'internal-svc-token
 const MAX_CARDS_PER_REQUEST = 10;   // 单次最大卡片数
 const MAX_POINTS_PER_ARTICLE = 7;  // 单篇文章最大要点数
 
+// 有效的卡片数量模式
+const VALID_CARD_COUNT_MODES = ['3-card', '5-card', '7-card'] as const;
+type CardCountMode = typeof VALID_CARD_COUNT_MODES[number];
+
+// 输入校验：subTaskId 格式
+function isValidSubTaskId(subTaskId: string): boolean {
+  // 允许字母、数字、短横、下划线，长度 1-100
+  return /^[\w-]{1,100}$/.test(subTaskId);
+}
+
+// 类型守卫：校验 cardCountMode
+function isValidCardCountMode(mode: string): mode is CardCountMode {
+  return VALID_CARD_COUNT_MODES.includes(mode as CardCountMode);
+}
+
 export async function POST(request: NextRequest) {
   // ========== 认证校验 ==========
   let workspaceId: string | undefined;
@@ -67,7 +82,11 @@ export async function POST(request: NextRequest) {
     } = body;
 
     // 统一使用 cardCountMode（兼容旧参数）
-    const finalCardCountMode = cardCountMode || imageCountMode || '5-card';
+    const rawCardCountMode = cardCountMode || imageCountMode || '5-card';
+    // P1 修复：类型守卫校验 cardCountMode
+    const finalCardCountMode: CardCountMode = isValidCardCountMode(rawCardCountMode) 
+      ? rawCardCountMode 
+      : '5-card';
 
     if (mode === 'article') {
       // 从文章生成卡片组
@@ -86,6 +105,22 @@ export async function POST(request: NextRequest) {
           { error: `要点数量超出限制，最多支持 ${MAX_POINTS_PER_ARTICLE} 个` },
           { status: 400 }
         );
+      }
+
+      // P1 修复：持久化时校验 subTaskId 格式
+      if (persist) {
+        if (!subTaskId) {
+          return NextResponse.json(
+            { error: '持久化存储时 subTaskId 为必填字段' },
+            { status: 400 }
+          );
+        }
+        if (!isValidSubTaskId(subTaskId)) {
+          return NextResponse.json(
+            { error: 'subTaskId 格式无效，仅允许字母、数字、短横、下划线，长度 1-100' },
+            { status: 400 }
+          );
+        }
       }
 
       // 生成卡片
@@ -122,7 +157,7 @@ export async function POST(request: NextRequest) {
           })),
           subTaskId,
           {
-            cardCountMode: finalCardCountMode as '3-card' | '5-card' | '7-card',
+            cardCountMode: finalCardCountMode,  // P1 修复：已通过类型守卫校验，无需断言
             gradientScheme,
             articleTitle: title,
             articleIntro: intro,
@@ -204,22 +239,38 @@ export async function POST(request: NextRequest) {
  * 
  * 查询参数：
  * - subTaskId: 子任务 ID
+ * - workspaceId: 工作空间 ID（内部调用时必需）
  */
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const subTaskId = searchParams.get('subTaskId');
+  const queryWorkspaceId = searchParams.get('workspaceId');
 
   // 如果提供了 subTaskId，返回持久化的卡片 URL
   if (subTaskId) {
+    // P1 修复：校验 subTaskId 格式
+    if (!isValidSubTaskId(subTaskId)) {
+      return NextResponse.json({
+        success: false,
+        error: 'subTaskId 格式无效',
+      }, { status: 400 });
+    }
+    
     try {
-      // 认证校验
+      // 认证校验 + 获取 workspaceId
+      let workspaceId: string | undefined;
       const internalToken = request.headers.get('x-internal-token');
       if (internalToken !== INTERNAL_API_TOKEN) {
         const authResult = await requireAuth(request);
         if (authResult instanceof NextResponse) return authResult;
+        workspaceId = getWorkspaceId(request);
+      } else {
+        // P0 修复：内部调用时从 URL 参数获取 workspaceId
+        workspaceId = queryWorkspaceId || undefined;
       }
 
-      const cards = await getCardGroupUrlsBySubTaskId(subTaskId);
+      // P0 修复：传递 workspaceId 进行权限隔离
+      const cards = await getCardGroupUrlsBySubTaskId(subTaskId, 604800, workspaceId);
 
       if (cards.length === 0) {
         return NextResponse.json({

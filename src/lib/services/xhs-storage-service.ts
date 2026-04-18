@@ -12,7 +12,7 @@
 import { S3Storage } from 'coze-coding-dev-sdk';
 import { db } from '@/lib/db';
 import { xhsCards, xhsCardGroups } from '@/lib/db/schema/xhs-cards';
-import { eq, and, inArray } from 'drizzle-orm';
+import { eq, and, inArray, sql } from 'drizzle-orm';
 import type { XhsCard, NewXhsCard, XhsCardGroup, NewXhsCardGroup } from '@/lib/db/schema/xhs-cards';
 
 // S3 存储客户端（单例）
@@ -129,6 +129,8 @@ export async function uploadXhsCard(
 /**
  * 批量上传卡片组
  * 
+ * P1 修复：增加错误处理和部分失败支持
+ * 
  * @param cards - 卡片数据数组（Base64）
  * @param subTaskId - 子任务 ID
  * @param options - 可选参数
@@ -151,43 +153,63 @@ export async function uploadXhsCardGroup(
   } = {}
 ): Promise<CardGroupUploadResult> {
   const uploadResults: CardUploadResult[] = [];
+  const failedIndices: number[] = [];
+  const storage = getStorage();
   
-  // 逐张上传卡片
+  // 逐张上传卡片，捕获单张失败不影响整体
   for (let i = 0; i < cards.length; i++) {
     const card = cards[i];
-    const result = await uploadXhsCard(
-      card.base64,
-      subTaskId,
-      i,
-      {
-        cardType: card.cardType,
-        titleSnapshot: card.title,
-        contentSnapshot: card.content,
-        gradientScheme: options.gradientScheme,
-        workspaceId: options.workspaceId,
-        commandResultId: options.commandResultId,
-      }
-    );
-    uploadResults.push(result);
+    try {
+      const result = await uploadXhsCard(
+        card.base64,
+        subTaskId,
+        i,
+        {
+          cardType: card.cardType,
+          titleSnapshot: card.title,
+          contentSnapshot: card.content,
+          gradientScheme: options.gradientScheme,
+          workspaceId: options.workspaceId,
+          commandResultId: options.commandResultId,
+        }
+      );
+      uploadResults.push(result);
+    } catch (error) {
+      console.error(`[XhsStorage] 上传卡片 ${i} 失败:`, error);
+      failedIndices.push(i);
+    }
   }
+  
+  // P1 修复：如果全部失败，抛出错误
+  if (uploadResults.length === 0) {
+    throw new Error('所有卡片上传失败');
+  }
+  
+  // 确定状态：全部成功=active，部分失败=partial
+  const groupStatus = failedIndices.length === 0 ? 'active' : 'partial';
   
   // 创建卡片组记录
   const [groupRecord] = await db.insert(xhsCardGroups).values({
     subTaskId,
     commandResultId: options.commandResultId,
-    totalCards: cards.length,
+    totalCards: uploadResults.length,  // 实际成功的卡片数
     cardCountMode: options.cardCountMode || '5-card',
     gradientScheme: options.gradientScheme,
     articleTitle: options.articleTitle,
     articleIntro: options.articleIntro,
     cardIds: JSON.stringify(uploadResults.map(r => r.cardId)),
-    status: 'active',
+    status: groupStatus,
     workspaceId: options.workspaceId,
   }).returning();
   
+  // 如果有失败的，记录警告日志
+  if (failedIndices.length > 0) {
+    console.warn(`[XhsStorage] 卡片组 ${groupRecord.id} 部分上传失败，失败索引: ${failedIndices.join(', ')}`);
+  }
+  
   return {
     groupId: groupRecord.id,
-    totalCards: cards.length,
+    totalCards: uploadResults.length,
     cards: uploadResults,
   };
 }
@@ -256,10 +278,12 @@ export async function getCardSignedUrls(
  * 
  * @param subTaskId - 子任务 ID
  * @param expireTime - 有效期（秒），默认 7 天
+ * @param workspaceId - 工作空间 ID（可选，用于权限验证）
  */
 export async function getCardGroupUrlsBySubTaskId(
   subTaskId: string,
-  expireTime: number = 604800
+  expireTime: number = 604800,
+  workspaceId?: string
 ): Promise<Array<{
   cardId: string;
   cardIndex: number;
@@ -267,10 +291,13 @@ export async function getCardGroupUrlsBySubTaskId(
   signedUrl: string;
   titleSnapshot: string | null;
 }>> {
+  // 构建查询条件
+  const whereConditions = workspaceId
+    ? and(eq(xhsCardGroups.subTaskId, subTaskId), eq(xhsCardGroups.workspaceId, workspaceId))
+    : eq(xhsCardGroups.subTaskId, subTaskId);
+  
   // 查询卡片组
-  const [group] = await db.select().from(xhsCardGroups).where(
-    eq(xhsCardGroups.subTaskId, subTaskId)
-  ).limit(1);
+  const [group] = await db.select().from(xhsCardGroups).where(whereConditions).limit(1);
   
   if (!group) {
     return [];
@@ -342,12 +369,11 @@ export async function deleteCard(cardId: string): Promise<boolean> {
 export async function cleanupExpiredCards(beforeDate: Date): Promise<number> {
   const storage = getStorage();
   
-  // 查询过期卡片
+  // 查询过期卡片（状态为 expired 且过期时间早于阈值）
   const expiredCards = await db.select().from(xhsCards).where(
     and(
       eq(xhsCards.status, 'expired'),
-      // @ts-ignore - Drizzle 类型推断问题
-      sql`${xhsCards.expiresAt} < ${beforeDate}`
+      sql`${xhsCards.expiresAt} IS NOT NULL AND ${xhsCards.expiresAt} < ${beforeDate}`
     )
   );
   
