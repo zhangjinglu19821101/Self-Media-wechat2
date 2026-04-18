@@ -1013,3 +1013,26 @@
      - 第一层、第二层、第三层（动态发现）全部使用 `>= MIN_CONTENT_LENGTH`
      - 与 `isValidContentText` 函数保持一致
    - **修复文件**: `src/lib/services/result-text-extractor.ts`
+51. **创作流程执行者修改 + 数据库连接统一**:
+   - **公众号流程修改**:
+     - 合规校验：执行者从 `insurance-d` 改为 `T`（技术专家）
+     - 上传草稿箱：执行者从 `insurance-d` 改为 `T`（技术专家）
+     - 原因：合规校验和技术上传是技术操作，应由技术专家完成
+   - **小红书流程修改**:
+     - 完成合规整改：执行者从 `T` 改为 `insurance-xiaohongshu`（小红书创作专家）
+     - 原因：合规整改是创作纠正，应由内容创作专家完成
+   - **数据库连接统一**:
+     - 问题：项目代码使用 `PGDATABASE_URL` 环境变量，db.sh 脚本使用硬编码连接字符串
+     - 影响：两边连接不同的数据库，定时任务读取不到正确的数据
+     - 修复：`src/lib/db/index.ts` 改为直接使用 db.sh 中的连接字符串
+     - 移除对 `PGDATABASE_URL` 环境变量的依赖
+   - **Next.js 配置修复**:
+     - 问题：Next.js 检测到多个 lockfile（项目根目录和父目录）
+     - 修复：`next.config.ts` 启用 `outputFileTracingRoot` 配置
+   - **修复文件**:
+     - `src/lib/agents/flow-templates.ts`: 修改 WECHAT_OFFICIAL_FLOW_TEMPLATE 和 XIAOHONGSHU_FLOW_TEMPLATE
+     - `src/lib/db/index.ts`: 统一数据库连接
+     - `next.config.ts`: 启用 outputFileTracingRoot
+   - **验证结果**:
+     - 定时任务执行成功，无数据库连接错误
+     - 服务健康检查通过
