@@ -136,7 +136,7 @@ export const XIAOHONGSHU_FLOW_TEMPLATE = createFlowTemplate(
     { id: 'node-xhs-2', executor: 'insurance-xiaohongshu', title: '创作小红书图文', description: '根据分析结果创作小红书图文内容（JSON格式），包含标题、要点卡片、正文、标签', styleKey: 'xiaohongshu_write' },
     { id: 'node-xhs-3', executor: 'user_preview_edit', title: '预览修改图文', description: '预览小红书图文初稿，可修改标题/要点/正文/标签或直接确认继续', styleKey: 'xiaohongshu_preview' },
     { id: 'node-xhs-4', executor: 'T', title: '合规校验', description: '对小红书图文进行合规性校验，检查是否包含绝对化用语、虚假承诺、违规营销等内容', styleKey: 'xiaohongshu_check' },
-    { id: 'node-xhs-5', executor: 'T', title: '完成合规整改', description: '依据合规校验结果，完成小红书图文整改', styleKey: 'xiaohongshu_polish' },
+    { id: 'node-xhs-5', executor: 'insurance-xiaohongshu', title: '完成合规整改', description: '依据合规校验结果，完成小红书图文整改', styleKey: 'xiaohongshu_polish' },
     { id: 'node-xhs-6', executor: 'B', title: '生成预览图', description: '生成小红书图文预览图，供用户手动发布使用', styleKey: 'xiaohongshu_check' },
   ]
 );
