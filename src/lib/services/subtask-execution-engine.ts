@@ -9663,6 +9663,7 @@ ${resultData.executionSummary}
                               // 🔥 存储OSS key（永久有效），而非签名URL（会过期）
                               xhsCardStorageKeys: uploadResult.cards.map(c => c.storageKey),
                               xhsCardGroupId: uploadResult.groupId,
+                              xhsCardStorageType: 'oss',  // 🔥 P1-1: 标识存储类型为 OSS
                               xhsFullText: xhsData.fullText || '',
                               xhsTags: xhsData.tags || [],
                               xhsIntro: xhsData.intro || '',
@@ -9700,6 +9701,7 @@ ${resultData.executionSummary}
                       }
                       
                       // 本地降级时仍存路径到extInfo（兼容旧逻辑）
+                      // 🔥 P1-1: 添加存储类型标识，区分 OSS 和本地存储
                       if (cardUrls.length > 0) {
                         const { db: _db2 } = await import('@/lib/db');
                         const { articleContent: _act } = await import('@/lib/db/schema');
@@ -9717,12 +9719,15 @@ ${resultData.executionSummary}
                               extInfo: {
                                 ...existingExt,
                                 xhsCardUrls: cardUrls,
+                                xhsCardStorageType: 'local',  // 🔥 P1-1: 标识存储类型为本地
                                 xhsFullText: xhsData.fullText || '',
                                 xhsTags: xhsData.tags || [],
                                 xhsIntro: xhsData.intro || '',
                               },
                             } as any)
                             .where(_eq2(_act.articleId, savedArticle.articleId));
+                          
+                          console.log('[SubtaskEngine] 🎨 小红书卡片已保存到本地（降级模式）, paths:', cardUrls);
                         }
                       }
                     }

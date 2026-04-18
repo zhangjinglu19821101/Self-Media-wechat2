@@ -6,6 +6,8 @@
  * 
  * 支持左右滑动翻页查看多张卡片
  * 
+ * P1-3 增强：支持展示已生成的 OSS 卡片图片（优先级高于 CSS 渲染）
+ * 
  * 使用共享模块：@/lib/xhs-parser
  */
 
@@ -15,7 +17,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Eye, Copy, Download, CheckCircle2, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Eye, Copy, Download, CheckCircle2, ChevronLeft, ChevronRight, ImageIcon } from 'lucide-react';
 import { toast } from 'sonner';
 import Link from 'next/link';
 import { getCurrentWorkspaceId } from '@/lib/api/client';
@@ -27,6 +29,15 @@ import {
   parseXhsContent as parseXhsContentFromLib,
   type XiaohongshuContent
 } from '@/lib/xhs-parser';
+
+// 🔥 P1-3: 已持久化的卡片（从 OSS 加载）
+interface PersistedCardUrl {
+  cardId: string;
+  cardIndex: number;
+  cardType: string;  // 'cover' | 'point' | 'ending'
+  url: string;       // 签名 URL
+  title: string | null;
+}
 
 interface XiaohongshuPreviewProps {
   /** 任务ID，用于加载内容 */
@@ -67,6 +78,10 @@ export function XiaohongshuPreview({
   const [content, setContent] = useState<XiaohongshuContent | null>(externalContent || null);
   const [loading, setLoading] = useState(false);
   const [copied, setCopied] = useState(false);
+  
+  // 🔥 P1-3: 已持久化的卡片图片（从 OSS 加载）
+  const [persistedCards, setPersistedCards] = useState<PersistedCardUrl[]>([]);
+  const [loadingPersistedCards, setLoadingPersistedCards] = useState(false);
   
   // 🔥 翻页状态
   const [currentPage, setCurrentPage] = useState(0);
@@ -172,6 +187,29 @@ export function XiaohongshuPreview({
             const parsed = parseXhsContent(rawContent);
             if (parsed) {
               setContent(parsed);
+              
+              // 🔥 P1-3: 尝试加载已持久化的卡片图片（从 OSS）
+              if (actualTaskId) {
+                setLoadingPersistedCards(true);
+                try {
+                  const cardsResponse = await fetch(
+                    `/api/xiaohongshu/generate-cards?subTaskId=${actualTaskId}`,
+                    { headers: { 'x-workspace-id': workspaceId } }
+                  );
+                  if (cardsResponse.ok) {
+                    const cardsData = await cardsResponse.json();
+                    if (cardsData.success && cardsData.cards?.length > 0) {
+                      setPersistedCards(cardsData.cards);
+                      console.log('[XiaohongshuPreview] 已加载持久化卡片:', cardsData.cards.length, '张');
+                    }
+                  }
+                } catch (cardsErr) {
+                  console.warn('[XiaohongshuPreview] 加载持久化卡片失败:', cardsErr);
+                  // 不影响主流程
+                } finally {
+                  setLoadingPersistedCards(false);
+                }
+              }
             } else {
               toast.error('无法解析小红书图文内容');
             }
@@ -561,23 +599,55 @@ export function XiaohongshuPreview({
 
             {/* 操作按钮 */}
             <div className="flex items-center justify-center gap-3 pt-2">
-              {(content.content || content.fullText) && (
-                <Button variant="outline" size="sm" onClick={handleCopyFullText}>
-                  {copied ? <CheckCircle2 className="w-4 h-4 mr-1" /> : <Copy className="w-4 h-4 mr-1" />}
-                  {copied ? '已复制' : '复制正文'}
-                </Button>
+              {/* 🔥 P1-3: 如果有已持久化的卡片，优先展示"查看已生成卡片"按钮 */}
+              {persistedCards.length > 0 ? (
+                <>
+                  <Link href={`/xiaohongshu-card?taskId=${taskId}`} className="inline-flex">
+                    <Button size="sm" className="bg-gradient-to-r from-green-500 to-emerald-600 text-white">
+                      <ImageIcon className="w-4 h-4 mr-1" />
+                      查看已生成卡片 ({persistedCards.length}张)
+                    </Button>
+                  </Link>
+                  <Button variant="outline" size="sm" onClick={handleCopyFullText}>
+                    {copied ? <CheckCircle2 className="w-4 h-4 mr-1" /> : <Copy className="w-4 h-4 mr-1" />}
+                    {copied ? '已复制' : '复制正文'}
+                  </Button>
+                </>
+              ) : (
+                <>
+                  {(content.content || content.fullText) && (
+                    <Button variant="outline" size="sm" onClick={handleCopyFullText}>
+                      {copied ? <CheckCircle2 className="w-4 h-4 mr-1" /> : <Copy className="w-4 h-4 mr-1" />}
+                      {copied ? '已复制' : '复制正文'}
+                    </Button>
+                  )}
+                  <Button variant="outline" size="sm" onClick={handleCopyJson}>
+                    <Copy className="w-4 h-4 mr-1" />
+                    复制 JSON
+                  </Button>
+                  <Link href={`/xiaohongshu-card?taskId=${taskId}`} className="inline-flex">
+                    <Button size="sm" className="bg-gradient-to-r from-red-500 to-pink-500 text-white">
+                      <Download className="w-4 h-4 mr-1" />
+                      生成卡片图
+                    </Button>
+                  </Link>
+                </>
               )}
-              <Button variant="outline" size="sm" onClick={handleCopyJson}>
-                <Copy className="w-4 h-4 mr-1" />
-                复制 JSON
-              </Button>
-              <Link href={`/xiaohongshu-card?taskId=${taskId}`} className="inline-flex">
-                <Button size="sm" className="bg-gradient-to-r from-red-500 to-pink-500 text-white">
-                  <Download className="w-4 h-4 mr-1" />
-                  生成卡片图
-                </Button>
-              </Link>
             </div>
+            
+            {/* 🔥 P1-3: 如果有已持久化的卡片，显示提示 */}
+            {persistedCards.length > 0 && (
+              <p className="text-xs text-green-600 text-center mt-2">
+                ✅ 已生成 {persistedCards.length} 张卡片图片，点击上方按钮查看和下载
+              </p>
+            )}
+            
+            {/* 加载持久化卡片中的提示 */}
+            {loadingPersistedCards && (
+              <p className="text-xs text-gray-400 text-center mt-2">
+                正在检查已生成的卡片...
+              </p>
+            )}
           </div>
         ) : (
           <div className="text-center py-12 text-gray-400">

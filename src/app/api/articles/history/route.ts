@@ -120,6 +120,7 @@ export async function GET(request: NextRequest) {
     }
 
     // 3. 合并所有版本
+    // 🔥 P2: 在返回中增加 extInfo 字段，包含小红书卡片信息
     const allVersions = [
       ...articles.map(article => ({
         versionType: 'saved',
@@ -131,6 +132,14 @@ export async function GET(request: NextRequest) {
         updateTime: article.updateTime,
         contentStatus: article.contentStatus,
         version: article.version,
+        // 🔥 P2: 返回 extInfo，包含小红书卡片信息
+        extInfo: (article as any).extInfo || null,
+        // 🔥 P2: 便捷字段 - 小红书卡片相关信息
+        xhsCardGroupId: (article as any).extInfo?.xhsCardGroupId || null,
+        xhsCardStorageKeys: (article as any).extInfo?.xhsCardStorageKeys || null,
+        xhsCardUrls: (article as any).extInfo?.xhsCardUrls || null,
+        xhsFullText: (article as any).extInfo?.xhsFullText || null,
+        xhsTags: (article as any).extInfo?.xhsTags || null,
       })),
       ...historyVersions,
     ];
