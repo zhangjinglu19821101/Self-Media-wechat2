@@ -161,6 +161,10 @@ export function XiaohongshuPreview({
   // 计算总卡片数
   const totalCards = content ? (1 + (content.points?.length || 0) + (content.conclusion ? 1 : 0)) : 0;
 
+  // 🔥 点赞/收藏状态（仅UI展示）
+  const [isLiked, setIsLiked] = useState(false);
+  const [isCollected, setIsCollected] = useState(false);
+
   // 当外部内容变化时同步
   useEffect(() => {
     if (externalContent) {
@@ -378,97 +382,105 @@ export function XiaohongshuPreview({
           </div>
         ) : content ? (
           <div className="space-y-6">
-            {/* 手机模拟器预览 */}
+            {/* 🔥 小红书风格模拟器 */}
             <div className="flex justify-center">
               <div className="w-[375px] bg-white rounded-3xl shadow-2xl border border-gray-200 overflow-hidden">
-                {/* 手机顶部 */}
-                <div className="bg-gray-100 px-4 py-2 flex items-center justify-center">
-                  <div className="w-20 h-1 bg-gray-300 rounded-full" />
+                
+                {/* 顶部状态栏 */}
+                <div className="bg-white px-5 py-2 flex items-center justify-between text-xs text-gray-600">
+                  <span>9:41</span>
+                  <div className="flex items-center gap-1">
+                    <span>📶</span>
+                    <span>🔋</span>
+                  </div>
                 </div>
-
-                {/* 小红书风格内容区 */}
-                <div className="px-4 py-3 space-y-3">
-                  {/* 标题 */}
-                  <h1 className="text-lg font-bold text-gray-900 leading-snug">
-                    {content.title}
-                  </h1>
-
-                  {/* 引言 */}
-                  {content.intro && (
-                    <p className="text-sm text-gray-500">{content.intro}</p>
-                  )}
-
-                  {/* 🔥 翻页卡片区域 */}
-                  {totalCards > 0 && (
+                
+                {/* 导航栏 */}
+                <div className="bg-white px-4 py-3 flex items-center justify-between border-b border-gray-100">
+                  <button className="text-gray-600 text-lg">←</button>
+                  <span className="font-semibold text-gray-800">笔记详情</span>
+                  <button className="text-gray-600 text-lg">⋯</button>
+                </div>
+                
+                {/* 主内容区：图片+右侧操作栏 */}
+                <div className="relative bg-black">
+                  
+                  {/* 🔥 图片卡片区域（竖版比例 3:4） */}
+                  {totalCards > 0 ? (
                     <div 
-                      className="relative"
+                      className="relative aspect-[3/4] overflow-hidden"
                       onTouchStart={onTouchStart}
                       onTouchMove={onTouchMove}
                       onTouchEnd={onTouchEnd}
                     >
-                      {/* 卡片容器 */}
-                      <div className="overflow-hidden rounded-xl">
-                        {/* 当前页卡片 */}
-                        <div
-                          className="transition-transform duration-300 ease-out"
-                          style={{ transform: `translateX(-${currentPage * 100}%)` }}
-                        >
-                          <div className="flex" style={{ width: `${totalCards * 100}%` }}>
-                            {/* 封面卡 (第0页) */}
-                            <div style={{ width: `${100 / totalCards}%` }} className="flex-shrink-0 px-1">
-                              <div
-                                className="rounded-xl p-5 text-white min-h-[280px] flex flex-col justify-center"
-                                style={{
-                                  background: `linear-gradient(135deg, ${GRADIENT_SCHEMES[0].from}, ${GRADIENT_SCHEMES[0].to})`,
-                                }}
-                              >
-                                <div className="text-xs opacity-80 mb-2">📕 封面</div>
-                                <div className="text-xl font-bold leading-tight">{content.title}</div>
-                                {content.intro && (
-                                  <div className="text-sm opacity-90 mt-3 leading-relaxed">{content.intro}</div>
-                                )}
-                              </div>
-                            </div>
-                            
-                            {/* 要点卡片 (第1~N页) */}
-                            {content.points?.map((point, idx) => {
-                              const scheme = GRADIENT_SCHEMES[(idx + 1) % GRADIENT_SCHEMES.length];
-                              return (
-                                <div key={idx} style={{ width: `${100 / totalCards}%` }} className="flex-shrink-0 px-1">
-                                  <div
-                                    className="rounded-xl p-5 text-white min-h-[280px] flex flex-col justify-center"
-                                    style={{
-                                      background: `linear-gradient(135deg, ${scheme.from}, ${scheme.to})`,
-                                    }}
-                                  >
-                                    <div className="text-xs opacity-80 mb-2">
-                                      📌 要点 {idx + 1}
-                                    </div>
-                                    <div className="text-lg font-bold leading-tight">{point.title}</div>
-                                    {point.content && (
-                                      <div className="text-sm opacity-90 mt-3 leading-relaxed">{point.content}</div>
-                                    )}
-                                  </div>
-                                </div>
-                              );
-                            })}
-                            
-                            {/* 结尾卡 (最后一页) */}
-                            {content.conclusion && (
-                              <div style={{ width: `${100 / totalCards}%` }} className="flex-shrink-0 px-1">
-                                <div
-                                  className="rounded-xl p-5 text-white min-h-[280px] flex flex-col justify-center"
-                                  style={{
-                                    background: `linear-gradient(135deg, #f59e0b, #ef4444)`,
-                                  }}
-                                >
-                                  <div className="text-xs opacity-80 mb-2">✨ 结语</div>
-                                  <div className="text-lg font-bold leading-tight">{content.conclusion}</div>
-                                </div>
-                              </div>
+                      {/* 卡片滑动容器 */}
+                      <div
+                        className="flex h-full transition-transform duration-300 ease-out"
+                        style={{ 
+                          transform: `translateX(-${currentPage * 100}%)`,
+                          width: `${totalCards * 100}%`
+                        }}
+                      >
+                        {/* 封面卡 */}
+                        <div className="flex-shrink-0 h-full flex items-center justify-center p-6" style={{ width: `${100 / totalCards}%` }}>
+                          <div
+                            className="w-full h-full rounded-2xl flex flex-col justify-center px-5 py-6 text-white shadow-lg"
+                            style={{
+                              background: `linear-gradient(135deg, ${GRADIENT_SCHEMES[0].from}, ${GRADIENT_SCHEMES[0].to})`,
+                            }}
+                          >
+                            <div className="text-xs opacity-70 mb-3 font-medium">📕 封面</div>
+                            <div className="text-xl font-bold leading-tight mb-3">{content.title}</div>
+                            {content.intro && (
+                              <div className="text-sm opacity-90 leading-relaxed">{content.intro}</div>
                             )}
                           </div>
                         </div>
+                        
+                        {/* 要点卡片 */}
+                        {content.points?.map((point, idx) => {
+                          const scheme = GRADIENT_SCHEMES[(idx + 1) % GRADIENT_SCHEMES.length];
+                          return (
+                            <div key={idx} className="flex-shrink-0 h-full flex items-center justify-center p-6" style={{ width: `${100 / totalCards}%` }}>
+                              <div
+                                className="w-full h-full rounded-2xl flex flex-col justify-center px-5 py-6 text-white shadow-lg"
+                                style={{
+                                  background: `linear-gradient(135deg, ${scheme.from}, ${scheme.to})`,
+                                }}
+                              >
+                                <div className="text-xs opacity-70 mb-3 font-medium">📌 要点 {idx + 1}</div>
+                                <div className="text-xl font-bold leading-tight mb-3">{point.title}</div>
+                                {point.content && (
+                                  <div className="text-sm opacity-90 leading-relaxed">{point.content}</div>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
+                        
+                        {/* 结尾卡 */}
+                        {content.conclusion && (
+                          <div className="flex-shrink-0 h-full flex items-center justify-center p-6" style={{ width: `${100 / totalCards}%` }}>
+                            <div
+                              className="w-full h-full rounded-2xl flex flex-col justify-center px-5 py-6 text-white shadow-lg"
+                              style={{
+                                background: 'linear-gradient(135deg, #374151, #111827)',
+                              }}
+                            >
+                              <div className="text-xs opacity-70 mb-3 font-medium">✨ 结语</div>
+                              <div className="text-xl font-bold leading-tight mb-3">{content.conclusion}</div>
+                              {content.tags && content.tags.length > 0 && (
+                                <div className="flex flex-wrap gap-2 mt-4">
+                                  {content.tags.map((tag, tIdx) => (
+                                    <span key={tIdx} className="text-xs bg-white/20 px-2.5 py-1 rounded-full">
+                                      #{tag}
+                                    </span>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        )}
                       </div>
                       
                       {/* 左右翻页按钮 */}
@@ -477,76 +489,128 @@ export function XiaohongshuPreview({
                           <button
                             onClick={goToPrevPage}
                             disabled={currentPage === 0}
-                            className={`absolute left-0 top-1/2 -translate-y-1/2 -translate-x-2 w-8 h-8 rounded-full bg-white/90 shadow-lg flex items-center justify-center transition-all ${
-                              currentPage === 0 ? 'opacity-30 cursor-not-allowed' : 'hover:bg-white hover:scale-110'
+                            className={`absolute left-2 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-black/40 flex items-center justify-center transition-all ${
+                              currentPage === 0 ? 'opacity-20' : 'hover:bg-black/60'
                             }`}
                           >
-                            <ChevronLeft className="w-5 h-5 text-gray-600" />
+                            <ChevronLeft className="w-5 h-5 text-white" />
                           </button>
                           <button
                             onClick={goToNextPage}
                             disabled={currentPage === totalCards - 1}
-                            className={`absolute right-0 top-1/2 -translate-y-1/2 translate-x-2 w-8 h-8 rounded-full bg-white/90 shadow-lg flex items-center justify-center transition-all ${
-                              currentPage === totalCards - 1 ? 'opacity-30 cursor-not-allowed' : 'hover:bg-white hover:scale-110'
+                            className={`absolute right-2 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-black/40 flex items-center justify-center transition-all ${
+                              currentPage === totalCards - 1 ? 'opacity-20' : 'hover:bg-black/60'
                             }`}
                           >
-                            <ChevronRight className="w-5 h-5 text-gray-600" />
+                            <ChevronRight className="w-5 h-5 text-white" />
                           </button>
                         </>
                       )}
                       
                       {/* 页码指示器 */}
                       {totalCards > 1 && (
-                        <div className="flex items-center justify-center gap-1.5 mt-3">
+                        <div className="absolute bottom-3 left-0 right-0 flex items-center justify-center gap-1.5">
                           {Array.from({ length: totalCards }).map((_, idx) => (
                             <button
                               key={idx}
                               onClick={() => goToPage(idx)}
-                              className={`w-2 h-2 rounded-full transition-all ${
-                                idx === currentPage 
-                                  ? 'bg-red-500 w-4' 
-                                  : 'bg-gray-300 hover:bg-gray-400'
+                              className={`h-1 rounded-full transition-all ${
+                                idx === currentPage ? 'bg-white w-4' : 'bg-white/50 w-1'
                               }`}
                             />
                           ))}
                         </div>
                       )}
                       
-                      {/* 页码文字 */}
+                      {/* 页码 */}
                       {totalCards > 1 && (
-                        <div className="text-center text-xs text-gray-400 mt-1">
-                          {currentPage + 1} / {totalCards}
+                        <div className="absolute top-3 right-3 bg-black/50 text-white text-xs px-2 py-1 rounded-full">
+                          {currentPage + 1}/{totalCards}
                         </div>
                       )}
                     </div>
+                  ) : (
+                    <div className="aspect-[3/4] flex items-center justify-center text-gray-400">
+                      暂无内容
+                    </div>
                   )}
-
-                  {/* 文字区（新信封格式 content 或旧格式 fullText） */}
-                  {(content.content || content.fullText) && (
-                    <div className="border-t border-gray-100 pt-3">
-                      <div className="text-xs text-gray-400 mb-2">📝 文字区内容</div>
-                      <div 
-                        className={`text-sm text-gray-800 leading-relaxed whitespace-pre-wrap overflow-hidden transition-all duration-300 ${
-                          isFullTextExpanded ? 'max-h-none' : 'max-h-40'
-                        }`}
-                      >
-                        {content.content || content.fullText}
+                  
+                  {/* 🔥 右侧悬浮操作栏（小红书特色） */}
+                  <div className="absolute right-3 bottom-16 flex flex-col items-center gap-5">
+                    {/* 头像 */}
+                    <div className="relative">
+                      <div className="w-10 h-10 rounded-full bg-gradient-to-br from-red-400 to-pink-500 flex items-center justify-center text-white text-sm font-bold">
+                        AI
                       </div>
-                      {/* 展开/收起按钮 */}
+                    </div>
+                    
+                    {/* 点赞 */}
+                    <button 
+                      onClick={() => setIsLiked(!isLiked)}
+                      className="flex flex-col items-center gap-1"
+                    >
+                      <div className={`w-10 h-10 rounded-full ${isLiked ? 'bg-red-500' : 'bg-white/20'} flex items-center justify-center`}>
+                        <span className="text-lg">{isLiked ? '❤️' : '🤍'}</span>
+                      </div>
+                      <span className="text-white text-xs">1.2w</span>
+                    </button>
+                    
+                    {/* 收藏 */}
+                    <button 
+                      onClick={() => setIsCollected(!isCollected)}
+                      className="flex flex-col items-center gap-1"
+                    >
+                      <div className={`w-10 h-10 rounded-full ${isCollected ? 'bg-yellow-500' : 'bg-white/20'} flex items-center justify-center`}>
+                        <span className="text-lg">{isCollected ? '⭐' : '☆'}</span>
+                      </div>
+                      <span className="text-white text-xs">8562</span>
+                    </button>
+                    
+                    {/* 评论 */}
+                    <button className="flex flex-col items-center gap-1">
+                      <div className="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center">
+                        <span className="text-lg">💬</span>
+                      </div>
+                      <span className="text-white text-xs">328</span>
+                    </button>
+                    
+                    {/* 分享 */}
+                    <button className="flex flex-col items-center gap-1">
+                      <div className="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center">
+                        <span className="text-lg">↗️</span>
+                      </div>
+                      <span className="text-white text-xs">分享</span>
+                    </button>
+                  </div>
+                </div>
+                
+                {/* 🔥 底部正文区 */}
+                <div className="bg-white p-4">
+                  {/* 标题 */}
+                  <h2 className="text-base font-bold text-gray-900 mb-2 leading-snug">
+                    {content.title || '小红书笔记'}
+                  </h2>
+                  
+                  {/* 正文 */}
+                  {(content.content || content.fullText) && (
+                    <>
+                      <p className={`text-sm text-gray-700 leading-relaxed mb-3 ${isFullTextExpanded ? '' : 'line-clamp-3'}`}>
+                        {content.content || content.fullText}
+                      </p>
                       {((content.content || content.fullText)?.length || 0) > 150 && (
                         <button
                           onClick={() => setIsFullTextExpanded(!isFullTextExpanded)}
-                          className="text-xs text-red-500 font-medium mt-2 hover:text-red-600 transition-colors"
+                          className="text-xs text-red-500 font-medium mb-2 hover:text-red-600 transition-colors"
                         >
-                          {isFullTextExpanded ? '收起全文 ▲' : '展开全文 ▼'}
+                          {isFullTextExpanded ? '收起 ▲' : '展开全文 ▼'}
                         </button>
                       )}
-                    </div>
+                    </>
                   )}
-
+                  
                   {/* 标签 */}
                   {content.tags && content.tags.length > 0 && (
-                    <div className="flex flex-wrap gap-2">
+                    <div className="flex flex-wrap gap-2 mb-3">
                       {content.tags.map((tag, idx) => (
                         <span key={idx} className="text-xs text-blue-500 font-medium">
                           #{tag}
@@ -554,16 +618,20 @@ export function XiaohongshuPreview({
                       ))}
                     </div>
                   )}
-                </div>
-
-                {/* 底部操作栏 */}
-                <div className="border-t border-gray-100 px-4 py-3 flex items-center justify-between text-gray-400 text-xs">
-                  <div className="flex items-center gap-4">
-                    <span>❤️ 点赞</span>
-                    <span>💬 评论</span>
-                    <span>⭐ 收藏</span>
+                  
+                  {/* 发布信息 */}
+                  <div className="flex items-center justify-between text-xs text-gray-400">
+                    <span>IP属地：北京</span>
+                    <span>编辑于 2024-04-19</span>
                   </div>
-                  <span>📤 分享</span>
+                </div>
+                
+                {/* 底部评论入口 */}
+                <div className="border-t border-gray-100 px-4 py-3 flex items-center gap-3">
+                  <div className="flex-1 bg-gray-100 rounded-full px-4 py-2 text-sm text-gray-400">
+                    说点什么...
+                  </div>
+                  <button className="text-gray-400 text-xl">😊</button>
                 </div>
               </div>
             </div>
