@@ -8,8 +8,7 @@ import * as schema from './schema';
 
 // 从环境变量获取数据库连接字符串
 const DATABASE_URL = process.env.DATABASE_URL ||
-  process.env.PGDATABASE_URL ||
-  'postgresql://user_7601448662618718259:bcc5e558-7809-4848-a97d-8b4817215e92@cp-deft-wind-b35fb7fc.pg4.aidap-global.cn-beijing.volces.com:5432/Database_1769852048532?sslmode=require&channel_binding=require';
+  'postgresql://user_7601448662618718259:bcc5e558-7809-4848-a97d-8b4817215e92@cp-deft-wind-b35fb7fc.pg4.aidap-global.cn-beijing.volces.com:5432/Database_1769852048532?sslmode=require';
 
 /**
  * 创建数据库连接
