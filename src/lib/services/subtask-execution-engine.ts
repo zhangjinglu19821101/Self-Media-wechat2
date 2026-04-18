@@ -2938,7 +2938,27 @@ export class SubtaskExecutionEngine {
         finalStatus: finalStatus
       });
       
-      // 更新数据库
+      // 🔴🔴🔴 【修复】生成 resultText 字段（用于前序任务结果传递）
+      let agentTResultText = '';
+      try {
+        // 构建 resultData 对象
+        const resultDataToSave = {
+          ...agentTDecision,
+          updatedBy: 'agent_t_executor',
+          updatedAt: new Date().toISOString()
+        };
+        agentTResultText = this.extractResultTextFromResultData(resultDataToSave, task.fromParentsExecutor);
+        console.log('[Agent T 执行追踪] ✅ resultText 提取成功:', {
+          taskId: task.id,
+          resultTextLength: agentTResultText.length,
+          resultTextPreview: agentTResultText.substring(0, 100)
+        });
+      } catch (extractError) {
+        console.error('[Agent T 执行追踪] ❌ resultText 提取失败:', extractError);
+        agentTResultText = '';
+      }
+      
+      // 更新数据库（添加 resultText 字段）
       await db
         .update(agentSubTasks)
         .set({
@@ -2948,6 +2968,7 @@ export class SubtaskExecutionEngine {
             updatedBy: 'agent_t_executor',
             updatedAt: new Date().toISOString()
           }),
+          resultText: agentTResultText,  // 🔴 新增：保存文本化结果
           updatedAt: getCurrentBeijingTime(),
         })
         .where(eq(agentSubTasks.id, task.id));

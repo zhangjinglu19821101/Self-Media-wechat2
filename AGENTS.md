@@ -1233,4 +1233,20 @@
    - **效果**:
      - 合规校验 MCP 技术性失败 → Agent T 重试
      - 合规校验发现审核问题 → 完成校验，流转到整改节点
+63. **Agent T 执行完成后 result_text 字段缺失修复**: 确保 order_index=4 的合规校验结果正确传递到 order_index=5 的合规整改任务
+   - **问题**: order_index=4（合规校验）的 `result_text` 字段为空，导致合规整改任务无法获取前序任务的校验结果
+   - **根因分析**:
+     - Agent T 执行完成后更新数据库时，只更新了 `status` 和 `resultData`，**缺少 `resultText` 字段**
+     - 下游任务通过 `priorStepOutput` 获取前序结果时，依赖于 `result_text` 字段
+   - **修复**:
+     - `subtask-execution-engine.ts`: Agent T 执行完成后，在更新数据库前调用 `extractResultTextFromResultData()` 提取文本化结果
+     - 更新数据库时同时设置 `resultText` 字段
+   - **数据流**:
+     ```
+     Agent T 执行完成 → 构建结果对象 resultDataToSave
+       → extractResultTextFromResultData(resultDataToSave, executor)
+         → 提取 result / suggestion / reasoning 等文本字段
+           → 更新数据库: resultText = agentTResultText
+     ```
+   - **效果**: order_index=4 的合规校验结果可以正确传递到 order_index=5 的合规整改任务
 
