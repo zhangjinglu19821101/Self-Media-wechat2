@@ -71,6 +71,7 @@ export async function POST(request: NextRequest) {
       tempSessionId, // 临时会话 ID，用于替换逻辑
       userOpinion, // 🔥 用户观点（核心锚点 + 关键素材）
       materialIds, // 🔥 素材ID列表
+      caseIds, // 🔥 行业案例ID列表（用户手动选择）
       relatedMaterials = '', // 🔥 关联素材补充区内容
       structureName, // 🔥 结构名称
       structureDetail, // 🔥 结构详情（JSON字符串）
@@ -271,6 +272,9 @@ export async function POST(request: NextRequest) {
             const taskMaterialIds = subTask.materialIds !== undefined
               ? subTask.materialIds
               : (materialIds || []);
+            const taskCaseIds = subTask.caseIds !== undefined
+              ? subTask.caseIds
+              : (caseIds || []);
 
             // 🔥 为写作类子任务按平台路由到对应 Agent + 添加平台前缀
             const resolvedExecutor = resolveExecutorForPlatform(accountInfo.platform, subTask.executor);
@@ -325,6 +329,7 @@ export async function POST(request: NextRequest) {
                 platform: accountInfo.platform, // 🔴 平台标识（供 user_preview_edit 等虚拟执行器使用）
                 ...(derivedImageCountMode ? { imageCountMode: derivedImageCountMode } : {}), // 🔥 小红书图片模式（从内容模板推导或前端传入）
                 ...(contentTemplateId ? { contentTemplateId } : {}), // 🔥🔥 内容模板ID
+                ...(taskCaseIds.length > 0 ? { caseIds: taskCaseIds } : {}), // 🔥 行业案例ID列表
               },
               createdAt: new Date(),
               updatedAt: new Date(),
@@ -349,6 +354,9 @@ export async function POST(request: NextRequest) {
         const taskMaterialIds = subTask.materialIds !== undefined
           ? subTask.materialIds
           : (materialIds || []);
+        const taskCaseIds = subTask.caseIds !== undefined
+          ? subTask.caseIds
+          : (caseIds || []);
 
         // 🔥 单平台模式：如果有 accountId，也获取平台信息
         let platformLabel = '';
@@ -398,6 +406,7 @@ export async function POST(request: NextRequest) {
             ...(singlePlatform ? { platform: singlePlatform } : {}), // 🔴 平台标识（供虚拟执行器使用）
             ...(derivedImageCountMode ? { imageCountMode: derivedImageCountMode } : {}), // 🔥 小红书图片模式（从内容模板推导或前端传入）
             ...(contentTemplateId ? { contentTemplateId } : {}), // 🔥🔥 内容模板ID
+            ...(taskCaseIds.length > 0 ? { caseIds: taskCaseIds } : {}), // 🔥 行业案例ID列表
           },
           createdAt: new Date(),
           updatedAt: new Date(),

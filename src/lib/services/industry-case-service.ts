@@ -392,7 +392,7 @@ export async function searchCases(params: CaseSearchParams): Promise<CaseMatchRe
  * @param platform 发布平台
  * @returns 推荐的案例列表
  */
-export async function recommendCases(instruction: string, platform?: string): Promise<CaseMatchResult[]> {
+export async function recommendCases(instruction: string, platform?: string, limit = 5): Promise<CaseMatchResult[]> {
   // 从指令中提取关键词
   const productTags = extractTags(instruction, []);
   const crowdTags = extractCrowdTags(instruction);
@@ -405,7 +405,7 @@ export async function recommendCases(instruction: string, platform?: string): Pr
     crowdTags,
     sceneTags,
     keywords: instruction,
-    limit: 3,
+    limit,
   };
   
   return searchCases(searchParams);
@@ -415,17 +415,23 @@ export async function recommendCases(instruction: string, platform?: string): Pr
  * 格式化案例为提示词文本
  * 
  * @param cases 案例列表
+ * @param mode 'manual' = 用户手动选择（必须使用），'auto' = 自动推荐（参考使用）
  * @returns 格式化后的文本
  */
-export function formatCasesForPrompt(cases: CaseMatchResult[]): string {
+export function formatCasesForPrompt(cases: CaseMatchResult[], mode: 'manual' | 'auto' = 'auto'): string {
   if (cases.length === 0) {
     return '';
   }
   
+  const isManual = mode === 'manual';
   const lines: string[] = [
-    '## 推荐案例（可用于增强文章说服力）',
+    isManual
+      ? '## 指定案例（用户选定，必须在文章中引用）'
+      : '## 推荐案例（可用于增强文章说服力）',
     '',
-    '以下是与你写作主题相关的真实案例，你可以选择性地在文章中引用：',
+    isManual
+      ? '以下是用户明确指定要引用的真实案例，你必须在文章中合理引用这些案例：'
+      : '以下是与你写作主题相关的真实案例，你可以选择性地在文章中引用：',
     '',
   ];
   
@@ -440,10 +446,17 @@ export function formatCasesForPrompt(cases: CaseMatchResult[]): string {
     lines.push('');
   }
   
-  lines.push('**使用建议**：');
-  lines.push('1. 选择与文章主题最相关的案例');
-  lines.push('2. 可以适当简化案例描述，保留核心数据');
-  lines.push('3. 引用案例时要标注来源（如"据《XX报》报道"）');
+  if (isManual) {
+    lines.push('**使用要求**：');
+    lines.push('1. 必须在文章中引用上述案例，至少引用 1 个');
+    lines.push('2. 引用案例时要标注来源（如"据《XX报》报道"）');
+    lines.push('3. 可以适当简化案例描述，但保留核心数据和结论');
+  } else {
+    lines.push('**使用建议**：');
+    lines.push('1. 选择与文章主题最相关的案例');
+    lines.push('2. 可以适当简化案例描述，保留核心数据');
+    lines.push('3. 引用案例时要标注来源（如"据《XX报》报道"）');
+  }
   lines.push('');
   
   return lines.join('\n');

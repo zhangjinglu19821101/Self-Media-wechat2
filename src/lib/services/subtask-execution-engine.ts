@@ -7254,23 +7254,46 @@ export class SubtaskExecutionEngine {
           console.log('[SubtaskEngine] 📋 小红书平台默认使用 5-card 详尽模式');
         }
 
-        // 🔥🔥🔥 行业案例库：按需检索（仅写作任务）
-        // 从任务指令+前序分析结果提取关键词，按相关度检索案例
-        // 不自动推荐：无相关案例时跳过，避免无关案例污染提示词
+        // 🔥🔥🔥 行业案例库：优先用户选择，其次自动推荐
+        // 1. 用户在前端「案例引用」tab 选择了案例 → 使用用户选择的案例（最高优先级）
+        // 2. 用户未选择 → 根据任务指令自动推荐相关案例
+        // 3. 无匹配 → 跳过注入，不污染提示词
         let _industryCasesText = '';
         try {
           const { industryCaseService } = await import('./industry-case-service');
-          const _caseInstruction = task.taskDescription || '';
-          if (_caseInstruction.length > 5) {
-            const _matchedCases = await industryCaseService.recommendCases(
-              _caseInstruction,
-              task.fromParentsExecutor === 'insurance-xiaohongshu' ? 'xiaohongshu' : undefined
-            );
-            if (_matchedCases.length > 0) {
-              _industryCasesText = industryCaseService.formatCasesForPrompt(_matchedCases);
-              console.log('[SubtaskEngine] 📚 行业案例检索成功:', _matchedCases.length, '条');
+          const _metadata = (task as any).metadata || {};
+          const _userCaseIds: string[] = _metadata.caseIds || [];
+
+          if (_userCaseIds.length > 0) {
+            // 优先：用户手动选择的案例
+            const _selectedCases = await industryCaseService.searchCases({
+              industry: 'insurance',
+              limit: 5,
+            });
+            // 按 caseIds 过滤（searchCases 不支持 ids 参数）
+            const _filtered = _selectedCases.filter(c => _userCaseIds.includes(c.id));
+            if (_filtered.length > 0) {
+              _industryCasesText = industryCaseService.formatCasesForPrompt(_filtered, 'manual');
+              console.log('[SubtaskEngine] 📚 用户选择案例:', _filtered.length, '条');
             } else {
-              console.log('[SubtaskEngine] 📚 行业案例检索无匹配结果，跳过注入');
+              console.log('[SubtaskEngine] 📚 用户选择案例未找到，降级为自动推荐');
+            }
+          }
+
+          if (!_industryCasesText) {
+            // 兜底：根据任务指令自动推荐
+            const _caseInstruction = task.taskDescription || '';
+            if (_caseInstruction.length > 5) {
+              const _matchedCases = await industryCaseService.recommendCases(
+                _caseInstruction,
+                task.fromParentsExecutor === 'insurance-xiaohongshu' ? 'xiaohongshu' : undefined
+              );
+              if (_matchedCases.length > 0) {
+                _industryCasesText = industryCaseService.formatCasesForPrompt(_matchedCases, 'auto');
+                console.log('[SubtaskEngine] 📚 自动推荐案例:', _matchedCases.length, '条');
+              } else {
+                console.log('[SubtaskEngine] 📚 自动推荐无匹配结果，跳过注入');
+              }
             }
           }
         } catch (_caseErr) {

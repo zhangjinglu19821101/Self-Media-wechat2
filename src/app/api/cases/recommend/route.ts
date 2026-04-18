@@ -50,7 +50,7 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { instruction, platform } = body;
+    const { instruction, platform, limit } = body;
     
     if (!instruction) {
       return NextResponse.json({
@@ -59,7 +59,7 @@ export async function POST(request: NextRequest) {
       }, { status: 400 });
     }
     
-    const cases = await industryCaseService.recommendCases(instruction, platform);
+    const cases = await industryCaseService.recommendCases(instruction, platform, limit || 5);
     
     // 格式化为提示词文本
     const promptText = industryCaseService.formatCasesForPrompt(cases);
