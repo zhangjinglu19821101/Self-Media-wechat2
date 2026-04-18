@@ -1168,3 +1168,18 @@
      - 例如 "JSON 标准化: 移除注释, 移除尾随逗号, 压缩空白"
    - **修复文件**:
      - `src/lib/utils/json-parser-enhancer.ts`: 移除贪婪正则，新增栈匹配方法
+
+59. **合规整改职责明确化**: 明确合规整改是写作 Agent 的职责，而非 Agent T 的职责
+   - **问题**: order_index=4（合规校验）发现问题后，整改任务应交给写作 Agent，而非 Agent T
+   - **微信公众号流程模板修改** (`src/lib/agents/flow-templates.ts`):
+     - 新增 order_index=5 "完成合规整改" 节点，执行者为 insurance-d
+     - 原来的 order_index=5 "上传公众号草稿箱" 改为 order_index=6
+     - 流程变为：分析→撰写→预览修改→合规校验→**合规整改**→上传
+   - **Agent B 提示词修改** (`src/lib/agents/prompts/agent-b-business-controller.ts`):
+     - 新增"合规整改职责划分"核心规则
+     - 明确：合规校验=Agent T 职责，合规整改=写作 Agent 职责
+     - 当 order_index=4 发现问题后，order_index=5 必须交给写作 Agent
+   - **insurance-d 提示词修改** (`src/lib/agents/prompts/insurance-d-v3.md`):
+     - 任务类型表格新增"合规整改"类型
+     - 明确合规整改是 insurance-d 的专属职责
+     - 新增整改任务的接受原则和执行步骤

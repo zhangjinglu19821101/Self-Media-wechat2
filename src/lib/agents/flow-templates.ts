@@ -32,6 +32,7 @@ const NODE_STYLES = {
   wechat_preview: { icon: '👁️', color: 'from-purple-500 to-violet-600' },
   wechat_polish: { icon: '✨', color: 'from-sky-500 to-blue-600' },
   wechat_check: { icon: '✅', color: 'from-amber-500 to-orange-600' },
+  wechat_upload: { icon: '📤', color: 'from-teal-500 to-cyan-600' },
   
   // 小红书样式
   xiaohongshu_user: { icon: '📕', color: 'from-red-500 to-rose-600' },
@@ -99,7 +100,8 @@ function createFlowTemplate(
  * - insurance-d 撰写 HTML 长文
  * - 用户预览修改初稿（可跳过）
  * - Agent T 执行合规校验
- * - 运营步骤自动上传公众号草稿箱
+ * - insurance-d 完成合规整改（根据校验结果修改文章）
+ * - Agent T 上传公众号草稿箱
  * - Agent B 最终审核确认
  */
 export const WECHAT_OFFICIAL_FLOW_TEMPLATE = createFlowTemplate(
@@ -112,7 +114,8 @@ export const WECHAT_OFFICIAL_FLOW_TEMPLATE = createFlowTemplate(
     { id: 'node-wechat-2', executor: 'insurance-d', title: '撰写公众号文章', description: '根据分析结果和用户确认的大纲，撰写完整的公众号文章（HTML格式），遵循核心铁律和风格要求', styleKey: 'wechat_write' },
     { id: 'node-wechat-3', executor: 'user_preview_edit', title: '预览修改初稿', description: '预览文章初稿，可进行修改调整或直接确认继续（修改后版本将用于合规校验）', styleKey: 'wechat_preview' },
     { id: 'node-wechat-4', executor: 'T', title: '合规校验', description: '对文章进行合规性校验，检查是否包含绝对化用语、虚假承诺、违规营销等内容', styleKey: 'wechat_check' },
-    { id: 'node-wechat-5', executor: 'T', title: '将文章上传公众号草稿箱', description: '将文章上传至公众号草稿箱，配置原创声明、赞赏等设置', styleKey: 'wechat_polish' },
+    { id: 'node-wechat-5', executor: 'insurance-d', title: '完成合规整改', description: '依据合规校验结果，完成公众号文章整改（修改违规内容、调整表述）', styleKey: 'wechat_polish' },
+    { id: 'node-wechat-6', executor: 'T', title: '上传公众号草稿箱', description: '将整改后的文章上传至公众号草稿箱，配置原创声明、赞赏等设置', styleKey: 'wechat_upload' },
   ]
 );
 
