@@ -28,6 +28,15 @@ import {
   AlertCircle, Loader2, FileText, Image, ChevronLeft, ChevronRight
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { getCurrentBeijingTime } from '@/lib/utils/date-time';
+
+// ============ 共享解析模块 ============
+import { 
+  GRADIENT_SCHEMES, 
+  parseXhsRenderData, 
+  parseXhsContent,
+  type XhsParsedContent 
+} from '@/lib/xhs-parser';
 
 // ============ 类型定义 ============
 
@@ -374,154 +383,7 @@ function WechatHtmlPreview({ html }: { html: string }) {
   );
 }
 
-// ============ 小红书渲染数据解析（platformRenderData 格式） ============
-
-/**
- * 从 platformRenderData（后端提取器生成的结构化数据）解析为前端展示格式
- * 
- * platformRenderData 格式（来自 extractors.ts）：
- * {
- *   platform: 'xiaohongshu',
- *   cardCountMode: '5-card',
- *   cards: [{ type: 'cover', title, subtitle }, { type: 'point', title, content }, { type: 'ending', conclusion, tags }],
- *   textContent: '正文',
- *   articleTitle: '标题'
- * }
- */
-function parseXhsRenderData(
-  renderData: Record<string, unknown>,
-  fallbackText: string
-): XhsParsedContent {
-  const result: XhsParsedContent = { title: '', points: [], tags: [], fullText: '' };
-
-  // 从 cards 数组提取结构化数据
-  const cards = renderData.cards;
-  if (Array.isArray(cards)) {
-    for (const card of cards) {
-      if (typeof card !== 'object' || card === null) continue;
-      const c = card as Record<string, unknown>;
-      
-      if (c.type === 'cover') {
-        result.title = typeof c.title === 'string' ? c.title : '';
-        result.intro = typeof c.subtitle === 'string' ? c.subtitle : undefined;
-      } else if (c.type === 'point') {
-        result.points.push({
-          title: typeof c.title === 'string' ? c.title : '',
-          content: typeof c.content === 'string' ? c.content : '',
-        });
-      } else if (c.type === 'ending') {
-        result.conclusion = typeof c.conclusion === 'string' ? c.conclusion : undefined;
-        if (Array.isArray(c.tags)) {
-          result.tags = c.tags.filter((t: unknown) => typeof t === 'string') as string[];
-        }
-      }
-    }
-  } else {
-    // 🔥 兜底：platformRenderData 可能是 platformData 格式（旧路径传下来的）
-    if (renderData.platform === 'xiaohongshu') {
-      result.title = typeof renderData.title === 'string' ? renderData.title : '';
-      result.intro = typeof renderData.intro === 'string' ? renderData.intro : undefined;
-      if (Array.isArray(renderData.points)) {
-        result.points = renderData.points
-          .filter((p: unknown) => typeof p === 'object' && p !== null && typeof (p as Record<string, unknown>).title === 'string')
-          .map((p: unknown) => ({
-            title: (p as Record<string, unknown>).title as string,
-            content: typeof (p as Record<string, unknown>).content === 'string' ? (p as Record<string, unknown>).content as string : '',
-          }));
-      }
-      result.conclusion = typeof renderData.conclusion === 'string' ? renderData.conclusion : undefined;
-      if (Array.isArray(renderData.tags)) {
-        result.tags = renderData.tags.filter((t: unknown) => typeof t === 'string') as string[];
-      }
-    }
-  }
-
-  // 正文：优先从 platformRenderData.textContent，兜底用 fallbackText
-  result.fullText = typeof renderData.textContent === 'string' && renderData.textContent.length > 0
-    ? renderData.textContent
-    : fallbackText;
-  
-  // 标题
-  result.articleTitle = typeof renderData.articleTitle === 'string' ? renderData.articleTitle : '';
-
-  return result;
-}
-
 // ============ 小红书内容预览组件 ============
-
-interface XhsParsedContent {
-  articleTitle?: string;  // 文章核心标题（15字以内）
-  title: string;          // 封面标题（20字以内）
-  intro?: string;         // 副标题/引言（30字以内）
-  points: Array<{ title: string; content: string }>;
-  conclusion?: string;    // 总结语（50字以内）
-  tags: string[];
-  fullText: string;       // 完整正文
-}
-
-function parseXhsContent(raw: string): XhsParsedContent {
-  const defaultResult: XhsParsedContent = { title: '', points: [], tags: [], fullText: '' };
-
-  if (!raw) return defaultResult;
-
-  try {
-    const data = typeof raw === 'string' ? JSON.parse(raw) : raw;
-    
-    // 信封格式: { isCompleted, result: { content, articleTitle, platformData: {...} } }
-    if (data?.result?.platformData) {
-      const pd = data.result.platformData;
-      return {
-        articleTitle: data.result.articleTitle || '',
-        title: pd.title || '',
-        intro: pd.intro || '',
-        points: pd.points || [],
-        conclusion: pd.conclusion || '',
-        tags: pd.tags || [],
-        fullText: data.result.content || pd.fullText || '',
-      };
-    }
-
-    // 旧格式: { result: { content, title, points, ... } }
-    if (data?.result?.content) {
-      return {
-        articleTitle: data.articleTitle || data.result.articleTitle || '',
-        title: data.result.title || '',
-        intro: data.result.intro || '',
-        points: data.result.points || [],
-        conclusion: data.result.conclusion || '',
-        tags: data.result.tags || [],
-        fullText: data.result.content,
-      };
-    }
-
-    // 直接格式: { title, points, fullText, ... }
-    if (data?.title || data?.fullText) {
-      return {
-        articleTitle: data.articleTitle || '',
-        title: data.title || '',
-        intro: data.intro || '',
-        points: data.points || [],
-        conclusion: data.conclusion || '',
-        tags: data.tags || [],
-        fullText: data.fullText || data.content || '',
-      };
-    }
-
-    // 纯文本
-    return { ...defaultResult, fullText: typeof raw === 'string' ? raw : JSON.stringify(raw) };
-  } catch {
-    return { ...defaultResult, fullText: raw };
-  }
-}
-
-// 渐变色方案（与小红书卡片生成器一致）
-const GRADIENT_SCHEMES = [
-  { from: '#FF6B6B', to: '#FFA07A' },  // 粉橙
-  { from: '#667eea', to: '#764ba2' },  // 蓝紫
-  { from: '#2dd4bf', to: '#34d399' },  // 青绿
-  { from: '#1e3a5f', to: '#4a90d9' },  // 深蓝
-  { from: '#f472b6', to: '#fb923c' },  // 珊瑚粉
-];
 
 function XiaohongshuContentPreview({ 
   content: rawContent, 
@@ -621,7 +483,9 @@ function XiaohongshuContentPreview({
               <div
                 className="flex h-full transition-transform duration-300 ease-out"
                 style={{ 
-                  transform: `translateX(-${currentPage * 100}%)`,
+                  // 🔥 修复：基于每张卡片在容器中的占比计算位移
+                  // 每张卡片占容器的 (100/totalCards)%，所以翻页需要移动这个比例
+                  transform: `translateX(-${currentPage * (100 / totalCards)}%)`,
                   width: `${totalCards * 100}%`
                 }}
               >
@@ -678,20 +542,22 @@ function XiaohongshuContentPreview({
                   <button
                     onClick={goToPrevPage}
                     disabled={currentPage === 0}
+                    aria-label="上一页"
                     className={`absolute left-2 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-black/40 flex items-center justify-center transition-all ${
                       currentPage === 0 ? 'opacity-20' : 'hover:bg-black/60'
                     }`}
                   >
-                    <ChevronLeft className="w-5 h-5 text-white" />
+                    <ChevronLeft className="w-5 h-5 text-white" aria-hidden="true" />
                   </button>
                   <button
                     onClick={goToNextPage}
                     disabled={currentPage === totalCards - 1}
+                    aria-label="下一页"
                     className={`absolute right-2 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-black/40 flex items-center justify-center transition-all ${
                       currentPage === totalCards - 1 ? 'opacity-20' : 'hover:bg-black/60'
                     }`}
                   >
-                    <ChevronRight className="w-5 h-5 text-white" />
+                    <ChevronRight className="w-5 h-5 text-white" aria-hidden="true" />
                   </button>
                 </>
               )}
@@ -737,38 +603,36 @@ function XiaohongshuContentPreview({
             <button 
               onClick={() => setIsLiked(!isLiked)}
               className="flex flex-col items-center gap-1"
+              aria-label={isLiked ? '取消点赞' : '点赞'}
             >
-              <div className={`w-10 h-10 rounded-full ${isLiked ? 'bg-red-500' : 'bg-white/20'} flex items-center justify-center`}>
-                <span className="text-lg">{isLiked ? '❤️' : '🤍'}</span>
+              <div className={`w-10 h-10 rounded-full ${isLiked ? 'bg-red-500' : 'bg-white/20'} flex items-center justify-center transition-colors`}>
+                <span className="text-lg" aria-hidden="true">{isLiked ? '❤️' : '🤍'}</span>
               </div>
-              <span className="text-white text-xs">1.2w</span>
             </button>
             
             {/* 收藏 */}
             <button 
               onClick={() => setIsCollected(!isCollected)}
               className="flex flex-col items-center gap-1"
+              aria-label={isCollected ? '取消收藏' : '收藏'}
             >
-              <div className={`w-10 h-10 rounded-full ${isCollected ? 'bg-yellow-500' : 'bg-white/20'} flex items-center justify-center`}>
-                <span className="text-lg">{isCollected ? '⭐' : '☆'}</span>
+              <div className={`w-10 h-10 rounded-full ${isCollected ? 'bg-yellow-500' : 'bg-white/20'} flex items-center justify-center transition-colors`}>
+                <span className="text-lg" aria-hidden="true">{isCollected ? '⭐' : '☆'}</span>
               </div>
-              <span className="text-white text-xs">8562</span>
             </button>
             
             {/* 评论 */}
-            <button className="flex flex-col items-center gap-1">
+            <button className="flex flex-col items-center gap-1" aria-label="评论">
               <div className="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center">
-                <span className="text-lg">💬</span>
+                <span className="text-lg" aria-hidden="true">💬</span>
               </div>
-              <span className="text-white text-xs">328</span>
             </button>
             
             {/* 分享 */}
-            <button className="flex flex-col items-center gap-1">
+            <button className="flex flex-col items-center gap-1" aria-label="分享">
               <div className="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center">
-                <span className="text-lg">↗️</span>
+                <span className="text-lg" aria-hidden="true">↗️</span>
               </div>
-              <span className="text-white text-xs">分享</span>
             </button>
           </div>
         </div>
@@ -800,8 +664,8 @@ function XiaohongshuContentPreview({
           
           {/* 发布信息 */}
           <div className="flex items-center justify-between text-xs text-gray-400">
-            <span>IP属地：北京</span>
-            <span>编辑于 2024-04-19</span>
+            <span>IP属地：中国</span>
+            <span>编辑于 {getCurrentBeijingTime().toLocaleDateString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit' })}</span>
           </div>
         </div>
         

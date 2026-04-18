@@ -5,6 +5,8 @@
  * 以小红书风格渲染预览（手机模拟器 + 图文卡片 + 文字区）
  * 
  * 支持左右滑动翻页查看多张卡片
+ * 
+ * 使用共享模块：@/lib/xhs-parser
  */
 
 'use client';
@@ -17,18 +19,14 @@ import { Eye, Copy, Download, CheckCircle2, ChevronLeft, ChevronRight } from 'lu
 import { toast } from 'sonner';
 import Link from 'next/link';
 import { getCurrentWorkspaceId } from '@/lib/api/client';
+import { getCurrentBeijingTime } from '@/lib/utils/date-time';
 
-// 小红书内容结构
-interface XiaohongshuContent {
-  title: string;
-  intro?: string;
-  points: Array<{ title: string; content: string }>;
-  conclusion?: string;
-  tags?: string[];
-  fullText?: string;   // 旧格式：纯正文
-  content?: string;     // 新信封格式：正文
-  articleTitle?: string;
-}
+// ============ 共享解析模块 ============
+import { 
+  GRADIENT_SCHEMES, 
+  parseXhsContent as parseXhsContentFromLib,
+  type XiaohongshuContent
+} from '@/lib/xhs-parser';
 
 interface XiaohongshuPreviewProps {
   /** 任务ID，用于加载内容 */
@@ -44,96 +42,19 @@ interface XiaohongshuPreviewProps {
 }
 
 /**
- * 从任务结果中解析小红书 JSON 内容
- * 
- * 支持多种数据格式：
- * 1. 新信封格式：{ isCompleted, result: { content, articleTitle, platformData: { title, points, ... } } }
- * 2. 旧格式1：{ isCompleted, result: { fullText, title, points, ... } }
- * 3. 旧格式2：直接的 JSON 对象
- * 4. 从文本中提取的 JSON 片段
+ * 解析小红书 JSON 内容（包装共享模块函数，兼容 null 返回）
  */
 function parseXhsContent(raw: string | object | null | undefined): XiaohongshuContent | null {
   if (!raw) return null;
-
-  // 如果已经是对象
-  if (typeof raw === 'object') {
-    const obj = raw as Record<string, unknown>;
-    
-    // 新信封格式：{ isCompleted, result: { content, articleTitle, platformData: {...} } }
-    if (obj.result && typeof obj.result === 'object') {
-      const result = obj.result as Record<string, unknown>;
-      
-      // 信封格式：result.content + result.platformData
-      if (result.platformData && typeof result.platformData === 'object') {
-        const pd = result.platformData as Record<string, unknown>;
-        // 类型安全的 points 提取：过滤掉不符合结构的元素
-        let points: Array<{ title: string; content: string }> = [];
-        if (Array.isArray(pd.points)) {
-          points = pd.points
-            .filter((p: unknown) => typeof p === 'object' && p !== null && typeof (p as Record<string, unknown>).title === 'string' && typeof (p as Record<string, unknown>).content === 'string')
-            .map((p: unknown) => ({ title: (p as Record<string, unknown>).title as string, content: (p as Record<string, unknown>).content as string }));
-        }
-        return {
-          content: typeof result.content === 'string' ? result.content : undefined,
-          fullText: typeof result.content === 'string' ? result.content : undefined,
-          articleTitle: typeof result.articleTitle === 'string' ? result.articleTitle : undefined,
-          title: typeof pd.title === 'string' ? pd.title : '',
-          intro: typeof pd.intro === 'string' ? pd.intro : undefined,
-          points,
-          conclusion: typeof pd.conclusion === 'string' ? pd.conclusion : undefined,
-          tags: Array.isArray(pd.tags) ? pd.tags.filter((t: unknown) => typeof t === 'string') as string[] : undefined,
-        };
-      }
-      
-      // 旧格式：result.fullText + result.title + result.points
-      if (result.title || result.points || result.fullText) {
-        return result as unknown as XiaohongshuContent;
-      }
-    }
-    
-    // 可能直接就是内容对象
-    if (obj.title || obj.points || obj.fullText || obj.content) {
-      return obj as unknown as XiaohongshuContent;
-    }
-    
-    // result 可能是字符串
-    if (typeof obj.result === 'string') {
-      return parseXhsContent(obj.result);
-    }
+  const result = parseXhsContentFromLib(raw);
+  if (!result.title && !result.fullText && result.points.length === 0) {
     return null;
   }
-
-  // 字符串处理
-  try {
-    const parsed = JSON.parse(raw);
-    return parseXhsContent(parsed); // 递归处理解析后的对象
-  } catch {
-    // 尝试从文本中提取 JSON
-    const jsonMatch = raw.match(/\{[\s\S]*"title"[\s\S]*\}/);
-    if (jsonMatch) {
-      try {
-        const parsed = JSON.parse(jsonMatch[0]);
-        if (parsed.title || parsed.points || parsed.fullText) {
-          return parsed;
-        }
-      } catch {
-        // 忽略
-      }
-    }
-  }
-  return null;
+  return {
+    ...result,
+    fullText: result.fullText,
+  };
 }
-
-/**
- * 渐变色方案（与小红书卡片生成器一致）
- */
-const GRADIENT_SCHEMES = [
-  { from: '#FF6B6B', to: '#FFA07A' },  // 粉橙
-  { from: '#667eea', to: '#764ba2' },  // 蓝紫
-  { from: '#2dd4bf', to: '#34d399' },  // 青绿
-  { from: '#1e3a5f', to: '#4a90d9' },  // 深蓝
-  { from: '#f472b6', to: '#fb923c' },  // 珊瑚粉
-];
 
 export function XiaohongshuPreview({
   taskId,
@@ -417,7 +338,9 @@ export function XiaohongshuPreview({
                       <div
                         className="flex h-full transition-transform duration-300 ease-out"
                         style={{ 
-                          transform: `translateX(-${currentPage * 100}%)`,
+                          // 🔥 修复：基于每张卡片在容器中的占比计算位移
+                          // 每张卡片占容器的 (100/totalCards)%，所以翻页需要移动这个比例
+                          transform: `translateX(-${currentPage * (100 / totalCards)}%)`,
                           width: `${totalCards * 100}%`
                         }}
                       >
@@ -489,20 +412,22 @@ export function XiaohongshuPreview({
                           <button
                             onClick={goToPrevPage}
                             disabled={currentPage === 0}
+                            aria-label="上一页"
                             className={`absolute left-2 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-black/40 flex items-center justify-center transition-all ${
                               currentPage === 0 ? 'opacity-20' : 'hover:bg-black/60'
                             }`}
                           >
-                            <ChevronLeft className="w-5 h-5 text-white" />
+                            <ChevronLeft className="w-5 h-5 text-white" aria-hidden="true" />
                           </button>
                           <button
                             onClick={goToNextPage}
                             disabled={currentPage === totalCards - 1}
+                            aria-label="下一页"
                             className={`absolute right-2 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-black/40 flex items-center justify-center transition-all ${
                               currentPage === totalCards - 1 ? 'opacity-20' : 'hover:bg-black/60'
                             }`}
                           >
-                            <ChevronRight className="w-5 h-5 text-white" />
+                            <ChevronRight className="w-5 h-5 text-white" aria-hidden="true" />
                           </button>
                         </>
                       )}
@@ -548,38 +473,36 @@ export function XiaohongshuPreview({
                     <button 
                       onClick={() => setIsLiked(!isLiked)}
                       className="flex flex-col items-center gap-1"
+                      aria-label={isLiked ? '取消点赞' : '点赞'}
                     >
-                      <div className={`w-10 h-10 rounded-full ${isLiked ? 'bg-red-500' : 'bg-white/20'} flex items-center justify-center`}>
-                        <span className="text-lg">{isLiked ? '❤️' : '🤍'}</span>
+                      <div className={`w-10 h-10 rounded-full ${isLiked ? 'bg-red-500' : 'bg-white/20'} flex items-center justify-center transition-colors`}>
+                        <span className="text-lg" aria-hidden="true">{isLiked ? '❤️' : '🤍'}</span>
                       </div>
-                      <span className="text-white text-xs">1.2w</span>
                     </button>
                     
                     {/* 收藏 */}
                     <button 
                       onClick={() => setIsCollected(!isCollected)}
                       className="flex flex-col items-center gap-1"
+                      aria-label={isCollected ? '取消收藏' : '收藏'}
                     >
-                      <div className={`w-10 h-10 rounded-full ${isCollected ? 'bg-yellow-500' : 'bg-white/20'} flex items-center justify-center`}>
-                        <span className="text-lg">{isCollected ? '⭐' : '☆'}</span>
+                      <div className={`w-10 h-10 rounded-full ${isCollected ? 'bg-yellow-500' : 'bg-white/20'} flex items-center justify-center transition-colors`}>
+                        <span className="text-lg" aria-hidden="true">{isCollected ? '⭐' : '☆'}</span>
                       </div>
-                      <span className="text-white text-xs">8562</span>
                     </button>
                     
                     {/* 评论 */}
-                    <button className="flex flex-col items-center gap-1">
+                    <button className="flex flex-col items-center gap-1" aria-label="评论">
                       <div className="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center">
-                        <span className="text-lg">💬</span>
+                        <span className="text-lg" aria-hidden="true">💬</span>
                       </div>
-                      <span className="text-white text-xs">328</span>
                     </button>
                     
                     {/* 分享 */}
-                    <button className="flex flex-col items-center gap-1">
+                    <button className="flex flex-col items-center gap-1" aria-label="分享">
                       <div className="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center">
-                        <span className="text-lg">↗️</span>
+                        <span className="text-lg" aria-hidden="true">↗️</span>
                       </div>
-                      <span className="text-white text-xs">分享</span>
                     </button>
                   </div>
                 </div>
@@ -621,8 +544,8 @@ export function XiaohongshuPreview({
                   
                   {/* 发布信息 */}
                   <div className="flex items-center justify-between text-xs text-gray-400">
-                    <span>IP属地：北京</span>
-                    <span>编辑于 2024-04-19</span>
+                    <span>IP属地：中国</span>
+                    <span>编辑于 {getCurrentBeijingTime().toLocaleDateString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit' })}</span>
                   </div>
                 </div>
                 
