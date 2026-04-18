@@ -1275,14 +1275,31 @@ export class SubtaskExecutionEngine {
     if (effectiveWritingTask && platform) {
       try {
         const { extractPlatformRenderData } = await import('@/lib/platform-render/extractors');
+        console.log('[SubtaskEngine] 👁️ 开始提取 platformRenderData...', {
+          platform,
+          hasWritingTaskResultData: !!effectiveWritingTask.resultData,
+          writingTaskResultDataType: typeof effectiveWritingTask.resultData,
+        });
         platformRenderData = extractPlatformRenderData(
           platform,
           effectiveWritingTask.resultData,
           (task.metadata as Record<string, unknown>) || {}
         );
+        console.log('[SubtaskEngine] 👁️ 提取结果:', {
+          hasPlatformRenderData: !!platformRenderData,
+          platformRenderDataKeys: platformRenderData ? Object.keys(platformRenderData) : [],
+          cardsCount: platformRenderData && 'cards' in platformRenderData 
+            ? (platformRenderData.cards as unknown[])?.length 
+            : 0,
+        });
       } catch (err) {
-        console.warn('[SubtaskEngine] ⚠️ 平台渲染数据提取失败，将使用纯文本兜底:', err);
+        console.error('[SubtaskEngine] ❌ 平台渲染数据提取失败:', err);
       }
+    } else {
+      console.warn('[SubtaskEngine] ⚠️ 跳过 platformRenderData 提取:', {
+        hasEffectiveWritingTask: !!effectiveWritingTask,
+        platform,
+      });
     }
 
     console.log('[SubtaskEngine] 👁️ 前序写作任务信息:', {

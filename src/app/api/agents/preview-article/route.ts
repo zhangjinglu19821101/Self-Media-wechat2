@@ -68,8 +68,27 @@ export async function GET(request: NextRequest) {
     // 🔥🔥🔥 【架构改造】平台渲染数据（独立于 articleContent 纯文本）
     let platformRenderData = resultData.platformRenderData || null;
 
+    // 🔥🔥🔥 【调试】打印初始数据
+    console.log('[Preview Article] 初始数据:', {
+      taskId,
+      hasArticleContent: !!articleContent,
+      articleContentLength: articleContent?.length || 0,
+      hasPlatformRenderData: !!platformRenderData,
+      platform,
+    });
+
     // 3. 如果没有预存内容（兼容旧流程），从前序写作任务获取
-    if (!articleContent) {
+    // 🔥🔥🔥 【修复】条件扩展：articleContent 为空，或者 platformRenderData 为空且是小红书平台
+    const needExtractFromWritingTask = !articleContent || 
+      (!platformRenderData && platform === 'xiaohongshu');
+    
+    console.log('[Preview Article] needExtractFromWritingTask:', needExtractFromWritingTask, {
+      articleContentEmpty: !articleContent,
+      platformRenderDataEmpty: !platformRenderData,
+      isXiaohongshu: platform === 'xiaohongshu',
+    });
+    
+    if (needExtractFromWritingTask) {
       const previousTasks = await db
         .select()
         .from(agentSubTasks)
@@ -101,22 +120,46 @@ export async function GET(request: NextRequest) {
         const platformData = structuredResult?.resultContent?.platformData || 
                             structuredResult?.platformData;
         
+        // 🔥🔥🔥 【调试日志】打印关键数据
+        console.log('[Preview Article] 前序写作任务信息:', {
+          writingTaskId: writingTask.id,
+          fromParentsExecutor: writingTask.fromParentsExecutor,
+          hasResultData: !!writingTask.resultData,
+          resultDataType: typeof writingTask.resultData,
+          hasExecutorOutput: !!executorOutput,
+          hasStructuredResult: !!structuredResult,
+          hasPlatformData: !!platformData,
+        });
+        
         // 🔥🔥🔥 【架构改造】使用平台渲染数据提取器
         // 优先使用提取器获取结构化平台渲染数据
         const writingPlatform = getPlatformForExecutor(writingTask.fromParentsExecutor);
+        console.log('[Preview Article] 写作平台:', writingPlatform);
+        
         if (writingPlatform && !platformRenderData) {
           try {
             const { extractPlatformRenderData } = await import('@/lib/platform-render/extractors');
             const taskMetadata = typeof task.metadata === 'object' && task.metadata !== null
               ? task.metadata as Record<string, unknown>
               : {};
+            console.log('[Preview Article] 开始提取 platformRenderData...', {
+              writingPlatform,
+              writingTaskResultDataKeys: writingTask.resultData ? Object.keys(writingTask.resultData as object) : [],
+            });
             platformRenderData = extractPlatformRenderData(
               writingPlatform,
               writingTask.resultData,
               taskMetadata
             );
+            console.log('[Preview Article] 提取结果:', {
+              hasPlatformRenderData: !!platformRenderData,
+              platformRenderDataKeys: platformRenderData ? Object.keys(platformRenderData) : [],
+              cardsCount: platformRenderData && 'cards' in platformRenderData 
+                ? (platformRenderData.cards as unknown[])?.length 
+                : 0,
+            });
           } catch (extractErr) {
-            console.warn('[Preview Article] 平台渲染数据提取失败:', extractErr);
+            console.error('[Preview Article] 平台渲染数据提取失败:', extractErr);
           }
         }
 

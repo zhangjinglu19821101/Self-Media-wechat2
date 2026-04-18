@@ -109,8 +109,16 @@ export function ArticlePreviewEditor({
   // 如果没有传入内容，从 API 加载
   // 🔴 P2-2 修复：增加 AbortController 处理竞态条件
   useEffect(() => {
+    console.log('[ArticlePreviewEditor] useEffect 触发:', {
+      taskId,
+      initialContent: initialContent?.substring(0, 100),
+      initialContentLength: initialContent?.length || 0,
+      initialPlatformRenderData: initialPlatformRenderData ? 'exists' : 'null',
+    });
+    
     if (initialContent) {
       setIsLoading(false);
+      console.log('[ArticlePreviewEditor] 已有内容，跳过 API 调用');
       return;
     }
 
@@ -118,11 +126,21 @@ export function ArticlePreviewEditor({
     const controller = new AbortController();
 
     const fetchContent = async () => {
+      console.log('[ArticlePreviewEditor] 开始调用 API...');
       try {
         const res = await fetch(`/api/agents/preview-article?taskId=${taskId}`, {
           signal: controller.signal,
         });
         const data = await res.json();
+        
+        console.log('[ArticlePreviewEditor] API 响应:', {
+          success: data.success,
+          hasArticleContent: !!data.data?.articleContent,
+          hasPlatformRenderData: !!data.data?.platformRenderData,
+          platform: data.data?.platform,
+          platformRenderDataKeys: data.data?.platformRenderData ? Object.keys(data.data.platformRenderData) : [],
+          cardsCount: data.data?.platformRenderData?.cards?.length || 0,
+        });
         
         if (!cancelled && data.success) {
           setContent(data.data.articleContent || '');
@@ -135,6 +153,7 @@ export function ArticlePreviewEditor({
       } catch (err) {
         // AbortError 是正常取消，不需要报错
         if (!cancelled && err instanceof Error && err.name !== 'AbortError') {
+          console.error('[ArticlePreviewEditor] 加载失败:', err);
           toast.error('加载文章内容失败');
         }
       } finally {
