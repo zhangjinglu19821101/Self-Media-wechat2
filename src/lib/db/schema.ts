@@ -1397,3 +1397,6 @@ export * from './schema/material-library';
 
 // 文章哈希表（去重检测）
 export * from './schema/article-hashes';
+
+// 小红书卡片图片表
+export * from './schema/xhs-cards';

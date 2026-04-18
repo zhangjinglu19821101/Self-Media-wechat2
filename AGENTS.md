@@ -1126,3 +1126,27 @@
      ```
    - **修复文件**:
      - `src/lib/services/subtask-execution-engine.ts`: 虚拟执行器对小红书传递完整 resultData
+
+57. **小红书卡片图片持久化存储**: 实现卡片图片上传到对象存储，支持永久访问
+   - **问题**: 卡片图片使用 Base64 编码传输，占用带宽且无法持久化访问
+   - **设计原则**:
+     - 持久化存储 key（永久有效），而非 URL（有过期时间）
+     - 使用时动态生成签名 URL（有效期 7 天）
+     - 文件名规范：`xhs-cards/{subTaskId}/{cardIndex}.png`
+   - **数据库表**:
+     - `xhs_cards`: 存储每张卡片的元信息和对象存储 key
+     - `xhs_card_groups`: 存储一次生成任务产生的一组卡片
+   - **新增文件**:
+     - `src/lib/db/schema/xhs-cards.ts`: 数据库表 Schema
+     - `src/lib/services/xhs-storage-service.ts`: 对象存储服务封装
+     - `src/app/api/db/create-xhs-cards-table/route.ts`: 数据库迁移 API
+   - **API 改造** (`src/app/api/xiaohongshu/generate-cards/route.ts`):
+     - 新增 `persist` 参数：是否持久化存储（默认 false）
+     - 新增 `subTaskId` 参数：子任务 ID（持久化时必需）
+     - 新增 `cardCountMode` 参数：卡片数量模式（3-card/5-card/7-card）
+     - 持久化模式返回：`groupId`、`cardId`、`storageKey`、`url`
+   - **GET 接口**: 支持 `?subTaskId=xxx` 查询已持久化的卡片 URL
+   - **验证结果**:
+     - POST 生成卡片并持久化成功
+     - GET 查询已持久化的卡片 URL 成功
+     - 图片可通过签名 URL 正常访问
