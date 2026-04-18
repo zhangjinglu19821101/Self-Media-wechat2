@@ -3,15 +3,17 @@
  * 
  * 解析 insurance-xiaohongshu 返回的 JSON 内容，
  * 以小红书风格渲染预览（手机模拟器 + 图文卡片 + 文字区）
+ * 
+ * 支持左右滑动翻页查看多张卡片
  */
 
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Eye, Copy, Download, CheckCircle2 } from 'lucide-react';
+import { Eye, Copy, Download, CheckCircle2, ChevronLeft, ChevronRight } from 'lucide-react';
 import { toast } from 'sonner';
 import Link from 'next/link';
 import { getCurrentWorkspaceId } from '@/lib/api/client';
@@ -145,8 +147,16 @@ export function XiaohongshuPreview({
   const [loading, setLoading] = useState(false);
   const [copied, setCopied] = useState(false);
   
+  // 🔥 翻页状态
+  const [currentPage, setCurrentPage] = useState(0);
+  const [touchStart, setTouchStart] = useState<number | null>(null);
+  const [touchEnd, setTouchEnd] = useState<number | null>(null);
+  
   // 🔥 P0 修复：使用 ref 防止重复加载
   const loadingRef = useRef(false);
+  
+  // 计算总卡片数
+  const totalCards = content ? (1 + (content.points?.length || 0) + (content.conclusion ? 1 : 0)) : 0;
 
   // 当外部内容变化时同步
   useEffect(() => {
@@ -278,6 +288,55 @@ export function XiaohongshuPreview({
       toast.success('JSON 已复制到剪贴板');
     });
   };
+  
+  // 🔥 翻页功能
+  const goToPage = useCallback((page: number) => {
+    if (page >= 0 && page < totalCards) {
+      setCurrentPage(page);
+    }
+  }, [totalCards]);
+  
+  const goToNextPage = useCallback(() => {
+    if (currentPage < totalCards - 1) {
+      setCurrentPage(prev => prev + 1);
+    }
+  }, [currentPage, totalCards]);
+  
+  const goToPrevPage = useCallback(() => {
+    if (currentPage > 0) {
+      setCurrentPage(prev => prev - 1);
+    }
+  }, [currentPage]);
+  
+  // 触摸滑动处理
+  const minSwipeDistance = 50;
+  
+  const onTouchStart = (e: React.TouchEvent) => {
+    setTouchEnd(null);
+    setTouchStart(e.targetTouches[0].clientX);
+  };
+  
+  const onTouchMove = (e: React.TouchEvent) => {
+    setTouchEnd(e.targetTouches[0].clientX);
+  };
+  
+  const onTouchEnd = () => {
+    if (!touchStart || !touchEnd) return;
+    const distance = touchStart - touchEnd;
+    const isLeftSwipe = distance > minSwipeDistance;
+    const isRightSwipe = distance < -minSwipeDistance;
+    
+    if (isLeftSwipe) {
+      goToNextPage();
+    } else if (isRightSwipe) {
+      goToPrevPage();
+    }
+  };
+  
+  // 重置页码当内容变化时
+  useEffect(() => {
+    setCurrentPage(0);
+  }, [content?.title]);
 
   // 如果没有内容，不渲染
   if (!content && !open) {
@@ -325,7 +384,7 @@ export function XiaohongshuPreview({
                 </div>
 
                 {/* 小红书风格内容区 */}
-                <div className="px-4 py-3 space-y-4">
+                <div className="px-4 py-3 space-y-3">
                   {/* 标题 */}
                   <h1 className="text-lg font-bold text-gray-900 leading-snug">
                     {content.title}
@@ -336,56 +395,124 @@ export function XiaohongshuPreview({
                     <p className="text-sm text-gray-500">{content.intro}</p>
                   )}
 
-                  {/* 图片卡片区域 */}
-                  {content.points && content.points.length > 0 && (
-                    <div className="space-y-3">
-                      {/* 封面卡 */}
-                      <div
-                        className="rounded-xl p-4 text-white"
-                        style={{
-                          background: `linear-gradient(135deg, ${GRADIENT_SCHEMES[0].from}, ${GRADIENT_SCHEMES[0].to})`,
-                          minHeight: '120px',
-                        }}
-                      >
-                        <div className="text-xs opacity-80 mb-1">📕 封面</div>
-                        <div className="text-base font-bold leading-tight">{content.title}</div>
-                        {content.intro && (
-                          <div className="text-xs opacity-90 mt-1">{content.intro}</div>
-                        )}
-                      </div>
-
-                      {/* 要点卡片 */}
-                      {content.points.map((point, idx) => {
-                        const scheme = GRADIENT_SCHEMES[(idx + 1) % GRADIENT_SCHEMES.length];
-                        return (
-                          <div
-                            key={idx}
-                            className="rounded-xl p-4 text-white"
-                            style={{
-                              background: `linear-gradient(135deg, ${scheme.from}, ${scheme.to})`,
-                            }}
-                          >
-                            <div className="text-xs opacity-80 mb-1">
-                              {idx === content.points.length - 1 && content.conclusion ? '💡 总结' : `📌 要点${idx + 1}`}
+                  {/* 🔥 翻页卡片区域 */}
+                  {totalCards > 0 && (
+                    <div 
+                      className="relative"
+                      onTouchStart={onTouchStart}
+                      onTouchMove={onTouchMove}
+                      onTouchEnd={onTouchEnd}
+                    >
+                      {/* 卡片容器 */}
+                      <div className="overflow-hidden rounded-xl">
+                        {/* 当前页卡片 */}
+                        <div
+                          className="transition-transform duration-300 ease-out"
+                          style={{ transform: `translateX(-${currentPage * 100}%)` }}
+                        >
+                          <div className="flex" style={{ width: `${totalCards * 100}%` }}>
+                            {/* 封面卡 (第0页) */}
+                            <div style={{ width: `${100 / totalCards}%` }} className="flex-shrink-0 px-1">
+                              <div
+                                className="rounded-xl p-4 text-white min-h-[200px] flex flex-col justify-center"
+                                style={{
+                                  background: `linear-gradient(135deg, ${GRADIENT_SCHEMES[0].from}, ${GRADIENT_SCHEMES[0].to})`,
+                                }}
+                              >
+                                <div className="text-xs opacity-80 mb-2">📕 封面</div>
+                                <div className="text-lg font-bold leading-tight">{content.title}</div>
+                                {content.intro && (
+                                  <div className="text-sm opacity-90 mt-2">{content.intro}</div>
+                                )}
+                              </div>
                             </div>
-                            <div className="text-sm font-bold leading-tight">{point.title}</div>
-                            {point.content && (
-                              <div className="text-xs opacity-90 mt-1">{point.content}</div>
+                            
+                            {/* 要点卡片 (第1~N页) */}
+                            {content.points?.map((point, idx) => {
+                              const scheme = GRADIENT_SCHEMES[(idx + 1) % GRADIENT_SCHEMES.length];
+                              return (
+                                <div key={idx} style={{ width: `${100 / totalCards}%` }} className="flex-shrink-0 px-1">
+                                  <div
+                                    className="rounded-xl p-4 text-white min-h-[200px] flex flex-col justify-center"
+                                    style={{
+                                      background: `linear-gradient(135deg, ${scheme.from}, ${scheme.to})`,
+                                    }}
+                                  >
+                                    <div className="text-xs opacity-80 mb-2">
+                                      📌 要点 {idx + 1}
+                                    </div>
+                                    <div className="text-base font-bold leading-tight">{point.title}</div>
+                                    {point.content && (
+                                      <div className="text-sm opacity-90 mt-2">{point.content}</div>
+                                    )}
+                                  </div>
+                                </div>
+                              );
+                            })}
+                            
+                            {/* 结尾卡 (最后一页) */}
+                            {content.conclusion && (
+                              <div style={{ width: `${100 / totalCards}%` }} className="flex-shrink-0 px-1">
+                                <div
+                                  className="rounded-xl p-4 text-white min-h-[200px] flex flex-col justify-center"
+                                  style={{
+                                    background: `linear-gradient(135deg, #f59e0b, #ef4444)`,
+                                  }}
+                                >
+                                  <div className="text-xs opacity-80 mb-2">✨ 结语</div>
+                                  <div className="text-base font-bold leading-tight">{content.conclusion}</div>
+                                </div>
+                              </div>
                             )}
                           </div>
-                        );
-                      })}
-
-                      {/* 结尾卡 */}
-                      {content.conclusion && (
-                        <div
-                          className="rounded-xl p-4 text-white"
-                          style={{
-                            background: `linear-gradient(135deg, #f59e0b, #ef4444)`,
-                          }}
-                        >
-                          <div className="text-xs opacity-80 mb-1">✨ 结语</div>
-                          <div className="text-sm font-bold leading-tight">{content.conclusion}</div>
+                        </div>
+                      </div>
+                      
+                      {/* 左右翻页按钮 */}
+                      {totalCards > 1 && (
+                        <>
+                          <button
+                            onClick={goToPrevPage}
+                            disabled={currentPage === 0}
+                            className={`absolute left-0 top-1/2 -translate-y-1/2 -translate-x-2 w-8 h-8 rounded-full bg-white/90 shadow-lg flex items-center justify-center transition-all ${
+                              currentPage === 0 ? 'opacity-30 cursor-not-allowed' : 'hover:bg-white hover:scale-110'
+                            }`}
+                          >
+                            <ChevronLeft className="w-5 h-5 text-gray-600" />
+                          </button>
+                          <button
+                            onClick={goToNextPage}
+                            disabled={currentPage === totalCards - 1}
+                            className={`absolute right-0 top-1/2 -translate-y-1/2 translate-x-2 w-8 h-8 rounded-full bg-white/90 shadow-lg flex items-center justify-center transition-all ${
+                              currentPage === totalCards - 1 ? 'opacity-30 cursor-not-allowed' : 'hover:bg-white hover:scale-110'
+                            }`}
+                          >
+                            <ChevronRight className="w-5 h-5 text-gray-600" />
+                          </button>
+                        </>
+                      )}
+                      
+                      {/* 页码指示器 */}
+                      {totalCards > 1 && (
+                        <div className="flex items-center justify-center gap-1.5 mt-3">
+                          {Array.from({ length: totalCards }).map((_, idx) => (
+                            <button
+                              key={idx}
+                              onClick={() => goToPage(idx)}
+                              className={`w-2 h-2 rounded-full transition-all ${
+                                idx === currentPage 
+                                  ? 'bg-red-500 w-4' 
+                                  : 'bg-gray-300 hover:bg-gray-400'
+                              }`}
+                            />
+                          ))}
+                        </div>
+                      )}
+                      
+                      {/* 页码文字 */}
+                      {totalCards > 1 && (
+                        <div className="text-center text-xs text-gray-400 mt-1">
+                          {currentPage + 1} / {totalCards}
                         </div>
                       )}
                     </div>
@@ -395,7 +522,7 @@ export function XiaohongshuPreview({
                   {(content.content || content.fullText) && (
                     <div className="border-t border-gray-100 pt-3">
                       <div className="text-xs text-gray-400 mb-2">📝 文字区内容</div>
-                      <div className="text-sm text-gray-800 leading-relaxed whitespace-pre-wrap">
+                      <div className="text-sm text-gray-800 leading-relaxed whitespace-pre-wrap max-h-32 overflow-y-auto">
                         {content.content || content.fullText}
                       </div>
                     </div>
