@@ -8,6 +8,7 @@
  * 2. 创建 Account
  * 3. 自动创建 Personal Workspace
  * 4. 将 Account 添加为 Workspace Owner
+ * 5. 初始化默认数据（平台账号、风格模板）
  */
 
 import { NextResponse } from 'next/server';
@@ -16,6 +17,7 @@ import { accounts, workspaces, workspaceMembers } from '@/lib/db/schema/auth';
 import { eq } from 'drizzle-orm';
 import { hashPassword, validatePasswordStrength, validateEmail } from '@/lib/auth/password';
 import { WorkspaceRole } from '@/lib/db/schema/auth';
+import { initializeUserData } from '@/lib/services/init-user-data';
 
 export async function POST(request: Request) {
   try {
@@ -99,6 +101,9 @@ export async function POST(request: Request) {
         status: 'active',
         joinedAt: new Date(),
       });
+
+      // 6. 初始化默认数据（平台账号、风格模板）
+      await initializeUserData(account.id, workspace.id);
     }
 
     console.log(`[Register] 注册成功: ${email}, workspace: ${workspace?.slug}`);
