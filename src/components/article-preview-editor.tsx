@@ -585,7 +585,6 @@ function XiaohongshuContentPreview({
             <div className="space-y-3">
               {parsed.points.map((point, idx) => {
                 const scheme = GRADIENT_SCHEMES[idx % GRADIENT_SCHEMES.length];
-                const cardNo = idx + 2; // 第2卡开始
                 return (
                   <div
                     key={idx}
@@ -594,10 +593,18 @@ function XiaohongshuContentPreview({
                       background: `linear-gradient(135deg, ${scheme.from}, ${scheme.to})`,
                     }}
                   >
-                    <div className="font-bold text-base mb-1">{point.title}</div>
-                    {point.content && (
-                      <div className="text-sm opacity-90 leading-relaxed">{point.content}</div>
-                    )}
+                    {/* 🔥 添加阿拉伯数字序号 */}
+                    <div className="flex items-start gap-2">
+                      <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-white/20 text-sm font-bold flex-shrink-0">
+                        {idx + 1}
+                      </span>
+                      <div className="flex-1 min-w-0">
+                        <div className="font-bold text-base mb-1">{point.title}</div>
+                        {point.content && (
+                          <div className="text-sm opacity-90 leading-relaxed">{point.content}</div>
+                        )}
+                      </div>
+                    </div>
                   </div>
                 );
               })}
