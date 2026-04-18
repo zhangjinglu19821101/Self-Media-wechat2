@@ -164,23 +164,30 @@ export function XiaohongshuPreview({
               });
               
               // 从 platformRenderData 构建 XiaohongshuContent
+              // 🔥🔥🔥 P0 修复：按卡片 type 字段安全拆分，避免字段映射错误
+              // XhsCoverCard: { type: 'cover', title, subtitle? }   — 无 content
+              // XhsPointCard: { type: 'point', title, content }     — 有 content
+              // XhsEndingCard: { type: 'ending', conclusion, tags? } — 无 content/title
               const cards = platformRenderData.cards || [];
-              const coverCard = cards[0] as { title?: string; content?: string } | undefined;
-              const pointCards = cards.slice(1, -1) as Array<{ title?: string; content?: string }>;
-              const endingCard = cards[cards.length - 1] as { title?: string; content?: string } | undefined;
+              const coverCard = cards.find(c => (c as { type?: string }).type === 'cover');
+              const pointCards = cards.filter(c => (c as { type?: string }).type === 'point');
+              const endingCard = cards.find(c => (c as { type?: string }).type === 'ending');
               
               const xhsContent: XiaohongshuContent = {
-                title: platformRenderData.articleTitle || coverCard?.title || '',
+                title: platformRenderData.articleTitle || (coverCard as { title?: string } | undefined)?.title || '',
                 articleTitle: platformRenderData.articleTitle,
                 fullText: platformRenderData.textContent || '',
                 content: platformRenderData.textContent || '',
                 points: pointCards.map(card => ({
-                  title: card?.title || '',
-                  content: card?.content || '',
+                  title: (card as { title?: string }).title || '',
+                  content: (card as { content?: string }).content || '',
                 })),
-                intro: coverCard?.content,
-                conclusion: endingCard?.content,
-                tags: platformRenderData.tags || [],
+                // 🔥 P0 修复：XhsCoverCard 的引言字段是 subtitle（不是 content）
+                intro: (coverCard as { subtitle?: string })?.subtitle,
+                // 🔥 P0 修复：XhsEndingCard 的总结字段是 conclusion（不是 content）
+                conclusion: (endingCard as { conclusion?: string })?.conclusion,
+                // 🔥 P0 修复：tags 来自结尾卡（XhsPlatformRenderData 无顶层 tags 字段）
+                tags: (endingCard as { tags?: string[] })?.tags || [],
               };
               
               setContent(xhsContent);
