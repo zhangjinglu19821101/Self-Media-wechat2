@@ -25,7 +25,7 @@ import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { 
   Eye, Pencil, CheckCircle2, SkipForward, Save, X, 
-  AlertCircle, Loader2, FileText, Image 
+  AlertCircle, Loader2, FileText, Image, ChevronLeft, ChevronRight
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -530,20 +530,71 @@ function XiaohongshuContentPreview({
   content: string; 
   platformRenderData?: Record<string, unknown> | null;
 }) {
+  // 🔥 翻页状态
+  const [currentPage, setCurrentPage] = useState(0);
+  const [touchStart, setTouchStart] = useState<number | null>(null);
+  const [touchEnd, setTouchEnd] = useState<number | null>(null);
+  
   // 🔥🔥🔥 【架构改造】优先使用 platformRenderData（结构化卡片数据）
-  // platformRenderData 由后端提取器从 resultData 中提取，包含完整的卡片信息
-  // 仅在 platformRenderData 不可用时，兜底从 articleContent（纯文本）解析
   const parsed = platformRenderData 
     ? parseXhsRenderData(platformRenderData, rawContent)
     : parseXhsContent(rawContent);
   
-  // 🔥🔥🔥 【P1修复】严谨计算卡片数量
-  // 封面卡：title 或 intro 有值时才存在
-  // 要点卡：points 数组长度
-  // 结尾卡：conclusion 或 tags 有值时才存在
+  // 计算卡片数量
   const hasCover = !!(parsed.title || parsed.intro);
   const hasEnding = !!(parsed.conclusion || parsed.tags.length > 0);
   const totalCards = (hasCover ? 1 : 0) + parsed.points.length + (hasEnding ? 1 : 0);
+  
+  // 🔥 翻页功能
+  const goToNextPage = useCallback(() => {
+    if (currentPage < totalCards - 1) {
+      setCurrentPage(prev => prev + 1);
+    }
+  }, [currentPage, totalCards]);
+  
+  const goToPrevPage = useCallback(() => {
+    if (currentPage > 0) {
+      setCurrentPage(prev => prev - 1);
+    }
+  }, [currentPage]);
+  
+  // 触摸滑动处理
+  const minSwipeDistance = 50;
+  
+  const onTouchStart = (e: React.TouchEvent) => {
+    setTouchEnd(null);
+    setTouchStart(e.targetTouches[0].clientX);
+  };
+  
+  const onTouchMove = (e: React.TouchEvent) => {
+    setTouchEnd(e.targetTouches[0].clientX);
+  };
+  
+  const onTouchEnd = () => {
+    if (!touchStart || !touchEnd) return;
+    const distance = touchStart - touchEnd;
+    const isLeftSwipe = distance > minSwipeDistance;
+    const isRightSwipe = distance < -minSwipeDistance;
+    
+    if (isLeftSwipe) {
+      goToNextPage();
+    } else if (isRightSwipe) {
+      goToPrevPage();
+    }
+  };
+  
+  // 构建卡片数组（用于翻页渲染）
+  const cards: Array<{ type: 'cover' | 'point' | 'ending'; title: string; content?: string; tags?: string[]; idx?: number }> = [];
+  
+  if (hasCover) {
+    cards.push({ type: 'cover', title: parsed.title, content: parsed.intro });
+  }
+  parsed.points.forEach((point, idx) => {
+    cards.push({ type: 'point', title: point.title, content: point.content, idx: idx + 1 });
+  });
+  if (hasEnding) {
+    cards.push({ type: 'ending', title: parsed.conclusion || '', tags: parsed.tags });
+  }
 
   return (
     <div className="flex justify-center">
@@ -554,103 +605,129 @@ function XiaohongshuContentPreview({
           <div className="w-20 h-1 bg-gray-300 rounded-full" />
         </div>
 
-        {/* 小红书风格内容区 */}
-        <div className="px-4 py-3 space-y-3 max-h-[500px] overflow-y-auto">
-          {/* 卡片数量指示 */}
-          {totalCards > 0 && (
-            <div className="text-xs text-gray-400 text-center mb-2">
-              📱 {totalCards}卡模式预览
-              {platformRenderData?.cardCountMode && (
-                <span className="ml-1 text-blue-400">
-                  (模板: {platformRenderData.cardCountMode as string})
-                </span>
-              )}
-            </div>
-          )}
-
-          {/* 【第1卡】封面卡 - 仅在有内容时渲染 */}
-          {hasCover && (
-            <div className="bg-gradient-to-br from-red-500 to-pink-500 rounded-xl p-4 text-white shadow-lg">
-              {parsed.title && (
-                <h3 className="text-lg font-bold leading-tight mb-1">{parsed.title}</h3>
-              )}
-              {parsed.intro && (
-                <p className="text-sm opacity-90">{parsed.intro}</p>
-              )}
-            </div>
-          )}
-
-          {/* 【第2-4卡】要点卡片 */}
-          {parsed.points.length > 0 && (
-            <div className="space-y-3">
-              {parsed.points.map((point, idx) => {
-                const scheme = GRADIENT_SCHEMES[idx % GRADIENT_SCHEMES.length];
-                return (
-                  <div
-                    key={idx}
-                    className="rounded-xl p-4 text-white shadow-lg"
-                    style={{
-                      background: `linear-gradient(135deg, ${scheme.from}, ${scheme.to})`,
-                    }}
-                  >
-                    {/* 🔥 添加阿拉伯数字序号 */}
-                    <div className="flex items-start gap-2">
-                      <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-white/20 text-sm font-bold flex-shrink-0">
-                        {idx + 1}
-                      </span>
-                      <div className="flex-1 min-w-0">
-                        <div className="font-bold text-base mb-1">{point.title}</div>
-                        {point.content && (
-                          <div className="text-sm opacity-90 leading-relaxed">{point.content}</div>
-                        )}
+        {/* 🔥 翻页卡片区域 */}
+        {totalCards > 0 ? (
+          <div 
+            className="relative"
+            onTouchStart={onTouchStart}
+            onTouchMove={onTouchMove}
+            onTouchEnd={onTouchEnd}
+          >
+            {/* 卡片容器 */}
+            <div className="overflow-hidden rounded-xl mx-4 my-3">
+              <div
+                className="transition-transform duration-300 ease-out"
+                style={{ transform: `translateX(-${currentPage * 100}%)` }}
+              >
+                <div className="flex" style={{ width: `${totalCards * 100}%` }}>
+                  {cards.map((card, idx) => {
+                    const scheme = GRADIENT_SCHEMES[idx % GRADIENT_SCHEMES.length];
+                    return (
+                      <div key={idx} style={{ width: `${100 / totalCards}%` }} className="flex-shrink-0 px-1">
+                        <div
+                          className="rounded-xl p-5 text-white min-h-[280px] flex flex-col justify-center"
+                          style={{
+                            background: card.type === 'ending' 
+                              ? 'linear-gradient(135deg, #374151, #111827)'
+                              : `linear-gradient(135deg, ${scheme.from}, ${scheme.to})`,
+                          }}
+                        >
+                          {/* 卡片类型标签 */}
+                          <div className="text-xs opacity-80 mb-2">
+                            {card.type === 'cover' && '📕 封面'}
+                            {card.type === 'point' && `📌 要点 ${card.idx}`}
+                            {card.type === 'ending' && '✨ 结语'}
+                          </div>
+                          
+                          {/* 标题 */}
+                          <div className="text-lg font-bold leading-tight">{card.title}</div>
+                          
+                          {/* 内容 */}
+                          {card.content && (
+                            <div className="text-sm opacity-90 mt-3 leading-relaxed">{card.content}</div>
+                          )}
+                          
+                          {/* 标签（仅结尾卡） */}
+                          {card.type === 'ending' && card.tags && card.tags.length > 0 && (
+                            <div className="flex flex-wrap gap-1 mt-3">
+                              {card.tags.map((tag, tIdx) => (
+                                <span key={tIdx} className="text-xs bg-white/20 px-2 py-0.5 rounded-full">
+                                  #{tag}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                        </div>
                       </div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-
-          {/* 【第N卡】结尾卡 - 仅在有内容时渲染 */}
-          {hasEnding && (
-            <div className="bg-gradient-to-br from-gray-700 to-gray-900 rounded-xl p-4 text-white shadow-lg">
-              {parsed.conclusion && (
-                <div className="font-medium text-base mb-2">💡 {parsed.conclusion}</div>
-              )}
-              {parsed.tags.length > 0 && (
-                <div className="flex flex-wrap gap-1">
-                  {parsed.tags.map((tag, idx) => (
-                    <span 
-                      key={idx} 
-                      className="text-xs bg-white/20 px-2 py-0.5 rounded-full"
-                    >
-                      #{tag}
-                    </span>
-                  ))}
+                    );
+                  })}
                 </div>
-              )}
+              </div>
             </div>
-          )}
+            
+            {/* 左右翻页按钮 */}
+            {totalCards > 1 && (
+              <>
+                <button
+                  onClick={goToPrevPage}
+                  disabled={currentPage === 0}
+                  className={`absolute left-0 top-1/2 -translate-y-1/2 -translate-x-2 w-8 h-8 rounded-full bg-white/90 shadow-lg flex items-center justify-center transition-all ${
+                    currentPage === 0 ? 'opacity-30 cursor-not-allowed' : 'hover:bg-white hover:scale-110'
+                  }`}
+                >
+                  <ChevronLeft className="w-5 h-5 text-gray-600" />
+                </button>
+                <button
+                  onClick={goToNextPage}
+                  disabled={currentPage === totalCards - 1}
+                  className={`absolute right-0 top-1/2 -translate-y-1/2 translate-x-2 w-8 h-8 rounded-full bg-white/90 shadow-lg flex items-center justify-center transition-all ${
+                    currentPage === totalCards - 1 ? 'opacity-30 cursor-not-allowed' : 'hover:bg-white hover:scale-110'
+                  }`}
+                >
+                  <ChevronRight className="w-5 h-5 text-gray-600" />
+                </button>
+              </>
+            )}
+            
+            {/* 页码指示器 */}
+            {totalCards > 1 && (
+              <div className="flex items-center justify-center gap-2 py-2">
+                {cards.map((_, idx) => (
+                  <button
+                    key={idx}
+                    onClick={() => setCurrentPage(idx)}
+                    className={`w-2 h-2 rounded-full transition-all ${
+                      idx === currentPage ? 'bg-red-500 w-4' : 'bg-gray-300'
+                    }`}
+                  />
+                ))}
+              </div>
+            )}
+            
+            {/* 页码文字 */}
+            <div className="text-center text-xs text-gray-400 pb-2">
+              {currentPage + 1} / {totalCards}
+            </div>
+          </div>
+        ) : (
+          <div className="text-center text-gray-400 py-8">
+            暂无内容
+          </div>
+        )}
 
-          {/* 完整正文（折叠展示） */}
-          {parsed.fullText && (
+        {/* 完整正文（折叠展示） */}
+        {parsed.fullText && (
+          <div className="px-4 pb-3">
             <details className="border-t border-gray-100 pt-3">
               <summary className="text-xs text-gray-400 cursor-pointer hover:text-gray-600">
                 📝 查看完整正文 ({parsed.fullText.length}字)
               </summary>
-              <div className="text-sm text-gray-700 whitespace-pre-wrap leading-relaxed mt-2 pl-2 border-l-2 border-gray-200">
+              <div className="text-sm text-gray-700 whitespace-pre-wrap leading-relaxed mt-2 pl-2 border-l-2 border-gray-200 max-h-[200px] overflow-y-auto">
                 {parsed.fullText}
               </div>
             </details>
-          )}
-
-          {/* 无内容提示 - 使用统一的判断逻辑 */}
-          {!hasCover && parsed.points.length === 0 && !hasEnding && !parsed.fullText && (
-            <div className="text-center text-gray-400 py-8">
-              暂无内容
-            </div>
-          )}
-        </div>
+          </div>
+        )}
 
         {/* 手机底部操作栏 */}
         <div className="bg-gray-50 px-4 py-3 border-t border-gray-100">
