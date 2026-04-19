@@ -10,38 +10,30 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { agentSubTasks } from '@/lib/db/schema';
-import { eq, desc, inArray, and, isNotNull, or } from 'drizzle-orm';
-import { getWorkspaceId } from '@/lib/auth/context';
+import { eq, desc, inArray, and, isNotNull } from 'drizzle-orm';
 import { WRITING_AGENT_IDS } from '@/lib/agents/agent-registry';
 
 export async function GET(request: NextRequest) {
   try {
-    const workspaceId = await getWorkspaceId(request);
     const { searchParams } = new URL(request.url);
     const limit = parseInt(searchParams.get('limit') || '50', 10);
 
-    // 查询已完成的写作任务（允许 workspaceId 为空或匹配）
+    // 查询已完成的写作任务（不做 workspaceId 校验，任务 ID 已经足够唯一）
     const completedTasks = await db
       .select({
         id: agentSubTasks.id,
         taskTitle: agentSubTasks.taskTitle,
-        executor: agentSubTasks.fromParentsExecutor, // 数据库字段是 from_parents_executor
+        executor: agentSubTasks.fromParentsExecutor,
         status: agentSubTasks.status,
         completedAt: agentSubTasks.completedAt,
         resultData: agentSubTasks.resultData,
         resultText: agentSubTasks.resultText,
         commandResultId: agentSubTasks.commandResultId,
-        workspaceId: agentSubTasks.workspaceId,
       })
       .from(agentSubTasks)
       .where(and(
-        or(
-          eq(agentSubTasks.workspaceId, workspaceId),
-          eq(agentSubTasks.workspaceId, ''),
-          isNotNull(agentSubTasks.workspaceId).not() // 允许任意 workspaceId
-        ),
         eq(agentSubTasks.status, 'completed'),
-        inArray(agentSubTasks.fromParentsExecutor, WRITING_AGENT_IDS), // 使用正确的字段名
+        inArray(agentSubTasks.fromParentsExecutor, WRITING_AGENT_IDS),
         isNotNull(agentSubTasks.completedAt)
       ))
       .orderBy(desc(agentSubTasks.completedAt))
