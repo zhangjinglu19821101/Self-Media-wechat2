@@ -9490,260 +9490,157 @@ ${resultData.executionSummary}
             if (savedArticle) {
               console.log('[SubtaskEngine] ✅ 文章内容保存成功:', savedArticle.articleId);
               
-              // ========== 小红书卡片自动生成 ==========
-              try {
-                const taskMetadata = subTasks[0].metadata as Record<string, any> | null;
-                const platformLabel = taskMetadata?.platformLabel || '';
+              // 🔥 卡片生成已移至 order_index=3 用户确认后执行
+              // 参见 user-decision/route.ts 中的 preview_edit_article 处理逻辑
+              
+              // ========== 🔥 合规整改后重新生成卡片（order_index=5） ==========
+              // 设计原则：合规整改后的内容是最新版本，需要重新生成卡片覆盖旧版本
+              const taskTitle = subTasks[0].taskTitle || '';
+              const taskMetadata = subTasks[0].metadata as Record<string, any> | null;
+              const platformLabel = taskMetadata?.platformLabel || '';
+              
+              if (platformLabel === '小红书' && taskTitle.includes('合规整改')) {
+                console.log('[SubtaskEngine] 🎨 检测到小红书合规整改任务，异步重新生成卡片...');
                 
-                if (platformLabel === '小红书') {
-                  console.log('[SubtaskEngine] 🎨 检测到小红书平台，尝试生成图文卡片...');
-                  
-                  // 尝试解析 insurance-d 输出的 JSON 格式
-                  let xhsData: { title: string; intro?: string; points: Array<{ title: string; content: string }>; conclusion: string; tags: string[]; fullText?: string } | null = null;
-                  
-                  // 从文章内容中提取 JSON
-                  const jsonMatch = fullArticleContent.match(/\{[\s\S]*"title"[\s\S]*"points"[\s\S]*\}/);
-                  if (jsonMatch) {
-                    try {
-                      xhsData = JSON.parse(jsonMatch[0]);
-                      console.log('[SubtaskEngine] ✅ 解析小红书JSON格式成功, points:', xhsData?.points?.length);
-                    } catch (parseErr) {
-                      console.log('[SubtaskEngine] ⚠️ JSON解析失败，跳过卡片生成');
-                    }
-                  }
-                  
-                  if (xhsData && xhsData.points && xhsData.points.length > 0) {
-                    const { generateCardsFromArticle } = await import('./xiaohongshu-card-service');
-
-                    // 🔥 优先从任务 metadata 读取图片数量模式（任务创建时已存入，零成本）
-                    // 仅当 metadata 中没有时，才降级查询模板规则（兼容旧数据）
-                    let imageCountMode: '3-card' | '5-card' | '7-card' = '5-card';
-                    const metadataImageMode = (subtask.metadata as Record<string, any>)?.imageCountMode;
-                    if (metadataImageMode && ['3-card', '5-card', '7-card'].includes(metadataImageMode)) {
-                      imageCountMode = metadataImageMode as ImageCountMode;
-                      console.log('[SubtaskEngine] 🖼️ 从metadata读取图片模式(零成本):', imageCountMode);
-                    } else {
-                      // 降级：从模板规则中读取（兼容旧数据或未指定模式的情况）
+                // 异步重新生成卡片，不阻塞主流程
+                (async () => {
+                  try {
+                    // 1. 解析小红书 JSON 格式
+                    let xhsData: { title: string; intro?: string; points: Array<{ title: string; content: string }>; conclusion: string; tags: string[]; fullText?: string } | null = null;
+                    
+                    const jsonMatch = fullArticleContent.match(/\{[\s\S]*"title"[\s\S]*"points"[\s\S]*\}/);
+                    if (jsonMatch) {
                       try {
-                        const { digitalAssetService } = await import('./digital-asset-service');
-                        const templateId = await this.getTemplateIdForTask(subtask);
-                        if (templateId) {
-                          const rules = await digitalAssetService.listStyleRules(templateId);
-                          const imageRule = rules.find(r => r.ruleType === 'image_structure' && r.metadata?.imageCountMode);
-                          if (imageRule) {
-                            imageCountMode = imageRule.metadata.imageCountMode as ImageCountMode;
-                            console.log('[SubtaskEngine] 🖼️ 从模板规则读取图片模式(降级):', imageCountMode);
-                          }
-                        }
-                      } catch (ruleErr) {
-                        console.warn('[SubtaskEngine] ⚠️ 读取图片模式失败，使用默认5-card:', ruleErr);
+                        xhsData = JSON.parse(jsonMatch[0]);
+                        console.log('[SubtaskEngine] 🎨 合规整改JSON解析成功, points:', xhsData?.points?.length);
+                      } catch (parseErr) {
+                        console.warn('[SubtaskEngine] 🎨 JSON解析失败，跳过卡片重新生成');
+                        return;
                       }
                     }
-
-                    // 🔥 读取自定义配色方案（来自多模态图片分析）
+                    
+                    if (!xhsData || !xhsData.points || xhsData.points.length === 0) {
+                      console.warn('[SubtaskEngine] 🎨 未解析到有效的 points 数据，跳过卡片重新生成');
+                      return;
+                    }
+                    
+                    // 2. 导入卡片生成服务
+                    const { generateCardsFromArticle } = await import('./xiaohongshu-card-service');
+                    const { uploadXhsCardGroup } = await import('./xhs-storage-service');
+                    
+                    // 3. 确定卡片数量模式
+                    let imageCountMode: '3-card' | '5-card' | '7-card' = '5-card';
+                    const metadataImageMode = taskMetadata?.imageCountMode;
+                    if (metadataImageMode && ['3-card', '5-card', '7-card'].includes(metadataImageMode)) {
+                      imageCountMode = metadataImageMode as '3-card' | '5-card' | '7-card';
+                    }
+                    console.log('[SubtaskEngine] 🎨 图片模式:', imageCountMode);
+                    
+                    // 4. 读取自定义配色方案
                     let customColorScheme: any = undefined;
                     try {
                       const { digitalAssetService } = await import('./digital-asset-service');
-                      const _colorTemplateId = await this.getTemplateIdForTask(subtask);
-                      if (_colorTemplateId) {
-                        const _allRules = await digitalAssetService.listStyleRules(_colorTemplateId);
-                        const _colorRule = _allRules.find(r => r.ruleType === 'color_scheme' && r.metadata?.primaryColor);
-                        if (_colorRule) {
+                      const { styleTemplateService } = await import('./style-template-service');
+                      const templateId = await styleTemplateService.getTemplateIdByAccount(subTasks[0].accountId || undefined, subTasks[0].workspaceId);
+                      if (templateId) {
+                        const rules = await digitalAssetService.listStyleRules(templateId);
+                        const colorRule = rules.find(r => r.ruleType === 'color_scheme' && r.metadata?.primaryColor);
+                        if (colorRule) {
                           customColorScheme = {
-                            primaryColor: _colorRule.metadata.primaryColor,
-                            secondaryColor: _colorRule.metadata.secondaryColor,
-                            backgroundColor: _colorRule.metadata.backgroundColor,
-                            accentColor: _colorRule.metadata.accentColor,
-                            textPrimaryColor: _colorRule.metadata.textPrimaryColor,
-                            textSecondaryColor: _colorRule.metadata.textSecondaryColor,
+                            primaryColor: colorRule.metadata.primaryColor,
+                            secondaryColor: colorRule.metadata.secondaryColor,
+                            backgroundColor: colorRule.metadata.backgroundColor,
+                            accentColor: colorRule.metadata.accentColor,
+                            textPrimaryColor: colorRule.metadata.textPrimaryColor,
+                            textSecondaryColor: colorRule.metadata.textSecondaryColor,
                           };
-                          console.log('[SubtaskEngine] 🎨 从模板规则读取自定义配色:', customColorScheme.primaryColor, '→', customColorScheme.secondaryColor);
+                          console.log('[SubtaskEngine] 🎨 从模板读取配色方案:', customColorScheme.primaryColor);
                         }
                       }
                     } catch (colorErr) {
-                      console.warn('[SubtaskEngine] ⚠️ 读取配色方案失败，使用默认:', colorErr);
+                      console.warn('[SubtaskEngine] 🎨 读取配色方案失败:', colorErr);
                     }
-
-                    // 🔥🔥 读取内容模板精简指令（Phase 2-2: 图文分工模板 → 传入卡片生成阶段）
-                    let contentPromptInstruction: string | undefined = undefined;
-                    try {
-                      const metadataContentTemplateId = (subtask.metadata as Record<string, any>)?.contentTemplateId;
-                      if (metadataContentTemplateId) {
-                        const { contentTemplateService } = await import('./content-template-service');
-                        const template = await contentTemplateService.getTemplate(metadataContentTemplateId, subtask.workspaceId);
-                        if (template?.promptInstruction) {
-                          contentPromptInstruction = template.promptInstruction;
-                          // 记录使用次数（此处与 Prompt 注入点可能重复，但 recordUse 是幂等的 +1 操作）
-                          contentTemplateService.recordUse(metadataContentTemplateId).catch(() => {});
-                          console.log('[SubtaskEngine] 📝 从内容模板读取精简指令（卡片生成阶段）:', contentPromptInstruction);
-                        }
-                      }
-                    } catch (templateErr) {
-                      console.warn('[SubtaskEngine] ⚠️ 读取内容模板失败:', templateErr);
-                    }
-
+                    
+                    // 5. 生成卡片
                     const cards = await generateCardsFromArticle({
                       title: xhsData.title,
                       intro: xhsData.intro,
-                      points: xhsData.points.slice(0, 5), // 最多5张要点卡（7张模式会自动裁剪）
+                      points: xhsData.points.slice(0, 5),
                       conclusion: xhsData.conclusion || '感谢阅读',
                       tags: xhsData.tags || [],
-                    }, 
-                      // 🔥 传入多色方案数组，每张卡片不同颜色（封面、要点1、要点2...结尾）
+                    },
                       ['pinkOrange', 'bluePurple', 'tealGreen', 'orangeYellow', 'deepBlue'],
-                      imageCountMode, 
-                      customColorScheme, 
-                      contentPromptInstruction
+                      imageCountMode,
+                      customColorScheme
                     );
                     
-                    console.log('[SubtaskEngine] 🎨 生成卡片数量:', cards.length);
+                    console.log('[SubtaskEngine] 🎨 合规整改重新生成卡片数量:', cards.length);
                     
-                    // 🔥 P0修复：上传卡片图片到 OSS 对象存储（而非本地文件系统）
-                    // 旧逻辑将卡片保存到 /tmp，生产环境必定丢失且无法HTTP访问
-                    // 新逻辑使用 uploadXhsCardGroup 写入 xhs_cards + xhs_card_groups 表，
-                    // 前端通过 GET /api/xiaohongshu/generate-cards?subTaskId=xxx 获取签名URL
-                    try {
-                      const { uploadXhsCardGroup } = await import('./xhs-storage-service');
-                      
-                      // 🔥 P1修复：边界情况处理，确保至少有封面和结尾两张卡
-                      if (cards.length < 2) {
-                        throw new Error(`卡片数量不足：生成 ${cards.length} 张，至少需要 2 张（封面+结尾）`);
-                      }
-                      
-                      // 确定每张卡片的类型（cover / point / ending）
-                      const cardTypes: Array<'cover' | 'point' | 'ending'> = ['cover'];
-                      const pointCount = cards.length - 2; // 减去封面和结尾
-                      for (let pi = 0; pi < pointCount; pi++) {
-                        cardTypes.push('point');
-                      }
-                      cardTypes.push('ending');
-                      
-                      // 写入 xhs_cards + xhs_card_groups 表（OSS 持久化）
-                      const uploadResult = await uploadXhsCardGroup(
-                        cards.map((card, index) => ({
-                          base64: card.base64,
-                          cardType: cardTypes[index] || 'point',
-                          title: index === 0
-                            ? xhsData.title
-                            : index === cards.length - 1
-                              ? xhsData.conclusion
-                              : xhsData.points[index - 1]?.title,
-                          content: index === 0
-                            ? xhsData.intro
-                            : index === cards.length - 1
-                              ? (xhsData.tags || []).join(' ')
-                              : xhsData.points[index - 1]?.content,
-                        })),
-                        subTasks[0].id,  // subTaskId = 写作子任务ID
-                        {
-                          cardCountMode: imageCountMode,
-                          gradientScheme: undefined, // 自定义配色由 card-service 内部处理
-                          articleTitle: xhsData.title,
-                          articleIntro: xhsData.intro,
-                          workspaceId: subTasks[0].workspaceId,
-                          commandResultId: subTasks[0].commandResultId || undefined,
-                        }
-                      );
-                      
-                      console.log('[SubtaskEngine] 🎨 卡片已上传到OSS:', {
-                        groupId: uploadResult.groupId,
-                        totalCards: uploadResult.totalCards,
-                      });
-                      
-                      // 将 OSS key 和全文存入文章 extInfo
-                      const { db: _db } = await import('@/lib/db');
-                      const { articleContent: articleContentTable } = await import('@/lib/db/schema');
-                      const { eq: _eq } = await import('drizzle-orm');
-                      
-                      const existingContent = await _db.select()
-                        .from(articleContentTable)
-                        .where(_eq(articleContentTable.articleId, savedArticle.articleId))
-                        .limit(1);
-                      
-                      if (existingContent.length > 0) {
-                        const existingExt = (existingContent[0] as any).extInfo || {};
-                        await _db.update(articleContentTable)
-                          .set({
-                            extInfo: {
-                              ...existingExt,
-                              // 🔥 存储OSS key（永久有效），而非签名URL（会过期）
-                              xhsCardStorageKeys: uploadResult.cards.map(c => c.storageKey),
-                              xhsCardGroupId: uploadResult.groupId,
-                              xhsCardStorageType: 'oss',  // 🔥 P1-1: 标识存储类型为 OSS
-                              xhsFullText: xhsData.fullText || '',
-                              xhsTags: xhsData.tags || [],
-                              xhsIntro: xhsData.intro || '',
-                            },
-                          } as any)
-                          .where(_eq(articleContentTable.articleId, savedArticle.articleId));
-                        
-                        console.log('[SubtaskEngine] 🎨 小红书卡片OSS key已保存到文章extInfo, groupId:', uploadResult.groupId);
-                      }
-                    } catch (ossErr) {
-                      // OSS上传失败不阻塞主流程，降级到本地文件存储
-                      console.error('[SubtaskEngine] ❌ 卡片OSS上传失败，降级到本地存储:', ossErr);
-                      
-                      const cardUrls: string[] = [];
-                      const fs = await import('fs');
-                      const path = await import('path');
-                      const workspacePath = process.env.COZE_WORKSPACE_PATH || '/workspace/projects';
-                      const isProduction = process.env.COZE_PROJECT_ENV === 'PROD';
-                      const baseDir = isProduction ? '/tmp' : workspacePath;
-                      const uploadDir = path.join(baseDir, 'public', 'xhs-cards');
-                      
-                      if (!fs.existsSync(uploadDir)) {
-                        fs.mkdirSync(uploadDir, { recursive: true });
-                      }
-                      
-                      for (let i = 0; i < cards.length; i++) {
-                        try {
-                          const filename = `${savedArticle.articleId}_card_${i + 1}.png`;
-                          const filepath = path.join(uploadDir, filename);
-                          fs.writeFileSync(filepath, cards[i].imageBuffer);
-                          cardUrls.push(`/xhs-cards/${filename}`);
-                        } catch (uploadErr) {
-                          console.error('[SubtaskEngine] ❌ 卡片本地保存失败:', uploadErr);
-                        }
-                      }
-                      
-                      // 本地降级时仍存路径到extInfo（兼容旧逻辑）
-                      // 🔥 P1-1: 添加存储类型标识，区分 OSS 和本地存储
-                      if (cardUrls.length > 0) {
-                        const { db: _db2 } = await import('@/lib/db');
-                        const { articleContent: _act } = await import('@/lib/db/schema');
-                        const { eq: _eq2 } = await import('drizzle-orm');
-                        
-                        const existingContent = await _db2.select()
-                          .from(_act)
-                          .where(_eq2(_act.articleId, savedArticle.articleId))
-                          .limit(1);
-                        
-                        if (existingContent.length > 0) {
-                          const existingExt = (existingContent[0] as any).extInfo || {};
-                          await _db2.update(_act)
-                            .set({
-                              extInfo: {
-                                ...existingExt,
-                                xhsCardUrls: cardUrls,
-                                xhsCardStorageType: 'local',  // 🔥 P1-1: 标识存储类型为本地
-                                xhsFullText: xhsData.fullText || '',
-                                xhsTags: xhsData.tags || [],
-                                xhsIntro: xhsData.intro || '',
-                              },
-                            } as any)
-                            .where(_eq2(_act.articleId, savedArticle.articleId));
-                          
-                          console.log('[SubtaskEngine] 🎨 小红书卡片已保存到本地（降级模式）, paths:', cardUrls);
-                        }
-                      }
+                    // 6. 上传到 OSS（覆盖旧版本）
+                    if (cards.length < 2) {
+                      console.error('[SubtaskEngine] 🎨 卡片数量不足：生成', cards.length, '张，至少需要 2 张');
+                      return;
                     }
-                  } else {
-                    console.log('[SubtaskEngine] ⚠️ 未解析到小红书JSON格式，跳过卡片生成');
+                    
+                    const cardTypes: Array<'cover' | 'point' | 'ending'> = ['cover'];
+                    const pointCount = cards.length - 2;
+                    for (let pi = 0; pi < pointCount; pi++) {
+                      cardTypes.push('point');
+                    }
+                    cardTypes.push('ending');
+                    
+                    const uploadResult = await uploadXhsCardGroup(
+                      cards.map((card, index) => ({
+                        base64: card.base64,
+                        cardType: cardTypes[index] || 'point',
+                        title: index === 0
+                          ? xhsData.title
+                          : index === cards.length - 1
+                            ? xhsData.conclusion
+                            : xhsData.points[index - 1]?.title,
+                        content: index === 0
+                          ? xhsData.intro
+                          : index === cards.length - 1
+                            ? (xhsData.tags || []).join(' ')
+                            : xhsData.points[index - 1]?.content,
+                      })),
+                      subTaskId as string,
+                      {
+                        cardCountMode: imageCountMode,
+                        articleTitle: xhsData.title,
+                        articleIntro: xhsData.intro,
+                        workspaceId: subTasks[0].workspaceId,
+                        commandResultId: subTasks[0].commandResultId || undefined,
+                      }
+                    );
+                    
+                    console.log('[SubtaskEngine] 🎨 ✅ 合规整改卡片已上传到OSS:', {
+                      groupId: uploadResult.groupId,
+                      totalCards: uploadResult.totalCards,
+                    });
+                    
+                    // 7. 更新文章的 extInfo（覆盖旧版本）
+                    const existingExt = (savedArticle as any).extInfo || {};
+                    await db.update(articleContent)
+                      .set({
+                        extInfo: {
+                          ...existingExt,
+                          xhsCardStorageKeys: uploadResult.cards.map(c => c.storageKey),
+                          xhsCardGroupId: uploadResult.groupId,
+                          xhsCardStorageType: 'oss',
+                          xhsFullText: xhsData.fullText || '',
+                          xhsTags: xhsData.tags || [],
+                          xhsIntro: xhsData.intro || '',
+                        },
+                      } as any)
+                      .where(eq(articleContent.articleId, savedArticle.articleId));
+                    
+                    console.log('[SubtaskEngine] 🎨 ✅ 合规整改卡片信息已更新到文章 extInfo');
+                    
+                  } catch (cardError) {
+                    console.error('[SubtaskEngine] 🎨 ❌ 合规整改卡片重新生成失败:', cardError);
                   }
-                }
-              } catch (xhsError) {
-                console.error('[SubtaskEngine] ❌ 小红书卡片生成失败:', xhsError);
-                // 不影响主流程
+                })().catch(err => console.error('[SubtaskEngine] 🎨 ❌ 卡片生成异步任务失败:', err));
               }
             } else {
               console.log('[SubtaskEngine] ⚠️ 文章内容保存跳过');

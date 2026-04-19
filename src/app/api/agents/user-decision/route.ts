@@ -712,6 +712,168 @@ export async function POST(request: NextRequest) {
         finalContentLength: finalContent.length,
       });
 
+      // ========== 🔥 小红书卡片生成（用户确认后） ==========
+      // 设计原则：用户确认后的内容才是最终版本，卡片应基于此生成
+      if (previewPlatform === 'xiaohongshu') {
+        console.log('[User Decision] 🎨 检测到小红书平台，异步生成图文卡片...');
+        
+        // 异步生成卡片，不阻塞用户确认流程
+        (async () => {
+          try {
+            // 1. 解析小红书 JSON 格式
+            let xhsData: { title: string; intro?: string; points: Array<{ title: string; content: string }>; conclusion: string; tags: string[]; fullText?: string } | null = null;
+            
+            // 尝试从 finalContent 中提取 JSON
+            const jsonMatch = finalContent.match(/\{[\s\S]*"title"[\s\S]*"points"[\s\S]*\}/);
+            if (jsonMatch) {
+              try {
+                xhsData = JSON.parse(jsonMatch[0]);
+                console.log('[User Decision] 🎨 解析小红书JSON格式成功, points:', xhsData?.points?.length);
+              } catch (parseErr) {
+                console.warn('[User Decision] 🎨 JSON解析失败，跳过卡片生成');
+                return;
+              }
+            }
+            
+            if (!xhsData || !xhsData.points || xhsData.points.length === 0) {
+              console.warn('[User Decision] 🎨 未解析到有效的 points 数据，跳过卡片生成');
+              return;
+            }
+            
+            // 2. 导入卡片生成服务
+            const { generateCardsFromArticle } = await import('@/lib/services/xiaohongshu-card-service');
+            const { uploadXhsCardGroup } = await import('@/lib/services/xhs-storage-service');
+            
+            // 3. 确定卡片数量模式
+            let imageCountMode: '3-card' | '5-card' | '7-card' = '5-card';
+            const metadataImageMode = (subTask.metadata as Record<string, any>)?.imageCountMode;
+            if (metadataImageMode && ['3-card', '5-card', '7-card'].includes(metadataImageMode)) {
+              imageCountMode = metadataImageMode as '3-card' | '5-card' | '7-card';
+            }
+            console.log('[User Decision] 🎨 图片模式:', imageCountMode);
+            
+            // 4. 读取自定义配色方案（来自风格模板）
+            let customColorScheme: any = undefined;
+            try {
+              const { digitalAssetService } = await import('@/lib/services/digital-asset-service');
+              const { styleTemplateService } = await import('@/lib/services/style-template-service');
+              const templateId = await styleTemplateService.getTemplateIdByAccount(subTask.accountId || undefined, subTask.workspaceId);
+              if (templateId) {
+                const rules = await digitalAssetService.listStyleRules(templateId);
+                const colorRule = rules.find(r => r.ruleType === 'color_scheme' && r.metadata?.primaryColor);
+                if (colorRule) {
+                  customColorScheme = {
+                    primaryColor: colorRule.metadata.primaryColor,
+                    secondaryColor: colorRule.metadata.secondaryColor,
+                    backgroundColor: colorRule.metadata.backgroundColor,
+                    accentColor: colorRule.metadata.accentColor,
+                    textPrimaryColor: colorRule.metadata.textPrimaryColor,
+                    textSecondaryColor: colorRule.metadata.textSecondaryColor,
+                  };
+                  console.log('[User Decision] 🎨 从模板读取配色方案:', customColorScheme.primaryColor);
+                }
+              }
+            } catch (colorErr) {
+              console.warn('[User Decision] 🎨 读取配色方案失败:', colorErr);
+            }
+            
+            // 5. 生成卡片
+            const cards = await generateCardsFromArticle({
+              title: xhsData.title,
+              intro: xhsData.intro,
+              points: xhsData.points.slice(0, 5),
+              conclusion: xhsData.conclusion || '感谢阅读',
+              tags: xhsData.tags || [],
+            },
+              ['pinkOrange', 'bluePurple', 'tealGreen', 'orangeYellow', 'deepBlue'],
+              imageCountMode,
+              customColorScheme
+            );
+            
+            console.log('[User Decision] 🎨 生成卡片数量:', cards.length);
+            
+            // 6. 上传到 OSS
+            if (cards.length < 2) {
+              console.error('[User Decision] 🎨 卡片数量不足：生成', cards.length, '张，至少需要 2 张');
+              return;
+            }
+            
+            const cardTypes: Array<'cover' | 'point' | 'ending'> = ['cover'];
+            const pointCount = cards.length - 2;
+            for (let pi = 0; pi < pointCount; pi++) {
+              cardTypes.push('point');
+            }
+            cardTypes.push('ending');
+            
+            const uploadResult = await uploadXhsCardGroup(
+              cards.map((card, index) => ({
+                base64: card.base64,
+                cardType: cardTypes[index] || 'point',
+                title: index === 0
+                  ? xhsData.title
+                  : index === cards.length - 1
+                    ? xhsData.conclusion
+                    : xhsData.points[index - 1]?.title,
+                content: index === 0
+                  ? xhsData.intro
+                  : index === cards.length - 1
+                    ? (xhsData.tags || []).join(' ')
+                    : xhsData.points[index - 1]?.content,
+              })),
+              subTaskId,  // 使用当前预览任务的 ID
+              {
+                cardCountMode: imageCountMode,
+                articleTitle: xhsData.title,
+                articleIntro: xhsData.intro,
+                workspaceId: subTask.workspaceId,
+                commandResultId: subTask.commandResultId || undefined,
+              }
+            );
+            
+            console.log('[User Decision] 🎨 ✅ 卡片已上传到OSS:', {
+              groupId: uploadResult.groupId,
+              totalCards: uploadResult.totalCards,
+            });
+            
+            // 7. 更新文章的 extInfo（存储 OSS key）
+            const { db } = await import('@/lib/db');
+            const { articleContent } = await import('@/lib/db/schema');
+            const { eq } = await import('drizzle-orm');
+            
+            // 查找文章记录
+            const existingArticles = await db.select()
+              .from(articleContent)
+              .where(eq(articleContent.subTaskId, subTaskId))
+              .limit(1);
+            
+            if (existingArticles.length > 0) {
+              const existingExt = (existingArticles[0] as any).extInfo || {};
+              await db.update(articleContent)
+                .set({
+                  extInfo: {
+                    ...existingExt,
+                    xhsCardStorageKeys: uploadResult.cards.map(c => c.storageKey),
+                    xhsCardGroupId: uploadResult.groupId,
+                    xhsCardStorageType: 'oss',
+                    xhsFullText: xhsData.fullText || '',
+                    xhsTags: xhsData.tags || [],
+                    xhsIntro: xhsData.intro || '',
+                  },
+                } as any)
+                .where(eq(articleContent.subTaskId, subTaskId));
+              
+              console.log('[User Decision] 🎨 ✅ 卡片信息已保存到文章 extInfo');
+            } else {
+              console.warn('[User Decision] 🎨 ⚠️ 未找到文章记录，无法保存卡片信息');
+            }
+            
+          } catch (cardError) {
+            console.error('[User Decision] 🎨 ❌ 卡片生成失败:', cardError);
+            // 不影响主流程
+          }
+        })().catch(err => console.error('[User Decision] 🎨 ❌ 卡片生成异步任务失败:', err));
+      }
+
       return NextResponse.json({
         success: true,
         message: previewAction === 'skip'
