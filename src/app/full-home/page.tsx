@@ -4045,7 +4045,7 @@ function ContentExportTab() {
       const result: any = await apiPost('/api/xiaohongshu/generate-cards/from-task', {
         subTaskId: task.id,
         persist: true,
-        gradientScheme: gradientSchemes, // 传入数组，每张卡片不同颜色
+        gradientSchemes, // 传入数组，每张卡片不同颜色
         cardCountMode: '5-card',
       });
       

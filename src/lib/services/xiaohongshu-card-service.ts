@@ -140,6 +140,7 @@ export interface GeneratedCard {
   base64: string;
   width: number;
   height: number;
+  title?: string;  // 卡片标题（用于文件名）
 }
 
 /**
@@ -311,6 +312,7 @@ async function generateCoverCard(content: CoverCardContent): Promise<GeneratedCa
     base64: buffer.toString('base64'),
     width: CARD_WIDTH,
     height: CARD_HEIGHT,
+    title: content.title,  // 封面标题
   };
 }
 
@@ -372,6 +374,7 @@ async function generatePointCard(content: PointCardContent): Promise<GeneratedCa
     base64: buffer.toString('base64'),
     width: CARD_WIDTH,
     height: CARD_HEIGHT,
+    title: content.title,  // 要点标题
   };
 }
 
@@ -445,6 +448,7 @@ async function generateMinimalPointCard(content: MinimalPointCardContent): Promi
     base64: buffer.toString('base64'),
     width: CARD_WIDTH,
     height: CARD_HEIGHT,
+    title: content.title,  // 极简要点标题
   };
 }
 
@@ -500,6 +504,7 @@ async function generateEndingCard(content: EndingCardContent): Promise<Generated
     base64: buffer.toString('base64'),
     width: CARD_WIDTH,
     height: CARD_HEIGHT,
+    title: content.summary,  // 结尾总结语
   };
 }
 
@@ -557,11 +562,13 @@ export async function generateXiaohongshuCardSet(
  * 从文章内容智能生成卡片组（支持 3/5/7 张图模式）
  *
  * @param article 文章内容
- * @param gradientScheme 渐变配色方案
+ * @param gradientSchemeOrSchemes 渐变配色方案（单个或数组，数组时每张卡片不同颜色）
  * @param imageCountMode 图片数量模式
  *   - '3-card' (极简)：封面 + 1个核心要点(仅标题) + 结尾 = 快速扫读
  *   - '5-card' (标准)：封面 + 3个要点(标题+1行) + 结尾 = 信息适中
  *   - '7-card' (详细)：封面 + 5个要点(完整) + 结尾 = 深度阅读
+ * @param colorScheme 自定义配色（来自多模态分析）
+ * @param contentPromptInstruction 内容模板精简指令（影响卡片文字内容取舍）
  */
 export async function generateCardsFromArticle(
   article: {
@@ -572,64 +579,103 @@ export async function generateCardsFromArticle(
     tags: string[];
     author?: string;
   },
-  gradientScheme: GradientScheme = 'pinkOrange',
+  gradientSchemeOrSchemes: GradientScheme | GradientScheme[] = 'pinkOrange',
   imageCountMode: ImageCountMode = '5-card',
   colorScheme?: CustomColorScheme,  // 🔥 自定义配色（来自多模态分析）
   contentPromptInstruction?: string  // 🔥 内容模板精简指令（影响卡片文字内容取舍）
 ): Promise<GeneratedCard[]> {
-  // 封面卡（所有模式共用）
-  const cover: CoverCardContent = {
-    type: 'cover',
-    title: truncate(article.title, LIMITS.title),
-    subtitle: article.intro ? truncate(article.intro, LIMITS.subtitle) : undefined,
-    author: article.author ? truncate(article.author, LIMITS.author) : undefined,
-    gradientScheme,
-    colorScheme,  // 🔥 传递自定义配色
+  // 统一转换为数组形式
+  const gradientSchemes = Array.isArray(gradientSchemeOrSchemes) 
+    ? gradientSchemeOrSchemes 
+    : [gradientSchemeOrSchemes];
+  
+  // 辅助函数：根据卡片索引获取颜色方案
+  const getSchemeForIndex = (index: number): GradientScheme => {
+    return gradientSchemes[index % gradientSchemes.length];
   };
-
-  // 结尾卡（所有模式共用）
-  const ending: EndingCardContent = {
-    type: 'ending',
-    summary: truncate(article.conclusion, LIMITS.summary),
-    tags: article.tags,
-    callToAction: '关注我，获取更多干货',
-    gradientScheme,
-    colorScheme,  // 🔥 传递自定义配色
-  };
-
   // 根据模式裁剪要点并选择卡片类型
   // 🔥 根据内容模板精简指令决定要点卡内容量（所有模式通用）
   const shouldStripPointContent = contentPromptInstruction?.includes('要点仅标题无内容');
 
   if (imageCountMode === '3-card') {
     // ===== 3张极简模式：封面 + 1个最核心要点(仅标题) + 结尾 =====
+    // 索引：封面=0, 要点=1, 结尾=2
+    const cover: CoverCardContent = {
+      type: 'cover',
+      title: truncate(article.title, LIMITS.title),
+      subtitle: article.intro ? truncate(article.intro, LIMITS.subtitle) : undefined,
+      author: article.author ? truncate(article.author, LIMITS.author) : undefined,
+      gradientScheme: getSchemeForIndex(0),
+      colorScheme,
+    };
+    
     const topPoint = article.points[0] || { title: article.title, content: '' };
     const minimalPoint: MinimalPointCardContent = {
       type: 'minimal-point',
       number: 1,
-      title: truncate(topPoint.title, 20),  // 极简模式允许稍长标题
+      title: truncate(topPoint.title, 20),
       subtitle: shouldStripPointContent ? undefined : (topPoint.content ? truncate(topPoint.content, 15) : undefined),
-      gradientScheme,
-      colorScheme,  // 🔥 传递自定义配色
+      gradientScheme: getSchemeForIndex(1),
+      colorScheme,
     };
+    
+    const ending: EndingCardContent = {
+      type: 'ending',
+      summary: truncate(article.conclusion, LIMITS.summary),
+      tags: article.tags,
+      callToAction: '关注我，获取更多干货',
+      gradientScheme: getSchemeForIndex(2),
+      colorScheme,
+    };
+    
     return generateXiaohongshuCardSet(cover, [], ending, [minimalPoint]);
   }
 
   if (imageCountMode === '5-card') {
     // ===== 5张标准模式：封面 + 3个要点(标题+精简内容) + 结尾 =====
+    // 索引：封面=0, 要点1=1, 要点2=2, 要点3=3, 结尾=4
+    const cover: CoverCardContent = {
+      type: 'cover',
+      title: truncate(article.title, LIMITS.title),
+      subtitle: article.intro ? truncate(article.intro, LIMITS.subtitle) : undefined,
+      author: article.author ? truncate(article.author, LIMITS.author) : undefined,
+      gradientScheme: getSchemeForIndex(0),
+      colorScheme,
+    };
+    
     const selectedPoints = article.points.slice(0, 3);
     const concisePoints: PointCardContent[] = selectedPoints.map((p, i) => ({
       type: 'point' as const,
       number: i + 1,
       title: truncate(p.title, LIMITS.pointTitle),
       content: shouldStripPointContent ? '' : truncate(p.content, 50),
-      gradientScheme,
-      colorScheme,  // 🔥 传递自定义配色
+      gradientScheme: getSchemeForIndex(i + 1),  // 要点从索引1开始
+      colorScheme,
     }));
+    
+    const ending: EndingCardContent = {
+      type: 'ending',
+      summary: truncate(article.conclusion, LIMITS.summary),
+      tags: article.tags,
+      callToAction: '关注我，获取更多干货',
+      gradientScheme: getSchemeForIndex(4),  // 结尾是第5张（索引4）
+      colorScheme,
+    };
+    
     return generateXiaohongshuCardSet(cover, concisePoints, ending);
   }
 
   // ===== 7张详细模式（默认）：封面 + 5个要点(完整内容) + 结尾 =====
+  // 索引：封面=0, 要点1~5=1~5, 结尾=6
+  const cover: CoverCardContent = {
+    type: 'cover',
+    title: truncate(article.title, LIMITS.title),
+    subtitle: article.intro ? truncate(article.intro, LIMITS.subtitle) : undefined,
+    author: article.author ? truncate(article.author, LIMITS.author) : undefined,
+    gradientScheme: getSchemeForIndex(0),
+    colorScheme,
+  };
+  
   const pointContentLimit = contentPromptInstruction?.includes('简短说明')
     ? 30  // 短内容模式
     : contentPromptInstruction?.includes('详细内容')
@@ -641,8 +687,18 @@ export async function generateCardsFromArticle(
     number: i + 1,
     title: truncate(p.title, LIMITS.pointTitle),
     content: shouldStripPointContent ? '' : truncate(p.content, pointContentLimit),
-    gradientScheme,
-    colorScheme,  // 🔥 传递自定义配色
+    gradientScheme: getSchemeForIndex(i + 1),  // 要点从索引1开始
+    colorScheme,
   }));
+  
+  const ending: EndingCardContent = {
+    type: 'ending',
+    summary: truncate(article.conclusion, LIMITS.summary),
+    tags: article.tags,
+    callToAction: '关注我，获取更多干货',
+    gradientScheme: getSchemeForIndex(6),  // 结尾是第7张（索引6）
+    colorScheme,
+  };
+  
   return generateXiaohongshuCardSet(cover, standardPoints, ending);
 }

@@ -66,7 +66,7 @@ export async function POST(request: NextRequest) {
     // 方式2：用户 session 认证（前端调用）
     const authResult = await requireAuth(request);
     if (authResult instanceof NextResponse) return authResult;
-    workspaceId = getWorkspaceId(request);
+    workspaceId = await getWorkspaceId(request);
   }
 
   try {
@@ -271,7 +271,7 @@ export async function GET(request: NextRequest) {
       if (internalToken !== INTERNAL_API_TOKEN) {
         const authResult = await requireAuth(request);
         if (authResult instanceof NextResponse) return authResult;
-        workspaceId = getWorkspaceId(request);
+        workspaceId = await getWorkspaceId(request);
       } else {
         // P0 修复：内部调用时从 URL 参数获取 workspaceId
         workspaceId = queryWorkspaceId || undefined;

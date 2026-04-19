@@ -61,8 +61,8 @@ function extractXhsArticleFromTask(task: typeof agentSubTasks.$inferSelect): {
     return null;
   }
   
-  // 提取字段
-  const title = platformData.title || task.articleTitle || '未命名文章';
+  // 提取字段（从 metadata 或 resultData 获取标题）
+  const title = platformData.title || (task.metadata as any)?.articleTitle || '未命名文章';
   const intro = platformData.intro || '';
   const points = platformData.points || [];
   const conclusion = platformData.conclusion || '';
@@ -94,7 +94,8 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const {
       subTaskId,
-      gradientScheme = 'pinkOrange',
+      gradientScheme,  // 单个颜色方案（兼容旧调用）
+      gradientSchemes, // 颜色方案数组（每张卡片不同颜色）
       cardCountMode = '5-card',
       persist = true,  // 默认持久化
     } = body;
@@ -108,13 +109,20 @@ export async function POST(request: NextRequest) {
     }
     
     // 类型守卫校验
-    const finalGradientScheme: GradientScheme = isValidGradientScheme(gradientScheme)
-      ? gradientScheme
-      : 'pinkOrange';
-    
     const finalCardCountMode: ImageCountMode = isValidCardCountMode(cardCountMode)
       ? cardCountMode
       : '5-card';
+    
+    // 颜色方案处理：优先使用数组，其次单个值，最后默认值
+    let finalGradientSchemes: GradientScheme[];
+    if (Array.isArray(gradientSchemes) && gradientSchemes.every(isValidGradientScheme)) {
+      finalGradientSchemes = gradientSchemes;
+    } else if (typeof gradientScheme === 'string' && isValidGradientScheme(gradientScheme)) {
+      finalGradientSchemes = [gradientScheme];
+    } else {
+      // 默认：每张卡片不同颜色
+      finalGradientSchemes = ['pinkOrange', 'bluePurple', 'tealGreen', 'orangeYellow', 'deepBlue'];
+    }
     
     // ========== 查询任务 ==========
     // 只按 ID 查询，不做 workspaceId 校验（任务 ID 已经足够唯一）
@@ -132,7 +140,7 @@ export async function POST(request: NextRequest) {
     }
     
     const task = tasks[0];
-    const workspaceId = task.workspaceId || getWorkspaceId(request);
+    const workspaceId = task.workspaceId || await getWorkspaceId(request);
     
     // ========== 提取文章内容 ==========
     const article = extractXhsArticleFromTask(task);
@@ -149,15 +157,13 @@ export async function POST(request: NextRequest) {
       title: article.title,
       pointsCount: article.points.length,
       subTaskId,
+      gradientSchemes: finalGradientSchemes,
     });
     
-    // ========== 生成卡片（每张卡片不同颜色） ==========
-    // 渐变色方案列表：封面、要点1、要点2、要点3、结尾
-    const gradientSchemes: GradientScheme[] = ['pinkOrange', 'bluePurple', 'tealGreen', 'orangeYellow', 'deepBlue'];
-    
+    // ========== 生成卡片 ==========
     const cards = await generateCardsFromArticle(
       article,
-      gradientSchemes,  // 传入数组，每张卡片不同颜色
+      finalGradientSchemes,  // 传入数组，每张卡片不同颜色
       finalCardCountMode
     );
     

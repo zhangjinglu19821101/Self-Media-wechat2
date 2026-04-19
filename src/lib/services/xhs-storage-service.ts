@@ -93,10 +93,10 @@ export async function uploadXhsCard(
   console.log(`[XhsStorage] 上传卡片成功: ${storageKey}, 大小: ${buffer.length} bytes`);
   
   // 生成签名 URL（有效期 7 天 = 604800 秒）
-  const signedUrl = await storage.generatePresignedUrl({
+  const signedUrl: string = await storage.generatePresignedUrl({
     key: storageKey,
     expireTime: 604800,
-  });
+  }) as string;
   
   // 写入数据库
   const [cardRecord] = await db.insert(xhsCards).values({
