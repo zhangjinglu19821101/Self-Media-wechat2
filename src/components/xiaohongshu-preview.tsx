@@ -636,14 +636,13 @@ export function XiaohongshuPreview({
                         ))}
                       </>
                     )}
-                    {(content.content || content.fullText) && (
-                      <button
-                        onClick={() => setIsFullTextExpanded(!isFullTextExpanded)}
-                        className="text-xs text-red-500 font-semibold hover:text-red-600 transition-colors underline decoration-dotted underline-offset-2"
-                      >
-                        {isFullTextExpanded ? '收起' : '展开全文'}
-                      </button>
-                    )}
+                    {/* 展开/收起按钮 - 始终显示 */}
+                    <button
+                      onClick={() => setIsFullTextExpanded(!isFullTextExpanded)}
+                      className="text-xs text-red-500 font-semibold hover:text-red-600 transition-colors underline decoration-dotted underline-offset-2"
+                    >
+                      {isFullTextExpanded ? '收起' : '展开全文'}
+                    </button>
                   </div>
                   
                   {/* 发布信息 */}
