@@ -398,6 +398,7 @@ function XiaohongshuContentPreview({
   const [touchEnd, setTouchEnd] = useState<number | null>(null);
   const [isLiked, setIsLiked] = useState(false);
   const [isCollected, setIsCollected] = useState(false);
+  const [isFullTextExpanded, setIsFullTextExpanded] = useState(false);
   
   // 解析数据
   const parsed = platformRenderData 
@@ -646,9 +647,18 @@ function XiaohongshuContentPreview({
           
           {/* 正文 */}
           {parsed.fullText && (
-            <p className="text-sm text-gray-700 leading-relaxed mb-3 line-clamp-3">
-              {parsed.fullText}
-            </p>
+            <div className="relative">
+              <p className={`text-sm text-gray-700 leading-relaxed mb-2 ${isFullTextExpanded ? '' : 'line-clamp-3'}`}>
+                {parsed.fullText}
+              </p>
+              {/* 展开/收起按钮 */}
+              <button
+                onClick={() => setIsFullTextExpanded(!isFullTextExpanded)}
+                className="text-xs text-red-500 font-semibold hover:text-red-600 transition-colors underline decoration-dotted underline-offset-2 mb-3"
+              >
+                {isFullTextExpanded ? '收起' : '展开全文'}
+              </button>
+            </div>
           )}
           
           {/* 标签 */}
