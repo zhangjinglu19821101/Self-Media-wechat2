@@ -47,11 +47,11 @@ export async function GET(
  */
 export async function PUT(
   request: NextRequest,
-  { params }: { params: { agentId: string; memoryId: string } }
+  { params }: { params: Promise<{ id: string; memoryId: string }> }
 ) {
   try {
     const body = await request.json();
-    const { memoryId } = params;
+    const { memoryId } = await params;
 
     const updates = {
       title: body.title,
@@ -102,10 +102,10 @@ export async function PUT(
  */
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { agentId: string; memoryId: string } }
+  { params }: { params: Promise<{ id: string; memoryId: string }> }
 ) {
   try {
-    const { memoryId } = params;
+    const { memoryId } = await params;
 
     await agentMemory.deleteMemory(memoryId);
 

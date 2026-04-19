@@ -22,6 +22,9 @@ const nextConfig: NextConfig = {
   // 🔧 Turbopack 配置（Next.js 16+）
   turbopack: {},
 
+  // 🔧 配置原生模块为外部包（Turbopack 构建）
+  serverExternalPackages: ['@napi-rs/canvas'],
+
   // 🔧 配置模块解析路径
   experimental: {
     optimizePackageImports: ['lucide-react', '@radix-ui/react-icons', 'date-fns', 'lodash'],

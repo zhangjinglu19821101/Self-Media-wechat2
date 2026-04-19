@@ -26,10 +26,10 @@ interface ConsultRequest {
  */
 export async function POST(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const commandId = params.id;
+    const { id: commandId } = await params;
     const body: ConsultRequest = await request.json();
     const { type, problemDescription, response } = body;
 
@@ -227,10 +227,10 @@ async function handleInspectionResponse(
  */
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const commandId = params.id;
+    const { id: commandId } = await params;
 
     // 查询指令详情
     const [command] = await db

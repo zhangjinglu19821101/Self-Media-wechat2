@@ -10,7 +10,7 @@ import { TaskManager } from '@/lib/services/task-manager';
  */
 export async function POST(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   console.log('📥 === /api/tasks/[id]/status 收到任务状态更新请求 ===');
 
@@ -18,7 +18,7 @@ export async function POST(
     const authResult = await requireAuth(request);
     if (authResult instanceof NextResponse) return authResult;
 
-    const taskId = params.id;
+    const { id: taskId } = await params;
     const body = await request.json();
     const { status, result } = body;
 

@@ -67,11 +67,11 @@ export async function GET(
  */
 export async function POST(
   request: NextRequest,
-  { params }: { params: { agentId: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const body = await request.json();
-    const { agentId } = params;
+    const { id: agentId } = await params;
 
     const {
       memoryType,

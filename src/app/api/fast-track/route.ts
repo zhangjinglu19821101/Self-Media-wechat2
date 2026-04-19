@@ -140,12 +140,13 @@ export async function GET(request: NextRequest) {
 }
 
 /**
- * PUT /api/fast-track/:executionId - 更新快速通道执行记录
+ * PUT /api/fast-track - 更新快速通道执行记录
+ * 请求体需要包含 executionId
  */
-export async function PUT(request: NextRequest, { params }: { params: { executionId: string } }) {
+export async function PUT(request: NextRequest) {
   try {
-    const executionId = params.executionId;
     const body = await request.json();
+    const { executionId, ...updates } = body;
 
     const execution = fastTrackExecutions.get(executionId);
     if (!execution) {

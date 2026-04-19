@@ -11,7 +11,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { agentTasks, dailyTask, agentSubTasks } from '@/lib/db/schema';
 import { eq } from 'drizzle-orm';
-import { TaskStateMachine, TaskStatus, CommandStatus } from '@/lib/services/task-state-machine';
+import { TaskStateMachine, TaskStatusConst, CommandStatus } from '@/lib/services/task-state-machine';
 
 /**
  * 测试任务失败级联
@@ -59,7 +59,7 @@ export async function POST(request: NextRequest) {
       console.log(`📊 级联前统计: ${commandsBefore.length} 个指令, ${subTasksBefore.length} 个子任务`);
 
       // 3. 标记任务为失败
-      await TaskStateMachine.updateTaskStatus(taskId, TaskStatus.FAILED, 'test', '测试级联失败');
+      await TaskStateMachine.updateTaskStatus(taskId, TaskStatusConst.FAILED, 'test', '测试级联失败');
       console.log(`✅ 任务状态已更新为 failed`);
 
       // 4. 获取所有关联指令和子任务（级联后）
@@ -89,7 +89,7 @@ export async function POST(request: NextRequest) {
         message: '任务失败级联测试完成',
         data: {
           taskId,
-          taskStatus: TaskStatus.FAILED,
+          taskStatus: TaskStatusConst.FAILED,
           cascadeBefore: {
             commandsCount: commandsBefore.length,
             subTasksCount: subTasksBefore.length,

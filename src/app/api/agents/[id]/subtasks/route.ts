@@ -233,15 +233,14 @@ export async function POST(
  */
 export async function PUT(
   request: NextRequest,
-  { params }: { params: { id: string; subtaskId: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
       const authResult = await requireAuth(request);
     if (authResult instanceof NextResponse) return authResult;
 
     try {
-    const agentId = params.id;
-    const subtaskId = params.subtaskId;
-    const { status, completedAt } = await request.json();
+    const { id: agentId } = await params;
+    const { status, completedAt, subtaskId } = await request.json();
     
     if (!status) {
       return NextResponse.json({

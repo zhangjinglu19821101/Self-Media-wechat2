@@ -10,12 +10,12 @@ import { wsServer } from '@/lib/websocket-server';
  */
 export async function PUT(
   request: NextRequest,
-  { params }: { params: { feedbackId: string } }
+  { params }: { params: Promise<{ feedbackId: string }> }
 ) {
   console.log('📥 === /api/feedback/:feedbackId 收到更新请求 ===');
 
   try {
-    const { feedbackId } = params;
+    const { feedbackId } = await params;
     const body = await request.json();
     const { status, resolution, resolvedCommand } = body;
 

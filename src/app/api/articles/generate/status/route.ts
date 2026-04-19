@@ -1,37 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getCronScheduler } from '@/lib/article-generator/instance';
-import { ArticleGenerator } from '@/lib/article-generator/generator';
-import { ArticleType } from '@/lib/article-generator/types';
 
 /**
  * GET /api/articles/generate/status
  * 获取文章生成调度器状态
+ * 
+ * 注意：此功能已迁移到新的任务系统，请使用 /api/tasks 接口
  */
 export async function GET() {
-  try {
-    const scheduler = getCronScheduler();
-    const config = scheduler.getConfig();
-    const nextExecution = scheduler.getNextExecutionTimes();
-
-    return NextResponse.json({
-      success: true,
-      data: {
-        config,
-        nextExecution: {
-          ai: nextExecution.ai.toISOString(),
-          insurance: nextExecution.insurance.toISOString(),
-        },
-        status: 'running',
-      },
-    });
-  } catch (error: any) {
-    console.error('Failed to get article generation status:', error);
-    return NextResponse.json(
-      {
-        success: false,
-        error: error.message,
-      },
-      { status: 500 }
-    );
-  }
+  return NextResponse.json(
+    {
+      success: false,
+      error: '此功能已迁移到新的任务系统',
+      message: '请使用 /api/tasks 接口查看任务状态',
+    },
+    { status: 410 } // 410 Gone - 表示资源已不存在
+  );
 }

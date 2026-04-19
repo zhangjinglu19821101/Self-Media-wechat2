@@ -11,13 +11,13 @@ import { styleLearner } from '@/lib/style-analyzer';
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
       const authResult = await requireAuth(request);
     if (authResult instanceof NextResponse) return authResult;
 
     try {
-    const { id } = params;
+    const { id } = await params;
 
     const template = styleLearner.getTemplate(id);
 
@@ -49,13 +49,13 @@ export async function GET(
 
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
       const authResult = await requireAuth(request);
     if (authResult instanceof NextResponse) return authResult;
 
     try {
-    const { id } = params;
+    const { id } = await params;
 
     const deleted = styleLearner.deleteTemplate(id);
 
@@ -87,13 +87,13 @@ export async function DELETE(
 
 export async function PATCH(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
       const authResult = await requireAuth(request);
     if (authResult instanceof NextResponse) return authResult;
 
     try {
-    const { id } = params;
+    const { id } = await params;
     const body = await request.json();
 
     const updated = styleLearner.updateTemplate(id, body);

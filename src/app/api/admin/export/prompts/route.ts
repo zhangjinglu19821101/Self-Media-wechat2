@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { agents } from '@/lib/agent-prompts';
+import { AGENT_PROMPTS, getAgentPrompt, getAllAgentPrompts } from '@/lib/agent-prompts';
 
 /**
  * 导出 Agent 提示词
@@ -12,15 +12,12 @@ export async function GET(request: NextRequest) {
 
     if (!agentId) {
       // 返回所有 Agent 的提示词
-      const allAgents = agents.map((agent) => ({
-        id: agent.id,
-        name: agent.name,
-        role: agent.role,
-        description: agent.description,
-        systemPrompt: agent.systemPrompt,
-        capabilities: agent.capabilities,
-        restrictions: agent.restrictions,
-        tools: agent.tools,
+      const allPrompts = getAllAgentPrompts();
+      const allAgents = Object.entries(allPrompts).map(([id, prompt]) => ({
+        id,
+        name: id.toUpperCase(),
+        role: 'Agent',
+        systemPrompt: prompt.systemPrompt,
       }));
 
       return NextResponse.json({
@@ -34,8 +31,8 @@ export async function GET(request: NextRequest) {
     }
 
     // 返回指定 Agent 的提示词
-    const agent = agents.find((a) => a.id === agentId);
-    if (!agent) {
+    const prompt = getAgentPrompt(agentId);
+    if (!prompt) {
       return NextResponse.json(
         {
           success: false,
@@ -51,14 +48,10 @@ export async function GET(request: NextRequest) {
         version: '1.0.0',
         exportTime: new Date().toISOString(),
         agent: {
-          id: agent.id,
-          name: agent.name,
-          role: agent.role,
-          description: agent.description,
-          systemPrompt: agent.systemPrompt,
-          capabilities: agent.capabilities,
-          restrictions: agent.restrictions,
-          tools: agent.tools,
+          id: agentId,
+          name: agentId.toUpperCase(),
+          role: 'Agent',
+          systemPrompt: prompt.systemPrompt,
         },
       },
     });
@@ -92,8 +85,8 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const agent = agents.find((a) => a.id === agentId);
-    if (!agent) {
+    const prompt = getAgentPrompt(agentId);
+    if (!prompt) {
       return NextResponse.json(
         {
           success: false,
@@ -104,54 +97,24 @@ export async function POST(request: NextRequest) {
     }
 
     // 生成 Markdown 内容
-    let markdown = `# Agent ${agent.id} 提示词导出\n\n`;
+    let markdown = `# Agent ${agentId} 提示词导出\n\n`;
     markdown += `**导出时间**: ${new Date().toLocaleString('zh-CN')}\n\n`;
     markdown += `---\n\n`;
 
     markdown += `## 基本信息\n\n`;
-    markdown += `- **ID**: ${agent.id}\n`;
-    markdown += `- **名称**: ${agent.name}\n`;
-    markdown += `- **角色**: ${agent.role}\n`;
-    markdown += `- **描述**: ${agent.description}\n\n`;
+    markdown += `- **ID**: ${agentId}\n`;
+    markdown += `- **名称**: ${agentId.toUpperCase()}\n\n`;
 
     markdown += `---\n\n`;
 
     markdown += `## 系统提示词\n\n`;
-    markdown += `\`\`\`\n${agent.systemPrompt}\n\`\`\`\n\n`;
-
-    markdown += `---\n\n`;
-
-    markdown += `## 核心能力\n\n`;
-    for (const capability of agent.capabilities) {
-      markdown += `- ${capability}\n`;
-    }
-    markdown += `\n`;
-
-    markdown += `---\n\n`;
-
-    if (agent.restrictions && agent.restrictions.length > 0) {
-      markdown += `## 限制条件\n\n`;
-      for (const restriction of agent.restrictions) {
-        markdown += `- ${restriction}\n`;
-      }
-      markdown += `\n`;
-    }
-
-    markdown += `---\n\n`;
-
-    if (agent.tools && agent.tools.length > 0) {
-      markdown += `## 可用工具\n\n`;
-      for (const tool of agent.tools) {
-        markdown += `- **${tool.name}**: ${tool.url}\n`;
-      }
-      markdown += `\n`;
-    }
+    markdown += `\`\`\`\n${prompt.systemPrompt}\n\`\`\`\n\n`;
 
     return NextResponse.json({
       success: true,
       data: {
         content: markdown,
-        filename: `agent-${agent.id}-prompt-${new Date().toISOString().split('T')[0]}.md`,
+        filename: `agent-${agentId}-prompt-${new Date().toISOString().split('T')[0]}.md`,
       },
     });
   } catch (error) {

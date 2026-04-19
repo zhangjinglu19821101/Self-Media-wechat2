@@ -2,7 +2,7 @@
  * Agent 管理器全局实例初始化
  */
 
-import { AgentManager } from './agent-manager';
+import { AgentManager } from '.';
 
 let agentManagerInstance: AgentManager | null = null;
 

@@ -7,7 +7,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { requireAuth } from '@/lib/auth/context';
 import { db } from '@/lib/db';
 import { agentTasks, agentNotifications } from '@/lib/db/schema';
-import { TaskStateMachine, TaskStatus } from '@/lib/services/task-state-machine';
+import { TaskStateMachine, TaskStatusConst } from '@/lib/services/task-state-machine';
 import { eq } from 'drizzle-orm';
 
 interface ConfirmRequest {
@@ -20,13 +20,13 @@ interface ConfirmRequest {
  */
 export async function POST(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
       const authResult = await requireAuth(request);
     if (authResult instanceof NextResponse) return authResult;
 
     try {
-    const taskId = params.id;
+    const { id: taskId } = await params;
     const body: ConfirmRequest = await request.json();
     const { approved, comments } = body;
 
@@ -44,7 +44,7 @@ export async function POST(
     }
 
     // 2. 验证任务状态
-    if (task.taskStatus !== TaskStatus.SPLIT_COMPLETED) {
+    if (task.taskStatus !== TaskStatusConst.SPLIT_COMPLETED) {
       return NextResponse.json(
         { error: `任务状态不允许确认，当前状态：${task.taskStatus}` },
         { status: 400 }
@@ -83,7 +83,7 @@ export async function POST(
       // 5. 更新任务状态为"拆分完成"（实际应该调用 POST /api/commands）
       const [updatedTask] = await TaskStateMachine.updateTaskStatus(
         taskId,
-        TaskStatus.SPLIT_COMPLETED,
+        TaskStatusConst.SPLIT_COMPLETED,
         'agent A',
         `拆解方案已确认，${comments || '无备注'}`
       );
@@ -125,7 +125,7 @@ export async function POST(
       // 4. 更新任务状态为"拆分中"（让 Agent B 重新拆解）
       const [updatedTask] = await TaskStateMachine.updateTaskStatus(
         taskId,
-        TaskStatus.SPLITTING,
+        TaskStatusConst.SPLITTING,
         'agent A',
         `拆解方案已退回，原因：${comments || '无备注'}`
       );
