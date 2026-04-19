@@ -143,8 +143,8 @@ async function handleSingleSplit(taskId: string) {
       splitType: 'agent_b_split',
       subTaskCount: splitResult.subTasks?.length || 0,
       splitPopupStatus: null,
-      originalTaskContent: task.metadata?.splitRequest?.originalContent || task.coreCommand || task.taskDescription || task.taskName || '',
-      originalTaskTitle: task.taskTitle || task.taskName || '',
+      originalTaskContent: task.metadata?.splitRequest?.originalContent || task.coreCommand || task.taskName || '',
+      originalTaskTitle: task.taskName || '',
     },
   });
 
@@ -262,14 +262,14 @@ async function handleBatchSplit(taskIds: string[]) {
       // 步骤2：合并该组所有任务的描述
       console.log(`   📝 合并分组任务描述...`);
       const combinedTaskDescription = groupTasks.map((task, index) => {
-        return `## 任务 ${index + 1}：${task.taskTitle || task.taskName}
+        return `## 任务 ${index + 1}：${task.taskName}
 
 **任务 ID**: ${task.taskId}
 **执行者**: ${executor}
 **优先级**: ${task.taskPriority || 'normal'}
 
 **任务描述**:
-${task.coreCommand || task.taskDescription || ''}
+${task.coreCommand || ''}
 
 **交付物**: ${task.taskName || ''}`;
       }).join('\n\n---\n\n');
@@ -388,7 +388,7 @@ ${task.coreCommand || task.taskDescription || ''}
         await createNotification({
           agentId: 'A',
           type: 'agent_b_split_result',
-          title: `Agent B 批量拆解完成: ${task.taskTitle || task.taskName} (${date}, ${executor})`,
+          title: `Agent B 批量拆解完成: ${task.taskName} (${date}, ${executor})`,
           content: {
             fromAgentId: 'B',
             toAgentId: 'A',
@@ -407,7 +407,7 @@ ${task.coreCommand || task.taskDescription || ''}
             date: date,
             executor: executor,
             splitPopupStatus: null,
-            originalTaskContent: groupTasks.map(t => `${t.taskTitle || t.taskName || ''}`).join('\n\n'),
+            originalTaskContent: groupTasks.map(t => `${t.taskName || ''}`).join('\n\n'),
             originalTaskTitle: `批量拆解 ${groupTasks.length} 个任务 (${date}, ${executor})`,
           },
         });

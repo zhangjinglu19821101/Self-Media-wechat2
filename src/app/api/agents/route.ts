@@ -13,9 +13,6 @@ import { AGENT_PROMPTS } from '@/lib/agent-prompts';
  */
 export async function GET() {
   try {
-    const authResult = await requireAuth(request);
-    if (authResult instanceof NextResponse) return authResult;
-
     const agents = agentManager.getAllAgents();
 
     // 为每个 Agent 添加提示词信息（只返回摘要，不返回完整内容）

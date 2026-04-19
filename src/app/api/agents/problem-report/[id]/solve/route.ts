@@ -140,7 +140,7 @@ export async function GET(
     const [problem] = await db
       .select()
       .from(problemReports)
-      .where(schema.eq(problemReports.id, id));
+      .where(eq(problemReports.id, id));
 
     if (!problem) {
       return NextResponse.json(

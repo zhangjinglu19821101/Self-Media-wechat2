@@ -57,7 +57,7 @@ export async function PUT(
       id: task.id,
       executor: task.fromParentsExecutor,
       orderIndex: task.orderIndex,
-      originalLength: (task.executionResult || '').length,
+      originalLength: (task.resultText || '').length,
       newLength: content.length,
     });
 
@@ -67,7 +67,7 @@ export async function PUT(
       ...(task.metadata as object || {}),
       userEditedAt: new Date().toISOString(),
       userEditedContent: true,
-      originalContent: task.executionResult,
+      originalContent: task.resultText,
       // 🔥 两阶段流程：标记文章已编辑，可进入第二阶段
       phase: 'creation_ready_for_publish', // 第一阶段完成，等待用户确认发布
       confirmedArticleContent: content, // 🔥 关键：存储最终确认的文章内容（第二阶段任务通过此字段获取）

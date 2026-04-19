@@ -13,7 +13,8 @@ import '@/lib/websocket-server';
 import { startAllCronJobs } from '@/lib/cron';
 
 // 🔥 MCP 工具自动注册器
-import { toolAutoRegistrar } from '@/lib/mcp/tool-auto-registrar';
+// 注意：仅在运行时初始化，不在构建时执行（避免 DataCloneError）
+// import { toolAutoRegistrar } from '@/lib/mcp/tool-auto-registrar';
 
 // 启动后台服务（仅在服务端运行）
 if (typeof window === 'undefined') {
@@ -29,12 +30,13 @@ if (typeof window === 'undefined') {
   startAllCronJobs();
   console.log('✅ 定时任务调度器已启动');
 
-  // 🔥 初始化 MCP 工具自动注册器（启动时注册 + 每10分钟刷新）
-  console.log('[Init] 开始初始化 MCP 工具自动注册器...');
-  toolAutoRegistrar.initialize().catch(error => {
-    console.error('[Init] MCP 工具自动注册器初始化失败:', error);
-    // 注意：不要让初始化失败阻断服务启动
-  });
+  // 🔥 MCP 工具自动注册器延迟初始化（避免构建时 DataCloneError）
+  import('@/lib/mcp/tool-auto-registrar').then(({ toolAutoRegistrar }) => {
+    console.log('[Init] 开始初始化 MCP 工具自动注册器...');
+    toolAutoRegistrar.initialize().catch(error => {
+      console.error('[Init] MCP 工具自动注册器初始化失败:', error);
+    });
+  }).catch(() => {});
 }
 
 export const metadata: Metadata = {

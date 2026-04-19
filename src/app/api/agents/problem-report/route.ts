@@ -11,6 +11,7 @@ import { getDatabase, schema } from '@/lib/db';
 import { problemReports } from '@/lib/db/problem-schema';
 import { ProblemReport, ProblemType, ProblemPriority } from '@/lib/problem-report/types';
 import { wsServer } from '@/lib/websocket-server';
+import { like, desc } from 'drizzle-orm';
 
 /**
  * POST /api/agents/problem-report
@@ -153,8 +154,8 @@ export async function GET(request: NextRequest) {
     let query = db
       .select()
       .from(problemReports)
-      .where(schema.like(problemReports.status, status))
-      .orderBy(schema.desc(problemReports.createdAt))
+      .where(like(problemReports.status, status))
+      .orderBy(desc(problemReports.createdAt))
       .limit(limit);
 
     // 可选筛选条件

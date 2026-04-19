@@ -11,7 +11,7 @@ import { AgentId } from './agent-types';
 import { authenticateWebSocket, WSAuthResult } from './websocket-auth';
 
 export interface WSMessage {
-  type: 'new_command' | 'task_result' | 'system_notification' | 'pong' | 'ping' | 'command_cancelled' | 'problem_solved';
+  type: 'new_command' | 'task_result' | 'system_notification' | 'pong' | 'ping' | 'command_cancelled' | 'problem_solved' | 'new_problem';
   fromAgentId?: string;
   toAgentId?: string;
   command?: string;
@@ -25,6 +25,14 @@ export interface WSMessage {
   status?: string;
   // 🔥 新增：通知ID（用于关联数据库中的通知记录）
   notificationId?: string;
+  // 🔥 新增：问题ID（用于问题解决通知）
+  problemId?: string;
+  solution?: string;
+  // 🔥 新增：问题报告相关字段
+  fromAgentName?: string;
+  problemType?: string;
+  title?: string;
+  description?: string;
 }
 
 export interface WSClient {
