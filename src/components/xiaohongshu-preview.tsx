@@ -619,22 +619,20 @@ export function XiaohongshuPreview({
                   {/* 正文 */}
                   {(content.content || content.fullText) && (
                     <div className="relative">
-                      <p className={`text-sm text-gray-700 leading-relaxed mb-3 ${isFullTextExpanded ? '' : 'line-clamp-3'}`}>
+                      <p className={`text-sm text-gray-700 leading-relaxed ${isFullTextExpanded ? '' : 'line-clamp-3'}`}>
                         {content.content || content.fullText}
                       </p>
-                      {/* 展开/收起按钮 - 始终显示 */}
-                      {(content.content || content.fullText) && (
-                        <button
-                          onClick={() => setIsFullTextExpanded(!isFullTextExpanded)}
-                          className="text-xs text-red-500 font-medium mb-2 hover:text-red-600 transition-colors flex items-center gap-1"
-                        >
-                          {isFullTextExpanded ? (
-                            <>收起 <span className="text-[10px]">▲</span></>
-                          ) : (
-                            <>展开全文 <span className="text-[10px]">▼</span></>
-                          )}
-                        </button>
-                      )}
+                      {/* 展开/收起按钮 - 单独一行，更明显 */}
+                      <button
+                        onClick={() => setIsFullTextExpanded(!isFullTextExpanded)}
+                        className="w-full mt-2 mb-3 py-1.5 text-sm text-red-500 font-medium hover:text-red-600 transition-colors flex items-center justify-center gap-1 bg-gray-50 rounded-md"
+                      >
+                        {isFullTextExpanded ? (
+                          <>收起 <span>▲</span></>
+                        ) : (
+                          <>展开全文 <span>▼</span></>
+                        )}
+                      </button>
                     </div>
                   )}
                   
