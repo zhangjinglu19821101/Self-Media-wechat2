@@ -327,8 +327,13 @@ export async function getCardGroupUrlsBySubTaskId(
     ? and(eq(xhsCardGroups.subTaskId, subTaskId), eq(xhsCardGroups.workspaceId, workspaceId))
     : eq(xhsCardGroups.subTaskId, subTaskId);
   
-  // 查询卡片组
-  const [group] = await db.select().from(xhsCardGroups).where(whereConditions).limit(1);
+  // 🔥 P0 修复：按创建时间倒序获取最新的卡片组（而非最早的）
+  const groups = await db.select().from(xhsCardGroups)
+    .where(whereConditions)
+    .orderBy(sql`${xhsCardGroups.createdAt} DESC`)
+    .limit(1);
+  
+  const group = groups[0];
   
   if (!group) {
     return [];
