@@ -493,16 +493,10 @@ export async function searchCases(params: CaseSearchParams): Promise<CaseMatchRe
   const hasSearchConditions = !!(keywords || (productTags && productTags.length > 0) || (crowdTags && crowdTags.length > 0) || (sceneTags && sceneTags.length > 0));
   
   let finalResults: CaseMatchResult[];
-  if (hasSearchConditions && matchedResults.length > 0) {
-    // 有搜索条件且有匹配结果 → 匹配结果优先，不足时用热门补充
-    finalResults = [
-      ...matchedResults,
-      ...fallbackResults.slice(0, Math.max(limit - matchedResults.length, 0)),
-    ];
-  } else if (hasSearchConditions && matchedResults.length === 0) {
-    // 有搜索条件但无匹配结果 → 不返回不相关的热门案例，保持空列表
-    // 前端会显示"暂无匹配案例"的友好提示
-    finalResults = [];
+  if (hasSearchConditions) {
+    // 有搜索条件 → 只返回匹配结果，不用热门案例补充
+    // 用户期望精准搜索，返回不相关案例会降低体验
+    finalResults = matchedResults;
   } else {
     // 无搜索条件 → 返回热门案例（浏览模式）
     finalResults = [
