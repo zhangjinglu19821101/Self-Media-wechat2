@@ -4135,6 +4135,82 @@ function ContentExportTab() {
     }
   };
 
+  // 预览小红书卡片图片
+  const previewXhsImages = async (task: CompletedTask) => {
+    setDownloadingTaskId(task.id);
+    try {
+      // 调用专用 API：从任务生成卡片
+      const result: any = await apiPost('/api/xiaohongshu/generate-cards/from-task', {
+        subTaskId: task.id,
+        persist: false, // 预览不持久化
+        gradientScheme: 'pinkOrange',
+        cardCountMode: '5-card',
+      });
+      
+      if (result.success && result.cards && result.cards.length > 0) {
+        // 直接打开第一张卡片图片预览
+        const firstCard = result.cards[0];
+        if (firstCard.url) {
+          window.open(firstCard.url, '_blank');
+        } else {
+          toast.error('无法获取预览图片');
+        }
+      } else if (result.error) {
+        toast.error(result.error + (result.hint ? `（${result.hint}）` : ''));
+      } else {
+        toast.error('生成预览失败');
+      }
+    } catch (error) {
+      console.error('预览失败:', error);
+      toast.error('预览失败，请稍后重试');
+    } finally {
+      setDownloadingTaskId(null);
+    }
+  };
+
+  // 预览公众号/其他平台文章（打开 HTML 预览）
+  const previewArticle = (task: CompletedTask) => {
+    // 获取文章内容
+    const content = task.resultText || 
+                    task.resultData?.structuredResult?.resultContent?.content ||
+                    task.resultData?.executorOutput?.structuredResult?.resultContent?.content ||
+                    task.resultData?.structuredResult?.resultContent?.htmlContent ||
+                    '';
+    
+    if (!content) {
+      toast.error('没有可预览的内容');
+      return;
+    }
+
+    // 创建新窗口显示 HTML 内容
+    const newWindow = window.open('', '_blank');
+    if (newWindow) {
+      // 判断是否为 HTML 内容
+      const isHtml = content.includes('<') && content.includes('>');
+      const htmlContent = isHtml ? content : `<pre style="white-space: pre-wrap; font-family: sans-serif; padding: 20px;">${content}</pre>`;
+      
+      newWindow.document.write(`
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <title>${task.articleTitle || task.taskTitle}</title>
+          <meta charset="utf-8">
+          <style>
+            body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; line-height: 1.6; max-width: 800px; margin: 0 auto; padding: 20px; }
+            img { max-width: 100%; }
+            pre { background: #f5f5f5; padding: 15px; border-radius: 8px; }
+          </style>
+        </head>
+        <body>
+          <h1 style="border-bottom: 1px solid #eee; padding-bottom: 10px;">${task.articleTitle || task.taskTitle}</h1>
+          ${htmlContent}
+        </body>
+        </html>
+      `);
+      newWindow.document.close();
+    }
+  };
+
   // 按平台筛选
   const filteredTasks = selectedPlatform === 'all' 
     ? tasks 
@@ -4241,12 +4317,14 @@ function ContentExportTab() {
                           <Button
                             size="sm"
                             variant="outline"
-                            onClick={() => {
-                              // 跳转到任务列表页查看预览
-                              window.open(`/full-home?tab=tasks&highlight=${task.id}`, '_blank');
-                            }}
+                            onClick={() => previewXhsImages(task)}
+                            disabled={downloadingTaskId === task.id}
                           >
-                            <Eye className="mr-1 h-4 w-4" />
+                            {downloadingTaskId === task.id ? (
+                              <RefreshCw className="mr-1 h-4 w-4 animate-spin" />
+                            ) : (
+                              <Eye className="mr-1 h-4 w-4" />
+                            )}
                             预览
                           </Button>
                           <Button
@@ -4286,10 +4364,7 @@ function ContentExportTab() {
                         <Button
                           size="sm"
                           variant="outline"
-                          onClick={() => {
-                            // 跳转到任务列表页查看预览
-                            window.open(`/full-home?tab=tasks&highlight=${task.id}`, '_blank');
-                          }}
+                          onClick={() => previewArticle(task)}
                         >
                           <Eye className="mr-1 h-4 w-4" />
                           预览
