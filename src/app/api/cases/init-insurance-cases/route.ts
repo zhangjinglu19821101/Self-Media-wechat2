@@ -19,7 +19,8 @@ import { existsSync } from 'fs';
 const CASE_FILES = [
   '保险行业标准化案例库（AI专属·MD格式·险种分类） (1-6).md',
   '保险行业标准化案例库（AI专属·MD格式·险种分类） (7-10).md',
-  '保险行业标准化案例库（增额寿、年金）.md', // 新增：增额寿、年金案例
+  '保险行业标准化案例库（增额寿、年金）.md',
+  '保险行业标准化案例库（8.8预定利率）.md', // 新增：8.8%预定利率历史案例
 ];
 
 export async function GET(request: NextRequest) {
