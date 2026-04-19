@@ -3958,44 +3958,45 @@ interface CompletedTask {
   resultData: any;
   resultText: string | null;
   commandResultId: string;
+  thumbnailUrls?: string[]; // 缩略图URL列表（最多3张）
 }
 
-// 平台配置
+// 平台配置 - 清新简洁风格
 const PLATFORM_CONFIG = {
   wechat_official: {
     name: '公众号',
     icon: '📱',
-    color: 'from-green-500 to-emerald-600',
-    bgColor: 'bg-green-50',
-    borderColor: 'border-green-200',
+    bgColor: 'bg-white',
+    borderColor: 'border-gray-200',
+    labelColor: 'bg-gray-100 text-gray-600',
   },
   xiaohongshu: {
     name: '小红书',
     icon: '📕',
-    color: 'from-red-500 to-pink-600',
-    bgColor: 'bg-red-50',
-    borderColor: 'border-red-200',
+    bgColor: 'bg-white',
+    borderColor: 'border-gray-200',
+    labelColor: 'bg-gray-100 text-gray-600',
   },
   zhihu: {
     name: '知乎',
     icon: '🔷',
-    color: 'from-blue-500 to-indigo-600',
-    bgColor: 'bg-blue-50',
-    borderColor: 'border-blue-200',
+    bgColor: 'bg-white',
+    borderColor: 'border-gray-200',
+    labelColor: 'bg-gray-100 text-gray-600',
   },
   toutiao: {
     name: '头条/抖音',
     icon: '📺',
-    color: 'from-orange-500 to-red-600',
-    bgColor: 'bg-orange-50',
-    borderColor: 'border-orange-200',
+    bgColor: 'bg-white',
+    borderColor: 'border-gray-200',
+    labelColor: 'bg-gray-100 text-gray-600',
   },
   unknown: {
     name: '其他',
     icon: '📄',
-    color: 'from-gray-500 to-slate-600',
-    bgColor: 'bg-gray-50',
+    bgColor: 'bg-white',
     borderColor: 'border-gray-200',
+    labelColor: 'bg-gray-100 text-gray-600',
   },
 };
 
@@ -4013,6 +4014,7 @@ function ContentExportTab() {
   const [loading, setLoading] = useState(false);
   const [selectedPlatform, setSelectedPlatform] = useState<string>('all');
   const [downloadingTaskId, setDownloadingTaskId] = useState<string | null>(null);
+  const [thumbnailMap, setThumbnailMap] = useState<Record<string, string[]>>({}); // taskId -> thumbnailUrls
 
   // 加载已完成的任务
   const loadCompletedTasks = async () => {
@@ -4025,6 +4027,9 @@ function ContentExportTab() {
           platform: getPlatformFromExecutor(task.executor),
         }));
         setTasks(tasks);
+        
+        // 异步加载小红书任务的缩略图
+        loadThumbnailsForTasks(tasks.filter((t: CompletedTask) => t.platform === 'xiaohongshu'));
       }
     } catch (error) {
       console.error('加载已完成任务失败:', error);
@@ -4032,6 +4037,27 @@ function ContentExportTab() {
     } finally {
       setLoading(false);
     }
+  };
+  
+  // 为小红书任务加载缩略图
+  const loadThumbnailsForTasks = async (xhsTasks: CompletedTask[]) => {
+    const newThumbnailMap: Record<string, string[]> = {};
+    
+    for (const task of xhsTasks) {
+      try {
+        const result = await apiGet<{ success?: boolean; cards?: Array<{ url?: string }> }>(
+          `/api/xiaohongshu/generate-cards?subTaskId=${task.id}`
+        );
+        if (result.success && result.cards) {
+          // 最多取前3张作为缩略图
+          newThumbnailMap[task.id] = result.cards.slice(0, 3).map(c => c.url).filter(Boolean);
+        }
+      } catch {
+        // 忽略加载失败
+      }
+    }
+    
+    setThumbnailMap(prev => ({ ...prev, ...newThumbnailMap }));
   };
 
   // 下载小红书图片 - 从 OSS 获取已生成的卡片（与预览一致）
@@ -4225,6 +4251,7 @@ function ContentExportTab() {
           variant={selectedPlatform === 'all' ? 'default' : 'outline'}
           size="sm"
           onClick={() => setSelectedPlatform('all')}
+          className={selectedPlatform === 'all' ? 'bg-blue-500 hover:bg-blue-600' : ''}
         >
           全部 ({tasks.length})
         </Button>
@@ -4236,7 +4263,7 @@ function ContentExportTab() {
               variant={selectedPlatform === platform ? 'default' : 'outline'}
               size="sm"
               onClick={() => setSelectedPlatform(platform)}
-              className={selectedPlatform === platform ? `bg-gradient-to-r ${config.color}` : ''}
+              className={selectedPlatform === platform ? 'bg-blue-500 hover:bg-blue-600' : ''}
             >
               {config.icon} {config.name} ({count})
             </Button>
@@ -4245,123 +4272,139 @@ function ContentExportTab() {
       </div>
 
       {/* 任务列表 */}
-      <Card className="p-4">
+      <div className="bg-white rounded-lg border border-gray-200">
         {loading ? (
           <div className="flex items-center justify-center py-12">
             <div className="text-center">
-              <div className="mb-4 h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent mx-auto"></div>
-              <p className="text-muted-foreground">加载中...</p>
+              <div className="mb-4 h-8 w-8 animate-spin rounded-full border-4 border-blue-500 border-t-transparent mx-auto"></div>
+              <p className="text-gray-500">加载中...</p>
             </div>
           </div>
         ) : filteredTasks.length === 0 ? (
           <div className="text-center py-12">
-            <FileText className="mx-auto h-12 w-12 text-muted-foreground mb-4" />
-            <h3 className="text-lg font-medium mb-2">暂无已完成的作品</h3>
-            <p className="text-sm text-muted-foreground">
+            <FileText className="mx-auto h-12 w-12 text-gray-300 mb-4" />
+            <h3 className="text-lg font-medium text-gray-700 mb-2">暂无已完成的作品</h3>
+            <p className="text-sm text-gray-400">
               完成创作后，作品会自动出现在这里
             </p>
           </div>
         ) : (
-          <div className="space-y-3">
+          <div className="space-y-2">
             {filteredTasks.map((task) => {
               const config = PLATFORM_CONFIG[task.platform];
+              const thumbnails = thumbnailMap[task.id] || [];
+              
               return (
                 <div
                   key={task.id}
-                  className={`p-4 rounded-lg border ${config.borderColor} ${config.bgColor} hover:shadow-sm transition-shadow`}
+                  className="flex items-center gap-4 p-4 bg-white rounded-lg border border-gray-200 hover:shadow-sm transition-shadow"
                 >
-                  <div className="flex items-start justify-between gap-4">
-                    <div className="flex-1 min-w-0">
-                      {/* 平台名称 Badge + 标题 */}
-                      <div className="flex items-center gap-2 mb-2">
-                        <span className="text-xl">{config.icon}</span>
-                        <Badge variant="outline">
-                          {config.name}
-                        </Badge>
+                  {/* 左侧：缩略图组 */}
+                  <div className="flex-shrink-0">
+                    {thumbnails.length > 0 ? (
+                      <div className="flex gap-1">
+                        {thumbnails.slice(0, 3).map((url, idx) => (
+                          <div
+                            key={idx}
+                            className="w-14 h-14 rounded-md overflow-hidden bg-gray-100"
+                          >
+                            <img
+                              src={url}
+                              alt={`缩略图${idx + 1}`}
+                              className="w-full h-full object-cover"
+                            />
+                          </div>
+                        ))}
+                        {/* 如果超过3张，显示更多提示 */}
+                        {thumbnails.length > 3 && (
+                          <div className="w-14 h-14 rounded-md bg-gray-100 flex items-center justify-center text-xs text-gray-500">
+                            +{thumbnails.length - 3}
+                          </div>
+                        )}
                       </div>
-                      {/* 文章标题 - 更突出的显示 */}
-                      <h3 className="text-lg font-semibold mb-2 line-clamp-2">
-                        {task.articleTitle || task.taskTitle}
-                      </h3>
-                      {/* 生成时间 */}
-                      <div className="text-sm text-muted-foreground flex items-center gap-1">
-                        <Clock className="h-3.5 w-3.5" />
-                        <span>
-                          {task.completedAt 
-                            ? new Date(task.completedAt).toLocaleString('zh-CN', {
-                                year: 'numeric',
-                                month: '2-digit',
-                                day: '2-digit',
-                                hour: '2-digit',
-                                minute: '2-digit'
-                              })
-                            : '未知时间'}
-                        </span>
+                    ) : (
+                      <div className="w-14 h-14 rounded-md bg-gray-100 flex items-center justify-center">
+                        <span className="text-2xl">{config.icon}</span>
                       </div>
+                    )}
+                  </div>
+                  
+                  {/* 中间：内容信息 */}
+                  <div className="flex-1 min-w-0">
+                    {/* 平台标签 */}
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className={`text-xs px-2 py-0.5 rounded ${config.labelColor}`}>
+                        {config.name}
+                      </span>
                     </div>
+                    {/* 文章标题 */}
+                    <h3 className="text-sm font-medium text-gray-900 mb-1 line-clamp-1">
+                      {task.articleTitle || task.taskTitle}
+                    </h3>
+                    {/* 生成时间 */}
+                    <div className="text-xs text-gray-400 flex items-center gap-1">
+                      <Clock className="h-3 w-3" />
+                      <span>
+                        {task.completedAt 
+                          ? new Date(task.completedAt).toLocaleString('zh-CN', {
+                              month: '2-digit',
+                              day: '2-digit',
+                              hour: '2-digit',
+                              minute: '2-digit'
+                            })
+                          : '未知时间'}
+                      </span>
+                    </div>
+                  </div>
 
-                    {/* 操作按钮 - 按平台区分 */}
-                    <div className="flex gap-2 flex-shrink-0">
-                      {/* 小红书：预览（可翻页） + 下载 */}
-                      {task.platform === 'xiaohongshu' && (
-                        <>
-                          {/* 使用 XiaohongshuPreview 组件（和任务列表一样的翻页预览） */}
-                          <XiaohongshuPreview 
-                            taskId={task.id}
-                            variant="outline"
-                            size="sm"
-                          />
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => downloadXhsImages(task)}
-                            disabled={downloadingTaskId === task.id}
-                          >
-                            {downloadingTaskId === task.id ? (
-                              <RefreshCw className="mr-1 h-4 w-4 animate-spin" />
-                            ) : (
-                              <ImageIcon className="mr-1 h-4 w-4" />
-                            )}
-                            下载图片
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => downloadArticleText(task)}
-                          >
-                            <Download className="mr-1 h-4 w-4" />
-                            下载正文
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => copyXhsJson(task)}
-                          >
-                            <Copy className="mr-1 h-4 w-4" />
-                            复制JSON
-                          </Button>
-                        </>
-                      )}
-                      
-                      {/* 公众号/知乎/头条：仅预览 */}
-                      {task.platform !== 'xiaohongshu' && (
+                  {/* 右侧：操作按钮 */}
+                  <div className="flex gap-2 flex-shrink-0">
+                    {/* 小红书：下载图片 + 下载正文 */}
+                    {task.platform === 'xiaohongshu' && (
+                      <>
                         <Button
                           size="sm"
                           variant="outline"
-                          onClick={() => previewArticle(task)}
+                          className="h-8 px-3 text-blue-600 border-blue-200 hover:bg-blue-50"
+                          onClick={() => downloadXhsImages(task)}
+                          disabled={downloadingTaskId === task.id}
                         >
-                          <Eye className="mr-1 h-4 w-4" />
-                          预览
+                          {downloadingTaskId === task.id ? (
+                            <RefreshCw className="mr-1 h-3.5 w-3.5 animate-spin" />
+                          ) : (
+                            <ImageIcon className="mr-1 h-3.5 w-3.5" />
+                          )}
+                          下载图片
                         </Button>
-                      )}
-                    </div>
+                        <Button
+                          size="sm"
+                          className="h-8 px-3 bg-blue-500 hover:bg-blue-600 text-white"
+                          onClick={() => downloadArticleText(task)}
+                        >
+                          <Download className="mr-1 h-3.5 w-3.5" />
+                          下载正文
+                        </Button>
+                      </>
+                    )}
+                    
+                    {/* 公众号/知乎/头条：预览 */}
+                    {task.platform !== 'xiaohongshu' && (
+                      <Button
+                        size="sm"
+                        className="h-8 px-3 bg-blue-500 hover:bg-blue-600 text-white"
+                        onClick={() => previewArticle(task)}
+                      >
+                        <Eye className="mr-1 h-3.5 w-3.5" />
+                        预览
+                      </Button>
+                    )}
                   </div>
                 </div>
               );
             })}
           </div>
         )}
-      </Card>
+      </div>
     </div>
   );
 }
