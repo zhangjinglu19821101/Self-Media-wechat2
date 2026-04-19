@@ -374,12 +374,11 @@ export async function getCardGroupUrlsBySubTaskId(
   const whereConditions = and(baseConditions, eq(xhsCardGroups.status, 'active'));
   
   // 按创建时间倒序获取最新的有效卡片组
-  const groups = await db.select().from(xhsCardGroups)
+  // 🔥 P2 修复：统一使用解构语法
+  const [group] = await db.select().from(xhsCardGroups)
     .where(whereConditions)
     .orderBy(sql`${xhsCardGroups.createdAt} DESC`)
     .limit(1);
-  
-  const group = groups[0];
   
   if (!group) {
     return [];
@@ -393,10 +392,13 @@ export async function getCardGroupUrlsBySubTaskId(
   }
   
   // 查询卡片记录
+  // 🔥 P1 修复：防御性查询 - 卡片组是 active 时，关联卡片应该可用
+  // 同时接受 active 和 inactive 状态（inactive 可能是历史数据残留）
+  // 但排除 expired（文件已删除）和 failed（上传失败）
   const cards = await db.select().from(xhsCards).where(
     and(
       inArray(xhsCards.id, cardIds),
-      eq(xhsCards.status, 'active')
+      sql`${xhsCards.status} IN ('active', 'inactive')`
     )
   );
   
