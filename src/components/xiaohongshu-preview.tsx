@@ -619,33 +619,32 @@ export function XiaohongshuPreview({
                   {/* 正文 */}
                   {(content.content || content.fullText) && (
                     <div className="relative">
-                      <p className={`text-sm text-gray-700 leading-relaxed ${isFullTextExpanded ? '' : 'line-clamp-3'}`}>
+                      <p className={`text-sm text-gray-700 leading-relaxed mb-2 ${isFullTextExpanded ? '' : 'line-clamp-3'}`}>
                         {content.content || content.fullText}
                       </p>
-                      {/* 展开/收起按钮 - 单独一行，更明显 */}
-                      <button
-                        onClick={() => setIsFullTextExpanded(!isFullTextExpanded)}
-                        className="w-full mt-2 mb-3 py-1.5 text-sm text-red-500 font-medium hover:text-red-600 transition-colors flex items-center justify-center gap-1 bg-gray-50 rounded-md"
-                      >
-                        {isFullTextExpanded ? (
-                          <>收起 <span>▲</span></>
-                        ) : (
-                          <>展开全文 <span>▼</span></>
-                        )}
-                      </button>
                     </div>
                   )}
                   
-                  {/* 标签 */}
-                  {content.tags && content.tags.length > 0 && (
-                    <div className="flex flex-wrap gap-2 mb-3">
-                      {content.tags.map((tag, idx) => (
-                        <span key={idx} className="text-xs text-blue-500 font-medium">
-                          #{tag}
-                        </span>
-                      ))}
-                    </div>
-                  )}
+                  {/* 标签 + 展开按钮 */}
+                  <div className="flex items-center gap-2 mb-3 flex-wrap">
+                    {content.tags && content.tags.length > 0 && (
+                      <>
+                        {content.tags.map((tag, idx) => (
+                          <span key={idx} className="text-xs text-blue-500 font-medium">
+                            #{tag}
+                          </span>
+                        ))}
+                      </>
+                    )}
+                    {(content.content || content.fullText) && (
+                      <button
+                        onClick={() => setIsFullTextExpanded(!isFullTextExpanded)}
+                        className="text-xs text-red-500 font-medium hover:text-red-600 transition-colors"
+                      >
+                        {isFullTextExpanded ? '收起' : '展开全文'}
+                      </button>
+                    )}
+                  </div>
                   
                   {/* 发布信息 */}
                   <div className="flex items-center justify-between text-xs text-gray-400">
