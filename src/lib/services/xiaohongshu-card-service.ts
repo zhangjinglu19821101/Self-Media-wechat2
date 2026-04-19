@@ -563,22 +563,41 @@ export async function generateXiaohongshuCardSet(
   const cards: GeneratedCard[] = [];
 
   // 封面
-  cards.push(await generateXiaohongshuCard(cover));
+  const coverCard = await generateXiaohongshuCard(cover);
+  cards.push(coverCard);
+  console.log(`[XhsCard] 封面卡片生成完成, base64长度: ${coverCard.base64.length}`);
 
   // 标准要点卡片
-  for (const point of points) {
-    cards.push(await generateXiaohongshuCard(point));
+  for (let i = 0; i < points.length; i++) {
+    const point = points[i];
+    const pointCard = await generateXiaohongshuCard(point);
+    cards.push(pointCard);
+    console.log(`[XhsCard] 要点卡片 ${i + 1} 生成完成, 标题: ${point.title}, base64长度: ${pointCard.base64.length}`);
   }
 
   // 极简要点卡片（3-card 模式）
   if (minimalPoints) {
-    for (const point of minimalPoints) {
-      cards.push(await generateXiaohongshuCard(point));
+    for (let i = 0; i < minimalPoints.length; i++) {
+      const point = minimalPoints[i];
+      const pointCard = await generateXiaohongshuCard(point);
+      cards.push(pointCard);
+      console.log(`[XhsCard] 极简要点卡片 ${i + 1} 生成完成, base64长度: ${pointCard.base64.length}`);
     }
   }
 
   // 结尾
-  cards.push(await generateXiaohongshuCard(ending));
+  const endingCard = await generateXiaohongshuCard(ending);
+  cards.push(endingCard);
+  console.log(`[XhsCard] 结尾卡片生成完成, base64长度: ${endingCard.base64.length}`);
+
+  // 🔥 调试：检查所有卡片的 base64 是否不同
+  const base64Lengths = cards.map(c => c.base64.length);
+  const uniqueLengths = new Set(base64Lengths);
+  if (uniqueLengths.size === 1) {
+    console.warn(`[XhsCard] ⚠️ 警告：所有卡片的 base64 长度相同 (${base64Lengths[0]})，可能存在问题！`);
+  } else {
+    console.log(`[XhsCard] ✅ 卡片 base64 长度分布: ${base64Lengths.join(', ')}`);
+  }
 
   return cards;
 }

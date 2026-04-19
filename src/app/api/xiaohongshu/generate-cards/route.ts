@@ -124,6 +124,8 @@ export async function POST(request: NextRequest) {
       }
 
       // 生成卡片
+      console.log(`[Xiaohongshu Card API] 开始生成卡片, 模式: ${finalCardCountMode}, 标题: ${title}, 要点数量: ${points.length}`);
+      
       const cards = await generateCardsFromArticle(
         {
           title,
@@ -136,7 +138,13 @@ export async function POST(request: NextRequest) {
         gradientScheme as GradientScheme,
         finalCardCountMode as ImageCountMode
       );
-
+      
+      console.log(`[Xiaohongshu Card API] 卡片生成完成, 数量: ${cards.length}`);
+      
+      // 🔥 调试：检查每张卡片的 base64 是否不同
+      const base64Lengths = cards.map(c => c.base64.length);
+      console.log(`[Xiaohongshu Card API] 卡片 base64 长度: ${base64Lengths.join(', ')}`);
+      
       // 持久化存储
       if (persist && subTaskId) {
         // 🔥 P1修复：边界情况处理，确保至少有封面和结尾两张卡

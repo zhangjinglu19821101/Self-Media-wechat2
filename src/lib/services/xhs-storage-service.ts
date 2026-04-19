@@ -156,9 +156,12 @@ export async function uploadXhsCardGroup(
   const failedIndices: number[] = [];
   const storage = getStorage();
   
+  console.log(`[XhsStorage] 开始上传卡片组, 共 ${cards.length} 张卡片, subTaskId: ${subTaskId}`);
+  
   // 逐张上传卡片，捕获单张失败不影响整体
   for (let i = 0; i < cards.length; i++) {
     const card = cards[i];
+    console.log(`[XhsStorage] 上传卡片 ${i}: cardType=${card.cardType}, base64长度=${card.base64?.length || 0}`);
     try {
       const result = await uploadXhsCard(
         card.base64,
@@ -174,10 +177,22 @@ export async function uploadXhsCardGroup(
         }
       );
       uploadResults.push(result);
+      console.log(`[XhsStorage] 卡片 ${i} 上传成功, storageKey: ${result.storageKey}`);
     } catch (error) {
       console.error(`[XhsStorage] 上传卡片 ${i} 失败:`, error);
       failedIndices.push(i);
     }
+  }
+  
+  console.log(`[XhsStorage] 上传完成: 成功 ${uploadResults.length} 张, 失败 ${failedIndices.length} 张`);
+  
+  // 检查 storageKey 是否唯一
+  const storageKeys = uploadResults.map(r => r.storageKey);
+  const uniqueKeys = new Set(storageKeys);
+  if (uniqueKeys.size !== storageKeys.length) {
+    console.error(`[XhsStorage] ❌ 错误：storageKey 不唯一！keys: ${storageKeys.join(', ')}`);
+  } else {
+    console.log(`[XhsStorage] ✅ 所有 storageKey 唯一`);
   }
   
   // P1 修复：如果全部失败，抛出错误
