@@ -9588,7 +9588,13 @@ ${resultData.executionSummary}
                       points: xhsData.points.slice(0, 5), // 最多5张要点卡（7张模式会自动裁剪）
                       conclusion: xhsData.conclusion || '感谢阅读',
                       tags: xhsData.tags || [],
-                    }, undefined, imageCountMode, customColorScheme, contentPromptInstruction);
+                    }, 
+                      // 🔥 传入多色方案数组，每张卡片不同颜色（封面、要点1、要点2...结尾）
+                      ['pinkOrange', 'bluePurple', 'tealGreen', 'orangeYellow', 'deepBlue'],
+                      imageCountMode, 
+                      customColorScheme, 
+                      contentPromptInstruction
+                    );
                     
                     console.log('[SubtaskEngine] 🎨 生成卡片数量:', cards.length);
                     

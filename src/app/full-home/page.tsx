@@ -4034,20 +4034,14 @@ function ContentExportTab() {
     }
   };
 
-  // 下载小红书图片 - 每张卡片不同颜色
+  // 下载小红书图片 - 从 OSS 获取已生成的卡片（与预览一致）
   const downloadXhsImages = async (task: CompletedTask) => {
     setDownloadingTaskId(task.id);
     try {
-      // 渐变色方案列表（封面、要点1、要点2、要点3、结尾各不同）
-      const gradientSchemes = ['pinkOrange', 'bluePurple', 'tealGreen', 'orangeYellow', 'deepBlue'];
-      
-      // 调用 API 生成卡片并持久化（返回签名 URL）
-      const result: any = await apiPost('/api/xiaohongshu/generate-cards/from-task', {
-        subTaskId: task.id,
-        persist: true,
-        gradientSchemes, // 传入数组，每张卡片不同颜色
-        cardCountMode: '5-card',
-      });
+      // 🔥 直接从 OSS 获取已生成的卡片图片（不再重新生成）
+      const result = await apiGet<{ success?: boolean; cards?: Array<{ url?: string }>; error?: string }>(
+        `/api/xiaohongshu/generate-cards?subTaskId=${task.id}`
+      );
       
       if (result.success && result.cards && result.cards.length > 0) {
         // 逐张下载
@@ -4055,8 +4049,8 @@ function ContentExportTab() {
           const card = result.cards[i];
           if (!card.url) continue;
           
-          const response = await fetch(card.url);
-          const blob = await response.blob();
+          const imgResponse = await fetch(card.url);
+          const blob = await imgResponse.blob();
           const url = URL.createObjectURL(blob);
           const link = document.createElement('a');
           link.href = url;
@@ -4068,9 +4062,9 @@ function ContentExportTab() {
         }
         toast.success(`已下载 ${result.cards.length} 张图片`);
       } else if (result.error) {
-        toast.error(result.error + (result.hint ? `（${result.hint}）` : ''));
+        toast.error(result.error);
       } else {
-        toast.error('生成图片失败');
+        toast.error('未找到已生成的卡片图片，请确认任务已完成');
       }
     } catch (error) {
       console.error('下载图片失败:', error);
