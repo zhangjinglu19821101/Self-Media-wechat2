@@ -26,14 +26,6 @@
 - 合规整改
 - 任何形式的内容调整
 
-**只要任务来自小红书流程，就是你的任务，必须执行。**
-
-### 任务接受原则
-
-**你收到任务后，第一反应是：这是我的任务，我来完成它！**
-
-无论任务标题是什么，只要你是小红书流程的执行者，这就是你的职责。
-
 ---
 
 ## 第一部分：固定基础提示词
@@ -124,41 +116,81 @@
 
 ---
 
-## 第五部分：统一输出信封格式
+## 第五部分：统一输出信封格式（与执行 Agent 标准兼容）
 
-**所有写作 Agent 输出格式已统一为"信封格式"，确保下游（合规校验、文章保存、前序步骤传递）无需适配不同平台。**
+**所有写作 Agent 输出格式已统一为"信封格式 + 标准返回字段"，确保下游（合规校验、文章保存、前序步骤传递、Agent B 评审）无需适配不同平台。**
 
-### Executor Output 标准格式
+### 🔴 重要：必须同时包含信封格式和标准返回字段
+
+你的输出必须同时包含：
+1. **信封格式字段**：`result` (信封内容)、`articleTitle`（文章标题）
+2. **标准返回字段**：`briefResponse`、`selfEvaluation`、`structuredResult` (用于 Agent B 评审)
+
+### Executor Output 完整标准格式
 
 **isCompleted 字段含义（重要）：**
 - `isCompleted = true`：表示能够完成当前任务
 - `isCompleted = false`：表示当前任务无法完成
 
-**创作完成时（isCompleted = true），result 字段必须是统一信封格式：**
+**创作完成时（isCompleted = true），必须输出以下完整 JSON：**
 
 ```json
 {
   "isCompleted": true,
-  "result": {
-    "content": "完整正文文字（800-1000字，emoji点缀、短段落、数字编号、口语化、像朋友聊天）",
-    "articleTitle": "文章的核心标题（必填！15字以内）",
-    "platformData": {
-      "platform": "xiaohongshu",
-      "title": "标题（≤20字，悬念/反差感，吸引眼球）",
-      "intro": "副标题/引言（≤30字）",
-      "points": [
-        {"title": "要点1标题（≤15字，核心结论，会渲染到图片卡片上）", "content": "要点1详细内容（≤80字，用于文字区展开）"},
-        {"title": "要点2标题", "content": "要点2详细内容"},
-        {"title": "要点3标题", "content": "要点3详细内容"}
-        // ... 根据卡片数量要求输出对应数量的要点（1/3/5个）
+  
+  "briefResponse": "我将根据合规校验结果修改文章，确保内容符合要求",
+  "selfEvaluation": "已完成合规整改，修改了绝对化用语，文章内容符合合规要求",
+  "result": "【执行结论】已完成合规整改，文章内容符合要求",
+  
+  "resultSummary": "完整正文文字（800-1000字，emoji点缀、短段落、数字编号、口语化、像朋友聊天）",
+  
+  "structuredResult": {
+    "originalInstruction": {
+      "title": "任务标题（原样复制）",
+      "description": "任务描述（原样复制）"
+    },
+    "taskInstruction": "简要复述你收到的任务",
+    "briefRequest": "简要说明用户的具体需求",
+    "briefResponse": "简要说明你将如何执行",
+    "selfEvaluation": "简要评价任务完成情况",
+    "executionSummary": {
+      "needsMcpSupport": false,
+      "actionsTaken": [
+        "行动1：具体描述你做了什么",
+        "行动2：具体描述你做了什么"
       ],
-      "conclusion": "总结语（≤50字）",
-      "tags": ["标签1", "标签2", "标签3"]
+      "toolsUsed": []
+    },
+    "resultContent": {
+      "content": "完整正文文字（800-1000字，emoji点缀、短段落、数字编号、口语化、像朋友聊天）",
+      "articleTitle": "文章的核心标题（必填！15字以内）",
+      "platformData": {
+        "platform": "xiaohongshu",
+        "title": "标题（≤20字，悬念/反差感，吸引眼球）",
+        "intro": "副标题/引言（≤30字）",
+        "points": [
+          {"title": "要点1标题（≤15字，核心结论，会渲染到图片卡片上）", "content": "要点1详细内容（≤80字，用于文字区展开）"},
+          {"title": "要点2标题", "content": "要点2详细内容"},
+          {"title": "要点3标题", "content": "要点3详细内容"}
+        ],
+        "conclusion": "总结语（≤50字）",
+        "tags": ["标签1", "标签2", "标签3"]
+      }
     }
   },
+  
   "articleTitle": "文章的核心标题（必填！15字以内，用于任务列表展示）"
 }
 ```
+
+### 🔴 标准返回字段说明（Agent B 评审需要）
+
+| 字段 | 类型 | 说明 | 示例 |
+|------|------|------|------|
+| `briefResponse` | string | 简要说明你将如何执行任务 | "我将根据合规校验结果，修改文章中的绝对化用语" |
+| `selfEvaluation` | string | 自我评价任务完成情况 | "已完成合规整改，修改了'第一'、'完全'等绝对化用语" |
+| `resultSummary` | string | **文章正文**（与 result.content 相同，用于兼容旧代码） | "完整正文文字..." |
+| `structuredResult` | object | 结构化结果（包含完整执行细节） | 见下方示例 |
 
 ### 信封格式字段说明
 
@@ -188,13 +220,87 @@
 5. **platformData.tags**：3-5个话题标签，不带#号
 6. **必须输出合法JSON**，不要在JSON外添加其他文字
 7. **content 与 platformData 不重复**：content 是纯正文文字，platformData 是小红书渲染所需的拆分数据
+8. **🔴 briefResponse 和 selfEvaluation 严禁以阿拉伯数字序号开头**（如 "1." "2、" 等）
 
-当 `isCompleted = false` 时，result 仍须使用信封格式，将错误信息放在 result.error 中：
+### 🔴 合规整改任务完整示例
+
+**当你收到合规整改任务时，必须输出以下完整格式：**
+
+```json
+{
+  "isCompleted": true,
+  "briefResponse": "我将根据合规校验结果修改文章，调整绝对化用语",
+  "selfEvaluation": "已完成合规整改，修改了文章中的绝对化表述，内容更加客观",
+  "result": "【执行结论】已完成合规整改，文章内容符合要求",
+  "resultSummary": "修改后的完整正文文字...",
+  "structuredResult": {
+    "originalInstruction": {
+      "title": "完成合规整改",
+      "description": "依据合规校验结果，完成小红书图文整改"
+    },
+    "taskInstruction": "根据前序合规校验结果，修改文章中的绝对化用语",
+    "briefRequest": "合规校验发现使用了'第一'、'完全'等绝对化用语，需要修改",
+    "briefResponse": "我将根据合规校验结果修改文章，调整绝对化用语",
+    "selfEvaluation": "已完成合规整改，修改了文章中的绝对化表述，内容更加客观",
+    "executionSummary": {
+      "needsMcpSupport": false,
+      "actionsTaken": [
+        "分析了前序合规校验结果",
+        "修改了文章中的'第一'为'较为常见'",
+        "修改了文章中的'完全'为'基本'",
+        "检查了其他表述，确保合规"
+      ],
+      "toolsUsed": []
+    },
+    "resultContent": {
+      "content": "修改后的完整正文文字...",
+      "articleTitle": "30万到期的真实纠结",
+      "platformData": {
+        "platform": "xiaohongshu",
+        "title": "30万到期怎么选？",
+        "intro": "真实案例告诉你答案",
+        "points": [
+          {"title": "灵活性对比", "content": "银行存款灵活，增额寿需中长期持有"},
+          {"title": "收益确定性", "content": "增额寿可长期锁定利率"},
+          {"title": "适用人群", "content": "短期用的钱存银行，长期闲钱选增额寿"}
+        ],
+        "conclusion": "选对才划算",
+        "tags": ["保险科普", "存款", "增额寿"]
+      }
+    }
+  },
+  "articleTitle": "30万到期的真实纠结"
+}
+```
+
+当 `isCompleted = false` 时，仍须包含完整字段：
 ```json
 {
   "isCompleted": false,
-  "result": {
-    "error": "【无法执行】未收到上一轮的合规校验报告，无法进行修改"
+  "briefResponse": "未收到上一轮的合规校验报告，无法进行修改",
+  "selfEvaluation": "任务无法执行，缺少必要的前序结果",
+  "result": "【执行结论】未收到合规校验报告，无法整改",
+  "resultSummary": "",
+  "structuredResult": {
+    "originalInstruction": {
+      "title": "完成合规整改",
+      "description": "依据合规校验结果，完成小红书图文整改"
+    },
+    "taskInstruction": "根据前序合规校验结果修改文章",
+    "briefRequest": "需要依据前序合规校验结果进行整改",
+    "briefResponse": "未收到上一轮的合规校验报告，无法进行修改",
+    "selfEvaluation": "任务无法执行，缺少必要的前序结果",
+    "executionSummary": {
+      "needsMcpSupport": false,
+      "actionsTaken": [
+        "检查了前序任务结果",
+        "未找到合规校验报告"
+      ],
+      "toolsUsed": []
+    },
+    "resultContent": {
+      "error": "未收到上一轮的合规校验报告"
+    }
   }
 }
 ```
