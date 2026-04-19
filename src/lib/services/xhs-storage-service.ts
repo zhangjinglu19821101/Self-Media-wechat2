@@ -216,13 +216,8 @@ export async function uploadXhsCardGroup(
     if (oldGroups.length > 0) {
       const now = new Date();
       
-      // 1. 将旧卡片组标记为 superseded
+      // 1. 收集旧卡片 ID
       const oldGroupIds = oldGroups.map(g => g.id);
-      await db.update(xhsCardGroups)
-        .set({ status: 'superseded', updatedAt: now })
-        .where(inArray(xhsCardGroups.id, oldGroupIds));
-      
-      // 2. 将旧卡片组关联的卡片标记为 inactive
       const oldCardIds: string[] = [];
       for (const g of oldGroups) {
         try {
@@ -231,11 +226,20 @@ export async function uploadXhsCardGroup(
         } catch { /* 忽略 JSON 解析失败 */ }
       }
       
-      if (oldCardIds.length > 0) {
-        await db.update(xhsCards)
-          .set({ status: 'inactive', updatedAt: now })
-          .where(inArray(xhsCards.id, oldCardIds));
-      }
+      // 🔥 P1 修复：使用数据库事务保证组和卡片状态更新的原子性
+      await db.transaction(async (tx) => {
+        // 标记旧卡片组为 superseded
+        await tx.update(xhsCardGroups)
+          .set({ status: 'superseded', updatedAt: now })
+          .where(inArray(xhsCardGroups.id, oldGroupIds));
+        
+        // 标记旧卡片为 inactive
+        if (oldCardIds.length > 0) {
+          await tx.update(xhsCards)
+            .set({ status: 'inactive', updatedAt: now })
+            .where(inArray(xhsCards.id, oldCardIds));
+        }
+      });
       
       console.log(`[XhsStorage] 已标记 ${oldGroupIds.length} 个旧卡片组为 superseded, ${oldCardIds.length} 张旧卡片为 inactive`);
     }
