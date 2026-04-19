@@ -22,7 +22,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { Loader2, Plus, Trash2, Send, Sparkles, ListTodo, CheckCircle2, XCircle, GripVertical, MoveUp, MoveDown, Maximize2, Minimize2, AlertTriangle, GitCompare, RefreshCw, FileText, Save, Eye, Home, BookmarkPlus, ExternalLink, BookOpen, Clock, Building2, X, HelpCircle, Settings, Rocket, Layers, ChevronDown, ChevronUp, Cpu, Brain, Workflow, Palette, PenTool, ArrowRight, Briefcase, Shield, Users } from 'lucide-react';
+import { Loader2, Plus, Trash2, Send, Sparkles, ListTodo, CheckCircle2, XCircle, GripVertical, MoveUp, MoveDown, Maximize2, Minimize2, AlertTriangle, GitCompare, RefreshCw, FileText, Save, Eye, Home, BookmarkPlus, ExternalLink, BookOpen, Clock, Building2, X, HelpCircle, Settings, Rocket, Layers, ChevronDown, ChevronUp, Cpu, Brain, Workflow, Palette, PenTool, ArrowRight, Briefcase, Shield, Users, Download, Copy, ImageIcon } from 'lucide-react';
 import { toast } from 'sonner';
 import { AgentTaskListNormal } from '@/components/agent-task-list-normal';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
@@ -1506,13 +1506,13 @@ export default function HomePage() {
             <span className="font-medium">对比草稿</span>
           </TabsTrigger>
 
-          {/* 微信草稿 Tab - 副天蓝色主题 */}
+          {/* 内容导出 Tab - 渐变紫粉色主题 */}
           <TabsTrigger 
-            value="wechat-drafts" 
-            className="relative px-4 py-2.5 rounded-lg transition-all duration-300 data-[state=active]:bg-gradient-to-r data-[state=active]:from-cyan-500 data-[state=active]:to-blue-600 data-[state=active]:text-white data-[state=active]:shadow-md data-[state=active]:shadow-cyan-200 hover:bg-white/70"
+            value="content-export" 
+            className="relative px-4 py-2.5 rounded-lg transition-all duration-300 data-[state=active]:bg-gradient-to-r data-[state=active]:from-purple-500 data-[state=active]:to-pink-500 data-[state=active]:text-white data-[state=active]:shadow-md data-[state=active]:shadow-purple-200 hover:bg-white/70"
           >
-            <FileText className="w-5 h-5 mr-2" />
-            <span className="font-medium">微信草稿</span>
+            <Download className="w-5 h-5 mr-2" />
+            <span className="font-medium">内容导出</span>
           </TabsTrigger>
         </TabsList>
 
@@ -3428,48 +3428,9 @@ export default function HomePage() {
           </Card>
         </TabsContent>
 
-        {/* 微信草稿 Tab */}
-        <TabsContent value="wechat-drafts" className="space-y-4">
-          {/* 🔥 公众号发布快捷入口 */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <Link href="/wechat-config">
-              <Card className="bg-gradient-to-br from-sky-50 to-cyan-50 border-sky-200/50 hover:shadow-md hover:border-sky-300 transition-all cursor-pointer h-full">
-                <CardContent className="pt-6 pb-6">
-                  <div className="flex items-center gap-4">
-                    <div className="rounded-xl bg-gradient-to-br from-sky-400 to-cyan-500 p-3 shadow-lg flex-shrink-0">
-                      <Settings className="w-6 h-6 text-white" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <h3 className="font-semibold text-sky-900">公众号发布配置</h3>
-                      <p className="text-sm text-sky-600 mt-1">设置作者、原创、评论等默认值</p>
-                      <Badge variant="secondary" className="mt-2 text-xs bg-sky-100 text-sky-700">首次使用请先配置</Badge>
-                    </div>
-                    <ExternalLink className="w-5 h-5 text-sky-400 flex-shrink-0" />
-                  </div>
-                </CardContent>
-              </Card>
-            </Link>
-
-            <Link href="/task-timeline">
-              <Card className="bg-gradient-to-br from-green-50 to-emerald-50 border-green-200/50 hover:shadow-md hover:border-green-300 transition-all cursor-pointer h-full">
-                <CardContent className="pt-6 pb-6">
-                  <div className="flex items-center gap-4">
-                    <div className="rounded-xl bg-gradient-to-br from-green-400 to-emerald-500 p-3 shadow-lg flex-shrink-0">
-                      <Rocket className="w-6 h-6 text-white" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <h3 className="font-semibold text-green-900">发布就绪中心</h3>
-                      <p className="text-sm text-green-600 mt-1">完成任务后一键上传到草稿箱</p>
-                      <Badge variant="secondary" className="mt-2 text-xs bg-green-100 text-green-700">任务完成后使用</Badge>
-                    </div>
-                    <ExternalLink className="w-5 h-5 text-green-400 flex-shrink-0" />
-                  </div>
-                </CardContent>
-              </Card>
-            </Link>
-          </div>
-
-          <WechatDraftsTab />
+        {/* 内容导出 Tab */}
+        <TabsContent value="content-export" className="space-y-4">
+          <ContentExportTab />
         </TabsContent>
       </Tabs>
 
@@ -3974,6 +3935,341 @@ function WechatDraftsTab() {
                 ))}
               </TableBody>
             </Table>
+          </div>
+        )}
+      </Card>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════
+// 🔥🔥 内容导出 Tab（多平台作品下载）
+// ═══════════════════════════════════════════════════
+
+interface CompletedTask {
+  id: string;
+  taskTitle: string;
+  articleTitle: string | null;
+  executor: string;
+  platform: 'wechat_official' | 'xiaohongshu' | 'zhihu' | 'toutiao' | 'unknown';
+  status: string;
+  completedAt: Date | null;
+  resultData: any;
+  resultText: string | null;
+  commandResultId: string;
+}
+
+// 平台配置
+const PLATFORM_CONFIG = {
+  wechat_official: {
+    name: '公众号',
+    icon: '📱',
+    color: 'from-green-500 to-emerald-600',
+    bgColor: 'bg-green-50',
+    borderColor: 'border-green-200',
+  },
+  xiaohongshu: {
+    name: '小红书',
+    icon: '📕',
+    color: 'from-red-500 to-pink-600',
+    bgColor: 'bg-red-50',
+    borderColor: 'border-red-200',
+  },
+  zhihu: {
+    name: '知乎',
+    icon: '🔷',
+    color: 'from-blue-500 to-indigo-600',
+    bgColor: 'bg-blue-50',
+    borderColor: 'border-blue-200',
+  },
+  toutiao: {
+    name: '头条/抖音',
+    icon: '📺',
+    color: 'from-orange-500 to-red-600',
+    bgColor: 'bg-orange-50',
+    borderColor: 'border-orange-200',
+  },
+  unknown: {
+    name: '其他',
+    icon: '📄',
+    color: 'from-gray-500 to-slate-600',
+    bgColor: 'bg-gray-50',
+    borderColor: 'border-gray-200',
+  },
+};
+
+// 获取平台类型
+function getPlatformFromExecutor(executor: string): 'wechat_official' | 'xiaohongshu' | 'zhihu' | 'toutiao' | 'unknown' {
+  if (executor === 'insurance-d') return 'wechat_official';
+  if (executor === 'insurance-xiaohongshu') return 'xiaohongshu';
+  if (executor === 'insurance-zhihu') return 'zhihu';
+  if (executor === 'insurance-toutiao') return 'toutiao';
+  return 'unknown';
+}
+
+function ContentExportTab() {
+  const [tasks, setTasks] = useState<CompletedTask[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [selectedPlatform, setSelectedPlatform] = useState<string>('all');
+  const [downloadingTaskId, setDownloadingTaskId] = useState<string | null>(null);
+
+  // 加载已完成的任务
+  const loadCompletedTasks = async () => {
+    setLoading(true);
+    try {
+      const result: any = await apiGet('/api/subtasks/completed?limit=50');
+      if (result.success) {
+        const tasks = (result.data || []).map((task: any) => ({
+          ...task,
+          platform: getPlatformFromExecutor(task.executor),
+        }));
+        setTasks(tasks);
+      }
+    } catch (error) {
+      console.error('加载已完成任务失败:', error);
+      toast.error('加载失败');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // 下载小红书图片
+  const downloadXhsImages = async (task: CompletedTask) => {
+    setDownloadingTaskId(task.id);
+    try {
+      // 调用生成卡片 API
+      const result: any = await apiGet(`/api/xiaohongshu/generate-cards?subTaskId=${task.id}&persist=true`);
+      if (result.success && result.cards) {
+        // 逐张下载
+        for (let i = 0; i < result.cards.length; i++) {
+          const card = result.cards[i];
+          const response = await fetch(card.url);
+          const blob = await response.blob();
+          const url = URL.createObjectURL(blob);
+          const link = document.createElement('a');
+          link.href = url;
+          link.download = `${task.articleTitle || '小红书'}_${i + 1}.png`;
+          link.click();
+          URL.revokeObjectURL(url);
+          // 稍作延迟避免浏览器阻止
+          await new Promise(r => setTimeout(r, 300));
+        }
+        toast.success(`已下载 ${result.cards.length} 张图片`);
+      } else {
+        toast.error('生成图片失败');
+      }
+    } catch (error) {
+      console.error('下载图片失败:', error);
+      toast.error('下载失败');
+    } finally {
+      setDownloadingTaskId(null);
+    }
+  };
+
+  // 下载正文 TXT
+  const downloadArticleText = (task: CompletedTask) => {
+    const content = task.resultText || 
+                    task.resultData?.structuredResult?.resultContent?.content ||
+                    task.resultData?.resultSummary || '';
+    
+    if (!content) {
+      toast.error('没有可下载的内容');
+      return;
+    }
+
+    const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `${task.articleTitle || '文章'}_${PLATFORM_CONFIG[task.platform].name}.txt`;
+    link.click();
+    URL.revokeObjectURL(url);
+    toast.success('下载成功');
+  };
+
+  // 复制正文到剪贴板
+  const copyArticleText = async (task: CompletedTask) => {
+    const content = task.resultText || 
+                    task.resultData?.structuredResult?.resultContent?.content ||
+                    task.resultData?.resultSummary || '';
+    
+    if (!content) {
+      toast.error('没有可复制的内容');
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(content);
+      toast.success('已复制到剪贴板');
+    } catch {
+      toast.error('复制失败');
+    }
+  };
+
+  // 复制小红书 JSON
+  const copyXhsJson = async (task: CompletedTask) => {
+    const platformData = task.resultData?.structuredResult?.resultContent?.platformData ||
+                         task.resultData?.executorOutput?.structuredResult?.resultContent?.platformData;
+    
+    if (!platformData) {
+      toast.error('没有小红书数据');
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(JSON.stringify(platformData, null, 2));
+      toast.success('JSON 已复制');
+    } catch {
+      toast.error('复制失败');
+    }
+  };
+
+  // 按平台筛选
+  const filteredTasks = selectedPlatform === 'all' 
+    ? tasks 
+    : tasks.filter(t => t.platform === selectedPlatform);
+
+  // 按平台分组统计
+  const platformStats = tasks.reduce((acc, task) => {
+    acc[task.platform] = (acc[task.platform] || 0) + 1;
+    return acc;
+  }, {} as Record<string, number>);
+
+  useEffect(() => {
+    loadCompletedTasks();
+  }, []);
+
+  return (
+    <div className="space-y-4">
+      {/* 标题和刷新按钮 */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-xl font-semibold">内容导出</h2>
+          <p className="text-sm text-muted-foreground mt-1">
+            已完成 {tasks.length} 篇作品，可下载图片和正文
+          </p>
+        </div>
+        <Button onClick={loadCompletedTasks} variant="outline" disabled={loading}>
+          <RefreshCw className={`mr-2 h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+          刷新
+        </Button>
+      </div>
+
+      {/* 平台筛选 */}
+      <div className="flex gap-2 flex-wrap">
+        <Button
+          variant={selectedPlatform === 'all' ? 'default' : 'outline'}
+          size="sm"
+          onClick={() => setSelectedPlatform('all')}
+        >
+          全部 ({tasks.length})
+        </Button>
+        {Object.entries(platformStats).map(([platform, count]) => {
+          const config = PLATFORM_CONFIG[platform as keyof typeof PLATFORM_CONFIG];
+          return (
+            <Button
+              key={platform}
+              variant={selectedPlatform === platform ? 'default' : 'outline'}
+              size="sm"
+              onClick={() => setSelectedPlatform(platform)}
+              className={selectedPlatform === platform ? `bg-gradient-to-r ${config.color}` : ''}
+            >
+              {config.icon} {config.name} ({count})
+            </Button>
+          );
+        })}
+      </div>
+
+      {/* 任务列表 */}
+      <Card className="p-4">
+        {loading ? (
+          <div className="flex items-center justify-center py-12">
+            <div className="text-center">
+              <div className="mb-4 h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent mx-auto"></div>
+              <p className="text-muted-foreground">加载中...</p>
+            </div>
+          </div>
+        ) : filteredTasks.length === 0 ? (
+          <div className="text-center py-12">
+            <FileText className="mx-auto h-12 w-12 text-muted-foreground mb-4" />
+            <h3 className="text-lg font-medium mb-2">暂无已完成的作品</h3>
+            <p className="text-sm text-muted-foreground">
+              完成创作后，作品会自动出现在这里
+            </p>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {filteredTasks.map((task) => {
+              const config = PLATFORM_CONFIG[task.platform];
+              return (
+                <div
+                  key={task.id}
+                  className={`p-4 rounded-lg border ${config.borderColor} ${config.bgColor} hover:shadow-sm transition-shadow`}
+                >
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="text-lg">{config.icon}</span>
+                        <span className="font-medium truncate">
+                          {task.articleTitle || task.taskTitle}
+                        </span>
+                        <Badge variant="outline" className="text-xs">
+                          {config.name}
+                        </Badge>
+                      </div>
+                      <div className="text-sm text-muted-foreground">
+                        {task.completedAt ? new Date(task.completedAt).toLocaleString() : '未知时间'}
+                      </div>
+                    </div>
+
+                    {/* 操作按钮 */}
+                    <div className="flex gap-2 flex-shrink-0">
+                      {task.platform === 'xiaohongshu' && (
+                        <>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => downloadXhsImages(task)}
+                            disabled={downloadingTaskId === task.id}
+                          >
+                            {downloadingTaskId === task.id ? (
+                              <RefreshCw className="mr-1 h-4 w-4 animate-spin" />
+                            ) : (
+                              <ImageIcon className="mr-1 h-4 w-4" />
+                            )}
+                            下载图片
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => copyXhsJson(task)}
+                          >
+                            <Copy className="mr-1 h-4 w-4" />
+                            复制JSON
+                          </Button>
+                        </>
+                      )}
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => downloadArticleText(task)}
+                      >
+                        <Download className="mr-1 h-4 w-4" />
+                        下载正文
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => copyArticleText(task)}
+                      >
+                        <Copy className="mr-1 h-4 w-4" />
+                        复制
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
           </div>
         )}
       </Card>
