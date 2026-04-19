@@ -25,6 +25,7 @@ import {
 import { Loader2, Plus, Trash2, Send, Sparkles, ListTodo, CheckCircle2, XCircle, GripVertical, MoveUp, MoveDown, Maximize2, Minimize2, AlertTriangle, GitCompare, RefreshCw, FileText, Save, Eye, Home, BookmarkPlus, ExternalLink, BookOpen, Clock, Building2, X, HelpCircle, Settings, Rocket, Layers, ChevronDown, ChevronUp, Cpu, Brain, Workflow, Palette, PenTool, ArrowRight, Briefcase, Shield, Users, Download, Copy, ImageIcon } from 'lucide-react';
 import { toast } from 'sonner';
 import { AgentTaskListNormal } from '@/components/agent-task-list-normal';
+import { XiaohongshuPreview } from '@/components/xiaohongshu-preview';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { STRUCTURE_TEMPLATES, getDefaultStructure, type StructureTemplate } from '@/components/creation-guide/structure-templates';
 import { PLATFORM_CONFIG_FIELDS, type PlatformType, PLATFORM_LABELS } from '@/lib/db/schema/style-template';
@@ -4033,23 +4034,20 @@ function ContentExportTab() {
     }
   };
 
-  // 生成小红书卡片（预览和下载共用）
-  const generateXhsCards = async (task: CompletedTask, persist: boolean) => {
-    const result: any = await apiPost('/api/xiaohongshu/generate-cards/from-task', {
-      subTaskId: task.id,
-      persist,
-      gradientScheme: 'pinkOrange',
-      cardCountMode: '5-card',
-    });
-    return result;
-  };
-
-  // 下载小红书图片
+  // 下载小红书图片 - 每张卡片不同颜色
   const downloadXhsImages = async (task: CompletedTask) => {
     setDownloadingTaskId(task.id);
     try {
+      // 渐变色方案列表（封面、要点1、要点2、要点3、结尾各不同）
+      const gradientSchemes = ['pinkOrange', 'bluePurple', 'tealGreen', 'orangeYellow', 'deepBlue'];
+      
       // 调用 API 生成卡片并持久化（返回签名 URL）
-      const result: any = await generateXhsCards(task, true);
+      const result: any = await apiPost('/api/xiaohongshu/generate-cards/from-task', {
+        subTaskId: task.id,
+        persist: true,
+        gradientScheme: gradientSchemes, // 传入数组，每张卡片不同颜色
+        cardCountMode: '5-card',
+      });
       
       if (result.success && result.cards && result.cards.length > 0) {
         // 逐张下载
@@ -4149,34 +4147,6 @@ function ContentExportTab() {
       toast.success('JSON 已复制');
     } catch {
       toast.error('复制失败');
-    }
-  };
-
-  // 预览小红书卡片图片
-  const previewXhsImages = async (task: CompletedTask) => {
-    setDownloadingTaskId(task.id);
-    try {
-      // 调用 API 生成卡片并持久化（返回签名 URL）
-      const result: any = await generateXhsCards(task, true);
-      
-      if (result.success && result.cards && result.cards.length > 0) {
-        // 直接打开第一张卡片图片预览
-        const firstCard = result.cards[0];
-        if (firstCard.url) {
-          window.open(firstCard.url, '_blank');
-        } else {
-          toast.error('无法获取预览图片');
-        }
-      } else if (result.error) {
-        toast.error(result.error + (result.hint ? `（${result.hint}）` : ''));
-      } else {
-        toast.error('生成预览失败');
-      }
-    } catch (error) {
-      console.error('预览失败:', error);
-      toast.error('预览失败，请稍后重试');
-    } finally {
-      setDownloadingTaskId(null);
     }
   };
 
@@ -4324,22 +4294,15 @@ function ContentExportTab() {
 
                     {/* 操作按钮 - 按平台区分 */}
                     <div className="flex gap-2 flex-shrink-0">
-                      {/* 小红书：预览 + 下载 */}
+                      {/* 小红书：预览（可翻页） + 下载 */}
                       {task.platform === 'xiaohongshu' && (
                         <>
-                          <Button
-                            size="sm"
+                          {/* 使用 XiaohongshuPreview 组件（和任务列表一样的翻页预览） */}
+                          <XiaohongshuPreview 
+                            taskId={task.id}
                             variant="outline"
-                            onClick={() => previewXhsImages(task)}
-                            disabled={downloadingTaskId === task.id}
-                          >
-                            {downloadingTaskId === task.id ? (
-                              <RefreshCw className="mr-1 h-4 w-4 animate-spin" />
-                            ) : (
-                              <Eye className="mr-1 h-4 w-4" />
-                            )}
-                            预览
-                          </Button>
+                            size="sm"
+                          />
                           <Button
                             size="sm"
                             variant="outline"

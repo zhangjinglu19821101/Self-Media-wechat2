@@ -17,29 +17,13 @@
  * - 7-card (详细)：封面 + 5个要点(标题+详细内容) + 结尾 = 深度阅读
  */
 
-import { createCanvas, loadImage, registerFont, type CanvasRenderingContext2D } from '@napi-rs/canvas';
+import { createCanvas, loadImage, type CanvasRenderingContext2D } from '@napi-rs/canvas';
 import * as fs from 'fs';
 import * as path from 'path';
 
-// 注册中文字体（支持中文渲染）
-const CHINESE_FONT_PATH = '/usr/share/fonts/truetype/wqy/wqy-microhei.ttc';
-let fontRegistered = false;
-
-function ensureChineseFont(): void {
-  if (fontRegistered) return;
-  try {
-    if (fs.existsSync(CHINESE_FONT_PATH)) {
-      registerFont(CHINESE_FONT_PATH, { family: 'WenQuanYi' });
-      console.log('[XhsCard] 已注册中文字体: WenQuanYi');
-    }
-  } catch (e) {
-    console.warn('[XhsCard] 注册中文字体失败:', e);
-  }
-  fontRegistered = true;
-}
-
-// 确保启动时注册字体
-ensureChineseFont();
+// 中文字体（使用系统已安装的字体）
+// WenQuanYi Micro Hei 是 Linux 系统常见的中文字体
+const CHINESE_FONT_FAMILY = '"WenQuanYi Micro Hei", "WenQuanYi Zen Hei", "Noto Sans CJK SC", sans-serif';
 
 // 小红书卡片尺寸
 const CARD_WIDTH = 1080;

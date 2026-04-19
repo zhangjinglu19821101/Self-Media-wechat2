@@ -151,10 +151,13 @@ export async function POST(request: NextRequest) {
       subTaskId,
     });
     
-    // ========== 生成卡片 ==========
+    // ========== 生成卡片（每张卡片不同颜色） ==========
+    // 渐变色方案列表：封面、要点1、要点2、要点3、结尾
+    const gradientSchemes: GradientScheme[] = ['pinkOrange', 'bluePurple', 'tealGreen', 'orangeYellow', 'deepBlue'];
+    
     const cards = await generateCardsFromArticle(
       article,
-      finalGradientScheme,
+      gradientSchemes,  // 传入数组，每张卡片不同颜色
       finalCardCountMode
     );
     
