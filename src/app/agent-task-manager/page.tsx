@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { Card, CardHeader, CardTitle, CardContent, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -388,6 +388,14 @@ function StepHistoryCard({ step, isLast }: { step: StepHistoryItem; isLast: bool
 }
 
 export default function AgentTaskManagerPage() {
+  return (
+    <Suspense fallback={<div className="flex items-center justify-center min-h-screen"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div></div>}>
+      <AgentTaskManagerContent />
+    </Suspense>
+  );
+}
+
+function AgentTaskManagerContent() {
   const searchParams = useSearchParams();
   const [selectedAgent, setSelectedAgent] = useState<string>('B');
   const [selectedTask, setSelectedTask] = useState<TaskWithDetails | null>(null);

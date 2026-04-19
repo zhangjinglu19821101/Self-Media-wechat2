@@ -13,10 +13,15 @@
  * @docs /docs/详细设计文档agent智能交互MCP能力设计capability_type.md
  */
 
-import { db } from '@/lib/db';
-import { capabilityList } from '@/lib/db/schema';
 import { toolRegistry } from './tool-registry';
-import { eq } from 'drizzle-orm';
+
+// 动态导入数据库相关模块，避免构建时副作用
+async function getDb() {
+  const { db } = await import('@/lib/db');
+  const { capabilityList } = await import('@/lib/db/schema');
+  const { eq } = await import('drizzle-orm');
+  return { db, capabilityList, eq };
+}
 
 export class ToolAutoRegistrar {
   private static instance: ToolAutoRegistrar;
@@ -75,6 +80,9 @@ export class ToolAutoRegistrar {
     console.log('[Tool Auto Registrar] ========== 开始自动注册工具 ==========');
     
     try {
+      // 动态导入数据库模块
+      const { db, capabilityList } = await getDb();
+      
       // 1. 从 capability_list 读取所有能力
       const capabilities = await db.select().from(capabilityList);
       console.log(`[Tool Auto Registrar] 从 capability_list 读取到 ${capabilities.length} 个能力`);
@@ -264,6 +272,9 @@ export class ToolAutoRegistrar {
    */
   public async reloadTool(toolName: string) {
     console.log(`[Tool Auto Registrar] 重新加载工具: ${toolName}`);
+    
+    // 动态导入数据库模块
+    const { db, capabilityList, eq } = await getDb();
     
     // 1. 先注销旧工具
     toolRegistry.unregisterTool(toolName);

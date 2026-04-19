@@ -13,7 +13,7 @@
 
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -60,6 +60,14 @@ interface GeneratedCard {
 }
 
 export default function XiaohongshuCardPage() {
+  return (
+    <Suspense fallback={<div className="flex items-center justify-center min-h-screen"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div></div>}>
+      <XiaohongshuCardContent />
+    </Suspense>
+  );
+}
+
+function XiaohongshuCardContent() {
   const searchParams = useSearchParams();
   const taskId = searchParams.get('taskId');
   
