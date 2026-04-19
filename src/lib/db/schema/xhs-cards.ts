@@ -26,9 +26,10 @@ export type XhsCardType =
  * 卡片状态
  */
 export type XhsCardStatus =
-  | 'active'   // 正常可用
-  | 'expired'  // 已过期（对象存储文件已删除）
-  | 'failed';  // 上传失败
+  | 'active'    // 正常可用
+  | 'inactive'  // 已被新卡片组取代（旧组关联卡片）
+  | 'expired'   // 已过期（对象存储文件已删除）
+  | 'failed';   // 上传失败
 
 // ============================================================
 // 表定义
@@ -63,7 +64,7 @@ export const xhsCards = pgTable('xhs_cards', {
   gradientScheme: text('gradient_scheme'),   // 配色方案名称
 
   // === 状态 ===
-  status: text('status').notNull().default('active'), // active / expired / failed
+  status: text('status').notNull().default('active'), // active / inactive / expired / failed
   isPublic: boolean('is_public').notNull().default(true), // 是否公开可访问
 
   // === 工作空间归属 ===
@@ -107,8 +108,10 @@ export const xhsCardGroups = pgTable('xhs_card_groups', {
   cardIds: text('card_ids').notNull().default('[]'),   // JSON 数组：["uuid1", "uuid2", ...]
 
   // === 状态 ===
-  status: text('status').notNull().default('active'),  // active / partial / failed
+  status: text('status').notNull().default('active'),  // active / partial / superseded / failed
+  // active: 全部卡片上传成功，当前有效
   // partial: 部分卡片上传失败
+  // superseded: 已被新卡片组取代（不再有效）
   // failed: 全部上传失败
 
   // === 工作空间归属 ===

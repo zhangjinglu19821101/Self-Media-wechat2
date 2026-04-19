@@ -200,6 +200,50 @@ export async function uploadXhsCardGroup(
     throw new Error('所有卡片上传失败');
   }
   
+  // 🔥 P0 修复：创建新卡片组前，将同 subTaskId 的旧卡片组标记为 superseded
+  // 同时将旧卡片组关联的卡片标记为 inactive，避免数据累积和读取混乱
+  try {
+    const oldGroups = await db.select({
+      id: xhsCardGroups.id,
+      cardIds: xhsCardGroups.cardIds,
+    }).from(xhsCardGroups).where(
+      and(
+        eq(xhsCardGroups.subTaskId, subTaskId),
+        eq(xhsCardGroups.status, 'active')
+      )
+    );
+    
+    if (oldGroups.length > 0) {
+      const now = new Date();
+      
+      // 1. 将旧卡片组标记为 superseded
+      const oldGroupIds = oldGroups.map(g => g.id);
+      await db.update(xhsCardGroups)
+        .set({ status: 'superseded', updatedAt: now })
+        .where(inArray(xhsCardGroups.id, oldGroupIds));
+      
+      // 2. 将旧卡片组关联的卡片标记为 inactive
+      const oldCardIds: string[] = [];
+      for (const g of oldGroups) {
+        try {
+          const ids: string[] = JSON.parse(g.cardIds || '[]');
+          oldCardIds.push(...ids);
+        } catch { /* 忽略 JSON 解析失败 */ }
+      }
+      
+      if (oldCardIds.length > 0) {
+        await db.update(xhsCards)
+          .set({ status: 'inactive', updatedAt: now })
+          .where(inArray(xhsCards.id, oldCardIds));
+      }
+      
+      console.log(`[XhsStorage] 已标记 ${oldGroupIds.length} 个旧卡片组为 superseded, ${oldCardIds.length} 张旧卡片为 inactive`);
+    }
+  } catch (error) {
+    // 旧组标记失败不阻塞新组创建，仅记录警告
+    console.warn(`[XhsStorage] 标记旧卡片组为 superseded 失败（不阻塞新组创建）:`, error);
+  }
+  
   // 确定状态：全部成功=active，部分失败=partial
   const groupStatus = failedIndices.length === 0 ? 'active' : 'partial';
   
@@ -323,11 +367,13 @@ export async function getCardGroupUrlsBySubTaskId(
   titleSnapshot: string | null;
 }>> {
   // 构建查询条件
-  const whereConditions = workspaceId
+  // 🔥 P0 修复：增加 status='active' 过滤，只获取有效的卡片组（排除 superseded/partial/failed）
+  const baseConditions = workspaceId
     ? and(eq(xhsCardGroups.subTaskId, subTaskId), eq(xhsCardGroups.workspaceId, workspaceId))
     : eq(xhsCardGroups.subTaskId, subTaskId);
+  const whereConditions = and(baseConditions, eq(xhsCardGroups.status, 'active'));
   
-  // 🔥 P0 修复：按创建时间倒序获取最新的卡片组（而非最早的）
+  // 按创建时间倒序获取最新的有效卡片组
   const groups = await db.select().from(xhsCardGroups)
     .where(whereConditions)
     .orderBy(sql`${xhsCardGroups.createdAt} DESC`)
