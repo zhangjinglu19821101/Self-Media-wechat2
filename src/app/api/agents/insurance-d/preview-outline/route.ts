@@ -125,7 +125,7 @@ export async function POST(request: NextRequest) {
     if (authResult instanceof NextResponse) return authResult;
 
     // 🔥 限流保护：基于 IP 的简单限流
-    const clientId = request.headers.get('x-forwarded-for') || request.ip || 'unknown';
+    const clientId = request.headers.get('x-forwarded-for') || 'unknown';
     const rateLimitResult = checkRateLimit(clientId);
     
     if (!rateLimitResult.allowed) {

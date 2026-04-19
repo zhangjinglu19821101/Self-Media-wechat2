@@ -7,6 +7,7 @@ import { agentBuilder } from '@/lib/agent-builder';
 import { workflowTriggerParser } from '@/lib/workflow-trigger';
 import { conversationHistoryManager } from '@/storage/database';
 import { getRAGIntegration } from '@/lib/rag/rag-integration';
+import type { AgentId } from '@/lib/agent-types';
 import postgres from 'postgres';
 
 /**
@@ -303,7 +304,7 @@ ${index + 1}. 来自 ${fromAgentName}（Agent ${fromAgentId}）的指令
           role: 'user',
           content: message,
           metadata: { hasTrigger: containsTrigger },
-        });
+        } as any);
       } catch (error) {
         console.error('Failed to save user message:', error);
       }
@@ -365,7 +366,7 @@ ${index + 1}. 来自 ${fromAgentName}（Agent ${fromAgentId}）的指令
                 role: 'assistant',
                 content: assistantContent,
                 metadata: { hasTrigger: containsTrigger },
-              });
+              } as any);
             } catch (error) {
               console.error('Failed to save assistant message:', error);
             }

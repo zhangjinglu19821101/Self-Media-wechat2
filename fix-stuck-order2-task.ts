@@ -92,7 +92,7 @@ async function fixStuckOrder2Task() {
     .update(agentSubTasks)
     .set({
       status: 'completed',
-      executionResult: JSON.stringify(completionResult),
+      resultText: JSON.stringify(completionResult),
       completedAt: getCurrentBeijingTime(),
       updatedAt: getCurrentBeijingTime()
     })

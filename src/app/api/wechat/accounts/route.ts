@@ -138,16 +138,16 @@ export async function POST(request: NextRequest) {
 }
 
 /**
- * PUT /api/wechat/accounts/:id
+ * PUT /api/wechat/accounts
  * 更新公众号配置
+ * 请求体需要包含 id 字段
  */
 export async function PUT(
-  request: NextRequest,
-  { params }: { params: { id: string } }
+  request: NextRequest
 ) {
   try {
-    const { id } = params;
     const body = await request.json();
+    const { id, ...updates } = body;
 
     // 检查公众号是否存在
     if (!accountsStore[id]) {
@@ -189,15 +189,16 @@ export async function PUT(
 }
 
 /**
- * DELETE /api/wechat/accounts/:id
+ * DELETE /api/wechat/accounts
  * 删除公众号配置
+ * 请求体需要包含 id 字段
  */
 export async function DELETE(
-  request: NextRequest,
-  { params }: { params: { id: string } }
+  request: NextRequest
 ) {
   try {
-    const { id } = params;
+    const body = await request.json();
+    const { id } = body;
 
     // 检查公众号是否存在
     if (!accountsStore[id]) {

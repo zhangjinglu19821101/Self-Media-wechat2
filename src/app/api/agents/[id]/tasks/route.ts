@@ -64,15 +64,10 @@ export async function GET(
     console.log(`🔍 whereClause:`, whereClause);
 
     // 查询 agent_sub_tasks
-    let query = db
+    const subTasks = await db
       .select()
-      .from(agentSubTasks);
-    
-    if (whereClause) {
-      query = query.where(whereClause);
-    }
-    
-    const subTasks = await query
+      .from(agentSubTasks)
+      .where(whereClause || undefined)
       .orderBy(desc(agentSubTasks.createdAt))
       .limit(50);
     
@@ -117,9 +112,10 @@ export async function GET(
           completedAt: subTask.completedAt,
           isDispatched: subTask.isDispatched,
           dispatchedAt: subTask.dispatchedAt,
-          executionResult: subTask.executionResult, // 🔥 新增：执行结果
-          statusProof: subTask.statusProof, // 🔥 新增：状态证明
-          articleMetadata: subTask.articleMetadata, // 🔥 新增：文章元数据
+          resultData: subTask.resultData, // 执行结果（JSONB 格式）
+          resultText: subTask.resultText, // 执行结果（文本格式）
+          statusProof: subTask.statusProof, // 状态证明
+          articleMetadata: subTask.articleMetadata, // 文章元数据
           userOpinion: (subTask as any).userOpinion || relatedDailyTask?.userOpinion || null, // 🔥 用户观点（标题回退）
           metadata: {
             ...subTask.metadata,

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { agentBuilder } from '@/lib/agent-builder';
+import type { AgentId } from '@/lib/agent-types';
 
 /**
  * GET /api/admin/agent-builder/agent/[id]/capabilities
@@ -12,7 +13,7 @@ export async function GET(
   try {
     const { id } = await params;
 
-    const agent = agentBuilder.getAgent(id);
+    const agent = agentBuilder.getAgent(id as AgentId);
 
     if (!agent) {
       return NextResponse.json(
@@ -24,7 +25,7 @@ export async function GET(
       );
     }
 
-    const capabilities = agentBuilder.getAgentCapabilities(id);
+    const capabilities = agentBuilder.getAgentCapabilities(id as AgentId);
 
     return NextResponse.json({
       success: true,

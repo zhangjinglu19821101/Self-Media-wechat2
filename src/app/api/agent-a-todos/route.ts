@@ -151,7 +151,6 @@ export async function PUT(request: Request) {
         processedBy,
         processedAt: new Date(),
         completedAt: status === 'completed' ? new Date() : null,
-        updatedAt: new Date(),
       })
       .where(eq(agentATodos.id, todoId))
       .returning();

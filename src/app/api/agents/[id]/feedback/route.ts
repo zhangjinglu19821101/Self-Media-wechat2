@@ -26,11 +26,11 @@ export async function GET(
     const feedbacks = tasks.filter(task => task.result).map(task => ({
       taskId: task.taskId,
       fromAgent: task.fromAgentId,
-      command: task.command,
+      command: task.coreCommand,
       result: task.result,
       completedAt: task.completedAt,
       commandType: task.commandType,
-      priority: task.priority,
+      priority: task.taskPriority,
     }));
 
     return NextResponse.json({

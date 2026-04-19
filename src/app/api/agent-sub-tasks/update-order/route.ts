@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { agentSubTasks } from '@/lib/db/schema';
-import { eq, and, lt, gt, gte, lte } from 'drizzle-orm';
+import { eq, and, lt, gt, gte, lte, sql } from 'drizzle-orm';
 import { requireAuth } from '@/lib/auth/context';
 
 export async function POST(request: NextRequest) {
@@ -76,7 +76,7 @@ export async function POST(request: NextRequest) {
         await tx
           .update(agentSubTasks)
           .set({
-            orderIndex: agentSubTasks.orderIndex + 1,
+            orderIndex: sql`${agentSubTasks.orderIndex} + 1`,
             updatedAt: new Date(),
           })
           .where(and(
@@ -91,7 +91,7 @@ export async function POST(request: NextRequest) {
         await tx
           .update(agentSubTasks)
           .set({
-            orderIndex: agentSubTasks.orderIndex - 1,
+            orderIndex: sql`${agentSubTasks.orderIndex} - 1`,
             updatedAt: new Date(),
           })
           .where(and(

@@ -4,6 +4,7 @@ import { db } from '@/lib/db';
 import { agentTasks } from '@/lib/db/schema';
 import { eq } from 'drizzle-orm';
 import { wsServer } from '@/lib/websocket-server';
+import type { AgentId } from '@/lib/agent-types';
 
 /**
  * POST /api/agents/cancel-command - 取消指令
@@ -94,7 +95,7 @@ export async function POST(request: NextRequest) {
       timestamp: new Date().toISOString(),
     };
 
-    wsServer.sendToAgent(executor, wsMessage);
+    wsServer.sendToAgent(executor as AgentId, wsMessage);
     console.log(`📡 已通知 ${executor} 停止执行: ${taskId}`);
 
     // 5. 返回成功响应

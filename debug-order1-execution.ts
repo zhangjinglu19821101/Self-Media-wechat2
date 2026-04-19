@@ -78,8 +78,8 @@ async function debugOrder1Tasks() {
     
     // 5. 检查是否有状态异常
     console.log('\n⚠️ 步骤5: 检查异常状态:');
-    if (latestTask.status === 'pre_need_support' && !latestTask.executionResult) {
-      console.log('  ❌ 发现问题: status=pre_need_support 但 execution_result 为空');
+    if (latestTask.status === 'pre_need_support' && !latestTask.resultData) {
+      console.log('  ❌ 发现问题: status=pre_need_support 但 resultData 为空');
       console.log('  这不符合预期！应该有执行结果说明为什么需要帮助');
     }
     

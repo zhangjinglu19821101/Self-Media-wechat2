@@ -33,19 +33,22 @@ async function debugSpecificTask() {
     console.log('  started_at:', task.startedAt?.toISOString());
     console.log('  updated_at:', task.updatedAt?.toISOString());
     
-    // 检查 execution_result
-    console.log('\n💾 execution_result:');
-    console.log('  存在:', !!task.executionResult);
-    console.log('  长度:', task.executionResult?.length || 0);
+    // 检查 resultData 和 resultText
+    console.log('\n💾 执行结果:');
+    console.log('  resultData 存在:', !!task.resultData);
+    console.log('  resultText 长度:', task.resultText?.length || 0);
     
-    if (task.executionResult) {
-      console.log('  内容:', task.executionResult);
+    if (task.resultText) {
+      console.log('  resultText 预览:', task.resultText.substring(0, 200));
       try {
-        const parsed = JSON.parse(task.executionResult);
+        const parsed = JSON.parse(task.resultText);
         console.log('  解析结果:', parsed);
       } catch (e) {
-        console.log('  解析失败:', e);
+        console.log('  非JSON格式文本');
       }
+    }
+    if (task.resultData) {
+      console.log('  resultData:', JSON.stringify(task.resultData, null, 2).substring(0, 500));
     }
     
     // 查看同组其他任务
@@ -58,7 +61,7 @@ async function debugSpecificTask() {
         .orderBy(agentSubTasks.orderIndex);
       
       groupTasks.forEach((t, i) => {
-        console.log(`  ${i+1}. order=${t.orderIndex}, status=${t.status}, exec_result=!!${!!t.executionResult}`);
+        console.log(`  ${i+1}. order=${t.orderIndex}, status=${t.status}, has_resultData=!!${!!t.resultData}, has_resultText=!!${!!t.resultText}`);
       });
       
       // 查看 order_index=1 的任务
@@ -66,9 +69,10 @@ async function debugSpecificTask() {
       if (order1Task) {
         console.log('\n📌 order_index=1 的任务:');
         console.log('  status:', order1Task.status);
-        console.log('  has_execution_result:', !!order1Task.executionResult);
-        if (order1Task.executionResult) {
-          console.log('  execution_result:', order1Task.executionResult);
+        console.log('  has_resultData:', !!order1Task.resultData);
+        console.log('  has_resultText:', !!order1Task.resultText);
+        if (order1Task.resultText) {
+          console.log('  resultText 预览:', order1Task.resultText.substring(0, 200));
         }
       }
     }

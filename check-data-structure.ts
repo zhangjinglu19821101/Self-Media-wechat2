@@ -16,9 +16,9 @@ async function checkDataStructure() {
     LIMIT 3
   `);
 
-  console.log(`   找到 ${recentTasks.rows.length} 个最近完成的任务`);
+  console.log(`   找到 ${(recentTasks as any[]).length} 个最近完成的任务`);
 
-  for (const task of recentTasks.rows) {
+  for (const task of recentTasks as any[]) {
     console.log(`\n   --- 任务 ${task.id} ---`);
     console.log(`   标题: ${task.task_title}`);
     console.log(`   状态: ${task.status}`);
@@ -34,9 +34,9 @@ async function checkDataStructure() {
         ORDER BY step_no, interact_num
       `);
 
-      console.log(`      记录数: ${stepHistory.rows.length}`);
+      console.log(`      记录数: ${(stepHistory as any[]).length}`);
 
-      for (const record of stepHistory.rows) {
+      for (const record of stepHistory as any[]) {
         console.log(`\n      Step ${record.step_no}, Num ${record.interact_num}, ${record.interact_type} (${record.interact_user})`);
         console.log(`      Content keys: ${Object.keys(record.interact_content || {}).join(', ')}`);
 

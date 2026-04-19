@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { AGENT_PROMPTS, getAgentPrompt, getAllAgentPrompts } from '@/lib/agent-prompts';
+import type { AgentId } from '@/lib/agent-types';
 
 /**
  * 导出 Agent 提示词
@@ -31,7 +32,7 @@ export async function GET(request: NextRequest) {
     }
 
     // 返回指定 Agent 的提示词
-    const prompt = getAgentPrompt(agentId);
+    const prompt = getAgentPrompt(agentId as AgentId);
     if (!prompt) {
       return NextResponse.json(
         {

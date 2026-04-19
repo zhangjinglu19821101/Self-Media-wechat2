@@ -113,7 +113,7 @@ function CreationGuideContent() {
         endingConclusion: coreAnchorData.endingConclusion,
         keyMaterials: materialData.keyMaterials,
         relatedMaterials: materialData.relatedMaterials,
-        targetWordCount: creationControlData.targetWordCount,
+        targetWordCount: String(creationControlData.targetWordCount || ''),
         structure: selectedStructure,  // 传入当前选择的结构模板
       });
 

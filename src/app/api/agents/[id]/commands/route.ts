@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { conversationHistoryService } from '@/lib/services/conversation-history';
+import { conversationHistory } from '@/lib/services/conversation-history';
 import postgres from 'postgres';
 
 /**

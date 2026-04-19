@@ -11,7 +11,7 @@ import { AgentId } from './agent-types';
 import { authenticateWebSocket, WSAuthResult } from './websocket-auth';
 
 export interface WSMessage {
-  type: 'new_command' | 'task_result' | 'system_notification' | 'pong' | 'ping';
+  type: 'new_command' | 'task_result' | 'system_notification' | 'pong' | 'ping' | 'command_cancelled' | 'problem_solved';
   fromAgentId?: string;
   toAgentId?: string;
   command?: string;

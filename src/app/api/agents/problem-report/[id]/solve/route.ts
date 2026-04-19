@@ -10,6 +10,8 @@ import { requireAuth } from '@/lib/auth/context';
 import { getDatabase, schema } from '@/lib/db';
 import { problemReports } from '@/lib/db/problem-schema';
 import { ProblemSolutionType, ProblemStatus } from '@/lib/problem-report/types';
+import { eq } from 'drizzle-orm';
+import { wsServer } from '@/lib/websocket-server';
 
 /**
  * PUT /api/agents/problem-report/[id]/solve
@@ -76,7 +78,7 @@ export async function PUT(
         updatedAt: new Date(),
         resolvedAt: newStatus === 'solved' ? new Date() : undefined,
       })
-      .where(schema.eq(problemReports.id, id))
+      .where(eq(problemReports.id, id))
       .returning();
 
     if (!updatedProblem) {

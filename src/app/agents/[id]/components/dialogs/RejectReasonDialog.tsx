@@ -119,7 +119,7 @@ export function RejectReasonDialog({
                   type="button"
                   variant="outline"
                   size="sm"
-                  onClick={() => onReasonChange(prev => prev ? prev + '\n' + option.text : option.text)}
+                  onClick={() => onReasonChange(reason ? reason + '\n' + option.text : option.text)}
                   disabled={isSubmitting}
                 >
                   {option.label}

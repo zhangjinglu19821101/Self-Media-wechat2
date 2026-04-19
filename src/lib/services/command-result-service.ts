@@ -850,6 +850,7 @@ export async function createAgentTaskWithDuplicateCheck(params: {
   taskStatus?: string;
   creator?: string;
   updater?: string;
+  commandType?: string;
   metadata?: Record<string, any>;
   timeWindowDays?: number;
   // 🔥 新增：用户观点和素材
@@ -956,7 +957,7 @@ export async function createAgentTaskWithDuplicateCheck(params: {
     updater: params.updater || params.fromAgentId,
     fromAgentId: params.fromAgentId,
     toAgentId: params.toAgentId,
-    commandType: 'instruction',
+    commandType: params.commandType || 'instruction',
     metadata: params.metadata || {},
     // 🔥 新增：用户观点和素材
     userOpinion: params.userOpinion || null,

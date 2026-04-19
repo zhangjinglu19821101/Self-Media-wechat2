@@ -45,12 +45,11 @@ export async function GET(request: Request) {
           if (skills.length > 0) {
             analysis.availableDomains[d] = {
               skillCount: skills.length,
-              totalPrice: skills.reduce((sum, skill) => sum + (skill.price || 0), 0),
               skills: skills.map((s) => ({
                 id: s.id,
                 name: s.name,
-                provider: s.provider,
-                price: s.price,
+                level: s.level,
+                description: s.description,
               })),
             };
           }
@@ -83,13 +82,14 @@ export async function GET(request: Request) {
       }
 
       // 整体统计
-      const totalBase = Object.values(analysis.agents).reduce((sum: number, a: any) => sum + a.baseCapabilities, 0);
-      const totalDomain = Object.values(analysis.agents).reduce((sum: number, a: any) => sum + a.domainCapabilities, 0);
+      const agentsData = Object.values(analysis.agents) as Array<{ baseCapabilities: number; domainCapabilities: number }>;
+      const totalBase: number = agentsData.reduce((sum, a) => sum + a.baseCapabilities, 0);
+      const totalDomain: number = agentsData.reduce((sum, a) => sum + a.domainCapabilities, 0);
 
       analysis.overall = {
         totalBaseCapabilities: totalBase,
         totalDomainCapabilities: totalDomain,
-        overallReplicability: Math.round((totalBase / (totalBase + totalDomain)) * 100),
+        overallReplicability: totalBase + totalDomain > 0 ? Math.round((totalBase / (totalBase + totalDomain)) * 100) : 0,
         recommendation: getOverallRecommendation(totalBase, totalDomain),
       };
     }
