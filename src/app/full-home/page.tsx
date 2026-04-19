@@ -4359,9 +4359,14 @@ function ContentExportTab() {
 
                   {/* 右侧：操作按钮 */}
                   <div className="flex gap-2 flex-shrink-0">
-                    {/* 小红书：下载图片 + 下载正文 */}
+                    {/* 小红书：预览 + 下载图片 + 下载正文 */}
                     {task.platform === 'xiaohongshu' && (
                       <>
+                        <XiaohongshuPreview 
+                          taskId={task.id}
+                          variant="outline"
+                          size="sm"
+                        />
                         <Button
                           size="sm"
                           variant="outline"
