@@ -104,11 +104,15 @@ export class ArticleReviewService {
     subTask: typeof agentSubTasks.$inferSelect
   ): Promise<ReviewResultData | null> {
     try {
-      // 查询该子任务的 MCP 执行记录
+      // 查询该子任务的 MCP 执行记录（使用 commandResultId 和 orderIndex）
+      // 注意：mcp_executions 表没有 subTaskId 字段，需要用 commandResultId + orderIndex 查询
       const mcpExecutions = await db
         .select()
         .from(agentSubTasksMcpExecutions)
-        .where(eq(agentSubTasksMcpExecutions.subTaskId, subTask.id))
+        .where(and(
+          eq(agentSubTasksMcpExecutions.commandResultId, subTask.commandResultId),
+          eq(agentSubTasksMcpExecutions.orderIndex, subTask.orderIndex)
+        ))
         .orderBy(desc(agentSubTasksMcpExecutions.attemptTimestamp))
         .limit(5);
 
@@ -138,7 +142,7 @@ export class ArticleReviewService {
       let summary = '合规性校验完成';
 
       try {
-        const result = complianceExecution.executionResult;
+        const result = complianceExecution.resultData;
         if (result) {
           const parsedResult = typeof result === 'string' 
             ? JSON.parse(result) 
