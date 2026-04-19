@@ -618,19 +618,24 @@ export function XiaohongshuPreview({
                   
                   {/* 正文 */}
                   {(content.content || content.fullText) && (
-                    <>
+                    <div className="relative">
                       <p className={`text-sm text-gray-700 leading-relaxed mb-3 ${isFullTextExpanded ? '' : 'line-clamp-3'}`}>
                         {content.content || content.fullText}
                       </p>
-                      {((content.content || content.fullText)?.length || 0) > 150 && (
+                      {/* 展开/收起按钮 - 始终显示 */}
+                      {(content.content || content.fullText) && (
                         <button
                           onClick={() => setIsFullTextExpanded(!isFullTextExpanded)}
-                          className="text-xs text-red-500 font-medium mb-2 hover:text-red-600 transition-colors"
+                          className="text-xs text-red-500 font-medium mb-2 hover:text-red-600 transition-colors flex items-center gap-1"
                         >
-                          {isFullTextExpanded ? '收起 ▲' : '展开全文 ▼'}
+                          {isFullTextExpanded ? (
+                            <>收起 <span className="text-[10px]">▲</span></>
+                          ) : (
+                            <>展开全文 <span className="text-[10px]">▼</span></>
+                          )}
                         </button>
                       )}
-                    </>
+                    </div>
                   )}
                   
                   {/* 标签 */}
