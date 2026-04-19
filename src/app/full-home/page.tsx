@@ -4033,17 +4033,23 @@ function ContentExportTab() {
     }
   };
 
+  // 生成小红书卡片（预览和下载共用）
+  const generateXhsCards = async (task: CompletedTask, persist: boolean) => {
+    const result: any = await apiPost('/api/xiaohongshu/generate-cards/from-task', {
+      subTaskId: task.id,
+      persist,
+      gradientScheme: 'pinkOrange',
+      cardCountMode: '5-card',
+    });
+    return result;
+  };
+
   // 下载小红书图片
   const downloadXhsImages = async (task: CompletedTask) => {
     setDownloadingTaskId(task.id);
     try {
-      // 调用专用 API：从任务生成卡片
-      const result: any = await apiPost('/api/xiaohongshu/generate-cards/from-task', {
-        subTaskId: task.id,
-        persist: true,
-        gradientScheme: 'pinkOrange',
-        cardCountMode: '5-card',
-      });
+      // 调用 API 生成卡片并持久化（返回签名 URL）
+      const result: any = await generateXhsCards(task, true);
       
       if (result.success && result.cards && result.cards.length > 0) {
         // 逐张下载
@@ -4064,7 +4070,6 @@ function ContentExportTab() {
         }
         toast.success(`已下载 ${result.cards.length} 张图片`);
       } else if (result.error) {
-        // 显示具体错误信息
         toast.error(result.error + (result.hint ? `（${result.hint}）` : ''));
       } else {
         toast.error('生成图片失败');
@@ -4077,11 +4082,17 @@ function ContentExportTab() {
     }
   };
 
-  // 下载正文 TXT
+  // 下载正文 TXT - 从正确的数据路径提取
   const downloadArticleText = (task: CompletedTask) => {
-    const content = task.resultText || 
-                    task.resultData?.structuredResult?.resultContent?.content ||
-                    task.resultData?.resultSummary || '';
+    // 多层级提取正文内容
+    const resultData = task.resultData as any;
+    const content = 
+      // 小红书/公众号信封格式
+      resultData?.executorOutput?.structuredResult?.resultContent?.content ||
+      resultData?.executorOutput?.result ||
+      // 兜底
+      task.resultText ||
+      '';
     
     if (!content) {
       toast.error('没有可下载的内容');
@@ -4100,9 +4111,12 @@ function ContentExportTab() {
 
   // 复制正文到剪贴板
   const copyArticleText = async (task: CompletedTask) => {
-    const content = task.resultText || 
-                    task.resultData?.structuredResult?.resultContent?.content ||
-                    task.resultData?.resultSummary || '';
+    const resultData = task.resultData as any;
+    const content = 
+      resultData?.executorOutput?.structuredResult?.resultContent?.content ||
+      resultData?.executorOutput?.result ||
+      task.resultText ||
+      '';
     
     if (!content) {
       toast.error('没有可复制的内容');
@@ -4119,8 +4133,11 @@ function ContentExportTab() {
 
   // 复制小红书 JSON
   const copyXhsJson = async (task: CompletedTask) => {
-    const platformData = task.resultData?.structuredResult?.resultContent?.platformData ||
-                         task.resultData?.executorOutput?.structuredResult?.resultContent?.platformData;
+    const resultData = task.resultData as any;
+    const platformData = 
+      resultData?.executorOutput?.structuredResult?.resultContent?.platformData ||
+      resultData?.structuredResult?.resultContent?.platformData ||
+      null;
     
     if (!platformData) {
       toast.error('没有小红书数据');
@@ -4139,13 +4156,8 @@ function ContentExportTab() {
   const previewXhsImages = async (task: CompletedTask) => {
     setDownloadingTaskId(task.id);
     try {
-      // 调用专用 API：从任务生成卡片
-      const result: any = await apiPost('/api/xiaohongshu/generate-cards/from-task', {
-        subTaskId: task.id,
-        persist: false, // 预览不持久化
-        gradientScheme: 'pinkOrange',
-        cardCountMode: '5-card',
-      });
+      // 调用 API 生成卡片并持久化（返回签名 URL）
+      const result: any = await generateXhsCards(task, true);
       
       if (result.success && result.cards && result.cards.length > 0) {
         // 直接打开第一张卡片图片预览
@@ -4170,12 +4182,13 @@ function ContentExportTab() {
 
   // 预览公众号/其他平台文章（打开 HTML 预览）
   const previewArticle = (task: CompletedTask) => {
+    const resultData = task.resultData as any;
     // 获取文章内容
-    const content = task.resultText || 
-                    task.resultData?.structuredResult?.resultContent?.content ||
-                    task.resultData?.executorOutput?.structuredResult?.resultContent?.content ||
-                    task.resultData?.structuredResult?.resultContent?.htmlContent ||
-                    '';
+    const content = 
+      resultData?.executorOutput?.structuredResult?.resultContent?.content ||
+      resultData?.executorOutput?.result ||
+      task.resultText ||
+      '';
     
     if (!content) {
       toast.error('没有可预览的内容');
