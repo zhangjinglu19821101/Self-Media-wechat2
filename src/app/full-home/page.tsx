@@ -4281,8 +4281,8 @@ function ContentExportTab() {
                         </>
                       )}
                       
-                      {/* 公众号：仅预览 */}
-                      {task.platform === 'wechat_official' && (
+                      {/* 公众号/知乎/头条：仅预览 */}
+                      {task.platform !== 'xiaohongshu' && (
                         <Button
                           size="sm"
                           variant="outline"
@@ -4294,28 +4294,6 @@ function ContentExportTab() {
                           <Eye className="mr-1 h-4 w-4" />
                           预览
                         </Button>
-                      )}
-                      
-                      {/* 其他平台：下载正文 + 复制 */}
-                      {task.platform !== 'xiaohongshu' && task.platform !== 'wechat_official' && (
-                        <>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => downloadArticleText(task)}
-                          >
-                            <Download className="mr-1 h-4 w-4" />
-                            下载正文
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => copyArticleText(task)}
-                          >
-                            <Copy className="mr-1 h-4 w-4" />
-                            复制
-                          </Button>
-                        </>
                       )}
                     </div>
                   </div>
