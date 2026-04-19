@@ -639,7 +639,7 @@ export function XiaohongshuPreview({
                     {(content.content || content.fullText) && (
                       <button
                         onClick={() => setIsFullTextExpanded(!isFullTextExpanded)}
-                        className="text-xs text-red-500 font-medium hover:text-red-600 transition-colors"
+                        className="text-xs text-red-500 font-semibold hover:text-red-600 transition-colors underline decoration-dotted underline-offset-2"
                       >
                         {isFullTextExpanded ? '收起' : '展开全文'}
                       </button>
