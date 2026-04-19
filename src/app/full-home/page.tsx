@@ -4272,17 +4272,31 @@ function ContentExportTab() {
                 >
                   <div className="flex items-start justify-between gap-4">
                     <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 mb-1">
-                        <span className="text-lg">{config.icon}</span>
-                        <span className="font-medium truncate">
-                          {task.articleTitle || task.taskTitle}
-                        </span>
-                        <Badge variant="outline" className="text-xs">
+                      {/* 平台名称 Badge + 标题 */}
+                      <div className="flex items-center gap-2 mb-2">
+                        <span className="text-xl">{config.icon}</span>
+                        <Badge variant="outline">
                           {config.name}
                         </Badge>
                       </div>
-                      <div className="text-sm text-muted-foreground">
-                        {task.completedAt ? new Date(task.completedAt).toLocaleString() : '未知时间'}
+                      {/* 文章标题 - 更突出的显示 */}
+                      <h3 className="text-lg font-semibold mb-2 line-clamp-2">
+                        {task.articleTitle || task.taskTitle}
+                      </h3>
+                      {/* 生成时间 */}
+                      <div className="text-sm text-muted-foreground flex items-center gap-1">
+                        <Clock className="h-3.5 w-3.5" />
+                        <span>
+                          {task.completedAt 
+                            ? new Date(task.completedAt).toLocaleString('zh-CN', {
+                                year: 'numeric',
+                                month: '2-digit',
+                                day: '2-digit',
+                                hour: '2-digit',
+                                minute: '2-digit'
+                              })
+                            : '未知时间'}
+                        </span>
                       </div>
                     </div>
 
