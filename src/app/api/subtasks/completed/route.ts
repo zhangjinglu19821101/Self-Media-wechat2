@@ -25,8 +25,7 @@ export async function GET(request: NextRequest) {
       .select({
         id: agentSubTasks.id,
         taskTitle: agentSubTasks.taskTitle,
-        articleTitle: agentSubTasks.articleTitle,
-        executor: agentSubTasks.executor,
+        executor: agentSubTasks.fromParentsExecutor, // 数据库字段是 from_parents_executor
         status: agentSubTasks.status,
         completedAt: agentSubTasks.completedAt,
         resultData: agentSubTasks.resultData,
@@ -37,16 +36,25 @@ export async function GET(request: NextRequest) {
       .where(and(
         eq(agentSubTasks.workspaceId, workspaceId),
         eq(agentSubTasks.status, 'completed'),
-        inArray(agentSubTasks.executor, WRITING_AGENT_IDS),
+        inArray(agentSubTasks.fromParentsExecutor, WRITING_AGENT_IDS), // 使用正确的字段名
         isNotNull(agentSubTasks.completedAt)
       ))
       .orderBy(desc(agentSubTasks.completedAt))
       .limit(limit);
 
+    // 从 resultData 中提取 articleTitle
+    const tasksWithArticleTitle = completedTasks.map(task => ({
+      ...task,
+      articleTitle: (task.resultData as any)?.articleTitle || 
+                    (task.resultData as any)?.structuredResult?.articleTitle ||
+                    (task.resultData as any)?.structuredResult?.resultContent?.articleTitle ||
+                    null,
+    }));
+
     return NextResponse.json({
       success: true,
-      data: completedTasks,
-      total: completedTasks.length,
+      data: tasksWithArticleTitle,
+      total: tasksWithArticleTitle.length,
     });
 
   } catch (error) {
