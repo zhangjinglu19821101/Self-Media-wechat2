@@ -21,6 +21,26 @@ import { createCanvas, loadImage, registerFont, type CanvasRenderingContext2D } 
 import * as fs from 'fs';
 import * as path from 'path';
 
+// 注册中文字体（支持中文渲染）
+const CHINESE_FONT_PATH = '/usr/share/fonts/truetype/wqy/wqy-microhei.ttc';
+let fontRegistered = false;
+
+function ensureChineseFont(): void {
+  if (fontRegistered) return;
+  try {
+    if (fs.existsSync(CHINESE_FONT_PATH)) {
+      registerFont(CHINESE_FONT_PATH, { family: 'WenQuanYi' });
+      console.log('[XhsCard] 已注册中文字体: WenQuanYi');
+    }
+  } catch (e) {
+    console.warn('[XhsCard] 注册中文字体失败:', e);
+  }
+  fontRegistered = true;
+}
+
+// 确保启动时注册字体
+ensureChineseFont();
+
 // 小红书卡片尺寸
 const CARD_WIDTH = 1080;
 const CARD_HEIGHT = 1440;
@@ -271,7 +291,7 @@ async function generateCoverCard(content: CoverCardContent): Promise<GeneratedCa
   
   // 主标题
   ctx.fillStyle = colors.textPrimaryColor;
-  ctx.font = 'bold 72px Arial';
+  ctx.font = 'bold 72px WenQuanYi, Arial';
   ctx.textAlign = 'center';
   ctx.shadowColor = 'rgba(0, 0, 0, 0.3)';
   ctx.shadowBlur = 10;
@@ -282,7 +302,7 @@ async function generateCoverCard(content: CoverCardContent): Promise<GeneratedCa
   
   // 副标题
   if (content.subtitle) {
-    ctx.font = '32px Arial';
+    ctx.font = '32px WenQuanYi, Arial';
     ctx.shadowBlur = 5;
     ctx.fillStyle = colors.textSecondaryColor;
     wrapText(ctx, content.subtitle, CARD_WIDTH / 2, titleY + 120, CARD_WIDTH - 180, 45);
@@ -290,7 +310,7 @@ async function generateCoverCard(content: CoverCardContent): Promise<GeneratedCa
   
   // 作者
   if (content.author) {
-    ctx.font = '28px Arial';
+    ctx.font = '28px WenQuanYi, Arial';
     ctx.globalAlpha = 0.8;
     ctx.fillStyle = colors.textSecondaryColor;
     ctx.fillText(`@${content.author}`, CARD_WIDTH / 2, CARD_HEIGHT - 100);
@@ -331,7 +351,7 @@ async function generatePointCard(content: PointCardContent): Promise<GeneratedCa
   
   // 序号数字
   ctx.fillStyle = colors.accentColor;
-  ctx.font = 'bold 80px Arial';
+  ctx.font = 'bold 80px WenQuanYi, Arial';
   ctx.textAlign = 'center';
   ctx.shadowColor = 'rgba(0, 0, 0, 0.3)';
   ctx.shadowBlur = 8;
@@ -339,7 +359,7 @@ async function generatePointCard(content: PointCardContent): Promise<GeneratedCa
   
   // 要点标题
   ctx.fillStyle = colors.textPrimaryColor;
-  ctx.font = 'bold 52px Arial';
+  ctx.font = 'bold 52px WenQuanYi, Arial';
   const titleY = circleY + 160;
   wrapText(ctx, content.title, CARD_WIDTH / 2, titleY, CARD_WIDTH - 120, 65);
   
@@ -354,7 +374,7 @@ async function generatePointCard(content: PointCardContent): Promise<GeneratedCa
   
   // 要点内容
   ctx.fillStyle = colors.textSecondaryColor;
-  ctx.font = '38px Arial';
+  ctx.font = '38px WenQuanYi, Arial';
   ctx.shadowBlur = 5;
   const contentY = lineY + 80;
   wrapText(ctx, content.content, CARD_WIDTH / 2, contentY, CARD_WIDTH - 120, 55);
@@ -390,14 +410,14 @@ async function generateMinimalPointCard(content: MinimalPointCardContent): Promi
   ctx.fillStyle = colors.isCustom
     ? `${colors.accentColor}1F`  // 12% opacity of accent color
     : 'rgba(255, 255, 255, 0.12)';
-  ctx.font = 'bold 280px Arial';
+  ctx.font = 'bold 280px WenQuanYi, Arial';
   ctx.textAlign = 'left';
   ctx.textBaseline = 'top';
   ctx.fillText(content.number.toString(), 40, 20);
 
   // 核心标题（居中，超大字号）
   ctx.fillStyle = colors.textPrimaryColor;
-  ctx.font = 'bold 68px Arial';  // 比标准模式的 52px 更大
+  ctx.font = 'bold 68px WenQuanYi, Arial';  // 比标准模式的 52px 更大
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.shadowColor = 'rgba(0, 0, 0, 0.4)';
@@ -409,7 +429,7 @@ async function generateMinimalPointCard(content: MinimalPointCardContent): Promi
 
   // 可选副文案（小字，次要信息）
   if (content.subtitle) {
-    ctx.font = '36px Arial';
+    ctx.font = '36px WenQuanYi, Arial';
     ctx.fillStyle = colors.textSecondaryColor;
     ctx.shadowBlur = 6;
     ctx.globalAlpha = 0.85;
@@ -431,7 +451,7 @@ async function generateMinimalPointCard(content: MinimalPointCardContent): Promi
 
   // 页码指示
   ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
-  ctx.font = '24px Arial';
+  ctx.font = '24px WenQuanYi, Arial';
   ctx.textAlign = 'center';
   ctx.fillText(`${content.number} / 3`, CARD_WIDTH / 2, CARD_HEIGHT - 120);
 
@@ -458,7 +478,7 @@ async function generateEndingCard(content: EndingCardContent): Promise<Generated
 
   // 总结语
   ctx.fillStyle = colors.textPrimaryColor;
-  ctx.font = 'bold 48px Arial';
+  ctx.font = 'bold 48px WenQuanYi, Arial';
   ctx.textAlign = 'center';
   ctx.shadowColor = 'rgba(0, 0, 0, 0.3)';
   ctx.shadowBlur = 8;
@@ -468,14 +488,14 @@ async function generateEndingCard(content: EndingCardContent): Promise<Generated
 
   // 行动召唤
   if (content.callToAction) {
-    ctx.font = '36px Arial';
+    ctx.font = '36px WenQuanYi, Arial';
     ctx.fillStyle = colors.textSecondaryColor;
     ctx.shadowBlur = 5;
     wrapText(ctx, content.callToAction, CARD_WIDTH / 2, summaryY + 180, CARD_WIDTH - 120, 50);
   }
 
   // 话题标签
-  ctx.font = '32px Arial';
+  ctx.font = '32px WenQuanYi, Arial';
   ctx.shadowBlur = 0;
   ctx.globalAlpha = 0.9;
 
