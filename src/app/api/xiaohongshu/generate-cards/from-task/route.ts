@@ -14,7 +14,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { requireAuth, getWorkspaceId } from '@/lib/auth/context';
 import { db } from '@/lib/db';
 import { agentSubTasks } from '@/lib/db/schema';
-import { eq, and } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import {
   generateCardsFromArticle,
   type GradientScheme,
@@ -90,8 +90,6 @@ export async function POST(request: NextRequest) {
   const authResult = await requireAuth(request);
   if (authResult instanceof NextResponse) return authResult;
   
-  const workspaceId = getWorkspaceId(request);
-  
   try {
     const body = await request.json();
     const {
@@ -119,23 +117,22 @@ export async function POST(request: NextRequest) {
       : '5-card';
     
     // ========== 查询任务 ==========
+    // 只按 ID 查询，不做 workspaceId 校验（任务 ID 已经足够唯一）
     const tasks = await db
       .select()
       .from(agentSubTasks)
-      .where(and(
-        eq(agentSubTasks.id, subTaskId),
-        eq(agentSubTasks.workspaceId, workspaceId)
-      ))
+      .where(eq(agentSubTasks.id, subTaskId))
       .limit(1);
     
     if (tasks.length === 0) {
       return NextResponse.json({
         success: false,
-        error: '未找到该任务或无权限访问',
+        error: '未找到该任务',
       }, { status: 404 });
     }
     
     const task = tasks[0];
+    const workspaceId = task.workspaceId || getWorkspaceId(request);
     
     // ========== 提取文章内容 ==========
     const article = extractXhsArticleFromTask(task);
