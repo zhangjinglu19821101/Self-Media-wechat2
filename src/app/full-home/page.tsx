@@ -4037,12 +4037,20 @@ function ContentExportTab() {
   const downloadXhsImages = async (task: CompletedTask) => {
     setDownloadingTaskId(task.id);
     try {
-      // 调用生成卡片 API
-      const result: any = await apiGet(`/api/xiaohongshu/generate-cards?subTaskId=${task.id}&persist=true`);
-      if (result.success && result.cards) {
+      // 调用专用 API：从任务生成卡片
+      const result: any = await apiPost('/api/xiaohongshu/generate-cards/from-task', {
+        subTaskId: task.id,
+        persist: true,
+        gradientScheme: 'pinkOrange',
+        cardCountMode: '5-card',
+      });
+      
+      if (result.success && result.cards && result.cards.length > 0) {
         // 逐张下载
         for (let i = 0; i < result.cards.length; i++) {
           const card = result.cards[i];
+          if (!card.url) continue;
+          
           const response = await fetch(card.url);
           const blob = await response.blob();
           const url = URL.createObjectURL(blob);
@@ -4055,12 +4063,15 @@ function ContentExportTab() {
           await new Promise(r => setTimeout(r, 300));
         }
         toast.success(`已下载 ${result.cards.length} 张图片`);
+      } else if (result.error) {
+        // 显示具体错误信息
+        toast.error(result.error + (result.hint ? `（${result.hint}）` : ''));
       } else {
         toast.error('生成图片失败');
       }
     } catch (error) {
       console.error('下载图片失败:', error);
-      toast.error('下载失败');
+      toast.error('下载失败，请稍后重试');
     } finally {
       setDownloadingTaskId(null);
     }
@@ -4222,10 +4233,22 @@ function ContentExportTab() {
                       </div>
                     </div>
 
-                    {/* 操作按钮 */}
+                    {/* 操作按钮 - 按平台区分 */}
                     <div className="flex gap-2 flex-shrink-0">
+                      {/* 小红书：预览 + 下载 */}
                       {task.platform === 'xiaohongshu' && (
                         <>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => {
+                              // 跳转到任务列表页查看预览
+                              window.open(`/full-home?tab=tasks&highlight=${task.id}`, '_blank');
+                            }}
+                          >
+                            <Eye className="mr-1 h-4 w-4" />
+                            预览
+                          </Button>
                           <Button
                             size="sm"
                             variant="outline"
@@ -4242,6 +4265,14 @@ function ContentExportTab() {
                           <Button
                             size="sm"
                             variant="outline"
+                            onClick={() => downloadArticleText(task)}
+                          >
+                            <Download className="mr-1 h-4 w-4" />
+                            下载正文
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
                             onClick={() => copyXhsJson(task)}
                           >
                             <Copy className="mr-1 h-4 w-4" />
@@ -4249,22 +4280,43 @@ function ContentExportTab() {
                           </Button>
                         </>
                       )}
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => downloadArticleText(task)}
-                      >
-                        <Download className="mr-1 h-4 w-4" />
-                        下载正文
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => copyArticleText(task)}
-                      >
-                        <Copy className="mr-1 h-4 w-4" />
-                        复制
-                      </Button>
+                      
+                      {/* 公众号：仅预览 */}
+                      {task.platform === 'wechat_official' && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => {
+                            // 跳转到任务列表页查看预览
+                            window.open(`/full-home?tab=tasks&highlight=${task.id}`, '_blank');
+                          }}
+                        >
+                          <Eye className="mr-1 h-4 w-4" />
+                          预览
+                        </Button>
+                      )}
+                      
+                      {/* 其他平台：下载正文 + 复制 */}
+                      {task.platform !== 'xiaohongshu' && task.platform !== 'wechat_official' && (
+                        <>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => downloadArticleText(task)}
+                          >
+                            <Download className="mr-1 h-4 w-4" />
+                            下载正文
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => copyArticleText(task)}
+                          >
+                            <Copy className="mr-1 h-4 w-4" />
+                            复制
+                          </Button>
+                        </>
+                      )}
                     </div>
                   </div>
                 </div>
