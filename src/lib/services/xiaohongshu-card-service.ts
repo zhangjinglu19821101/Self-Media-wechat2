@@ -23,33 +23,32 @@ import * as path from 'path';
 
 // ========== 注册中文字体 ==========
 // @napi-rs/canvas 不会自动加载系统字体，必须显式注册
+const FONT_REGISTER_NAME = 'WenQuanYi';
 const FONT_PATHS = [
   '/usr/share/fonts/truetype/wqy/wqy-microhei.ttc',
   '/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc',
 ];
 
-// 注册字体（模块加载时执行一次）
-let _fontsRegistered = false;
+// 注册字体（使用 GlobalFonts.has() 检测，跨模块实例可靠）
 function ensureFontsRegistered(): void {
-  if (_fontsRegistered) return;
+  if (GlobalFonts.has(FONT_REGISTER_NAME)) return;
   for (const fontPath of FONT_PATHS) {
     if (fs.existsSync(fontPath)) {
       try {
-        GlobalFonts.registerFromPath(fontPath, 'WenQuanYi');
+        GlobalFonts.registerFromPath(fontPath, FONT_REGISTER_NAME);
         console.log(`[XhsCard] 注册字体: ${fontPath}`);
       } catch (e) {
         console.warn(`[XhsCard] 注册字体失败: ${fontPath}`, e);
       }
     }
   }
-  _fontsRegistered = true;
 }
 
 // 模块加载时立即注册
 ensureFontsRegistered();
 
 // 中文字体族名（必须与注册名一致）
-const CHINESE_FONT_FAMILY = 'WenQuanYi';
+const CHINESE_FONT_FAMILY = FONT_REGISTER_NAME;
 
 // 小红书卡片尺寸
 const CARD_WIDTH = 1080;
