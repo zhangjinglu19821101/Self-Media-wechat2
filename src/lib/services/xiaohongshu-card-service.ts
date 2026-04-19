@@ -17,13 +17,39 @@
  * - 7-card (详细)：封面 + 5个要点(标题+详细内容) + 结尾 = 深度阅读
  */
 
-import { createCanvas, loadImage, type CanvasRenderingContext2D } from '@napi-rs/canvas';
+import { createCanvas, GlobalFonts, loadImage, type CanvasRenderingContext2D } from '@napi-rs/canvas';
 import * as fs from 'fs';
 import * as path from 'path';
 
-// 中文字体（使用系统已安装的字体）
-// WenQuanYi Micro Hei 是 Linux 系统常见的中文字体
-const CHINESE_FONT_FAMILY = '"WenQuanYi Micro Hei", "WenQuanYi Zen Hei", "Noto Sans CJK SC", sans-serif';
+// ========== 注册中文字体 ==========
+// @napi-rs/canvas 不会自动加载系统字体，必须显式注册
+const FONT_PATHS = [
+  '/usr/share/fonts/truetype/wqy/wqy-microhei.ttc',
+  '/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc',
+];
+
+// 注册字体（模块加载时执行一次）
+let _fontsRegistered = false;
+function ensureFontsRegistered(): void {
+  if (_fontsRegistered) return;
+  for (const fontPath of FONT_PATHS) {
+    if (fs.existsSync(fontPath)) {
+      try {
+        GlobalFonts.registerFromPath(fontPath, 'WenQuanYi');
+        console.log(`[XhsCard] 注册字体: ${fontPath}`);
+      } catch (e) {
+        console.warn(`[XhsCard] 注册字体失败: ${fontPath}`, e);
+      }
+    }
+  }
+  _fontsRegistered = true;
+}
+
+// 模块加载时立即注册
+ensureFontsRegistered();
+
+// 中文字体族名（必须与注册名一致）
+const CHINESE_FONT_FAMILY = 'WenQuanYi';
 
 // 小红书卡片尺寸
 const CARD_WIDTH = 1080;
@@ -276,7 +302,7 @@ async function generateCoverCard(content: CoverCardContent): Promise<GeneratedCa
   
   // 主标题
   ctx.fillStyle = colors.textPrimaryColor;
-  ctx.font = 'bold 72px WenQuanYi, Arial';
+  ctx.font = `bold 72px ${CHINESE_FONT_FAMILY}`;
   ctx.textAlign = 'center';
   ctx.shadowColor = 'rgba(0, 0, 0, 0.3)';
   ctx.shadowBlur = 10;
@@ -287,7 +313,7 @@ async function generateCoverCard(content: CoverCardContent): Promise<GeneratedCa
   
   // 副标题
   if (content.subtitle) {
-    ctx.font = '32px WenQuanYi, Arial';
+    ctx.font = `32px ${CHINESE_FONT_FAMILY}`;
     ctx.shadowBlur = 5;
     ctx.fillStyle = colors.textSecondaryColor;
     wrapText(ctx, content.subtitle, CARD_WIDTH / 2, titleY + 120, CARD_WIDTH - 180, 45);
@@ -295,7 +321,7 @@ async function generateCoverCard(content: CoverCardContent): Promise<GeneratedCa
   
   // 作者
   if (content.author) {
-    ctx.font = '28px WenQuanYi, Arial';
+    ctx.font = `28px ${CHINESE_FONT_FAMILY}`;
     ctx.globalAlpha = 0.8;
     ctx.fillStyle = colors.textSecondaryColor;
     ctx.fillText(`@${content.author}`, CARD_WIDTH / 2, CARD_HEIGHT - 100);
@@ -337,7 +363,7 @@ async function generatePointCard(content: PointCardContent): Promise<GeneratedCa
   
   // 序号数字
   ctx.fillStyle = colors.accentColor;
-  ctx.font = 'bold 80px WenQuanYi, Arial';
+  ctx.font = `bold 80px ${CHINESE_FONT_FAMILY}`;
   ctx.textAlign = 'center';
   ctx.shadowColor = 'rgba(0, 0, 0, 0.3)';
   ctx.shadowBlur = 8;
@@ -345,7 +371,7 @@ async function generatePointCard(content: PointCardContent): Promise<GeneratedCa
   
   // 要点标题
   ctx.fillStyle = colors.textPrimaryColor;
-  ctx.font = 'bold 52px WenQuanYi, Arial';
+  ctx.font = `bold 52px ${CHINESE_FONT_FAMILY}`;
   const titleY = circleY + 160;
   wrapText(ctx, content.title, CARD_WIDTH / 2, titleY, CARD_WIDTH - 120, 65);
   
@@ -360,7 +386,7 @@ async function generatePointCard(content: PointCardContent): Promise<GeneratedCa
   
   // 要点内容
   ctx.fillStyle = colors.textSecondaryColor;
-  ctx.font = '38px WenQuanYi, Arial';
+  ctx.font = `38px ${CHINESE_FONT_FAMILY}`;
   ctx.shadowBlur = 5;
   const contentY = lineY + 80;
   wrapText(ctx, content.content, CARD_WIDTH / 2, contentY, CARD_WIDTH - 120, 55);
@@ -397,14 +423,14 @@ async function generateMinimalPointCard(content: MinimalPointCardContent): Promi
   ctx.fillStyle = colors.isCustom
     ? `${colors.accentColor}1F`  // 12% opacity of accent color
     : 'rgba(255, 255, 255, 0.12)';
-  ctx.font = 'bold 280px WenQuanYi, Arial';
+  ctx.font = `bold 280px ${CHINESE_FONT_FAMILY}`;
   ctx.textAlign = 'left';
   ctx.textBaseline = 'top';
   ctx.fillText(content.number.toString(), 40, 20);
 
   // 核心标题（居中，超大字号）
   ctx.fillStyle = colors.textPrimaryColor;
-  ctx.font = 'bold 68px WenQuanYi, Arial';  // 比标准模式的 52px 更大
+  ctx.font = `bold 68px ${CHINESE_FONT_FAMILY}`;  // 比标准模式的 52px 更大
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.shadowColor = 'rgba(0, 0, 0, 0.4)';
@@ -416,7 +442,7 @@ async function generateMinimalPointCard(content: MinimalPointCardContent): Promi
 
   // 可选副文案（小字，次要信息）
   if (content.subtitle) {
-    ctx.font = '36px WenQuanYi, Arial';
+    ctx.font = `36px ${CHINESE_FONT_FAMILY}`;
     ctx.fillStyle = colors.textSecondaryColor;
     ctx.shadowBlur = 6;
     ctx.globalAlpha = 0.85;
@@ -438,7 +464,7 @@ async function generateMinimalPointCard(content: MinimalPointCardContent): Promi
 
   // 页码指示
   ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
-  ctx.font = '24px WenQuanYi, Arial';
+  ctx.font = `24px ${CHINESE_FONT_FAMILY}`;
   ctx.textAlign = 'center';
   ctx.fillText(`${content.number} / 3`, CARD_WIDTH / 2, CARD_HEIGHT - 120);
 
@@ -466,7 +492,7 @@ async function generateEndingCard(content: EndingCardContent): Promise<Generated
 
   // 总结语
   ctx.fillStyle = colors.textPrimaryColor;
-  ctx.font = 'bold 48px WenQuanYi, Arial';
+  ctx.font = `bold 48px ${CHINESE_FONT_FAMILY}`;
   ctx.textAlign = 'center';
   ctx.shadowColor = 'rgba(0, 0, 0, 0.3)';
   ctx.shadowBlur = 8;
@@ -476,14 +502,14 @@ async function generateEndingCard(content: EndingCardContent): Promise<Generated
 
   // 行动召唤
   if (content.callToAction) {
-    ctx.font = '36px WenQuanYi, Arial';
+    ctx.font = `36px ${CHINESE_FONT_FAMILY}`;
     ctx.fillStyle = colors.textSecondaryColor;
     ctx.shadowBlur = 5;
     wrapText(ctx, content.callToAction, CARD_WIDTH / 2, summaryY + 180, CARD_WIDTH - 120, 50);
   }
 
   // 话题标签
-  ctx.font = '32px WenQuanYi, Arial';
+  ctx.font = `32px ${CHINESE_FONT_FAMILY}`;
   ctx.shadowBlur = 0;
   ctx.globalAlpha = 0.9;
 
@@ -591,6 +617,9 @@ export async function generateCardsFromArticle(
   
   // 辅助函数：根据卡片索引获取颜色方案
   const getSchemeForIndex = (index: number): GradientScheme => {
+    if (!gradientSchemes || gradientSchemes.length === 0) {
+      return 'pinkOrange'; // 默认值
+    }
     return gradientSchemes[index % gradientSchemes.length];
   };
   // 根据模式裁剪要点并选择卡片类型
