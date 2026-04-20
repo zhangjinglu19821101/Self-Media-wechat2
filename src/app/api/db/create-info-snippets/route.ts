@@ -37,6 +37,7 @@ export async function GET() {
         highlights TEXT NOT NULL,
         status TEXT NOT NULL DEFAULT 'pending',
         user_id TEXT,
+        workspace_id TEXT,
         created_at TIMESTAMP NOT NULL DEFAULT NOW(),
         updated_at TIMESTAMP NOT NULL DEFAULT NOW()
       )
@@ -45,12 +46,13 @@ export async function GET() {
     // 创建索引
     await db.execute(sql`CREATE INDEX idx_info_snippet_status ON info_snippets(status)`);
     await db.execute(sql`CREATE INDEX idx_info_snippet_user_id ON info_snippets(user_id)`);
+    await db.execute(sql`CREATE INDEX idx_info_snippets_workspace_id ON info_snippets(workspace_id)`);
     await db.execute(sql`CREATE INDEX idx_info_snippet_created_at ON info_snippets(created_at)`);
 
     return NextResponse.json({
       success: true,
       message: 'info_snippets 表创建成功',
-      indexes: ['idx_info_snippet_status', 'idx_info_snippet_user_id', 'idx_info_snippet_created_at'],
+      indexes: ['idx_info_snippet_status', 'idx_info_snippet_user_id', 'idx_info_snippets_workspace_id', 'idx_info_snippet_created_at'],
     });
   } catch (error: any) {
     console.error('[create-info-snippets] 错误:', error);
