@@ -33,13 +33,13 @@ export async function POST(
 
     const snippet = snippets[0];
 
-    // 创建正式素材（内容整合标题+机构+亮点+URL）
+    // 创建正式素材（内容整合标题+机构+摘要+URL）
     const materialContent = [
       `【${snippet.title}】`,
       `发布机构：${snippet.sourceOrg}`,
       snippet.publishDate ? `发布时间：${snippet.publishDate}` : '',
       '',
-      snippet.highlights,
+      snippet.summary,
       snippet.url ? `\n📎 原文链接：${snippet.url}` : '',
     ].filter(Boolean).join('\n');
 

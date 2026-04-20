@@ -456,6 +456,9 @@ export default function HomePage() {
     remindAt: '',
   });
   const [snippetCategoryFilter, setSnippetCategoryFilter] = useState<string>('all');
+  const [snippetSearchQuery, setSnippetSearchQuery] = useState('');
+  const [snippetTypeFilter, setSnippetTypeFilter] = useState('all');
+  const [snippetStatusFilter, setSnippetStatusFilter] = useState('all');
   
   // 🔥 提醒弹框状态
   const [triggeredReminders, setTriggeredReminders] = useState<InfoSnippet[]>([]);

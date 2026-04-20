@@ -54,7 +54,9 @@ export async function PUT(
       sourceOrg: body.sourceOrg,
       publishDate: body.publishDate || null,
       url: body.url || null,
-      highlights: body.highlights,
+      summary: body.summary,
+      keywords: body.keywords,
+      applicableScenes: body.applicableScenes,
       status: body.status || 'pending',
       // 🔥 提醒相关字段
       snippetType: body.snippetType || null,

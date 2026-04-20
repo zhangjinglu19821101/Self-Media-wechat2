@@ -65,7 +65,7 @@ export async function GET(request: NextRequest) {
         id: r.id,
         title: r.title,
         sourceOrg: r.sourceOrg,
-        highlights: r.highlights,
+        summary: r.summary,
         remindAt: r.remindAt,
       })),
     });
