@@ -33,13 +33,20 @@ export async function POST(
 
     const snippet = snippets[0];
 
-    // 创建正式素材（内容整合标题+机构+摘要+URL）
+    // 创建正式素材（内容整合原始内容+AI分析结果）
+    // 🔥 修复：保留用户原始输入的完整信息
     const materialContent = [
-      `【${snippet.title}】`,
-      `发布机构：${snippet.sourceOrg}`,
+      '📝 【原始信息】',
+      snippet.rawContent,
+      '',
+      '📋 【AI 分析结果】',
+      `标题：${snippet.title}`,
+      `来源：${snippet.sourceOrg || '未知'}`,
       snippet.publishDate ? `发布时间：${snippet.publishDate}` : '',
       '',
-      snippet.summary,
+      `摘要：${snippet.summary || ''}`,
+      snippet.keywords ? `关键词：${snippet.keywords}` : '',
+      snippet.applicableScenes ? `适用场景：${snippet.applicableScenes}` : '',
       snippet.url ? `\n📎 原文链接：${snippet.url}` : '',
     ].filter(Boolean).join('\n');
 
