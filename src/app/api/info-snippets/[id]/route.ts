@@ -56,6 +56,11 @@ export async function PUT(
       url: body.url || null,
       highlights: body.highlights,
       status: body.status || 'pending',
+      // 🔥 提醒相关字段
+      snippetType: body.snippetType || null,
+      remindAt: body.remindAt ? new Date(body.remindAt) : null,
+      remindStatus: body.remindStatus || null,
+      remindedAt: body.remindedAt === null ? null : (body.remindedAt ? new Date(body.remindedAt) : undefined),
       updatedAt: new Date(),
     }).where(
       and(

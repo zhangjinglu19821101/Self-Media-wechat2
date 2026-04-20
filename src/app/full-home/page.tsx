@@ -1109,9 +1109,10 @@ export default function HomePage() {
     
     try {
       // 更新提醒时间并重置状态
-      await apiPost(`/api/info-snippets/${currentReminder.id}`, {
+      await apiPut(`/api/info-snippets/${currentReminder.id}`, {
         remindAt: snoozeTime.toISOString(),
         remindStatus: 'pending',
+        remindedAt: null, // 清除触发时间，防止重复触发
       });
       toast.success('已延迟 1 小时提醒');
       
