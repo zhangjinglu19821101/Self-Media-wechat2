@@ -138,7 +138,11 @@ function parseLLMResponse(content: string): SnippetEnrichmentResult {
 
     // 判断是否包含保险分类（用于合规校验）
     const hasInsurance = categories.includes('insurance');
-    const complianceLevel = hasInsurance ? (parsed.complianceLevel || null) : null;
+    
+    // 校验合规等级（P1 修复：严格校验，防止非法值）
+    const rawLevel = parsed.complianceLevel;
+    const complianceLevel = hasInsurance && isValidComplianceLevel(rawLevel) ? rawLevel : null;
+    
     const complianceWarnings = hasInsurance ? (parsed.complianceWarnings || null) : null;
 
     return {
@@ -178,6 +182,14 @@ function validateCategories(val: unknown): string[] {
   
   // 去重
   return [...new Set(validCategories)];
+}
+
+/**
+ * 校验合规等级（类型守卫）
+ * 确保 complianceLevel 只能是 'A' | 'B' | 'C'
+ */
+function isValidComplianceLevel(val: unknown): val is 'A' | 'B' | 'C' {
+  return val === 'A' || val === 'B' || val === 'C';
 }
 
 /**
