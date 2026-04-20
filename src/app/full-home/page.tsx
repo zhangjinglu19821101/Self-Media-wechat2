@@ -22,7 +22,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { Loader2, Plus, Trash2, Send, Sparkles, ListTodo, CheckCircle2, XCircle, GripVertical, MoveUp, MoveDown, Maximize2, Minimize2, AlertTriangle, GitCompare, RefreshCw, FileText, Save, Eye, Home, BookmarkPlus, ExternalLink, BookOpen, Clock, Building2, X, HelpCircle, Settings, Rocket, Layers, ChevronDown, ChevronUp, Cpu, Brain, Bell, Workflow, Palette, PenTool, ArrowRight, Briefcase, Shield, Users, Download, Copy, ImageIcon } from 'lucide-react';
+import { Loader2, Plus, Trash2, Send, Sparkles, ListTodo, CheckCircle2, XCircle, GripVertical, MoveUp, MoveDown, Maximize2, Minimize2, AlertTriangle, GitCompare, RefreshCw, FileText, Save, Eye, Home, BookmarkPlus, ExternalLink, BookOpen, Clock, Building2, X, HelpCircle, Settings, Rocket, Layers, ChevronDown, ChevronUp, Cpu, Brain, Bell, Workflow, Palette, PenTool, ArrowRight, Briefcase, Shield, Users, Download, Copy, ImageIcon, Check } from 'lucide-react';
 import { toast } from 'sonner';
 import { AgentTaskListNormal } from '@/components/agent-task-list-normal';
 import { XiaohongshuPreview } from '@/components/xiaohongshu-preview';
@@ -181,16 +181,24 @@ function clearFormSnapshot() {
 // 🔥 信息速记类型定义
 interface InfoSnippet {
   id: string;
-  title: string;
-  sourceOrg: string;
+  rawContent: string | null;
+  category: string | null;
+  title: string | null;
+  sourceOrg: string | null;
   publishDate: string | null;
   url: string | null;
-  highlights: string;
-  status: string;
-  snippetType: 'memory' | 'reminder';
+  summary: string | null;
+  keywords: string | null;
+  applicableScenes: string | null;
+  complianceWarnings: Record<string, any> | null;
+  complianceLevel: string | null;
+  materialStatus: string | null;
+  materialId: string | null;
+  snippetType: string | null;
   remindAt: string | null;
-  remindStatus: 'pending' | 'triggered' | 'dismissed' | null;
+  remindStatus: string | null;
   remindedAt: string | null;
+  status: string;
   createdAt: string;
 }
 
@@ -424,18 +432,30 @@ export default function HomePage() {
   const [snippetList, setSnippetList] = useState<InfoSnippet[]>([]);
   const [snippetLoading, setSnippetLoading] = useState(false);
   const [snippetSaving, setSnippetSaving] = useState(false);
+  const [snippetAnalyzing, setSnippetAnalyzing] = useState(false);
+  const [snippetAnalyzeResult, setSnippetAnalyzeResult] = useState<{
+    rawContent: string;
+    category: string;
+    categoryLabel: string;
+    title: string;
+    sourceOrg: string;
+    publishDate: string;
+    url: string;
+    summary: string;
+    keywords: string;
+    applicableScenes: string;
+    complianceWarnings: Record<string, any> | null;
+    complianceLevel: string | null;
+    complianceLevelLabel: string | null;
+    materialId: string;
+    materialStatus: string;
+  } | null>(null);
   const [snippetForm, setSnippetForm] = useState({
-    title: '',
-    sourceOrg: '',
-    publishDate: '',
-    url: '',
-    highlights: '',
+    rawContent: '',
     snippetType: 'memory' as 'memory' | 'reminder',
     remindAt: '',
   });
-  const [snippetSearchQuery, setSnippetSearchQuery] = useState('');
-  const [snippetStatusFilter, setSnippetStatusFilter] = useState<string>('all');
-  const [snippetTypeFilter, setSnippetTypeFilter] = useState<string>('all');
+  const [snippetCategoryFilter, setSnippetCategoryFilter] = useState<string>('all');
   
   // 🔥 提醒弹框状态
   const [triggeredReminders, setTriggeredReminders] = useState<InfoSnippet[]>([]);
@@ -1017,23 +1037,59 @@ export default function HomePage() {
     }
   }, [showSnippetDrawer, loadSnippetList]);
 
-  // 🔥 信息速记：保存速记
-  const handleSaveSnippet = async () => {
-    if (!snippetForm.title.trim()) { toast.error('请填写报告/信息名称'); return; }
-    if (!snippetForm.sourceOrg.trim()) { toast.error('请填写发布机构'); return; }
-    if (!snippetForm.highlights.trim()) { toast.error('请填写核心数据亮点'); return; }
+  // 🔥 信息速记：AI 分析原始内容
+  const handleAnalyzeSnippet = async () => {
+    if (!snippetForm.rawContent.trim()) {
+      toast.error('请输入要记录的信息');
+      return;
+    }
+    
+    setSnippetAnalyzing(true);
+    try {
+      const result = await apiPost('/api/info-snippets/analyze', {
+        rawContent: snippetForm.rawContent.trim(),
+      });
+      
+      if (result.success && result.data) {
+        setSnippetAnalyzeResult(result.data);
+        toast.success(`AI 分析完成：${result.data.categoryLabel}`);
+      } else {
+        toast.error('AI 分析失败，请重试');
+      }
+    } catch (error) {
+      console.error('[InfoSnippets] AI 分析失败:', error);
+      toast.error('AI 分析失败，请重试');
+    } finally {
+      setSnippetAnalyzing(false);
+    }
+  };
+
+  // 🔥 信息速记：取消分析结果，重新输入
+  const handleCancelAnalyze = () => {
+    setSnippetAnalyzeResult(null);
+  };
+
+  // 🔥 信息速记：确认保存
+  const handleConfirmSaveSnippet = async () => {
+    if (!snippetAnalyzeResult) {
+      toast.error('请先进行 AI 分析');
+      return;
+    }
     if (snippetForm.snippetType === 'reminder' && !snippetForm.remindAt) {
-      toast.error('提醒类型必须设置提醒时间'); return;
+      toast.error('提醒类型必须设置提醒时间');
+      return;
     }
     
     setSnippetSaving(true);
     try {
       await apiPost('/api/info-snippets', {
-        ...snippetForm,
+        ...snippetAnalyzeResult,
+        snippetType: snippetForm.snippetType,
         remindAt: snippetForm.remindAt ? new Date(snippetForm.remindAt).toISOString() : null,
       });
       toast.success(snippetForm.snippetType === 'reminder' ? '提醒已设置' : '速记已保存');
-      setSnippetForm({ title: '', sourceOrg: '', publishDate: '', url: '', highlights: '', snippetType: 'memory', remindAt: '' });
+      setSnippetForm({ rawContent: '', snippetType: 'memory', remindAt: '' });
+      setSnippetAnalyzeResult(null);
       loadSnippetList();
     } catch (error) {
       console.error('[InfoSnippets] 保存失败:', error);
@@ -3656,127 +3712,242 @@ export default function HomePage() {
               <div className="flex items-center gap-2 mb-3">
                 <BookmarkPlus className="h-4 w-4 text-sky-500" />
                 <span className="text-sm font-medium text-slate-700">快速记录</span>
+                <span className="text-xs text-slate-400 ml-1">— 输入内容，AI 自动分类、摘要、标签</span>
               </div>
               
-              <div className="space-y-3">
-                {/* 速记类型选择 */}
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setSnippetForm(prev => ({ ...prev, snippetType: 'memory', remindAt: '' }))}
-                    className={`flex-1 py-2 px-3 rounded-lg text-sm font-medium transition-all flex items-center justify-center gap-1.5 ${
-                      snippetForm.snippetType === 'memory'
-                        ? 'bg-sky-500 text-white shadow-sm'
-                        : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50'
-                    }`}
-                  >
-                    <Brain className="h-4 w-4" />
-                    记忆
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setSnippetForm(prev => ({ ...prev, snippetType: 'reminder' }))}
-                    className={`flex-1 py-2 px-3 rounded-lg text-sm font-medium transition-all flex items-center justify-center gap-1.5 ${
-                      snippetForm.snippetType === 'reminder'
-                        ? 'bg-amber-500 text-white shadow-sm'
-                        : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50'
-                    }`}
-                  >
-                    <Bell className="h-4 w-4" />
-                    提醒
-                  </button>
-                </div>
-                
-                {/* 提醒时间（仅提醒类型显示） */}
-                {snippetForm.snippetType === 'reminder' && (
-                  <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
-                    <Label className="text-xs text-amber-700 mb-1 block flex items-center gap-1">
-                      <Bell className="h-3 w-3" />提醒时间 *
-                    </Label>
-                    <Input
-                      type="datetime-local"
-                      value={snippetForm.remindAt}
-                      onChange={(e) => setSnippetForm(prev => ({ ...prev, remindAt: e.target.value }))}
-                      className="h-9 text-sm bg-white"
-                    />
+              {!snippetAnalyzeResult ? (
+                // 步骤1：输入原始内容 + AI 分析
+                <div className="space-y-3">
+                  {/* 速记类型选择 */}
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setSnippetForm(prev => ({ ...prev, snippetType: 'memory', remindAt: '' }))}
+                      className={`flex-1 py-2 px-3 rounded-lg text-sm font-medium transition-all flex items-center justify-center gap-1.5 ${
+                        snippetForm.snippetType === 'memory'
+                          ? 'bg-sky-500 text-white shadow-sm'
+                          : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50'
+                      }`}
+                    >
+                      <Brain className="h-4 w-4" />
+                      记忆
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSnippetForm(prev => ({ ...prev, snippetType: 'reminder' }))}
+                      className={`flex-1 py-2 px-3 rounded-lg text-sm font-medium transition-all flex items-center justify-center gap-1.5 ${
+                        snippetForm.snippetType === 'reminder'
+                          ? 'bg-amber-500 text-white shadow-sm'
+                          : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50'
+                      }`}
+                    >
+                      <Bell className="h-4 w-4" />
+                      提醒
+                    </button>
                   </div>
-                )}
-                
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <Label className="text-xs text-slate-500 mb-1 block">报告/信息名称 *</Label>
-                    <Input
-                      placeholder="如：中国城镇居民家庭资产负债调查"
-                      value={snippetForm.title}
-                      onChange={(e) => setSnippetForm(prev => ({ ...prev, title: e.target.value }))}
-                      className="h-9 text-sm"
-                    />
-                  </div>
-                  <div>
-                    <Label className="text-xs text-slate-500 mb-1 block">发布机构 *</Label>
-                    <Input
-                      placeholder="如：中国人民银行"
-                      value={snippetForm.sourceOrg}
-                      onChange={(e) => setSnippetForm(prev => ({ ...prev, sourceOrg: e.target.value }))}
-                      className="h-9 text-sm"
-                    />
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <Label className="text-xs text-slate-500 mb-1 block">
-                      <Clock className="h-3 w-3 inline mr-1" />发布时间
-                    </Label>
-                    <Input
-                      placeholder="2020年 / 2026年1月"
-                      value={snippetForm.publishDate}
-                      onChange={(e) => setSnippetForm(prev => ({ ...prev, publishDate: e.target.value }))}
-                      className="h-9 text-sm"
-                    />
-                  </div>
-                  <div>
-                    <Label className="text-xs text-slate-500 mb-1 block">
-                      <ExternalLink className="h-3 w-3 inline mr-1" />直达 URL
-                    </Label>
-                    <Input
-                      placeholder="https://..."
-                      value={snippetForm.url}
-                      onChange={(e) => setSnippetForm(prev => ({ ...prev, url: e.target.value }))}
-                      className="h-9 text-sm"
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <Label className="text-xs text-slate-500 mb-1 block">核心数据亮点 *</Label>
-                  <Textarea
-                    placeholder="家庭总资产均值 317.9 万元，房产占比 70%..."
-                    value={snippetForm.highlights}
-                    onChange={(e) => setSnippetForm(prev => ({ ...prev, highlights: e.target.value }))}
-                    rows={4}
-                    className="text-sm min-h-[100px] resize-y w-full"
-                  />
-                </div>
-
-                <Button
-                  onClick={handleSaveSnippet}
-                  disabled={snippetSaving}
-                  className={`w-full h-9 ${
-                    snippetForm.snippetType === 'reminder'
-                      ? 'bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-600 hover:to-orange-700'
-                      : 'bg-gradient-to-r from-sky-500 to-cyan-600 hover:from-sky-600 hover:to-cyan-700'
-                  } text-white`}
-                >
-                  {snippetSaving ? (
-                    <><Loader2 className="mr-2 h-4 w-4 animate-spin" />保存中...</>
-                  ) : snippetForm.snippetType === 'reminder' ? (
-                    <><Bell className="mr-2 h-4 w-4" />设置提醒</>
-                  ) : (
-                    <><BookmarkPlus className="mr-2 h-4 w-4" />保存速记</>
+                  
+                  {/* 提醒时间（仅提醒类型显示） */}
+                  {snippetForm.snippetType === 'reminder' && (
+                    <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
+                      <Label className="text-xs text-amber-700 mb-1 block flex items-center gap-1">
+                        <Bell className="h-3 w-3" />提醒时间 *
+                      </Label>
+                      <Input
+                        type="datetime-local"
+                        value={snippetForm.remindAt}
+                        onChange={(e) => setSnippetForm(prev => ({ ...prev, remindAt: e.target.value }))}
+                        className="h-9 text-sm bg-white"
+                      />
+                    </div>
                   )}
-                </Button>
-              </div>
+
+                  {/* 唯一输入框：原始内容 */}
+                  <div>
+                    <Label className="text-xs text-slate-500 mb-1 block">输入信息内容 *</Label>
+                    <Textarea
+                      placeholder="粘贴或输入任何你想记录的信息...&#10;&#10;例如：&#10;· 今天有个客户咨询了重疾险的理赔流程，他说...&#10;· 银保监会发布《关于规范保险公司城市定制型商业医疗保险的通知》&#10;· OpenAI 发布了 GPT-5，支持多模态推理&#10;· 医保目录新增 91 种药品"
+                      value={snippetForm.rawContent}
+                      onChange={(e) => setSnippetForm(prev => ({ ...prev, rawContent: e.target.value }))}
+                      rows={5}
+                      className="text-sm min-h-[120px] resize-y w-full"
+                    />
+                    <p className="text-xs text-slate-400 mt-1">AI 将自动完成分类、标题、摘要、关键词、合规校验</p>
+                  </div>
+
+                  <Button
+                    onClick={handleAnalyzeSnippet}
+                    disabled={snippetAnalyzing}
+                    className="w-full h-10 bg-gradient-to-r from-violet-500 to-purple-600 hover:from-violet-600 hover:to-purple-700 text-white"
+                  >
+                    {snippetAnalyzing ? (
+                      <><Loader2 className="mr-2 h-4 w-4 animate-spin" />AI 分析中...</>
+                    ) : (
+                      <><Sparkles className="mr-2 h-4 w-4" />AI 智能分析</>
+                    )}
+                  </Button>
+                </div>
+              ) : (
+                // 步骤2：显示分析结果 + 确认保存
+                <div className="space-y-3">
+                  {/* 分类标签 */}
+                  <div className="flex items-center gap-2">
+                    <Badge className={`${
+                      snippetAnalyzeResult.category === 'real_case' ? 'bg-rose-100 text-rose-700' :
+                      snippetAnalyzeResult.category === 'insurance' ? 'bg-blue-100 text-blue-700' :
+                      snippetAnalyzeResult.category === 'intelligence' ? 'bg-violet-100 text-violet-700' :
+                      snippetAnalyzeResult.category === 'medical' ? 'bg-emerald-100 text-emerald-700' :
+                      'bg-slate-100 text-slate-600'
+                    } px-3 py-1`}>
+                      {snippetAnalyzeResult.categoryLabel}
+                    </Badge>
+                    {snippetAnalyzeResult.materialId && (
+                      <span className="text-xs text-slate-400">ID: {snippetAnalyzeResult.materialId}</span>
+                    )}
+                    {snippetAnalyzeResult.complianceLevel && (
+                      <Badge className={`${
+                        snippetAnalyzeResult.complianceLevel === 'A' ? 'bg-green-100 text-green-700' :
+                        snippetAnalyzeResult.complianceLevel === 'B' ? 'bg-amber-100 text-amber-700' :
+                        'bg-red-100 text-red-700'
+                      }`}>
+                        {snippetAnalyzeResult.complianceLevelLabel}
+                      </Badge>
+                    )}
+                  </div>
+
+                  {/* 标题 */}
+                  <div>
+                    <Label className="text-xs text-slate-500 mb-1 block">标题</Label>
+                    <Input
+                      value={snippetAnalyzeResult.title}
+                      onChange={(e) => setSnippetAnalyzeResult(prev => prev ? { ...prev, title: e.target.value } : null)}
+                      className="h-9 text-sm"
+                    />
+                  </div>
+
+                  {/* 来源机构 & 发布时间 */}
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <Label className="text-xs text-slate-500 mb-1 block">来源机构</Label>
+                      <Input
+                        value={snippetAnalyzeResult.sourceOrg}
+                        onChange={(e) => setSnippetAnalyzeResult(prev => prev ? { ...prev, sourceOrg: e.target.value } : null)}
+                        className="h-9 text-sm"
+                      />
+                    </div>
+                    <div>
+                      <Label className="text-xs text-slate-500 mb-1 block">发布时间</Label>
+                      <Input
+                        value={snippetAnalyzeResult.publishDate}
+                        onChange={(e) => setSnippetAnalyzeResult(prev => prev ? { ...prev, publishDate: e.target.value } : null)}
+                        className="h-9 text-sm"
+                      />
+                    </div>
+                  </div>
+
+                  {/* 原文链接 */}
+                  <div>
+                    <Label className="text-xs text-slate-500 mb-1 block">原文链接</Label>
+                    <Input
+                      value={snippetAnalyzeResult.url}
+                      onChange={(e) => setSnippetAnalyzeResult(prev => prev ? { ...prev, url: e.target.value } : null)}
+                      className="h-9 text-sm"
+                      placeholder="https://..."
+                    />
+                  </div>
+
+                  {/* 摘要 */}
+                  <div>
+                    <Label className="text-xs text-slate-500 mb-1 block">摘要（15-30字）</Label>
+                    <Textarea
+                      value={snippetAnalyzeResult.summary}
+                      onChange={(e) => setSnippetAnalyzeResult(prev => prev ? { ...prev, summary: e.target.value } : null)}
+                      rows={2}
+                      className="text-sm resize-none"
+                    />
+                  </div>
+
+                  {/* 关键词 & 适用场景 */}
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <Label className="text-xs text-slate-500 mb-1 block">关键词</Label>
+                      <Input
+                        value={snippetAnalyzeResult.keywords}
+                        onChange={(e) => setSnippetAnalyzeResult(prev => prev ? { ...prev, keywords: e.target.value } : null)}
+                        className="h-9 text-sm"
+                        placeholder="关键词1, 关键词2"
+                      />
+                    </div>
+                    <div>
+                      <Label className="text-xs text-slate-500 mb-1 block">适用场景</Label>
+                      <Input
+                        value={snippetAnalyzeResult.applicableScenes}
+                        onChange={(e) => setSnippetAnalyzeResult(prev => prev ? { ...prev, applicableScenes: e.target.value } : null)}
+                        className="h-9 text-sm"
+                        placeholder="场景1, 场景2"
+                      />
+                    </div>
+                  </div>
+
+                  {/* 合规预警（保险类） */}
+                  {snippetAnalyzeResult.category === 'insurance' && snippetAnalyzeResult.complianceWarnings && (
+                    <div className="bg-slate-50 border border-slate-200 rounded-lg p-3">
+                      <Label className="text-xs text-slate-600 mb-2 block font-medium">合规三维校验</Label>
+                      <div className="space-y-2 text-xs">
+                        {snippetAnalyzeResult.complianceWarnings.source && (
+                          <div className="flex items-center gap-2">
+                            <span className={`w-2 h-2 rounded-full ${snippetAnalyzeResult.complianceWarnings.source.status === 'pass' ? 'bg-green-500' : 'bg-amber-500'}`}></span>
+                            <span className="text-slate-600">来源：</span>
+                            <span className="text-slate-800">{snippetAnalyzeResult.complianceWarnings.source.detail}</span>
+                          </div>
+                        )}
+                        {snippetAnalyzeResult.complianceWarnings.content && (
+                          <div className="flex items-center gap-2">
+                            <span className={`w-2 h-2 rounded-full ${snippetAnalyzeResult.complianceWarnings.content.status === 'pass' ? 'bg-green-500' : snippetAnalyzeResult.complianceWarnings.content.status === 'warning' ? 'bg-amber-500' : 'bg-red-500'}`}></span>
+                            <span className="text-slate-600">内容：</span>
+                            <span className="text-slate-800">{snippetAnalyzeResult.complianceWarnings.content.detail}</span>
+                            {snippetAnalyzeResult.complianceWarnings.content.violations && snippetAnalyzeResult.complianceWarnings.content.violations.length > 0 && (
+                              <span className="text-red-600">（{snippetAnalyzeResult.complianceWarnings.content.violations.join('、')}）</span>
+                            )}
+                          </div>
+                        )}
+                        {snippetAnalyzeResult.complianceWarnings.timeliness && (
+                          <div className="flex items-center gap-2">
+                            <span className={`w-2 h-2 rounded-full ${snippetAnalyzeResult.complianceWarnings.timeliness.status === 'pass' ? 'bg-green-500' : 'bg-red-500'}`}></span>
+                            <span className="text-slate-600">时效：</span>
+                            <span className="text-slate-800">{snippetAnalyzeResult.complianceWarnings.timeliness.detail}</span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* 操作按钮 */}
+                  <div className="flex gap-2 pt-2">
+                    <Button
+                      variant="outline"
+                      onClick={handleCancelAnalyze}
+                      className="flex-1 h-9"
+                    >
+                      重新输入
+                    </Button>
+                    <Button
+                      onClick={handleConfirmSaveSnippet}
+                      disabled={snippetSaving}
+                      className={`flex-1 h-9 ${
+                        snippetForm.snippetType === 'reminder'
+                          ? 'bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-600 hover:to-orange-700'
+                          : 'bg-gradient-to-r from-sky-500 to-cyan-600 hover:from-sky-600 hover:to-cyan-700'
+                      } text-white`}
+                    >
+                      {snippetSaving ? (
+                        <><Loader2 className="mr-2 h-4 w-4 animate-spin" />保存中...</>
+                      ) : (
+                        <><Check className="mr-2 h-4 w-4" />确认保存</>
+                      )}
+                    </Button>
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* 已有速记列表 */}
@@ -3829,50 +4000,87 @@ export default function HomePage() {
                 <div className="space-y-3">
                   {snippetList.map((snippet) => {
                     const isReminder = snippet.snippetType === 'reminder';
+                    // 分类颜色
+                    const categoryColors: Record<string, { bg: string; text: string; border: string }> = {
+                      real_case: { bg: 'bg-rose-50', text: 'text-rose-700', border: 'border-rose-200' },
+                      insurance: { bg: 'bg-blue-50', text: 'text-blue-700', border: 'border-blue-200' },
+                      intelligence: { bg: 'bg-violet-50', text: 'text-violet-700', border: 'border-violet-200' },
+                      medical: { bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-200' },
+                      quick_note: { bg: 'bg-slate-50', text: 'text-slate-600', border: 'border-slate-200' },
+                    };
+                    const categoryLabels: Record<string, string> = {
+                      real_case: '身边真实案例',
+                      insurance: '保险',
+                      intelligence: '智能化',
+                      medical: '医疗',
+                      quick_note: '简要内容速记',
+                    };
+                    const catStyle = categoryColors[snippet.category || 'quick_note'] || categoryColors.quick_note;
+                    
                     return (
                       <div
                         key={snippet.id}
                         className={`rounded-xl border p-4 transition-all hover:shadow-md ${
-                          snippet.status === 'organized' 
-                            ? 'bg-emerald-50/50 border-emerald-200' 
-                            : isReminder
-                              ? 'bg-amber-50/30 border-amber-200'
+                          isReminder
+                            ? 'bg-amber-50/30 border-amber-200'
+                            : snippet.complianceLevel === 'C'
+                              ? 'bg-red-50/30 border-red-200'
                               : 'bg-white border-slate-200'
                         }`}
                       >
                         <div className="flex items-start justify-between gap-3">
                           <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2 mb-1">
-                              {/* 类型图标 */}
-                              {isReminder ? (
-                                <Bell className="h-4 w-4 text-amber-500 shrink-0" />
-                              ) : (
-                                <Brain className="h-4 w-4 text-sky-500 shrink-0" />
+                            <div className="flex items-center gap-2 mb-1 flex-wrap">
+                              {/* 分类标签 */}
+                              <Badge className={`${catStyle.bg} ${catStyle.text} ${catStyle.border} border px-2 py-0.5`}>
+                                {categoryLabels[snippet.category || 'quick_note'] || '简要内容速记'}
+                              </Badge>
+                              
+                              {/* 合规等级 */}
+                              {snippet.complianceLevel && (
+                                <Badge className={`${
+                                  snippet.complianceLevel === 'A' ? 'bg-green-100 text-green-700' :
+                                  snippet.complianceLevel === 'B' ? 'bg-amber-100 text-amber-700' :
+                                  'bg-red-100 text-red-700'
+                                }`}>
+                                  {snippet.complianceLevel === 'A' ? '合规' :
+                                   snippet.complianceLevel === 'B' ? '预警' : '违规'}
+                                </Badge>
                               )}
-                              <h4 className="text-sm font-medium text-slate-800 truncate">{snippet.title}</h4>
-                              {snippet.status === 'organized' && (
-                                <Badge className="bg-emerald-100 text-emerald-700 text-xs px-1.5 py-0">已整理</Badge>
-                              )}
+                              
+                              {/* 提醒状态 */}
                               {isReminder && snippet.remindStatus === 'pending' && (
-                                <Badge className="bg-amber-100 text-amber-700 text-xs px-1.5 py-0">待提醒</Badge>
+                                <Badge className="bg-amber-100 text-amber-700 text-xs">待提醒</Badge>
                               )}
                               {isReminder && snippet.remindStatus === 'triggered' && (
-                                <Badge className="bg-red-100 text-red-700 text-xs px-1.5 py-0">已触发</Badge>
+                                <Badge className="bg-red-100 text-red-700 text-xs">已触发</Badge>
                               )}
                             </div>
                             
-                            <div className="flex items-center gap-3 text-xs text-slate-500 mb-2">
-                              <span className="flex items-center gap-1">
-                                <Building2 className="h-3 w-3" />
-                                {snippet.sourceOrg}
-                              </span>
+                            {/* 标题 */}
+                            <h4 className="text-sm font-medium text-slate-800 truncate mb-1">
+                              {snippet.title || '无标题'}
+                            </h4>
+                            
+                            {/* 摘要 */}
+                            {snippet.summary && (
+                              <p className="text-xs text-slate-600 leading-relaxed mb-2">{snippet.summary}</p>
+                            )}
+                            
+                            {/* 元数据 */}
+                            <div className="flex items-center gap-3 text-xs text-slate-500 mb-2 flex-wrap">
+                              {snippet.sourceOrg && (
+                                <span className="flex items-center gap-1">
+                                  <Building2 className="h-3 w-3" />
+                                  {snippet.sourceOrg}
+                                </span>
+                              )}
                               {snippet.publishDate && (
                                 <span className="flex items-center gap-1">
                                   <Clock className="h-3 w-3" />
                                   {snippet.publishDate}
                                 </span>
                               )}
-                              {/* 提醒时间 */}
                               {isReminder && snippet.remindAt && (
                                 <span className="flex items-center gap-1 text-amber-600">
                                   <Bell className="h-3 w-3" />
@@ -3886,14 +4094,23 @@ export default function HomePage() {
                               )}
                             </div>
 
-                            <p className="text-xs text-slate-600 leading-relaxed line-clamp-2">{snippet.highlights}</p>
+                            {/* 关键词 */}
+                            {snippet.keywords && (
+                              <div className="flex items-center gap-1 flex-wrap mb-2">
+                                {snippet.keywords.split(',').slice(0, 4).map((kw, i) => (
+                                  <span key={i} className="text-xs bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded">
+                                    {kw.trim()}
+                                  </span>
+                                ))}
+                              </div>
+                            )}
                             
                             {snippet.url && (
                               <a
                                 href={snippet.url}
                                 target="_blank"
                                 rel="noopener noreferrer"
-                                className="inline-flex items-center gap-1 text-xs text-sky-600 hover:text-sky-700 mt-2"
+                                className="inline-flex items-center gap-1 text-xs text-sky-600 hover:text-sky-700"
                               >
                                 <ExternalLink className="h-3 w-3" />
                                 查看原文
@@ -3901,28 +4118,12 @@ export default function HomePage() {
                             )}
                           </div>
 
-                        <div className="flex items-center gap-1 shrink-0">
-                            {snippet.status !== 'organized' && (
-                              <TooltipProvider>
-                                <Tooltip>
-                                  <TooltipTrigger asChild>
-                                    <button
-                                      onClick={() => handleConvertToMaterial(snippet.id, snippet.title)}
-                                      className="h-8 w-8 rounded-lg hover:bg-sky-50 flex items-center justify-center text-sky-600 hover:text-sky-700 transition-colors"
-                                    >
-                                      <BookOpen className="h-4 w-4" />
-                                    </button>
-                                  </TooltipTrigger>
-                                  <TooltipContent><p>转化为素材</p></TooltipContent>
-                                </Tooltip>
-                              </TooltipProvider>
-                            )}
-                            
+                          <div className="flex items-center gap-1 shrink-0">
                             <TooltipProvider>
                               <Tooltip>
                                 <TooltipTrigger asChild>
                                   <button
-                                    onClick={() => handleDeleteSnippet(snippet.id, snippet.title)}
+                                    onClick={() => handleDeleteSnippet(snippet.id, snippet.title || '')}
                                     className="h-8 w-8 rounded-lg hover:bg-red-50 flex items-center justify-center text-slate-400 hover:text-red-500 transition-colors"
                                   >
                                     <Trash2 className="h-4 w-4" />

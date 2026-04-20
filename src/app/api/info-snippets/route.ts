@@ -1,33 +1,40 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { infoSnippets } from '@/lib/db/schema/info-snippets';
-import { desc, eq, like, sql, and } from 'drizzle-orm';
+import { desc, eq, sql, and, ilike, or } from 'drizzle-orm';
 import { getWorkspaceId } from '@/lib/auth/context';
 
 /**
  * GET /api/info-snippets
  * 获取信息速记列表（按 workspaceId 隔离）
- * Query: status=pending|organized, snippetType=memory|reminder, search=关键词, limit=20, page=1
+ * Query: category, status, search, limit, page
  */
 export async function GET(request: NextRequest) {
   try {
     const workspaceId = await getWorkspaceId(request);
     const { searchParams } = new URL(request.url);
+    const category = searchParams.get('category') || '';
     const status = searchParams.get('status') || '';
-    const snippetType = searchParams.get('snippetType') || '';
     const search = searchParams.get('search') || '';
     const page = parseInt(searchParams.get('page') || '1');
     const limit = parseInt(searchParams.get('limit') || '20');
 
     const conditions = [eq(infoSnippets.workspaceId, workspaceId)];
-    if (status) {
+    if (category && category !== 'all') {
+      conditions.push(eq(infoSnippets.category, category));
+    }
+    if (status && status !== 'all') {
       conditions.push(eq(infoSnippets.status, status));
     }
-    if (snippetType) {
-      conditions.push(eq(infoSnippets.snippetType, snippetType));
-    }
     if (search) {
-      conditions.push(sql`(${infoSnippets.title} ILIKE ${'%' + search + '%'} OR ${infoSnippets.sourceOrg} ILIKE ${'%' + search + '%'} OR ${infoSnippets.highlights} ILIKE ${'%' + search + '%'})`);
+      conditions.push(
+        or(
+          ilike(infoSnippets.title, `%${search}%`),
+          ilike(infoSnippets.rawContent, `%${search}%`),
+          ilike(infoSnippets.summary, `%${search}%`),
+          ilike(infoSnippets.keywords, `%${search}%`)
+        )!
+      );
     }
 
     const whereClause = conditions.reduce((acc, cond) => sql`${acc} AND ${cond}`);
@@ -63,23 +70,49 @@ export async function GET(request: NextRequest) {
 
 /**
  * POST /api/info-snippets
- * 快速创建一条信息速记（按 workspaceId 隔离）
- * Body: title, sourceOrg, publishDate, url, highlights, snippetType, remindAt
+ * 保存信息速记（用户确认后的数据）
+ * 
+ * Body: 
+ * - rawContent: 原始内容
+ * - category: 分类
+ * - title: 标题
+ * - sourceOrg: 来源机构
+ * - publishDate: 发布时间
+ * - url: 原文链接
+ * - summary: 摘要
+ * - keywords: 关键词
+ * - applicableScenes: 适用场景
+ * - complianceWarnings: 合规预警
+ * - complianceLevel: 合规等级
+ * - materialId: 素材ID
+ * - materialStatus: 素材状态
+ * - snippetType: memory/reminder
+ * - remindAt: 提醒时间
  */
 export async function POST(request: NextRequest) {
   try {
     const workspaceId = await getWorkspaceId(request);
     const body = await request.json();
-    const { title, sourceOrg, publishDate, url, highlights, snippetType, remindAt } = body;
+    const {
+      rawContent,
+      category,
+      title,
+      sourceOrg,
+      publishDate,
+      url,
+      summary,
+      keywords,
+      applicableScenes,
+      complianceWarnings,
+      complianceLevel,
+      materialId,
+      materialStatus,
+      snippetType,
+      remindAt,
+    } = body;
 
-    if (!title?.trim()) {
-      return NextResponse.json({ error: '请输入报告/信息名称' }, { status: 400 });
-    }
-    if (!sourceOrg?.trim()) {
-      return NextResponse.json({ error: '请输入发布机构' }, { status: 400 });
-    }
-    if (!highlights?.trim()) {
-      return NextResponse.json({ error: '请输入核心亮点' }, { status: 400 });
+    if (!rawContent?.trim()) {
+      return NextResponse.json({ error: '请输入要记录的信息' }, { status: 400 });
     }
 
     // 提醒类型必须设置提醒时间
@@ -88,11 +121,19 @@ export async function POST(request: NextRequest) {
     }
 
     const result = await db.insert(infoSnippets).values({
-      title: title.trim(),
-      sourceOrg: sourceOrg.trim(),
-      publishDate: publishDate?.trim() || null,
-      url: url?.trim() || null,
-      highlights: highlights.trim(),
+      rawContent: rawContent.trim(),
+      category: category || 'quick_note',
+      title: title || null,
+      sourceOrg: sourceOrg || null,
+      publishDate: publishDate || null,
+      url: url || null,
+      summary: summary || null,
+      keywords: keywords || null,
+      applicableScenes: applicableScenes || null,
+      complianceWarnings: complianceWarnings || null,
+      complianceLevel: complianceLevel || null,
+      materialId: materialId || null,
+      materialStatus: materialStatus || 'draft',
       snippetType: snippetType || 'memory',
       remindAt: remindAt ? new Date(remindAt) : null,
       remindStatus: snippetType === 'reminder' ? 'pending' : null,
