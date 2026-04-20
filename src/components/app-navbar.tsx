@@ -14,6 +14,7 @@ import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { WorkspaceSwitcher } from '@/components/workspace-switcher';
 import { Button } from '@/components/ui/button';
+import { useReminderNotification } from '@/hooks/use-browser-notification';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -35,6 +36,7 @@ import {
   ChevronDown,
   Copy,
   Users,
+  Bell,
 } from 'lucide-react';
 
 interface NavItem {
@@ -65,6 +67,10 @@ export function AppNavbar() {
   const router = useRouter();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [isSuperAdmin, setIsSuperAdmin] = useState(false);
+  const [overdueCount, setOverdueCount] = useState(0);
+
+  // 浏览器通知轮询
+  useReminderNotification();
 
   // 登录/注册页不显示导航
   const isAuthPage = pathname === '/login' || pathname === '/register';
@@ -80,12 +86,34 @@ export function AppNavbar() {
       })
       .catch(() => {});
 
+    // 加载逾期提醒数量
+    const loadOverdueCount = async () => {
+      try {
+        const res = await fetch('/api/reminders?mode=stats', {
+          headers: { 'x-workspace-id': localStorage.getItem('currentWorkspaceId') || '' },
+        });
+        const data = await res.json();
+        if (data.success) {
+          setOverdueCount(data.data.overdue || 0);
+        }
+      } catch {
+        // 忽略错误
+      }
+    };
+    loadOverdueCount();
+    // 每 60 秒刷新一次
+    const interval = setInterval(loadOverdueCount, 60000);
+
     const handler = (e: Event) => {
       // workspace 变化时可以触发其他逻辑（如刷新数据）
       void (e as CustomEvent).detail;
+      loadOverdueCount();
     };
     window.addEventListener('workspace-changed', handler);
-    return () => window.removeEventListener('workspace-changed', handler);
+    return () => {
+      window.removeEventListener('workspace-changed', handler);
+      clearInterval(interval);
+    };
   }, [isAuthPage]);
 
   const handleLogout = async () => {
@@ -182,8 +210,23 @@ export function AppNavbar() {
             </DropdownMenu>
           </div>
 
-          {/* 右侧: 退出 + 移动端菜单 */}
+          {/* 右侧: 提醒 + 退出 + 移动端菜单 */}
           <div className="flex items-center gap-2">
+            {/* 提醒中心入口 */}
+            <Link href="/reminders" className="relative">
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-gray-500 hover:text-gray-900"
+              >
+                <Bell className="w-4 h-4" />
+                {overdueCount > 0 && (
+                  <span className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 text-white text-xs rounded-full flex items-center justify-center font-medium">
+                    {overdueCount > 9 ? '9+' : overdueCount}
+                  </span>
+                )}
+              </Button>
+            </Link>
             <Button
               variant="ghost"
               size="sm"
