@@ -9,7 +9,9 @@ import { and, eq, lte, isNotNull } from 'drizzle-orm';
 
 /**
  * 触发信息速记提醒
- * 查询所有到期的提醒，更新状态为 triggered
+ * 查询所有到期的提醒，原子性更新状态为 triggered
+ * 
+ * 使用 UPDATE ... WHERE ... RETURNING 原子操作，避免多实例重复触发
  * 
  * @returns 触发的提醒数量和详情
  */
@@ -24,9 +26,14 @@ export async function triggerSnippetReminders(): Promise<{
 }> {
   const now = new Date();
   
-  // 查询所有到期的提醒
-  const dueReminders = await db.select()
-    .from(infoSnippets)
+  // 🔒 原子操作：直接 UPDATE + RETURNING，避免查询-更新之间的竞态
+  // 只更新 remindStatus = 'pending' 的记录，已更新的不会再被匹配
+  const updated = await db.update(infoSnippets)
+    .set({
+      remindStatus: 'triggered',
+      remindedAt: now,
+      updatedAt: now,
+    })
     .where(
       and(
         eq(infoSnippets.snippetType, 'reminder'),
@@ -34,35 +41,20 @@ export async function triggerSnippetReminders(): Promise<{
         isNotNull(infoSnippets.remindAt),
         lte(infoSnippets.remindAt, now)
       )
-    );
+    )
+    .returning({
+      id: infoSnippets.id,
+      title: infoSnippets.title,
+      summary: infoSnippets.summary,
+      remindAt: infoSnippets.remindAt,
+    });
 
-  if (dueReminders.length === 0) {
-    return {
-      triggered: 0,
-      reminders: [],
-    };
+  if (updated.length > 0) {
+    console.log(`[snippet-reminders] 已触发 ${updated.length} 个提醒`);
   }
-
-  // 批量更新提醒状态为 triggered
-  for (const reminder of dueReminders) {
-    await db.update(infoSnippets)
-      .set({
-        remindStatus: 'triggered',
-        remindedAt: now,
-        updatedAt: now,
-      })
-      .where(eq(infoSnippets.id, reminder.id));
-  }
-
-  console.log(`[snippet-reminders] 已触发 ${dueReminders.length} 个提醒`);
 
   return {
-    triggered: dueReminders.length,
-    reminders: dueReminders.map(r => ({
-      id: r.id,
-      title: r.title,
-      summary: r.summary,
-      remindAt: r.remindAt,
-    })),
+    triggered: updated.length,
+    reminders: updated,
   };
 }

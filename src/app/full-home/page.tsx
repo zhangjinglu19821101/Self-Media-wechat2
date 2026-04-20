@@ -1127,13 +1127,20 @@ export default function HomePage() {
   };
 
   // 🔥 提醒功能：轮询检查触发的提醒
+  // 使用 dismissedIdSet 记录本次会话已处理的提醒 ID，避免重复弹窗
+  const dismissedIdSetRef = useRef<Set<string>>(new Set());
+
   const checkTriggeredReminders = useCallback(async () => {
     try {
       const data: any = await apiGet('/api/info-snippets/triggered-reminders');
       if (data.success && data.data?.length > 0) {
-        setTriggeredReminders(data.data);
-        setCurrentReminderIndex(0);
-        setShowReminderDialog(true);
+        // 🔒 过滤掉本次会话已处理的提醒
+        const newReminders = data.data.filter((r: InfoSnippet) => !dismissedIdSetRef.current.has(r.id));
+        if (newReminders.length > 0) {
+          setTriggeredReminders(newReminders);
+          setCurrentReminderIndex(0);
+          setShowReminderDialog(true);
+        }
       }
     } catch (error) {
       console.error('[Reminders] 检查失败:', error);
@@ -1147,6 +1154,7 @@ export default function HomePage() {
     const currentReminder = triggeredReminders[currentReminderIndex];
     try {
       await apiPost(`/api/info-snippets/${currentReminder.id}/dismiss-reminder`);
+      dismissedIdSetRef.current.add(currentReminder.id);
       
       // 如果还有下一个提醒，显示下一个
       if (currentReminderIndex < triggeredReminders.length - 1) {
@@ -1175,6 +1183,7 @@ export default function HomePage() {
         remindStatus: 'pending',
         remindedAt: null, // 清除触发时间，防止重复触发
       });
+      dismissedIdSetRef.current.add(currentReminder.id);
       toast.success('已延迟 1 小时提醒');
       
       // 显示下一个提醒
@@ -3590,7 +3599,7 @@ export default function HomePage() {
       {/* 🔥 提醒弹框 */}
       {showReminderDialog && triggeredReminders.length > 0 && (
         <div className="fixed inset-0 z-[70] flex items-center justify-center">
-          <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={() => setShowReminderDialog(false)} />
+          <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={handleDismissReminder} />
           <div className="relative bg-white rounded-2xl shadow-2xl max-w-md w-full mx-4 overflow-hidden animate-in zoom-in-95 duration-200">
             {/* 头部 */}
             <div className="bg-gradient-to-r from-amber-500 to-orange-600 px-6 py-4 text-white">
