@@ -1126,17 +1126,6 @@ export default function HomePage() {
     }
   };
 
-  // 🔥 信息速记：转化为素材
-  const handleConvertToMaterial = async (id: string, title: string) => {
-    try {
-      await apiPost(`/api/info-snippets/${id}/convert-to-material`, { type: 'data' });
-      toast.success(`已将「${title}」转化为素材`);
-      loadSnippetList();
-    } catch (error) {
-      toast.error('转化失败');
-    }
-  };
-
   // 🔥 提醒功能：轮询检查触发的提醒
   const checkTriggeredReminders = useCallback(async () => {
     try {
@@ -4154,14 +4143,39 @@ export default function HomePage() {
                           </div>
 
                           <div className="flex items-center gap-1 shrink-0">
+                            {/* 入库状态标识 */}
+                            {snippet.materialId ? (
+                              <TooltipProvider>
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <span className="h-7 px-2 rounded-md bg-green-50 border border-green-200 flex items-center justify-center text-green-600 text-xs font-medium gap-1">
+                                      <Check className="h-3 w-3" />
+                                      已入库
+                                    </span>
+                                  </TooltipTrigger>
+                                  <TooltipContent><p>已自动入库到素材库，可直接用于创作</p></TooltipContent>
+                                </Tooltip>
+                              </TooltipProvider>
+                            ) : (
+                              <TooltipProvider>
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <span className="h-7 px-2 rounded-md bg-amber-50 border border-amber-200 flex items-center justify-center text-amber-600 text-xs font-medium">
+                                      待入库
+                                    </span>
+                                  </TooltipTrigger>
+                                  <TooltipContent><p>素材入库异常，可重新保存</p></TooltipContent>
+                                </Tooltip>
+                              </TooltipProvider>
+                            )}
                             <TooltipProvider>
                               <Tooltip>
                                 <TooltipTrigger asChild>
                                   <button
                                     onClick={() => handleDeleteSnippet(snippet.id, snippet.title || '')}
-                                    className="h-8 w-8 rounded-lg hover:bg-red-50 flex items-center justify-center text-slate-400 hover:text-red-500 transition-colors"
+                                    className="h-7 w-7 rounded-md hover:bg-red-50 flex items-center justify-center text-slate-400 hover:text-red-500 transition-colors"
                                   >
-                                    <Trash2 className="h-4 w-4" />
+                                    <Trash2 className="h-3.5 w-3.5" />
                                   </button>
                                 </TooltipTrigger>
                                 <TooltipContent><p>删除</p></TooltipContent>

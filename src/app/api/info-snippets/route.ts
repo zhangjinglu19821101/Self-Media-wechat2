@@ -1,17 +1,97 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { infoSnippets } from '@/lib/db/schema/info-snippets';
+import { materialLibrary } from '@/lib/db/schema/material-library';
 import { desc, eq, sql, and, ilike, or } from 'drizzle-orm';
 import { getWorkspaceId } from '@/lib/auth/context';
 import { snippetDedupService } from '@/lib/services/snippet-dedup-service';
 
+// ================================================================
+// 速记 → 素材 字段映射
+// ================================================================
+
+/**
+ * 速记分类 → 素材类型 映射
+ * 
+ * 信息速记的分类维度（领域）与素材库的类型维度（用途）不同：
+ * - 速记分类：内容属于什么领域（保险/医疗/案例...）
+ * - 素材类型：内容能怎么用（案例/数据/故事/引用...）
+ */
+function inferMaterialType(categories: string[]): string {
+  if (categories.includes('real_case')) return 'case';
+  if (categories.includes('insurance')) return 'data';
+  if (categories.includes('medical')) return 'data';
+  if (categories.includes('intelligence')) return 'data';
+  return 'data';
+}
+
+/**
+ * 速记分类 → 素材标签 映射
+ */
+function mapCategoriesToTags(
+  categories: string[],
+  complianceLevel: string | null,
+  applicableScenes: string | null,
+): { topicTags: string[]; sceneTags: string[]; emotionTags: string[] } {
+  const topicMap: Record<string, string> = {
+    insurance: '保险',
+    medical: '医疗健康',
+    intelligence: '智能化',
+    real_case: '真实案例',
+    quick_note: '速记',
+  };
+
+  const topicTags = categories.filter(c => c !== 'quick_note').map(c => topicMap[c] || c);
+  const sceneTags = applicableScenes
+    ? applicableScenes.split(',').map(s => s.trim()).filter(Boolean)
+    : [];
+  const emotionTags: string[] = [];
+  if (complianceLevel === 'C') emotionTags.push('违规风险');
+  if (complianceLevel === 'B') emotionTags.push('需注意');
+  if (categories.includes('real_case')) emotionTags.push('真实');
+
+  return { topicTags, sceneTags, emotionTags };
+}
+
+/**
+ * 构建素材库 content 字段
+ * 包含原始内容 + AI 分析结果（完整保存）
+ */
+function buildMaterialContent(snippet: {
+  rawContent: string | null;
+  title: string | null;
+  sourceOrg: string | null;
+  publishDate: string | null;
+  summary: string | null;
+  keywords: string | null;
+  applicableScenes: string | null;
+  complianceLevel: string | null;
+  url: string | null;
+}): string {
+  return [
+    '📝 【原始信息】',
+    snippet.rawContent || '',
+    '',
+    '📋 【AI 分析结果】',
+    `标题：${snippet.title || '无标题'}`,
+    `来源：${snippet.sourceOrg || '未知'}`,
+    snippet.publishDate ? `发布时间：${snippet.publishDate}` : '',
+    '',
+    `摘要：${snippet.summary || ''}`,
+    snippet.keywords ? `关键词：${snippet.keywords}` : '',
+    snippet.applicableScenes ? `适用场景：${snippet.applicableScenes}` : '',
+    snippet.complianceLevel ? `合规等级：${snippet.complianceLevel}` : '',
+    snippet.url ? `\n📎 原文链接：${snippet.url}` : '',
+  ].filter(Boolean).join('\n');
+}
+
+// ================================================================
+// GET
+// ================================================================
+
 /**
  * GET /api/info-snippets
  * 获取信息速记列表（按 workspaceId 隔离）
- * Query: category, status, search, limit, page
- * 
- * 分类筛选说明：
- * - category 参数会匹配 categories 数组中是否包含该分类（使用 @> 操作符）
  */
 export async function GET(request: NextRequest) {
   try {
@@ -25,7 +105,6 @@ export async function GET(request: NextRequest) {
 
     const conditions = [eq(infoSnippets.workspaceId, workspaceId)];
     
-    // 分类筛选：匹配 categories 数组是否包含指定分类
     if (category && category !== 'all') {
       conditions.push(sql`${infoSnippets.categories} @> ${JSON.stringify([category])}::jsonb`);
     }
@@ -46,11 +125,9 @@ export async function GET(request: NextRequest) {
 
     const whereClause = conditions.reduce((acc, cond) => sql`${acc} AND ${cond}`);
 
-    // 查询总数
     const countResult = await db.select({ count: sql<number>`count(*)::int` }).from(infoSnippets).where(whereClause);
     const total = countResult[0]?.count || 0;
 
-    // 查询数据
     const data = await db.select().from(infoSnippets)
       .where(whereClause)
       .orderBy(desc(infoSnippets.createdAt))
@@ -75,26 +152,19 @@ export async function GET(request: NextRequest) {
   }
 }
 
+// ================================================================
+// POST — 保存速记 + 自动入库素材库
+// ================================================================
+
 /**
  * POST /api/info-snippets
- * 保存信息速记（用户确认后的数据）
+ * 保存信息速记，同时自动创建素材库记录
  * 
- * Body: 
- * - rawContent: 原始内容（完整保存，不截断）
- * - categories: 分类标签数组（并列多标签，无主次之分）
- * - title: 标题
- * - sourceOrg: 来源机构
- * - publishDate: 发布时间
- * - url: 原文链接
- * - summary: 摘要
- * - keywords: 关键词
- * - applicableScenes: 适用场景
- * - complianceWarnings: 合规预警（保险类）
- * - complianceLevel: 合规等级（保险类）
- * - materialId: 素材ID
- * - materialStatus: 素材状态
- * - snippetType: memory/reminder
- * - remindAt: 提醒时间
+ * 数据流（一步到位）：
+ * 1. 保存到 info_snippets（原始内容 + AI 结构化字段）
+ * 2. 自动创建 material_library 记录（content = 原始内容 + AI 分析结果）
+ * 3. 反写 materialId 到 info_snippets（双向关联）
+ * 4. 保存哈希记录（去重用）
  */
 export async function POST(request: NextRequest) {
   try {
@@ -112,8 +182,6 @@ export async function POST(request: NextRequest) {
       applicableScenes,
       complianceWarnings,
       complianceLevel,
-      materialId,
-      materialStatus,
       snippetType,
       remindAt,
     } = body;
@@ -127,9 +195,12 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: '提醒类型必须设置提醒时间' }, { status: 400 });
     }
 
+    const snippetCategories = categories || ['quick_note'];
+
+    // === Step 1: 保存到 info_snippets ===
     const result = await db.insert(infoSnippets).values({
       rawContent: rawContent.trim(),
-      categories: categories || ['quick_note'],
+      categories: snippetCategories,
       title: title || null,
       sourceOrg: sourceOrg || null,
       publishDate: publishDate || null,
@@ -139,30 +210,83 @@ export async function POST(request: NextRequest) {
       applicableScenes: applicableScenes || null,
       complianceWarnings: complianceWarnings || null,
       complianceLevel: complianceLevel || null,
-      materialId: materialId || null,
-      materialStatus: materialStatus || 'draft',
+      materialStatus: 'draft',
       snippetType: snippetType || 'memory',
       remindAt: remindAt ? new Date(remindAt) : null,
       remindStatus: snippetType === 'reminder' ? 'pending' : null,
-      status: 'pending',
+      status: 'organized',  // 已入库
       workspaceId,
     }).returning();
 
-    // 🔥 保存/更新哈希记录（关联 snippetId）
+    const savedSnippet = result[0];
+
+    // === Step 2: 自动创建素材库记录 ===
+    let materialId: string | null = null;
+    let materialType = 'data';
+    try {
+      materialType = inferMaterialType(snippetCategories);
+      const { topicTags, sceneTags, emotionTags } = mapCategoriesToTags(
+        snippetCategories,
+        complianceLevel || null,
+        applicableScenes || null,
+      );
+      const materialContent = buildMaterialContent({
+        rawContent: rawContent.trim(),
+        title: title || null,
+        sourceOrg: sourceOrg || null,
+        publishDate: publishDate || null,
+        summary: summary || null,
+        keywords: keywords || null,
+        applicableScenes: applicableScenes || null,
+        complianceLevel: complianceLevel || null,
+        url: url || null,
+      });
+
+      const [material] = await db.insert(materialLibrary).values({
+        title: title || '无标题速记',
+        type: materialType,
+        content: materialContent,
+        sourceType: 'info_snippet',
+        sourceDesc: sourceOrg ? `来源：${sourceOrg}` : '信息速记',
+        sourceUrl: url || null,
+        topicTags,
+        sceneTags,
+        emotionTags,
+        status: 'active',
+        workspaceId,
+      }).returning();
+
+      materialId = material.id;
+
+      // === Step 3: 反写 materialId 到 info_snippets ===
+      await db.update(infoSnippets).set({
+        materialId: materialId,
+        updatedAt: new Date(),
+      }).where(eq(infoSnippets.id, savedSnippet.id));
+
+      console.log(`[info-snippets POST] 速记 ${savedSnippet.id} → 素材 ${materialId}，类型=${materialType}`);
+    } catch (materialError) {
+      console.error('[info-snippets POST] 自动入库失败:', materialError);
+      // 入库失败不阻塞速记保存
+    }
+
+    // === Step 4: 保存哈希记录（去重用） ===
     try {
       await snippetDedupService.saveSnippetHash({
         content: rawContent.trim(),
-        snippetId: result[0].id,
+        snippetId: savedSnippet.id,
         workspaceId,
       });
     } catch (hashError) {
       console.error('[info-snippets POST] 保存哈希失败:', hashError);
-      // 不阻塞主流程
     }
 
     return NextResponse.json({
       success: true,
-      data: result[0],
+      data: {
+        ...savedSnippet,
+        materialId,  // 确保返回最新的 materialId
+      },
     });
   } catch (error: any) {
     console.error('[info-snippets POST] 错误:', error);
