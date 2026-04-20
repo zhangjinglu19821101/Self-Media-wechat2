@@ -6,6 +6,7 @@ import { getWorkspaceId } from '@/lib/auth/context';
 import {
   convertSnippetToMaterial,
   safeGetCategories,
+  shouldConvertToMaterial,
   type SnippetData,
 } from '@/lib/services/snippet-to-material';
 
@@ -61,6 +62,20 @@ export async function POST(request: NextRequest) {
             title: snippet.title,
             status: 'skipped',
             materialId: snippet.materialId,
+          });
+          continue;
+        }
+
+        // 🔒 判断是否应该转化为素材（quick_note 和 reminder 不转化）
+        const snippetCategories = safeGetCategories(snippet.categories);
+        const convertCheck = shouldConvertToMaterial(snippetCategories, snippet.snippetType);
+        
+        if (!convertCheck.shouldConvert) {
+          results.push({
+            id: snippet.id,
+            title: snippet.title,
+            status: 'skipped',
+            error: convertCheck.reason,
           });
           continue;
         }

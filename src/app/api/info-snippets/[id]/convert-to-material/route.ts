@@ -6,6 +6,7 @@ import { getWorkspaceId } from '@/lib/auth/context';
 import {
   convertSnippetToMaterial,
   safeGetCategories,
+  shouldConvertToMaterial,
   type SnippetData,
   type MaterialType,
 } from '@/lib/services/snippet-to-material';
@@ -51,6 +52,14 @@ export async function POST(
       // 防重复转化
       if (snippet.status === 'organized' && snippet.materialId) {
         throw new Error(`ALREADY_CONVERTED:${snippet.materialId}`);
+      }
+
+      // 🔒 判断是否应该转化为素材（quick_note 和 reminder 不转化）
+      const snippetCategories = safeGetCategories(snippet.categories);
+      const convertCheck = shouldConvertToMaterial(snippetCategories, snippet.snippetType);
+      
+      if (!convertCheck.shouldConvert) {
+        throw new Error(`CANNOT_CONVERT:${convertCheck.reason}`);
       }
 
       // 构建转化数据
@@ -119,6 +128,12 @@ export async function POST(
         error: '该速记已转化为素材', 
         materialId,
       }, { status: 409 });
+    }
+    if (error.message.startsWith('CANNOT_CONVERT:')) {
+      const reason = error.message.split(':').slice(1).join(':');
+      return NextResponse.json({ 
+        error: reason, 
+      }, { status: 400 });
     }
     
     console.error('[convert-to-material] 错误:', error);

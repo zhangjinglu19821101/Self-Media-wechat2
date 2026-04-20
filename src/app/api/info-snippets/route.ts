@@ -7,6 +7,7 @@ import { snippetDedupService } from '@/lib/services/snippet-dedup-service';
 import {
   convertSnippetToMaterial,
   safeGetCategories,
+  shouldConvertToMaterial,
   type SnippetData,
 } from '@/lib/services/snippet-to-material';
 
@@ -150,36 +151,43 @@ export async function POST(request: NextRequest) {
       let materialType = 'data';
       let materialError: string | null = null;
       
-      try {
-        const snippetData: SnippetData = {
-          rawContent: rawContent.trim(),
-          title: title || null,
-          sourceOrg: sourceOrg || null,
-          publishDate: publishDate || null,
-          url: url || null,
-          summary: summary || null,
-          keywords: keywords || null,
-          applicableScenes: applicableScenes || null,
-          complianceLevel: complianceLevel || null,
-          categories: snippetCategories,
-        };
-        
-        // 在事务内执行素材转化，传递 tx 参数
-        const conversionResult = await convertSnippetToMaterial(snippetData, workspaceId, undefined, tx);
-        materialId = conversionResult.materialId;
-        materialType = conversionResult.materialType;
+      // 🔒 判断是否应该转化为素材（quick_note 和 reminder 不转化）
+      const convertCheck = shouldConvertToMaterial(snippetCategories, snippetType || 'memory');
+      
+      if (!convertCheck.shouldConvert) {
+        console.log(`[info-snippets POST] 速记 ${savedSnippet.id} 跳过自动入库: ${convertCheck.reason}`);
+        materialError = convertCheck.reason || '不符合素材转化条件';
+      } else {
+        try {
+          const snippetData: SnippetData = {
+            rawContent: rawContent.trim(),
+            title: title || null,
+            sourceOrg: sourceOrg || null,
+            publishDate: publishDate || null,
+            url: url || null,
+            summary: summary || null,
+            keywords: keywords || null,
+            applicableScenes: applicableScenes || null,
+            complianceLevel: complianceLevel || null,
+            categories: snippetCategories,
+          };
+          
+          // 在事务内执行素材转化，传递 tx 参数
+          const conversionResult = await convertSnippetToMaterial(snippetData, workspaceId, undefined, tx);
+          materialId = conversionResult.materialId;
+          materialType = conversionResult.materialType;
 
-        // === Step 3: 反写 materialId 到 info_snippets ===
-        await tx.update(infoSnippets).set({
-          materialId: materialId,
-          updatedAt: new Date(),
-        }).where(eq(infoSnippets.id, savedSnippet.id));
+          // === Step 3: 反写 materialId 到 info_snippets ===
+          await tx.update(infoSnippets).set({
+            materialId: materialId,
+            updatedAt: new Date(),
+          }).where(eq(infoSnippets.id, savedSnippet.id));
 
-        console.log(`[info-snippets POST] 速记 ${savedSnippet.id} → 素材 ${materialId}，类型=${materialType}`);
-      } catch (err: any) {
-        console.error('[info-snippets POST] 自动入库失败:', err);
-        materialError = err.message || '入库失败';
-        // 入库失败不阻塞速记保存，但返回错误信息
+          console.log(`[info-snippets POST] 速记 ${savedSnippet.id} → 素材 ${materialId}，类型=${materialType}`);
+        } catch (err: any) {
+          console.error('[info-snippets POST] 自动入库失败:', err);
+          materialError = err.message || '入库失败';
+        }
       }
 
       return {
