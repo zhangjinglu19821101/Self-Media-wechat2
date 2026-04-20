@@ -3754,8 +3754,8 @@ export default function HomePage() {
                     placeholder="家庭总资产均值 317.9 万元，房产占比 70%..."
                     value={snippetForm.highlights}
                     onChange={(e) => setSnippetForm(prev => ({ ...prev, highlights: e.target.value }))}
-                    rows={2}
-                    className="text-sm resize-none"
+                    rows={4}
+                    className="text-sm min-h-[100px] resize-y w-full"
                   />
                 </div>
 
