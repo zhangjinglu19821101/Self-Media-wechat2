@@ -9,9 +9,8 @@ import { enrichSnippetWithLLM } from '@/lib/services/snippet-enrichment-service'
  * Body: rawContent (必填)
  * 
  * 返回字段（对应前端表单）：
- * - category: 主分类代码
- * - categoryLabel: 主分类中文名
- * - secondaryCategories: 副分类数组（跨领域多标签）
+ * - categories: 分类标签数组（并列多标签，无主次之分）
+ * - categoryLabels: 分类中文名数组
  * - title: 标题
  * - sourceOrg: 来源机构
  * - publishDate: 发布时间
@@ -40,7 +39,7 @@ export async function POST(request: NextRequest) {
       insurance: '保险',
       intelligence: '智能化',
       medical: '医疗',
-      quick_note: '简要内容速记',
+      quick_note: '简要速记',
     };
 
     // 合规等级颜色映射
@@ -50,20 +49,18 @@ export async function POST(request: NextRequest) {
       C: { bg: 'bg-red-50', text: 'text-red-700' },
     };
 
-    // 副分类标签
-    const secondaryCategoryLabels = result.secondaryCategories.map(cat => categoryLabels[cat] || cat);
+    // 分类标签数组
+    const categoryLabelList = result.categories.map(cat => categoryLabels[cat] || cat);
 
     return NextResponse.json({
       success: true,
       data: {
-        // 原始内容
+        // 原始内容（完整保存）
         rawContent: rawContent.trim(),
         
         // AI 分析结果
-        category: result.category,
-        categoryLabel: categoryLabels[result.category] || '简要内容速记',
-        secondaryCategories: result.secondaryCategories,
-        secondaryCategoryLabels,
+        categories: result.categories,
+        categoryLabels: categoryLabelList,
         title: result.title,
         sourceOrg: result.sourceOrg,
         publishDate: result.publishDate,

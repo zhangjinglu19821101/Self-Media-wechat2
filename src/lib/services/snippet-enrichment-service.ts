@@ -21,8 +21,7 @@ import type { SnippetCategory, MaterialStatus } from '@/lib/db/schema/info-snipp
  * LLM 自动填充结果
  */
 export interface SnippetEnrichmentResult {
-  category: SnippetCategory;
-  secondaryCategories: string[];  // 副分类数组（跨领域多标签）
+  categories: string[];  // 分类标签数组（并列多标签，无主次之分）
   title: string;
   sourceOrg: string;
   publishDate: string;
@@ -118,7 +117,10 @@ function parseLLMResponse(content: string): SnippetEnrichmentResult {
   try {
     const parsed = JSON.parse(jsonStr);
     
-    // 生成素材ID
+    // 解析分类数组
+    const categories = validateCategories(parsed.categories);
+    
+    // 生成素材ID（使用第一个分类作为前缀）
     const now = new Date();
     const dateStr = now.getFullYear().toString() +
       (now.getMonth() + 1).toString().padStart(2, '0') +
@@ -131,15 +133,16 @@ function parseLLMResponse(content: string): SnippetEnrichmentResult {
       medical: 'MED',
       quick_note: 'QN',
     };
-    const category = validateCategory(parsed.category);
-    const materialId = `${catPrefix[category] || 'QN'}-${dateStr}-${seq}`;
+    const primaryCategory = categories[0] || 'quick_note';
+    const materialId = `${catPrefix[primaryCategory] || 'QN'}-${dateStr}-${seq}`;
 
-    // 解析副分类数组
-    const secondaryCategories = validateSecondaryCategories(parsed.secondaryCategories, category);
+    // 判断是否包含保险分类（用于合规校验）
+    const hasInsurance = categories.includes('insurance');
+    const complianceLevel = hasInsurance ? (parsed.complianceLevel || null) : null;
+    const complianceWarnings = hasInsurance ? (parsed.complianceWarnings || null) : null;
 
     return {
-      category,
-      secondaryCategories,
+      categories,
       title: String(parsed.title || '').slice(0, 50),
       sourceOrg: String(parsed.sourceOrg || '未知'),
       publishDate: String(parsed.publishDate || ''),
@@ -147,10 +150,10 @@ function parseLLMResponse(content: string): SnippetEnrichmentResult {
       summary: String(parsed.summary || '').slice(0, 60),
       keywords: String(parsed.keywords || ''),
       applicableScenes: String(parsed.applicableScenes || ''),
-      complianceWarnings: parsed.complianceWarnings || null,
-      complianceLevel: parsed.complianceLevel || null,
+      complianceWarnings,
+      complianceLevel,
       materialId,
-      materialStatus: determineMaterialStatus(category, parsed.complianceLevel),
+      materialStatus: determineMaterialStatus(categories, complianceLevel),
     };
   } catch (e) {
     console.error('[parseLLMResponse] JSON 解析失败:', e);
@@ -159,39 +162,29 @@ function parseLLMResponse(content: string): SnippetEnrichmentResult {
 }
 
 /**
- * 校验分类值
+ * 校验分类数组
  */
-function validateCategory(val: unknown): SnippetCategory {
-  const valid: SnippetCategory[] = ['real_case', 'insurance', 'intelligence', 'medical', 'quick_note'];
-  if (typeof val === 'string' && valid.includes(val as SnippetCategory)) {
-    return val as SnippetCategory;
-  }
-  return 'quick_note';
-}
-
-/**
- * 校验副分类数组
- */
-function validateSecondaryCategories(val: unknown, mainCategory: SnippetCategory): string[] {
+function validateCategories(val: unknown): string[] {
   const valid: SnippetCategory[] = ['real_case', 'insurance', 'intelligence', 'medical', 'quick_note'];
   
-  if (!Array.isArray(val)) {
-    return [];
+  if (!Array.isArray(val) || val.length === 0) {
+    return ['quick_note'];
   }
   
-  // 过滤有效分类，且不与主分类重复
-  return val.filter((item): item is SnippetCategory => 
-    typeof item === 'string' && 
-    valid.includes(item as SnippetCategory) && 
-    item !== mainCategory
+  // 过滤有效分类并去重
+  const validCategories = val.filter((item): item is SnippetCategory => 
+    typeof item === 'string' && valid.includes(item as SnippetCategory)
   );
+  
+  // 去重
+  return [...new Set(validCategories)];
 }
 
 /**
  * 根据分类和合规等级确定素材状态
  */
-function determineMaterialStatus(category: SnippetCategory, complianceLevel: string | null): MaterialStatus {
-  if (category === 'insurance') {
+function determineMaterialStatus(categories: string[], complianceLevel: string | null): MaterialStatus {
+  if (categories.includes('insurance')) {
     if (complianceLevel === 'C') return 'disabled';
     if (complianceLevel === 'B') return 'draft';
     return 'archived';
@@ -210,8 +203,7 @@ function buildFallbackResult(rawContent: string): SnippetEnrichmentResult {
   const seq = String(Math.floor(Math.random() * 999) + 1).padStart(3, '0');
 
   return {
-    category: 'quick_note',
-    secondaryCategories: [],
+    categories: ['quick_note'],
     title: rawContent.slice(0, 30) + (rawContent.length > 30 ? '...' : ''),
     sourceOrg: '未知',
     publishDate: '',

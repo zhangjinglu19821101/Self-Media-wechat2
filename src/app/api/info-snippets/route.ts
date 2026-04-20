@@ -8,6 +8,9 @@ import { getWorkspaceId } from '@/lib/auth/context';
  * GET /api/info-snippets
  * 获取信息速记列表（按 workspaceId 隔离）
  * Query: category, status, search, limit, page
+ * 
+ * 分类筛选说明：
+ * - category 参数会匹配 categories 数组中是否包含该分类（使用 @> 操作符）
  */
 export async function GET(request: NextRequest) {
   try {
@@ -20,9 +23,12 @@ export async function GET(request: NextRequest) {
     const limit = parseInt(searchParams.get('limit') || '20');
 
     const conditions = [eq(infoSnippets.workspaceId, workspaceId)];
+    
+    // 分类筛选：匹配 categories 数组是否包含指定分类
     if (category && category !== 'all') {
-      conditions.push(eq(infoSnippets.category, category));
+      conditions.push(sql`${infoSnippets.categories} @> ${JSON.stringify([category])}::jsonb`);
     }
+    
     if (status && status !== 'all') {
       conditions.push(eq(infoSnippets.status, status));
     }
@@ -73,9 +79,8 @@ export async function GET(request: NextRequest) {
  * 保存信息速记（用户确认后的数据）
  * 
  * Body: 
- * - rawContent: 原始内容
- * - category: 主分类
- * - secondaryCategories: 副分类数组（跨领域多标签）
+ * - rawContent: 原始内容（完整保存，不截断）
+ * - categories: 分类标签数组（并列多标签，无主次之分）
  * - title: 标题
  * - sourceOrg: 来源机构
  * - publishDate: 发布时间
@@ -83,8 +88,8 @@ export async function GET(request: NextRequest) {
  * - summary: 摘要
  * - keywords: 关键词
  * - applicableScenes: 适用场景
- * - complianceWarnings: 合规预警
- * - complianceLevel: 合规等级
+ * - complianceWarnings: 合规预警（保险类）
+ * - complianceLevel: 合规等级（保险类）
  * - materialId: 素材ID
  * - materialStatus: 素材状态
  * - snippetType: memory/reminder
@@ -96,8 +101,7 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const {
       rawContent,
-      category,
-      secondaryCategories,
+      categories,
       title,
       sourceOrg,
       publishDate,
@@ -124,8 +128,7 @@ export async function POST(request: NextRequest) {
 
     const result = await db.insert(infoSnippets).values({
       rawContent: rawContent.trim(),
-      category: category || 'quick_note',
-      secondaryCategories: secondaryCategories || [],
+      categories: categories || ['quick_note'],
       title: title || null,
       sourceOrg: sourceOrg || null,
       publishDate: publishDate || null,

@@ -1271,3 +1271,86 @@
      - `src/app/api/rag/regenerate-embeddings/route.ts`: 同上
    - **效果**: RAG 向量检索现在使用与 LLM 工厂统一的 Embedding Client，合规校验任务不再报错
 
+## 信息速记模块
+
+### 功能概述
+信息速记用于快速记录行业资讯，支持 AI 自动分析提取结构化信息，适用于保险从业者日常素材收集场景。
+
+### 核心功能
+1. **快速记录**: 输入原始内容，AI 自动提取标题、来源、摘要等
+2. **并列多标签**: 分类标签之间无主次之分，支持跨领域内容的多维度标注
+3. **合规校验**: 保险类内容自动进行合规三维校验（来源/内容/时效）
+4. **定时提醒**: 支持设置提醒时间，到期自动提醒
+
+### 关键文件
+- **Schema**: `src/lib/db/schema/info-snippets.ts`
+- **提示词**: `src/lib/agents/prompts/snippet-enrichment.md`
+- **服务**: `src/lib/services/snippet-enrichment-service.ts`
+- **API**: 
+  - `src/app/api/info-snippets/` (CRUD)
+  - `src/app/api/info-snippets/analyze` (AI 分析)
+  - `src/app/api/info-snippets/triggered-reminders` (提醒触发)
+- **前端**: `src/app/full-home/page.tsx` (信息速记浮动按钮 + 抽屉)
+
+### API 接口
+| 接口 | 方法 | 说明 |
+|-----|------|------|
+| `/api/info-snippets` | GET | 获取速记列表（支持搜索、筛选、分页） |
+| `/api/info-snippets` | POST | 保存速记（用户确认后） |
+| `/api/info-snippets/[id]` | GET/PUT/DELETE | 单个速记 CRUD |
+| `/api/info-snippets/analyze` | POST | AI 分析原始内容，返回结构化字段 |
+| `/api/info-snippets/[id]/convert-to-material` | POST | 转化为素材库素材 |
+| `/api/info-snippets/triggered-reminders` | GET | 获取已触发的提醒列表 |
+
+### 分类标签（并列多标签）
+| 标签代码 | 中文名 | 说明 |
+|---------|-------|------|
+| `real_case` | 身边真实案例 | 真实发生的事件、案例 |
+| `insurance` | 保险 | 与保险直接相关的内容 |
+| `intelligence` | 智能化 | AI、科技相关内容 |
+| `medical` | 医疗 | 医疗、健康相关内容 |
+| `quick_note` | 简要速记 | 默认分类，无法归类的内容 |
+
+### 数据库表
+- **info_snippets**: 信息速记主表
+  - `categories`: JSONB 数组，存储并列多标签（如 `["medical", "insurance"]`）
+  - `raw_content`: 原始内容（完整保存，不截断）
+  - `title`: AI 提取的标题
+  - `summary`: 摘要（15-30字）
+  - `keywords`: 关键词
+  - `compliance_level`: 合规等级（A/B/C，仅保险类）
+  - `compliance_warnings`: 合规三维校验结果
+
+### 迁移 API
+- `/api/db/create-info-snippets`: 创建表
+- `/api/db/migrate-info-snippets-v2`: V2 迁移（新增字段）
+- `/api/db/migrate-info-snippets-v3`: V3 迁移（并列多标签重构）
+
+### 素材可提炼性原则
+即使原始内容未直接提及某领域，若内容可用于该领域创作，必须添加对应分类标签。例如：
+- 名人去世事件 → 可用于保险科普 → 必须添加 `insurance` 标签
+- 疾病新闻 → 可用于健康险推广 → 必须添加 `insurance` 标签
+
+66. **信息速记并列多标签重构**: 支持跨领域内容的多维度标注
+   - **设计原则**: 分类标签之间无主次之分，采用数组存储（如 `["medical", "insurance"]`）
+   - **Schema 改造**: 
+     - 移除 `category`（主分类）和 `secondaryCategories`（副分类）
+     - 新增 `categories` (JSONB 数组) 字段
+     - 注释明确 `rawContent` 完整保存用户输入，不做截断
+   - **提示词重构**: 
+     - 移除优先级概念，改为并列多标签规则
+     - 新增"素材可提炼性原则"，明确名人去世、疾病新闻等必须添加 `insurance` 标签
+   - **服务层改造**: `SnippetEnrichmentResult` 接口调整为 `categories: string[]`
+   - **API 改造**:
+     - `/api/info-snippets/analyze`: 返回 `categories` 和 `categoryLabels` 数组
+     - `/api/info-snippets`: GET 支持分类筛选（使用 `@>` 操作符匹配 JSONB 数组）
+     - `/api/info-snippets`: POST 接收 `categories` 数组
+   - **前端改造** (`src/app/full-home/page.tsx`):
+     - `InfoSnippet` 接口更新为 `categories: string[]`
+     - AI 分析结果展示改为并列标签渲染
+     - 已有速记列表改为并列标签渲染
+   - **数据库迁移**:
+     - 新增 `/api/db/migrate-info-snippets-v3` 迁移 API
+     - 将现有 `category` + `secondaryCategories` 数据合并为 `categories` 数组
+     - 创建 GIN 索引支持数组包含查询
+   - **效果**: 一条速记可同时属于多个领域，更符合实际使用场景

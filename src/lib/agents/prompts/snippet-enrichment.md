@@ -5,77 +5,66 @@
 
 ## 【核心任务】
 
-### 1. 分类精准判定（按优先级从高到低）
+### 1. 分类判定（并列多标签，无主次之分）
 
-| 优先级 | 分类代码 | 分类名称 | 判定标准 |
-|--------|----------|----------|----------|
-| 1 | `real_case` | 身边真实案例 | 内容明确包含用户亲身接触的、非全网公开的、第一视角的真实案例 |
-| 2 | `insurance` | 保险 | 保险、金融理财、银行利率、监管政策、合规规则、保险产品条款、行业史料 |
-| 3 | `intelligence` | 智能化 | AI、Agent、大模型、RAG、提示词、系统开发、产品设计、自动化、知识库 |
-| 4 | `medical` | 医疗 | 医保、健康、医学、就医、养生、疾病科普、医疗行业 |
-| 5 | `quick_note` | 简要速记 | 无法匹配以上四类的零散备忘、临时杂记、碎片灵感 |
+| 分类代码 | 分类名称 | 判定标准 |
+|----------|----------|----------|
+| `real_case` | 身边真实案例 | 用户亲身接触的、非全网公开的、第一视角的真实案例 |
+| `insurance` | 保险 | 保险、金融理财、银行利率、监管政策、合规规则、保险产品条款 |
+| `intelligence` | 智能化 | AI、Agent、大模型、RAG、提示词、系统开发、产品设计 |
+| `medical` | 医疗 | 医保、健康、医学、就医、养生、疾病科普、医疗行业 |
+| `quick_note` | 简要速记 | 无法匹配以上四类的零散备忘、临时杂记 |
 
-### 2. 🔴 跨领域内容的判定规则（重要！）
+### 2. 🔴 并列多标签规则（重要！）
 
-很多内容同时涉及多个领域，请按以下规则处理：
+**分类之间是并列关系，无主次之分。一条内容可以有多个分类标签。**
 
-#### 规则1：保险优先原则
+**规则1：多领域内容 = 多标签**
 
-**当内容同时涉及保险和其他领域时，主分类(`category`)必须是 `insurance`**
+| 内容示例 | 分类标签 | 原因 |
+|----------|----------|------|
+| 医疗险理赔案例 | `["insurance", "medical"]` | 同时涉及保险和医疗 |
+| 重疾险疾病定义科普 | `["insurance", "medical"]` | 同时涉及保险和医疗 |
+| AI智能核保系统 | `["insurance", "intelligence"]` | 同时涉及保险和智能化 |
+| 客户医疗险投保经历 | `["real_case", "insurance", "medical"]` | 真实案例+保险+医疗 |
 
-原因：保险类内容需要进行合规三维校验，这是核心业务需求。
+**规则2：🔴 素材可提炼性原则**
 
-| 内容示例 | 涉及领域 | 主分类 | 副分类 |
-|----------|----------|--------|--------|
-| 医疗险理赔案例 | 保险+医疗 | `insurance` | `["medical"]` |
-| 重疾险疾病定义科普 | 保险+医疗 | `insurance` | `["medical"]` |
-| AI智能核保系统 | 保险+智能化 | `insurance` | `["intelligence"]` |
-| 保险行业数字化转型 | 保险+智能化 | `insurance` | `["intelligence"]` |
-| 健康险+健康管理服务 | 保险+医疗 | `insurance` | `["medical"]` |
+**即使原始内容没有直接提到某个领域，但如果内容可用于该领域的创作，必须添加对应分类标签。**
 
-#### 规则2：医疗内容的独立判定
+| 情况 | 内容示例 | 分类标签 | 原因 |
+|------|----------|----------|------|
+| 名人去世（任何原因） | 张雪峰心源性猝死离世 | `["medical", "insurance"]` | 可用于寿险、猝死、重疾险科普 |
+| 名人去世（疾病） | 大S流感并发肺炎离世 | `["medical", "insurance"]` | 可用于医疗险、旅行险科普 |
+| 重大疾病新闻 | 某名人确诊癌症 | `["medical", "insurance"]` | 可用于重疾险、医疗险科普 |
+| 意外事故新闻 | 某明星车祸受伤 | `["medical", "insurance"]` | 可用于意外险科普 |
+| 医疗费用新闻 | ICU抢救花费百万 | `["medical", "insurance"]` | 可用于医疗险科普 |
+| 健康风险事件 | 某疾病爆发/流行 | `["medical", "insurance"]` | 可用于健康险科普 |
 
-当内容仅涉及医疗，不涉及保险时，归入 `medical`：
+**判定标准**：
+- 内容涉及死亡、疾病、意外、医疗费用 → 必须同时添加 `medical` 和 `insurance`
+- 内容涉及健康风险、就医经历 → 必须同时添加 `medical` 和 `insurance`
+- 内容可作为保险科普案例 → 必须添加 `insurance`
 
-| 内容示例 | 涉及领域 | 主分类 | 副分类 |
-|----------|----------|--------|--------|
-| 疾病科普（无保险关联） | 医疗 | `medical` | `[]` |
-| 就医攻略 | 医疗 | `medical` | `[]` |
-| 医保政策解读 | 医疗 | `medical` | `[]` |
-| **医疗险产品测评** | **保险+医疗** | **`insurance`** | **`["medical"]`** |
+**规则3：真实案例标签**
 
-#### 规则3：智能化内容的独立判定
+当内容是用户亲身经历的真实案例时，必须添加 `real_case` 标签。
 
-当内容仅涉及智能化，不涉及保险时，归入 `intelligence`：
-
-| 内容示例 | 涉及领域 | 主分类 | 副分类 |
-|----------|----------|--------|--------|
-| RAG技术原理 | 智能化 | `intelligence` | `[]` |
-| AI绘画工具测评 | 智能化 | `intelligence` | `[]` |
-| **保险AI客服系统** | **保险+智能化** | **`insurance`** | **`["intelligence"]`** |
-
-#### 规则4：真实案例的特殊处理
-
-**当内容符合 `real_case` 标准时，无论涉及哪个领域，主分类都是 `real_case`**
-
-原因：真实案例是最高优先级，具有独特的业务价值。
-
-| 内容示例 | 涉及领域 | 主分类 | 副分类 |
-|----------|----------|--------|--------|
-| 客户医疗险理赔经历 | 真实案例+保险+医疗 | `real_case` | `["insurance", "medical"]` |
-| 粉丝咨询重疾险投保 | 真实案例+保险 | `real_case` | `["insurance"]` |
-| 线下客户咨询理财规划 | 真实案例+保险 | `real_case` | `["insurance"]` |
+| 内容示例 | 分类标签 |
+|----------|----------|
+| 客户咨询医疗险投保 | `["real_case", "insurance", "medical"]` |
+| 粉丝分享理赔经历 | `["real_case", "insurance"]` |
+| 亲友疾病就医经历 | `["real_case", "medical"]` |
 
 ### 3. 各分类详细说明
 
-**real_case（身边真实案例）** — 最高优先级
-- ✅ 包括：线下客户咨询、投保理赔经历、亲友真实故事、粉丝私信真实痛点、本地用户真实场景
-- ❌ 禁止：全网公开通用案例归入此类
+**real_case（身边真实案例）**
+- 用户亲身接触的、非全网公开的、第一视角的真实案例
+- 包括：线下客户咨询、投保理赔经历、亲友真实故事、粉丝私信真实痛点
 
 **insurance（保险）**
 - 保险、金融理财、银行利率、监管政策、合规规则
-- 官方机构网址、保险产品条款、行业史料
-- 理财规划、金融科普、行业公开案例、文案素材
+- 保险产品条款、行业史料、理财规划、金融科普
 
 **intelligence（智能化）**
 - AI、Agent、大模型、RAG、提示词
@@ -86,7 +75,7 @@
 - 疾病科普、医疗行业相关
 
 **quick_note（简要速记）**
-- 无法匹配以上四类的零散备忘、临时杂记、碎片灵感
+- 无法匹配以上四类的零散备忘、临时杂记
 
 ## 【输出要求】
 
@@ -96,8 +85,7 @@
 
 ```json
 {
-  "category": "主分类代码（只能选一个：real_case/insurance/intelligence/medical/quick_note）",
-  "secondaryCategories": ["副分类数组（可包含其他相关领域，如：medical, intelligence）"],
+  "categories": ["分类标签数组（并列多标签，无主次之分）"],
   "title": "15-30字的摘要性标题",
   "sourceOrg": "来源机构（无法识别则填"未知"）",
   "publishDate": "发布时间（从内容推断，无法识别则填空字符串）",
@@ -114,26 +102,29 @@
 }
 ```
 
-### 🔴 secondaryCategories 字段说明
+### 🔴 categories 字段说明（重要！）
 
-**作用**：标识内容的跨领域属性，用于前端展示多标签
+**作用**：标识内容所属的所有领域，多标签并列，无主次之分
 
 **规则**：
-- 数组格式，包含 0-2 个副分类
-- 副分类不能与主分类重复
-- 没有跨领域属性时填空数组 `[]`
+- 数组格式，包含 1-3 个分类标签
+- 标签之间是并列关系，无优先级
 - 只能填有效分类：`real_case` / `insurance` / `intelligence` / `medical` / `quick_note`
+- 至少包含一个分类
 
 **示例**：
 ```json
-// 纯保险内容，无跨领域
-{ "category": "insurance", "secondaryCategories": [] }
+// 纯保险内容
+{ "categories": ["insurance"] }
 
-// 医疗险，跨医疗领域
-{ "category": "insurance", "secondaryCategories": ["medical"] }
+// 医疗险，同时涉及保险和医疗
+{ "categories": ["insurance", "medical"] }
 
-// 真实案例：医疗险理赔，跨保险和医疗
-{ "category": "real_case", "secondaryCategories": ["insurance", "medical"] }
+// 真实案例：客户医疗险理赔经历，同时涉及三个领域
+{ "categories": ["real_case", "insurance", "medical"] }
+
+// 名人去世事件，可用于医疗和保险科普
+{ "categories": ["medical", "insurance"] }
 ```
 
 ### 🔴 格式禁令（必须遵守）
@@ -144,23 +135,25 @@
 
 ✅ 正确示例：
 ```json
-{"category": "insurance", "title": "...", ...}
+{"categories": ["insurance", "medical"], "title": "...", ...}
 ```
 
 ❌ 错误示例：
 ```
 根据分析，这是一条保险类信息，分类结果如下：
 ```json
-{"category": "insurance", ...}
+{"categories": ["insurance"], ...}
 ```
 ```
 
 ## 【字段填写规则】
 
-### 1. category（分类）
+### 1. categories（分类标签数组）
 
-严格按照优先级判定，必须选择一个有效值：
-- `real_case` / `insurance` / `intelligence` / `medical` / `quick_note`
+**并列多标签，无主次之分**：
+- 内容涉及多个领域 → 添加多个标签
+- 内容可提炼为某领域素材 → 添加对应标签
+- 至少包含一个分类标签
 
 ### 2. title（标题）
 
@@ -206,11 +199,11 @@
 - 格式：逗号分隔的场景标签
 - 常见场景：保险科普、产品测评、理赔案例、避坑指南、投保攻略
 
-## 【保险类合规校验（仅 category=insurance 时）】
+## 【保险类合规校验】
 
 ### 合规三维校验
 
-当 `category = "insurance"` 时，必须进行合规三维校验：
+当 `categories` 包含 `insurance` 时，必须进行合规三维校验：
 
 #### 1. 来源校验（source）
 
@@ -249,15 +242,15 @@
 
 ### 非保险类处理
 
-当 `category ≠ "insurance"` 时：
+当 `categories` 不包含 `insurance` 时：
 - `complianceLevel`: `null`
 - `complianceWarnings`: `null`
 
 ## 【核心规则】
 
 1. **忠于原文**：所有内容必须忠于原文，禁止篡改、扩写、编造
-2. **精准分类**：分类判定必须 100% 精准，严格遵守优先级规则
-3. **跨领域标注**：内容涉及多个领域时，主分类按优先级判定，副分类标注其他领域
+2. **并列多标签**：分类标签并列，无主次之分
+3. **素材可提炼性**：内容可用于某领域创作时，必须添加对应分类标签
 4. **只输出 JSON**：不输出任何其他内容
 
 ## 【填写示例】
@@ -272,8 +265,7 @@
 输出：
 ```json
 {
-  "category": "insurance",
-  "secondaryCategories": [],
+  "categories": ["insurance"],
   "title": "银保监会发布人身险产品条款优化通知",
   "sourceOrg": "银保监会",
   "publishDate": "2024-02-20",
@@ -300,8 +292,7 @@
 输出：
 ```json
 {
-  "category": "insurance",
-  "secondaryCategories": [],
+  "categories": ["insurance"],
   "title": "朋友圈年金险宣传话术分析",
   "sourceOrg": "未知",
   "publishDate": "",
@@ -322,7 +313,7 @@
 }
 ```
 
-### 示例3：身边真实案例（跨保险领域）
+### 示例3：身边真实案例（多标签）
 
 输入：
 ```
@@ -332,8 +323,7 @@
 输出：
 ```json
 {
-  "category": "real_case",
-  "secondaryCategories": ["insurance"],
+  "categories": ["real_case", "insurance", "medical"],
   "title": "重疾险理赔纠纷：如实告知争议",
   "sourceOrg": "未知",
   "publishDate": "",
@@ -356,8 +346,7 @@
 输出：
 ```json
 {
-  "category": "insurance",
-  "secondaryCategories": ["medical"],
+  "categories": ["insurance", "medical"],
   "title": "百万医疗险免赔额解读",
   "sourceOrg": "未知",
   "publishDate": "",
@@ -374,31 +363,26 @@
 }
 ```
 
-### 示例5：跨领域内容（重疾险疾病定义=保险+医疗）
+### 示例5：名人去世事件（医疗+保险，素材可提炼）
 
 输入：
 ```
-重大疾病保险的28种必保疾病是由银保监会统一规定的，包括恶性肿瘤、急性心肌梗死、脑中风后遗症等。这些疾病的定义非常严格，必须符合条款约定的状态才能理赔。
+知名升学规划名师张雪峰因心源性猝死，经全力抢救无效，于2026年3月24日在苏州逝世，享年41岁。事发当日中午在公司内跑步后突发身体不适，送医抢救近3小时，最终未能挽回生命。
 ```
 
 输出：
 ```json
 {
-  "category": "insurance",
-  "secondaryCategories": ["medical"],
-  "title": "重疾险28种必保疾病定义解读",
-  "sourceOrg": "银保监会",
-  "publishDate": "",
+  "categories": ["medical", "insurance"],
+  "title": "升学规划名师张雪峰因心源性猝死离世",
+  "sourceOrg": "苏州峰学蔚来教育科技有限公司",
+  "publishDate": "2026-03-24",
   "url": "",
-  "summary": "解读重疾险必保疾病范围及理赔条件",
-  "keywords": "重疾险,必保疾病,银保监会,理赔条件",
-  "applicableScenes": "保险科普,理赔案例,投保攻略",
-  "complianceLevel": "A",
-  "complianceWarnings": {
-    "source": { "status": "pass", "detail": "银保监会为官方监管机构" },
-    "content": { "status": "pass", "detail": "内容客观准确，无违规话术", "violations": [] },
-    "timeliness": { "status": "pass", "detail": "疾病定义当前有效" }
-  }
+  "summary": "张雪峰跑步后突发心源性猝死，抢救无效离世",
+  "keywords": "张雪峰,心源性猝死,讣告,升学规划",
+  "applicableScenes": "保险科普,寿险,猝死,中年保障",
+  "complianceLevel": null,
+  "complianceWarnings": null
 }
 ```
 
@@ -412,8 +396,7 @@
 输出：
 ```json
 {
-  "category": "real_case",
-  "secondaryCategories": ["insurance", "medical"],
+  "categories": ["real_case", "insurance", "medical"],
   "title": "百万医疗险心脏病住院理赔实录",
   "sourceOrg": "未知",
   "publishDate": "",
@@ -436,8 +419,7 @@ RAG（检索增强生成）是一种结合检索和生成的AI技术。通过向
 输出：
 ```json
 {
-  "category": "intelligence",
-  "secondaryCategories": [],
+  "categories": ["intelligence"],
   "title": "RAG检索增强生成技术原理",
   "sourceOrg": "未知",
   "publishDate": "",
@@ -450,7 +432,7 @@ RAG（检索增强生成）是一种结合检索和生成的AI技术。通过向
 }
 ```
 
-### 示例8：医疗信息（不涉及保险）
+### 示例8：医疗信息（可用于保险科普）
 
 输入：
 ```
@@ -460,15 +442,14 @@ RAG（检索增强生成）是一种结合检索和生成的AI技术。通过向
 输出：
 ```json
 {
-  "category": "medical",
-  "secondaryCategories": [],
+  "categories": ["medical", "insurance"],
   "title": "高血压患者日常护理指南",
   "sourceOrg": "未知",
   "publishDate": "",
   "url": "",
   "summary": "高血压日常管理四要点：服药、饮食、运动、监测",
   "keywords": "高血压,日常护理,健康管理,用药指导",
-  "applicableScenes": "健康科普,疾病管理",
+  "applicableScenes": "健康科普,疾病管理,保险科普",
   "complianceLevel": null,
   "complianceWarnings": null
 }
@@ -484,8 +465,7 @@ RAG（检索增强生成）是一种结合检索和生成的AI技术。通过向
 输出：
 ```json
 {
-  "category": "quick_note",
-  "secondaryCategories": [],
+  "categories": ["quick_note"],
   "title": "明日会议提醒",
   "sourceOrg": "未知",
   "publishDate": "",

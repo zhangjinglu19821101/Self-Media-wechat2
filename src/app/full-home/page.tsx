@@ -182,8 +182,7 @@ function clearFormSnapshot() {
 interface InfoSnippet {
   id: string;
   rawContent: string | null;
-  category: string | null;
-  secondaryCategories: string[] | null;
+  categories: string[] | null; // 并列多标签（无主次之分）
   title: string | null;
   sourceOrg: string | null;
   publishDate: string | null;
@@ -436,10 +435,8 @@ export default function HomePage() {
   const [snippetAnalyzing, setSnippetAnalyzing] = useState(false);
   const [snippetAnalyzeResult, setSnippetAnalyzeResult] = useState<{
     rawContent: string;
-    category: string;
-    categoryLabel: string;
-    secondaryCategories: string[];
-    secondaryCategoryLabels: string[];
+    categories: string[];
+    categoryLabels: string[];
     title: string;
     sourceOrg: string;
     publishDate: string;
@@ -3796,34 +3793,25 @@ export default function HomePage() {
               ) : (
                 // 步骤2：显示分析结果 + 确认保存
                 <div className="space-y-3">
-                  {/* 分类标签 */}
+                  {/* 分类标签（并列多标签，无主次之分） */}
                   <div className="flex items-center gap-2 flex-wrap">
-                    {/* 主分类标签 */}
-                    <Badge className={`${
-                      snippetAnalyzeResult.category === 'real_case' ? 'bg-rose-100 text-rose-700' :
-                      snippetAnalyzeResult.category === 'insurance' ? 'bg-blue-100 text-blue-700' :
-                      snippetAnalyzeResult.category === 'intelligence' ? 'bg-violet-100 text-violet-700' :
-                      snippetAnalyzeResult.category === 'medical' ? 'bg-emerald-100 text-emerald-700' :
-                      'bg-slate-100 text-slate-600'
-                    } px-3 py-1`}>
-                      {snippetAnalyzeResult.categoryLabel}
-                    </Badge>
-                    
-                    {/* 副分类标签 */}
-                    {snippetAnalyzeResult.secondaryCategoryLabels?.map((label, idx) => (
-                      <Badge 
-                        key={idx}
-                        className={`${
-                          snippetAnalyzeResult.secondaryCategories?.[idx] === 'real_case' ? 'bg-rose-50 text-rose-600' :
-                          snippetAnalyzeResult.secondaryCategories?.[idx] === 'insurance' ? 'bg-blue-50 text-blue-600' :
-                          snippetAnalyzeResult.secondaryCategories?.[idx] === 'intelligence' ? 'bg-violet-50 text-violet-600' :
-                          snippetAnalyzeResult.secondaryCategories?.[idx] === 'medical' ? 'bg-emerald-50 text-emerald-600' :
-                          'bg-slate-50 text-slate-500'
-                        } text-xs`}
-                      >
-                        +{label}
-                      </Badge>
-                    ))}
+                    {snippetAnalyzeResult.categoryLabels?.map((label, idx) => {
+                      const category = snippetAnalyzeResult.categories?.[idx] || 'quick_note';
+                      return (
+                        <Badge 
+                          key={idx}
+                          className={`${
+                            category === 'real_case' ? 'bg-rose-100 text-rose-700' :
+                            category === 'insurance' ? 'bg-blue-100 text-blue-700' :
+                            category === 'intelligence' ? 'bg-violet-100 text-violet-700' :
+                            category === 'medical' ? 'bg-emerald-100 text-emerald-700' :
+                            'bg-slate-100 text-slate-600'
+                          } px-3 py-1`}
+                        >
+                          {label}
+                        </Badge>
+                      );
+                    })}
                     
                     {snippetAnalyzeResult.materialId && (
                       <span className="text-xs text-slate-400">ID: {snippetAnalyzeResult.materialId}</span>
@@ -3914,7 +3902,7 @@ export default function HomePage() {
                   </div>
 
                   {/* 合规预警（保险类） */}
-                  {snippetAnalyzeResult.category === 'insurance' && snippetAnalyzeResult.complianceWarnings && (
+                  {snippetAnalyzeResult.categories?.includes('insurance') && snippetAnalyzeResult.complianceWarnings && (
                     <div className="bg-slate-50 border border-slate-200 rounded-lg p-3">
                       <Label className="text-xs text-slate-600 mb-2 block font-medium">合规三维校验</Label>
                       <div className="space-y-2 text-xs">
@@ -4038,9 +4026,10 @@ export default function HomePage() {
                       insurance: '保险',
                       intelligence: '智能化',
                       medical: '医疗',
-                      quick_note: '简要内容速记',
+                      quick_note: '简要速记',
                     };
-                    const catStyle = categoryColors[snippet.category || 'quick_note'] || categoryColors.quick_note;
+                    // 获取分类数组（并列多标签）
+                    const snippetCategories = (snippet.categories as string[] || ['quick_note']);
                     
                     return (
                       <div
@@ -4056,21 +4045,16 @@ export default function HomePage() {
                         <div className="flex items-start justify-between gap-3">
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-2 mb-1 flex-wrap">
-                              {/* 主分类标签 */}
-                              <Badge className={`${catStyle.bg} ${catStyle.text} ${catStyle.border} border px-2 py-0.5`}>
-                                {categoryLabels[snippet.category || 'quick_note'] || '简要内容速记'}
-                              </Badge>
-                              
-                              {/* 副分类标签（跨领域多标签） */}
-                              {(snippet.secondaryCategories as string[] || []).map((secCat) => {
-                                const secStyle = categoryColors[secCat] || categoryColors.quick_note;
-                                const secLabel = categoryLabels[secCat] || secCat;
+                              {/* 分类标签（并列多标签，无主次之分） */}
+                              {snippetCategories.map((cat) => {
+                                const catStyle = categoryColors[cat] || categoryColors.quick_note;
+                                const catLabel = categoryLabels[cat] || cat;
                                 return (
                                   <Badge 
-                                    key={secCat}
-                                    className={`${secStyle.bg} ${secStyle.text} ${secStyle.border} border px-1.5 py-0.5 text-xs opacity-80`}
+                                    key={cat}
+                                    className={`${catStyle.bg} ${catStyle.text} ${catStyle.border} border px-2 py-0.5`}
                                   >
-                                    +{secLabel}
+                                    {catLabel}
                                   </Badge>
                                 );
                               })}
