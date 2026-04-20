@@ -493,6 +493,11 @@ export default function HomePage() {
   });
   const [creatingReminder, setCreatingReminder] = useState(false);
   
+  // 🔥 智能解析模式
+  const [reminderInputMode, setReminderInputMode] = useState<'smart' | 'manual'>('smart');
+  const [smartInputText, setSmartInputText] = useState('');
+  const [parsingReminder, setParsingReminder] = useState(false);
+  
   const [snippetCategoryFilter, setSnippetCategoryFilter] = useState<string>('all');
   const [snippetSearchQuery, setSnippetSearchQuery] = useState('');
   const [snippetTypeFilter, setSnippetTypeFilter] = useState('all');
@@ -1129,6 +1134,68 @@ export default function HomePage() {
       }
     } catch (error) {
       toast.error('删除失败');
+    }
+  };
+
+  // 🔥 提醒中心：智能解析提醒输入
+  const handleSmartParseReminder = async () => {
+    if (!smartInputText.trim()) {
+      toast.error('请输入提醒内容');
+      return;
+    }
+
+    setParsingReminder(true);
+    try {
+      const result = await apiPost('/api/reminders/parse', {
+        input: smartInputText.trim(),
+      }) as any;
+
+      if (result.success && result.data) {
+        const parsed = result.data;
+        
+        // 根据解析结果填充表单
+        const direction = parsed.executorType === '我自己' ? 'inbound' : 'outbound';
+        const requesterName = direction === 'inbound' ? parsed.requester : (parsed.requester || '我');
+        const assigneeName = direction === 'inbound' ? '我' : parsed.executor;
+        
+        // 转换时间格式
+        let remindAt = '';
+        if (parsed.deadline) {
+          // 解析 ISO 时间并转换为 datetime-local 格式
+          const date = new Date(parsed.deadline);
+          remindAt = date.toISOString().slice(0, 16);
+        }
+        
+        setNewReminderForm({
+          requesterName,
+          assigneeName,
+          content: parsed.taskContent,
+          remindAt,
+          direction,
+        });
+        
+        // 切换到手动模式让用户确认/修改
+        setReminderInputMode('manual');
+        
+        // 显示解析提示
+        if (parsed.confidence === 'low') {
+          toast.warning('解析置信度较低，请确认信息是否正确');
+        } else {
+          toast.success('解析成功，请确认或修改信息');
+        }
+        
+        // 如果有备注，显示出来
+        if (parsed.extractionNotes) {
+          console.log('[智能解析备注]', parsed.extractionNotes);
+        }
+      } else {
+        toast.error(result.error || '解析失败');
+      }
+    } catch (error) {
+      console.error('[智能解析错误]', error);
+      toast.error('解析失败，请尝试手动填写');
+    } finally {
+      setParsingReminder(false);
     }
   };
 
@@ -4124,106 +4191,177 @@ export default function HomePage() {
           </DialogHeader>
           
           <div className="space-y-4 py-4">
-            {/* 方向选择 */}
-            <div className="space-y-2">
-              <Label className="text-sm font-medium">提醒类型</Label>
-              <div className="flex gap-2">
-                <button
-                  type="button"
-                  onClick={() => setNewReminderForm(prev => ({ ...prev, direction: 'outbound' }))}
-                  className={`flex-1 py-2 px-3 rounded-lg text-sm font-medium transition-all flex items-center justify-center gap-1.5 ${
-                    newReminderForm.direction === 'outbound'
-                      ? 'bg-blue-500 text-white shadow-sm'
-                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                  }`}
+            {/* 模式切换 */}
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => setReminderInputMode('smart')}
+                className={`flex-1 py-2 px-3 rounded-lg text-sm font-medium transition-all flex items-center justify-center gap-1.5 ${
+                  reminderInputMode === 'smart'
+                    ? 'bg-gradient-to-r from-purple-500 to-pink-500 text-white shadow-sm'
+                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                }`}
+              >
+                <Sparkles className="h-4 w-4" />
+                智能解析
+              </button>
+              <button
+                type="button"
+                onClick={() => setReminderInputMode('manual')}
+                className={`flex-1 py-2 px-3 rounded-lg text-sm font-medium transition-all flex items-center justify-center gap-1.5 ${
+                  reminderInputMode === 'manual'
+                    ? 'bg-slate-700 text-white shadow-sm'
+                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                }`}
+              >
+                <PenTool className="h-4 w-4" />
+                手动填写
+              </button>
+            </div>
+
+            {/* 智能解析模式 */}
+            {reminderInputMode === 'smart' ? (
+              <div className="space-y-3">
+                <div className="bg-gradient-to-r from-purple-50 to-pink-50 rounded-lg p-4 border border-purple-100">
+                  <div className="flex items-center gap-2 mb-2">
+                    <Sparkles className="h-4 w-4 text-purple-500" />
+                    <span className="text-sm font-medium text-purple-700">自然语言输入</span>
+                  </div>
+                  <p className="text-xs text-purple-600 mb-3">
+                    例如：张总让我明天下午3点把方案发给他
+                  </p>
+                  <Textarea
+                    placeholder="输入提醒内容，AI 会自动解析..."
+                    value={smartInputText}
+                    onChange={(e) => setSmartInputText(e.target.value)}
+                    rows={3}
+                    className="resize-none bg-white border-purple-200 focus:border-purple-400"
+                  />
+                </div>
+                <Button
+                  onClick={handleSmartParseReminder}
+                  disabled={parsingReminder || !smartInputText.trim()}
+                  className="w-full bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600"
                 >
-                  <ArrowRight className="h-4 w-4" />
-                  我要求别人
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setNewReminderForm(prev => ({ ...prev, direction: 'inbound' }))}
-                  className={`flex-1 py-2 px-3 rounded-lg text-sm font-medium transition-all flex items-center justify-center gap-1.5 ${
-                    newReminderForm.direction === 'inbound'
-                      ? 'bg-orange-500 text-white shadow-sm'
-                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                  }`}
-                >
-                  <ArrowLeft className="h-4 w-4" />
-                  别人要求我
-                </button>
+                  {parsingReminder ? (
+                    <><Loader2 className="h-4 w-4 mr-2 animate-spin" />解析中...</>
+                  ) : (
+                    <><Sparkles className="h-4 w-4 mr-2" />AI 解析</>
+                  )}
+                </Button>
               </div>
-            </div>
+            ) : (
+              /* 手动填写模式 */
+              <>
+                {/* 方向选择 */}
+                <div className="space-y-2">
+                  <Label className="text-sm font-medium">提醒类型</Label>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setNewReminderForm(prev => ({ ...prev, direction: 'outbound' }))}
+                      className={`flex-1 py-2 px-3 rounded-lg text-sm font-medium transition-all flex items-center justify-center gap-1.5 ${
+                        newReminderForm.direction === 'outbound'
+                          ? 'bg-blue-500 text-white shadow-sm'
+                          : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                      }`}
+                    >
+                      <ArrowRight className="h-4 w-4" />
+                      我要求别人
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setNewReminderForm(prev => ({ ...prev, direction: 'inbound' }))}
+                      className={`flex-1 py-2 px-3 rounded-lg text-sm font-medium transition-all flex items-center justify-center gap-1.5 ${
+                        newReminderForm.direction === 'inbound'
+                          ? 'bg-orange-500 text-white shadow-sm'
+                          : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                      }`}
+                    >
+                      <ArrowLeft className="h-4 w-4" />
+                      别人要求我
+                    </button>
+                  </div>
+                </div>
 
-            {/* 要求者 */}
-            <div className="space-y-2">
-              <Label className="text-sm font-medium">
-                {newReminderForm.direction === 'outbound' ? '我（要求者）' : '要求者'}
-              </Label>
-              <Input
-                placeholder={newReminderForm.direction === 'outbound' ? '输入你的名字' : '输入要求者名字'}
-                value={newReminderForm.requesterName}
-                onChange={(e) => setNewReminderForm(prev => ({ ...prev, requesterName: e.target.value }))}
-                className="h-9"
-              />
-            </div>
+                {/* 要求者 */}
+                <div className="space-y-2">
+                  <Label className="text-sm font-medium">
+                    {newReminderForm.direction === 'outbound' ? '我（要求者）' : '要求者'}
+                  </Label>
+                  <Input
+                    placeholder={newReminderForm.direction === 'outbound' ? '输入你的名字' : '输入要求者名字'}
+                    value={newReminderForm.requesterName}
+                    onChange={(e) => setNewReminderForm(prev => ({ ...prev, requesterName: e.target.value }))}
+                    className="h-9"
+                  />
+                </div>
 
-            {/* 被要求者 */}
-            <div className="space-y-2">
-              <Label className="text-sm font-medium">
-                {newReminderForm.direction === 'outbound' ? '被要求者' : '我（被要求者）'}
-              </Label>
-              <Input
-                placeholder={newReminderForm.direction === 'outbound' ? '输入被要求者名字' : '输入你的名字'}
-                value={newReminderForm.assigneeName}
-                onChange={(e) => setNewReminderForm(prev => ({ ...prev, assigneeName: e.target.value }))}
-                className="h-9"
-              />
-            </div>
+                {/* 被要求者 */}
+                <div className="space-y-2">
+                  <Label className="text-sm font-medium">
+                    {newReminderForm.direction === 'outbound' ? '被要求者' : '我（被要求者）'}
+                  </Label>
+                  <Input
+                    placeholder={newReminderForm.direction === 'outbound' ? '输入被要求者名字' : '输入你的名字'}
+                    value={newReminderForm.assigneeName}
+                    onChange={(e) => setNewReminderForm(prev => ({ ...prev, assigneeName: e.target.value }))}
+                    className="h-9"
+                  />
+                </div>
 
-            {/* 提醒内容 */}
-            <div className="space-y-2">
-              <Label className="text-sm font-medium">提醒内容</Label>
-              <Textarea
-                placeholder="要做什么事..."
-                value={newReminderForm.content}
-                onChange={(e) => setNewReminderForm(prev => ({ ...prev, content: e.target.value }))}
-                rows={3}
-                className="resize-none"
-              />
-            </div>
+                {/* 提醒内容 */}
+                <div className="space-y-2">
+                  <Label className="text-sm font-medium">提醒内容</Label>
+                  <Textarea
+                    placeholder="要做什么事..."
+                    value={newReminderForm.content}
+                    onChange={(e) => setNewReminderForm(prev => ({ ...prev, content: e.target.value }))}
+                    rows={3}
+                    className="resize-none"
+                  />
+                </div>
 
-            {/* 提醒时间 */}
-            <div className="space-y-2">
-              <Label className="text-sm font-medium">提醒时间</Label>
-              <Input
-                type="datetime-local"
-                value={newReminderForm.remindAt}
-                onChange={(e) => setNewReminderForm(prev => ({ ...prev, remindAt: e.target.value }))}
-                className="h-9"
-              />
-            </div>
+                {/* 提醒时间 */}
+                <div className="space-y-2">
+                  <Label className="text-sm font-medium">提醒时间</Label>
+                  <Input
+                    type="datetime-local"
+                    value={newReminderForm.remindAt}
+                    onChange={(e) => setNewReminderForm(prev => ({ ...prev, remindAt: e.target.value }))}
+                    className="h-9"
+                  />
+                </div>
+              </>
+            )}
           </div>
 
           <DialogFooter className="gap-2">
             <Button
               variant="outline"
-              onClick={() => setShowCreateReminderDialog(false)}
+              onClick={() => {
+                setShowCreateReminderDialog(false);
+                // 重置状态
+                setSmartInputText('');
+                setReminderInputMode('smart');
+              }}
               disabled={creatingReminder}
             >
               取消
             </Button>
-            <Button
-              onClick={handleCreateReminder}
-              disabled={creatingReminder}
-              className="bg-gradient-to-r from-orange-500 to-amber-600 hover:from-orange-600 hover:to-amber-700"
-            >
-              {creatingReminder ? (
-                <><Loader2 className="h-4 w-4 mr-2 animate-spin" />创建中...</>
-              ) : (
-                '创建提醒'
-              )}
-            </Button>
+            {reminderInputMode === 'manual' && (
+              <Button
+                onClick={handleCreateReminder}
+                disabled={creatingReminder}
+                className="bg-gradient-to-r from-orange-500 to-amber-600 hover:from-orange-600 hover:to-amber-700"
+              >
+                {creatingReminder ? (
+                  <><Loader2 className="h-4 w-4 mr-2 animate-spin" />创建中...</>
+                ) : (
+                  '创建提醒'
+                )}
+              </Button>
+            )}
           </DialogFooter>
         </DialogContent>
       </Dialog>
