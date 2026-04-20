@@ -22,7 +22,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { Loader2, Plus, Trash2, Send, Sparkles, ListTodo, CheckCircle2, XCircle, GripVertical, MoveUp, MoveDown, Maximize2, Minimize2, AlertTriangle, GitCompare, RefreshCw, FileText, Save, Eye, Home, BookmarkPlus, ExternalLink, BookOpen, Clock, Building2, X, HelpCircle, Settings, Rocket, Layers, ChevronDown, ChevronUp, Cpu, Brain, Bell, Workflow, Palette, PenTool, ArrowRight, Briefcase, Shield, Users, Download, Copy, ImageIcon, Check } from 'lucide-react';
+import { Loader2, Plus, Trash2, Send, Sparkles, ListTodo, CheckCircle2, XCircle, GripVertical, MoveUp, MoveDown, Maximize2, Minimize2, AlertTriangle, GitCompare, RefreshCw, FileText, Save, Eye, Home, BookmarkPlus, ExternalLink, BookOpen, Clock, Building2, X, HelpCircle, Settings, Rocket, Layers, ChevronDown, ChevronUp, Cpu, Brain, Bell, Workflow, Palette, PenTool, ArrowRight, ArrowLeft, Briefcase, Shield, Users, Download, Copy, ImageIcon, Check, AlertCircle, Calendar } from 'lucide-react';
 import { toast } from 'sonner';
 import { AgentTaskListNormal } from '@/components/agent-task-list-normal';
 import { XiaohongshuPreview } from '@/components/xiaohongshu-preview';
@@ -33,6 +33,24 @@ import { getFlowTemplate } from '@/lib/agents/flow-templates';
 import { HorizontalFlowDiagram } from '@/components/creation-guide/horizontal-flow-diagram';
 import { NodeDetailPanel } from '@/components/creation-guide/node-detail-drawer';
 import type { FlowNode } from '@/components/creation-guide/types';
+
+// 🔥 提醒中心类型定义
+interface Reminder {
+  id: string;
+  content: string;
+  requesterName: string;
+  assigneeName: string;
+  direction: 'outbound' | 'inbound';
+  remindAt: string;
+  status: 'pending' | 'completed' | 'cancelled';
+  createdAt: string;
+}
+
+interface ReminderStats {
+  outbound: { pending: number; overdue: number; completed: number };
+  inbound: { pending: number; overdue: number; completed: number };
+  total: { pending: number; overdue: number; completed: number };
+}
 
 interface SubTask {
   id: string;
@@ -455,6 +473,14 @@ export default function HomePage() {
     snippetType: 'memory' as 'memory' | 'reminder',
     remindAt: '',
   });
+  
+  // 🔥 提醒中心相关状态
+  const [showReminderDrawer, setShowReminderDrawer] = useState(false);
+  const [reminderList, setReminderList] = useState<Reminder[]>([]);
+  const [reminderStats, setReminderStats] = useState<ReminderStats | null>(null);
+  const [reminderDirection, setReminderDirection] = useState<'outbound' | 'inbound'>('outbound');
+  const [reminderSearchQuery, setReminderSearchQuery] = useState('');
+  const [selectedPersonFilter, setSelectedPersonFilter] = useState<string | null>(null);
   const [snippetCategoryFilter, setSnippetCategoryFilter] = useState<string>('all');
   const [snippetSearchQuery, setSnippetSearchQuery] = useState('');
   const [snippetTypeFilter, setSnippetTypeFilter] = useState('all');
@@ -1040,6 +1066,121 @@ export default function HomePage() {
       loadSnippetList();
     }
   }, [showSnippetDrawer, loadSnippetList]);
+
+  // 🔥 提醒中心：加载提醒数据和统计
+  const loadReminderData = useCallback(async () => {
+    try {
+      const [listResult, statsResult] = await Promise.all([
+        apiGet('/api/reminders?mode=list&status=pending'),
+        apiGet('/api/reminders?mode=stats'),
+      ]) as [any, any];
+      
+      if (listResult.success) {
+        setReminderList(listResult.data || []);
+      }
+      if (statsResult.success) {
+        setReminderStats(statsResult.data);
+      }
+    } catch (error) {
+      console.error('加载提醒数据失败:', error);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [reminderDirection, reminderSearchQuery, selectedPersonFilter]);
+
+  // 🔥 提醒中心：打开抽屉时加载
+  useEffect(() => {
+    if (showReminderDrawer) {
+      loadReminderData();
+    }
+  }, [showReminderDrawer, loadReminderData]);
+
+  // 🔥 提醒中心：完成提醒
+  const handleCompleteReminder = async (id: string) => {
+    try {
+      const result = await apiPut(`/api/reminders/${id}`, { status: 'completed' }) as any;
+      if (result.success) {
+        toast.success('提醒已完成');
+        loadReminderData();
+      }
+    } catch (error) {
+      toast.error('操作失败');
+    }
+  };
+
+  // 🔥 提醒中心：删除提醒
+  const handleDeleteReminder = async (id: string) => {
+    try {
+      const result = await apiDelete(`/api/reminders/${id}`) as any;
+      if (result.success) {
+        toast.success('提醒已删除');
+        loadReminderData();
+      }
+    } catch (error) {
+      toast.error('删除失败');
+    }
+  };
+
+  // 🔥 提醒中心：格式化时间
+  const formatReminderTime = (dateStr: string) => {
+    const date = new Date(dateStr);
+    const now = new Date();
+    const diffMs = date.getTime() - now.getTime();
+    const diffDays = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
+    
+    if (diffDays < 0) {
+      return `逾期 ${Math.abs(diffDays)} 天`;
+    } else if (diffDays === 0) {
+      return '今天';
+    } else if (diffDays === 1) {
+      return '明天';
+    } else if (diffDays <= 7) {
+      return `${diffDays} 天后`;
+    } else {
+      return date.toLocaleDateString('zh-CN', { month: 'short', day: 'numeric' });
+    }
+  };
+
+  // 🔥 提醒中心：渲染人名头像
+  const renderPersonAvatar = (name: string) => {
+    const colors = ['bg-blue-500', 'bg-green-500', 'bg-purple-500', 'bg-orange-500', 'bg-pink-500'];
+    const colorIndex = name.charCodeAt(0) % colors.length;
+    return (
+      <div className={`w-6 h-6 rounded-full ${colors[colorIndex]} flex items-center justify-center text-white text-xs font-medium`}>
+        {name.charAt(0)}
+      </div>
+    );
+  };
+
+  // 🔥 提醒中心：分组提醒列表
+  const reminderGroups = useMemo(() => {
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const tomorrow = new Date(today.getTime() + 24 * 60 * 60 * 1000);
+    const nextWeek = new Date(today.getTime() + 7 * 24 * 60 * 60 * 1000);
+    
+    const filtered = reminderList
+      .filter(r => r.direction === reminderDirection)
+      .filter(r => !reminderSearchQuery || r.content.toLowerCase().includes(reminderSearchQuery.toLowerCase()))
+      .filter(r => !selectedPersonFilter || r.requesterName === selectedPersonFilter || r.assigneeName === selectedPersonFilter);
+    
+    const overdue = filtered.filter(r => new Date(r.remindAt) < today && r.status === 'pending');
+    const todayList = filtered.filter(r => {
+      const d = new Date(r.remindAt);
+      return d >= today && d < tomorrow && r.status === 'pending';
+    });
+    const upcoming = filtered.filter(r => {
+      const d = new Date(r.remindAt);
+      return d >= tomorrow && d < nextWeek && r.status === 'pending';
+    });
+    const later = filtered.filter(r => new Date(r.remindAt) >= nextWeek && r.status === 'pending');
+    
+    return [
+      { key: 'overdue', label: '已逾期', reminders: overdue, isOverdue: true },
+      { key: 'today', label: '今天', reminders: todayList },
+      { key: 'upcoming', label: '近7天', reminders: upcoming },
+      { key: 'later', label: '稍后', reminders: later },
+    ].filter(g => g.reminders.length > 0);
+  }, [reminderList, reminderDirection, reminderSearchQuery, selectedPersonFilter]);
 
   // 🔥 信息速记：AI 分析原始内容
   const handleAnalyzeSnippet = async () => {
@@ -3671,6 +3812,29 @@ export default function HomePage() {
         </div>
       )}
 
+      {/* 🔥 提醒中心浮动按钮 */}
+      <TooltipProvider>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              onClick={() => setShowReminderDrawer(true)}
+              className="fixed bottom-6 right-24 z-50 h-14 w-14 rounded-full bg-gradient-to-br from-orange-500 to-amber-600 text-white shadow-lg shadow-orange-200 hover:shadow-xl hover:shadow-orange-300 hover:scale-110 transition-all duration-300 flex items-center justify-center group"
+            >
+              <Bell className="h-6 w-6 group-hover:animate-bounce" />
+              {/* 逾期提醒红点 */}
+              {reminderStats && reminderStats.total.overdue > 0 && (
+                <span className="absolute -top-1 -right-1 h-5 w-5 rounded-full bg-red-500 text-white text-xs flex items-center justify-center font-bold animate-pulse">
+                  {reminderStats.total.overdue}
+                </span>
+              )}
+            </button>
+          </TooltipTrigger>
+          <TooltipContent side="left">
+            <p className="font-medium">提醒中心 · 谁要求谁做什么</p>
+          </TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
+
       {/* 🔥 信息速记浮动按钮 */}
       <TooltipProvider>
         <Tooltip>
@@ -3689,6 +3853,191 @@ export default function HomePage() {
           </TooltipContent>
         </Tooltip>
       </TooltipProvider>
+
+      {/* 🔥 提醒中心抽屉 */}
+      {showReminderDrawer && (
+        <div className="fixed inset-0 z-[60]">
+          {/* 遮罩层 */}
+          <div 
+            className="absolute inset-0 bg-black/40 backdrop-blur-sm"
+            onClick={() => setShowReminderDrawer(false)}
+          />
+          
+          {/* 抽屉主体 */}
+          <div className="absolute right-0 top-0 bottom-0 w-full max-w-2xl bg-white shadow-2xl flex flex-col animate-in slide-in-from-right duration-300">
+            
+            {/* 抽屉头部 */}
+            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 bg-gradient-to-r from-orange-50 to-amber-50">
+              <div className="flex items-center gap-3">
+                <div className="h-9 w-9 rounded-lg bg-gradient-to-br from-orange-500 to-amber-600 flex items-center justify-center">
+                  <Bell className="h-5 w-5 text-white" />
+                </div>
+                <div>
+                  <h2 className="text-lg font-semibold text-slate-800">提醒中心</h2>
+                  <p className="text-xs text-slate-500">谁要求谁做什么 · 双视角时间管理</p>
+                </div>
+              </div>
+              <button 
+                onClick={() => setShowReminderDrawer(false)}
+                className="h-8 w-8 rounded-lg hover:bg-slate-100 flex items-center justify-center transition-colors"
+              >
+                <X className="h-5 w-5 text-slate-400" />
+              </button>
+            </div>
+
+            {/* 统计卡片 */}
+            {reminderStats && (
+              <div className="grid grid-cols-2 gap-3 p-4">
+                {/* 出向统计：我要求别人 */}
+                <div className="border border-blue-100 rounded-lg p-3 bg-blue-50/50">
+                  <div className="text-sm font-medium flex items-center gap-2 text-blue-700 mb-2">
+                    <ArrowRight className="w-4 h-4" />
+                    我要求别人
+                  </div>
+                  <div className="grid grid-cols-3 gap-2 text-center">
+                    <div>
+                      <div className="text-lg font-bold">{reminderStats.outbound.pending}</div>
+                      <div className="text-xs text-slate-500">待完成</div>
+                    </div>
+                    <div>
+                      <div className="text-lg font-bold text-red-500">{reminderStats.outbound.overdue}</div>
+                      <div className="text-xs text-slate-500">逾期</div>
+                    </div>
+                    <div>
+                      <div className="text-lg font-bold text-green-500">{reminderStats.outbound.completed}</div>
+                      <div className="text-xs text-slate-500">已完成</div>
+                    </div>
+                  </div>
+                </div>
+                {/* 入向统计：别人要求我 */}
+                <div className="border border-orange-100 rounded-lg p-3 bg-orange-50/50">
+                  <div className="text-sm font-medium flex items-center gap-2 text-orange-700 mb-2">
+                    <ArrowLeft className="w-4 h-4" />
+                    别人要求我
+                  </div>
+                  <div className="grid grid-cols-3 gap-2 text-center">
+                    <div>
+                      <div className="text-lg font-bold">{reminderStats.inbound.pending}</div>
+                      <div className="text-xs text-slate-500">待完成</div>
+                    </div>
+                    <div>
+                      <div className="text-lg font-bold text-red-500">{reminderStats.inbound.overdue}</div>
+                      <div className="text-xs text-slate-500">逾期</div>
+                    </div>
+                    <div>
+                      <div className="text-lg font-bold text-green-500">{reminderStats.inbound.completed}</div>
+                      <div className="text-xs text-slate-500">已完成</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* 方向切换 + 搜索 */}
+            <div className="px-4 py-3 border-b border-slate-100 flex items-center gap-3">
+              <div className="flex bg-slate-100 rounded-lg p-1">
+                <button
+                  onClick={() => setReminderDirection('outbound')}
+                  className={`px-3 py-1.5 rounded-md text-sm font-medium transition-all ${
+                    reminderDirection === 'outbound'
+                      ? 'bg-blue-500 text-white shadow-sm'
+                      : 'text-slate-600 hover:bg-white'
+                  }`}
+                >
+                  我要求别人
+                </button>
+                <button
+                  onClick={() => setReminderDirection('inbound')}
+                  className={`px-3 py-1.5 rounded-md text-sm font-medium transition-all ${
+                    reminderDirection === 'inbound'
+                      ? 'bg-orange-500 text-white shadow-sm'
+                      : 'text-slate-600 hover:bg-white'
+                  }`}
+                >
+                  别人要求我
+                </button>
+              </div>
+              <Input
+                placeholder="搜索提醒..."
+                value={reminderSearchQuery}
+                onChange={(e) => setReminderSearchQuery(e.target.value)}
+                className="h-8 flex-1 text-sm"
+              />
+            </div>
+
+            {/* 提醒列表 */}
+            <div className="flex-1 overflow-y-auto p-4">
+              {reminderGroups.length === 0 ? (
+                <div className="text-center py-12">
+                  <Bell className="mx-auto h-12 w-12 text-slate-200 mb-3" />
+                  <p className="text-sm text-slate-400">
+                    {reminderDirection === 'outbound' ? '暂无你要求别人的事项' : '暂无别人要求你的事项'}
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {reminderGroups.map((group) => (
+                    <div key={group.key} className={`rounded-lg border ${group.isOverdue ? 'border-red-200 bg-red-50/30' : 'border-slate-200'}`}>
+                      <div className="flex items-center gap-2 px-3 py-2 border-b border-slate-100">
+                        {group.isOverdue ? (
+                          <AlertCircle className="w-4 h-4 text-red-500" />
+                        ) : (
+                          <Calendar className="w-4 h-4 text-slate-400" />
+                        )}
+                        <span className="text-sm font-medium">{group.label}</span>
+                        <Badge variant="secondary" className="text-xs">{group.reminders.length}</Badge>
+                      </div>
+                      <div className="p-2 space-y-2">
+                        {group.reminders.map((reminder) => (
+                          <div key={reminder.id} className="flex items-start gap-3 p-3 bg-white rounded-lg border border-slate-100 hover:border-slate-200">
+                            {/* 人名 */}
+                            <div className="flex items-center gap-2 shrink-0">
+                              {reminderDirection === 'outbound' ? (
+                                <>
+                                  {renderPersonAvatar(reminder.assigneeName)}
+                                  <span className="text-sm font-medium text-blue-700">{reminder.assigneeName}</span>
+                                </>
+                              ) : (
+                                <>
+                                  {renderPersonAvatar(reminder.requesterName)}
+                                  <span className="text-sm font-medium text-orange-700">{reminder.requesterName}</span>
+                                </>
+                              )}
+                            </div>
+                            {/* 内容 */}
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-1.5">
+                                {reminderDirection === 'outbound' ? (
+                                  <ArrowRight className="w-4 h-4 text-blue-400" />
+                                ) : (
+                                  <ArrowLeft className="w-4 h-4 text-orange-400" />
+                                )}
+                                <span className="font-medium truncate">{reminder.content}</span>
+                              </div>
+                              <div className="text-xs text-slate-500 mt-1">
+                                {formatReminderTime(reminder.remindAt)}
+                              </div>
+                            </div>
+                            {/* 操作 */}
+                            <div className="flex items-center gap-1 shrink-0">
+                              <Button variant="ghost" size="icon" className="h-7 w-7 text-green-600" onClick={() => handleCompleteReminder(reminder.id)}>
+                                <CheckCircle2 className="w-4 h-4" />
+                              </Button>
+                              <Button variant="ghost" size="icon" className="h-7 w-7 text-red-600" onClick={() => handleDeleteReminder(reminder.id)}>
+                                <Trash2 className="w-4 h-4" />
+                              </Button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* 🔥 信息速记抽屉 */}
       {showSnippetDrawer && (
