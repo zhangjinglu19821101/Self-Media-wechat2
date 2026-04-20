@@ -7,13 +7,14 @@ import { getWorkspaceId } from '@/lib/auth/context';
 /**
  * GET /api/info-snippets
  * 获取信息速记列表（按 workspaceId 隔离）
- * Query: status=pending|organized, search=关键词, limit=20, page=1
+ * Query: status=pending|organized, snippetType=memory|reminder, search=关键词, limit=20, page=1
  */
 export async function GET(request: NextRequest) {
   try {
     const workspaceId = await getWorkspaceId(request);
     const { searchParams } = new URL(request.url);
     const status = searchParams.get('status') || '';
+    const snippetType = searchParams.get('snippetType') || '';
     const search = searchParams.get('search') || '';
     const page = parseInt(searchParams.get('page') || '1');
     const limit = parseInt(searchParams.get('limit') || '20');
@@ -21,6 +22,9 @@ export async function GET(request: NextRequest) {
     const conditions = [eq(infoSnippets.workspaceId, workspaceId)];
     if (status) {
       conditions.push(eq(infoSnippets.status, status));
+    }
+    if (snippetType) {
+      conditions.push(eq(infoSnippets.snippetType, snippetType));
     }
     if (search) {
       conditions.push(sql`(${infoSnippets.title} ILIKE ${'%' + search + '%'} OR ${infoSnippets.sourceOrg} ILIKE ${'%' + search + '%'} OR ${infoSnippets.highlights} ILIKE ${'%' + search + '%'})`);
@@ -60,12 +64,13 @@ export async function GET(request: NextRequest) {
 /**
  * POST /api/info-snippets
  * 快速创建一条信息速记（按 workspaceId 隔离）
+ * Body: title, sourceOrg, publishDate, url, highlights, snippetType, remindAt
  */
 export async function POST(request: NextRequest) {
   try {
     const workspaceId = await getWorkspaceId(request);
     const body = await request.json();
-    const { title, sourceOrg, publishDate, url, highlights } = body;
+    const { title, sourceOrg, publishDate, url, highlights, snippetType, remindAt } = body;
 
     if (!title?.trim()) {
       return NextResponse.json({ error: '请输入报告/信息名称' }, { status: 400 });
@@ -77,12 +82,20 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: '请输入核心亮点' }, { status: 400 });
     }
 
+    // 提醒类型必须设置提醒时间
+    if (snippetType === 'reminder' && !remindAt) {
+      return NextResponse.json({ error: '提醒类型必须设置提醒时间' }, { status: 400 });
+    }
+
     const result = await db.insert(infoSnippets).values({
       title: title.trim(),
       sourceOrg: sourceOrg.trim(),
       publishDate: publishDate?.trim() || null,
       url: url?.trim() || null,
       highlights: highlights.trim(),
+      snippetType: snippetType || 'memory',
+      remindAt: remindAt ? new Date(remindAt) : null,
+      remindStatus: snippetType === 'reminder' ? 'pending' : null,
       status: 'pending',
       workspaceId,
     }).returning();

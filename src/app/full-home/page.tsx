@@ -22,7 +22,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { Loader2, Plus, Trash2, Send, Sparkles, ListTodo, CheckCircle2, XCircle, GripVertical, MoveUp, MoveDown, Maximize2, Minimize2, AlertTriangle, GitCompare, RefreshCw, FileText, Save, Eye, Home, BookmarkPlus, ExternalLink, BookOpen, Clock, Building2, X, HelpCircle, Settings, Rocket, Layers, ChevronDown, ChevronUp, Cpu, Brain, Workflow, Palette, PenTool, ArrowRight, Briefcase, Shield, Users, Download, Copy, ImageIcon } from 'lucide-react';
+import { Loader2, Plus, Trash2, Send, Sparkles, ListTodo, CheckCircle2, XCircle, GripVertical, MoveUp, MoveDown, Maximize2, Minimize2, AlertTriangle, GitCompare, RefreshCw, FileText, Save, Eye, Home, BookmarkPlus, ExternalLink, BookOpen, Clock, Building2, X, HelpCircle, Settings, Rocket, Layers, ChevronDown, ChevronUp, Cpu, Brain, Bell, Workflow, Palette, PenTool, ArrowRight, Briefcase, Shield, Users, Download, Copy, ImageIcon } from 'lucide-react';
 import { toast } from 'sonner';
 import { AgentTaskListNormal } from '@/components/agent-task-list-normal';
 import { XiaohongshuPreview } from '@/components/xiaohongshu-preview';
@@ -187,6 +187,10 @@ interface InfoSnippet {
   url: string | null;
   highlights: string;
   status: string;
+  snippetType: 'memory' | 'reminder';
+  remindAt: string | null;
+  remindStatus: 'pending' | 'triggered' | 'dismissed' | null;
+  remindedAt: string | null;
   createdAt: string;
 }
 
@@ -426,9 +430,17 @@ export default function HomePage() {
     publishDate: '',
     url: '',
     highlights: '',
+    snippetType: 'memory' as 'memory' | 'reminder',
+    remindAt: '',
   });
   const [snippetSearchQuery, setSnippetSearchQuery] = useState('');
   const [snippetStatusFilter, setSnippetStatusFilter] = useState<string>('all');
+  const [snippetTypeFilter, setSnippetTypeFilter] = useState<string>('all');
+  
+  // 🔥 提醒弹框状态
+  const [triggeredReminders, setTriggeredReminders] = useState<InfoSnippet[]>([]);
+  const [showReminderDialog, setShowReminderDialog] = useState(false);
+  const [currentReminderIndex, setCurrentReminderIndex] = useState(0);
 
   // 🔥 创作引导：从 localStorage 加载草稿（仅在客户端）
   useEffect(() => {
@@ -987,6 +999,7 @@ export default function HomePage() {
       const params = new URLSearchParams();
       if (snippetSearchQuery) params.set('search', snippetSearchQuery);
       if (snippetStatusFilter !== 'all') params.set('status', snippetStatusFilter);
+      if (snippetTypeFilter !== 'all') params.set('snippetType', snippetTypeFilter);
       params.set('pageSize', '50');
       const data: any = await apiGet(`/api/info-snippets?${params.toString()}`);
       setSnippetList(data?.data?.list || data?.data || []);
@@ -995,7 +1008,7 @@ export default function HomePage() {
     } finally {
       setSnippetLoading(false);
     }
-  }, [snippetSearchQuery, snippetStatusFilter]);
+  }, [snippetSearchQuery, snippetStatusFilter, snippetTypeFilter]);
 
   // 🔥 信息速记：打开抽屉时加载
   useEffect(() => {
@@ -1009,12 +1022,18 @@ export default function HomePage() {
     if (!snippetForm.title.trim()) { toast.error('请填写报告/信息名称'); return; }
     if (!snippetForm.sourceOrg.trim()) { toast.error('请填写发布机构'); return; }
     if (!snippetForm.highlights.trim()) { toast.error('请填写核心数据亮点'); return; }
+    if (snippetForm.snippetType === 'reminder' && !snippetForm.remindAt) {
+      toast.error('提醒类型必须设置提醒时间'); return;
+    }
     
     setSnippetSaving(true);
     try {
-      await apiPost('/api/info-snippets', snippetForm);
-      toast.success('速记已保存');
-      setSnippetForm({ title: '', sourceOrg: '', publishDate: '', url: '', highlights: '' });
+      await apiPost('/api/info-snippets', {
+        ...snippetForm,
+        remindAt: snippetForm.remindAt ? new Date(snippetForm.remindAt).toISOString() : null,
+      });
+      toast.success(snippetForm.snippetType === 'reminder' ? '提醒已设置' : '速记已保存');
+      setSnippetForm({ title: '', sourceOrg: '', publishDate: '', url: '', highlights: '', snippetType: 'memory', remindAt: '' });
       loadSnippetList();
     } catch (error) {
       console.error('[InfoSnippets] 保存失败:', error);
@@ -1045,6 +1064,77 @@ export default function HomePage() {
       toast.error('转化失败');
     }
   };
+
+  // 🔥 提醒功能：轮询检查触发的提醒
+  const checkTriggeredReminders = useCallback(async () => {
+    try {
+      const data: any = await apiGet('/api/info-snippets/triggered-reminders');
+      if (data.success && data.data?.length > 0) {
+        setTriggeredReminders(data.data);
+        setCurrentReminderIndex(0);
+        setShowReminderDialog(true);
+      }
+    } catch (error) {
+      console.error('[Reminders] 检查失败:', error);
+    }
+  }, []);
+
+  // 🔥 提醒功能：标记当前提醒为已处理
+  const handleDismissReminder = async () => {
+    if (triggeredReminders.length === 0) return;
+    
+    const currentReminder = triggeredReminders[currentReminderIndex];
+    try {
+      await apiPost(`/api/info-snippets/${currentReminder.id}/dismiss-reminder`);
+      
+      // 如果还有下一个提醒，显示下一个
+      if (currentReminderIndex < triggeredReminders.length - 1) {
+        setCurrentReminderIndex(prev => prev + 1);
+      } else {
+        // 没有更多提醒，关闭弹框
+        setShowReminderDialog(false);
+        setTriggeredReminders([]);
+      }
+    } catch (error) {
+      toast.error('操作失败');
+    }
+  };
+
+  // 🔥 提醒功能：稍后提醒（1小时后）
+  const handleSnoozeReminder = async () => {
+    if (triggeredReminders.length === 0) return;
+    
+    const currentReminder = triggeredReminders[currentReminderIndex];
+    const snoozeTime = new Date(Date.now() + 60 * 60 * 1000); // 1小时后
+    
+    try {
+      // 更新提醒时间并重置状态
+      await apiPost(`/api/info-snippets/${currentReminder.id}`, {
+        remindAt: snoozeTime.toISOString(),
+        remindStatus: 'pending',
+      });
+      toast.success('已延迟 1 小时提醒');
+      
+      // 显示下一个提醒
+      if (currentReminderIndex < triggeredReminders.length - 1) {
+        setCurrentReminderIndex(prev => prev + 1);
+      } else {
+        setShowReminderDialog(false);
+        setTriggeredReminders([]);
+      }
+    } catch (error) {
+      toast.error('操作失败');
+    }
+  };
+
+  // 🔥 页面加载时检查触发的提醒，并启动轮询
+  useEffect(() => {
+    checkTriggeredReminders();
+    
+    // 每30秒检查一次
+    const interval = setInterval(checkTriggeredReminders, 30000);
+    return () => clearInterval(interval);
+  }, [checkTriggeredReminders]);
 
   // 🔥 获取确认创建子任务按钮的禁用原因
   const getSubmitDisabledReason = () => {
@@ -3435,6 +3525,81 @@ export default function HomePage() {
         </TabsContent>
       </Tabs>
 
+      {/* 🔥 提醒弹框 */}
+      {showReminderDialog && triggeredReminders.length > 0 && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center">
+          <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={() => setShowReminderDialog(false)} />
+          <div className="relative bg-white rounded-2xl shadow-2xl max-w-md w-full mx-4 overflow-hidden animate-in zoom-in-95 duration-200">
+            {/* 头部 */}
+            <div className="bg-gradient-to-r from-amber-500 to-orange-600 px-6 py-4 text-white">
+              <div className="flex items-center gap-3">
+                <div className="h-10 w-10 rounded-full bg-white/20 flex items-center justify-center">
+                  <Bell className="h-5 w-5 animate-bounce" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-semibold">速记提醒</h3>
+                  <p className="text-sm text-white/80">
+                    {currentReminderIndex + 1} / {triggeredReminders.length} 条提醒
+                  </p>
+                </div>
+              </div>
+            </div>
+            
+            {/* 内容 */}
+            <div className="px-6 py-5">
+              <div className="mb-4">
+                <h4 className="text-base font-semibold text-slate-800 mb-2">
+                  {triggeredReminders[currentReminderIndex]?.title}
+                </h4>
+                <div className="flex items-center gap-3 text-xs text-slate-500 mb-3">
+                  <span className="flex items-center gap-1">
+                    <Building2 className="h-3 w-3" />
+                    {triggeredReminders[currentReminderIndex]?.sourceOrg}
+                  </span>
+                </div>
+                <div className="bg-amber-50 border border-amber-100 rounded-lg p-4">
+                  <p className="text-sm text-slate-700 leading-relaxed">
+                    {triggeredReminders[currentReminderIndex]?.highlights}
+                  </p>
+                </div>
+              </div>
+              
+              {/* 链接 */}
+              {triggeredReminders[currentReminderIndex]?.url && (
+                <a
+                  href={triggeredReminders[currentReminderIndex].url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 text-xs text-sky-600 hover:text-sky-700 mb-4"
+                >
+                  <ExternalLink className="h-3 w-3" />
+                  查看原文
+                </a>
+              )}
+            </div>
+            
+            {/* 操作按钮 */}
+            <div className="px-6 py-4 bg-slate-50 border-t border-slate-100 flex gap-3">
+              <Button
+                variant="outline"
+                onClick={handleSnoozeReminder}
+                className="flex-1"
+              >
+                <Clock className="h-4 w-4 mr-2" />
+                稍后提醒
+              </Button>
+              <Button
+                onClick={handleDismissReminder}
+                className="flex-1 bg-amber-500 hover:bg-amber-600 text-white"
+              >
+                <CheckCircle2 className="h-4 w-4 mr-2" />
+                知道了
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* 🔥 信息速记浮动按钮 */}
       <TooltipProvider>
         <Tooltip>
@@ -3493,6 +3658,49 @@ export default function HomePage() {
               </div>
               
               <div className="space-y-3">
+                {/* 速记类型选择 */}
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setSnippetForm(prev => ({ ...prev, snippetType: 'memory', remindAt: '' }))}
+                    className={`flex-1 py-2 px-3 rounded-lg text-sm font-medium transition-all flex items-center justify-center gap-1.5 ${
+                      snippetForm.snippetType === 'memory'
+                        ? 'bg-sky-500 text-white shadow-sm'
+                        : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50'
+                    }`}
+                  >
+                    <Brain className="h-4 w-4" />
+                    记忆
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSnippetForm(prev => ({ ...prev, snippetType: 'reminder' }))}
+                    className={`flex-1 py-2 px-3 rounded-lg text-sm font-medium transition-all flex items-center justify-center gap-1.5 ${
+                      snippetForm.snippetType === 'reminder'
+                        ? 'bg-amber-500 text-white shadow-sm'
+                        : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50'
+                    }`}
+                  >
+                    <Bell className="h-4 w-4" />
+                    提醒
+                  </button>
+                </div>
+                
+                {/* 提醒时间（仅提醒类型显示） */}
+                {snippetForm.snippetType === 'reminder' && (
+                  <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
+                    <Label className="text-xs text-amber-700 mb-1 block flex items-center gap-1">
+                      <Bell className="h-3 w-3" />提醒时间 *
+                    </Label>
+                    <Input
+                      type="datetime-local"
+                      value={snippetForm.remindAt}
+                      onChange={(e) => setSnippetForm(prev => ({ ...prev, remindAt: e.target.value }))}
+                      className="h-9 text-sm bg-white"
+                    />
+                  </div>
+                )}
+                
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <Label className="text-xs text-slate-500 mb-1 block">报告/信息名称 *</Label>
@@ -3553,10 +3761,16 @@ export default function HomePage() {
                 <Button
                   onClick={handleSaveSnippet}
                   disabled={snippetSaving}
-                  className="w-full bg-gradient-to-r from-sky-500 to-cyan-600 hover:from-sky-600 hover:to-cyan-700 text-white h-9"
+                  className={`w-full h-9 ${
+                    snippetForm.snippetType === 'reminder'
+                      ? 'bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-600 hover:to-orange-700'
+                      : 'bg-gradient-to-r from-sky-500 to-cyan-600 hover:from-sky-600 hover:to-cyan-700'
+                  } text-white`}
                 >
                   {snippetSaving ? (
                     <><Loader2 className="mr-2 h-4 w-4 animate-spin" />保存中...</>
+                  ) : snippetForm.snippetType === 'reminder' ? (
+                    <><Bell className="mr-2 h-4 w-4" />设置提醒</>
                   ) : (
                     <><BookmarkPlus className="mr-2 h-4 w-4" />保存速记</>
                   )}
@@ -3577,14 +3791,23 @@ export default function HomePage() {
                     placeholder="搜索..."
                     value={snippetSearchQuery}
                     onChange={(e) => setSnippetSearchQuery(e.target.value)}
-                    className="h-8 w-36 text-xs"
+                    className="h-8 w-32 text-xs"
                   />
+                  <select
+                    value={snippetTypeFilter}
+                    onChange={(e) => setSnippetTypeFilter(e.target.value)}
+                    className="h-8 text-xs border rounded-md px-2 bg-white"
+                  >
+                    <option value="all">全部类型</option>
+                    <option value="memory">📝 记忆</option>
+                    <option value="reminder">🔔 提醒</option>
+                  </select>
                   <select
                     value={snippetStatusFilter}
                     onChange={(e) => setSnippetStatusFilter(e.target.value)}
                     className="h-8 text-xs border rounded-md px-2 bg-white"
                   >
-                    <option value="all">全部</option>
+                    <option value="all">全部状态</option>
                     <option value="pending">待整理</option>
                     <option value="organized">已整理</option>
                   </select>
@@ -3603,86 +3826,115 @@ export default function HomePage() {
                 </div>
               ) : (
                 <div className="space-y-3">
-                  {snippetList.map((snippet) => (
-                    <div
-                      key={snippet.id}
-                      className={`rounded-xl border p-4 transition-all hover:shadow-md ${
-                        snippet.status === 'organized' 
-                          ? 'bg-emerald-50/50 border-emerald-200' 
-                          : 'bg-white border-slate-200'
-                      }`}
-                    >
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2 mb-1">
-                            <h4 className="text-sm font-medium text-slate-800 truncate">{snippet.title}</h4>
-                            {snippet.status === 'organized' && (
-                              <Badge className="bg-emerald-100 text-emerald-700 text-xs px-1.5 py-0">已整理</Badge>
-                            )}
-                          </div>
-                          
-                          <div className="flex items-center gap-3 text-xs text-slate-500 mb-2">
-                            <span className="flex items-center gap-1">
-                              <Building2 className="h-3 w-3" />
-                              {snippet.sourceOrg}
-                            </span>
-                            {snippet.publishDate && (
+                  {snippetList.map((snippet) => {
+                    const isReminder = snippet.snippetType === 'reminder';
+                    return (
+                      <div
+                        key={snippet.id}
+                        className={`rounded-xl border p-4 transition-all hover:shadow-md ${
+                          snippet.status === 'organized' 
+                            ? 'bg-emerald-50/50 border-emerald-200' 
+                            : isReminder
+                              ? 'bg-amber-50/30 border-amber-200'
+                              : 'bg-white border-slate-200'
+                        }`}
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 mb-1">
+                              {/* 类型图标 */}
+                              {isReminder ? (
+                                <Bell className="h-4 w-4 text-amber-500 shrink-0" />
+                              ) : (
+                                <Brain className="h-4 w-4 text-sky-500 shrink-0" />
+                              )}
+                              <h4 className="text-sm font-medium text-slate-800 truncate">{snippet.title}</h4>
+                              {snippet.status === 'organized' && (
+                                <Badge className="bg-emerald-100 text-emerald-700 text-xs px-1.5 py-0">已整理</Badge>
+                              )}
+                              {isReminder && snippet.remindStatus === 'pending' && (
+                                <Badge className="bg-amber-100 text-amber-700 text-xs px-1.5 py-0">待提醒</Badge>
+                              )}
+                              {isReminder && snippet.remindStatus === 'triggered' && (
+                                <Badge className="bg-red-100 text-red-700 text-xs px-1.5 py-0">已触发</Badge>
+                              )}
+                            </div>
+                            
+                            <div className="flex items-center gap-3 text-xs text-slate-500 mb-2">
                               <span className="flex items-center gap-1">
-                                <Clock className="h-3 w-3" />
-                                {snippet.publishDate}
+                                <Building2 className="h-3 w-3" />
+                                {snippet.sourceOrg}
                               </span>
+                              {snippet.publishDate && (
+                                <span className="flex items-center gap-1">
+                                  <Clock className="h-3 w-3" />
+                                  {snippet.publishDate}
+                                </span>
+                              )}
+                              {/* 提醒时间 */}
+                              {isReminder && snippet.remindAt && (
+                                <span className="flex items-center gap-1 text-amber-600">
+                                  <Bell className="h-3 w-3" />
+                                  {new Date(snippet.remindAt).toLocaleString('zh-CN', {
+                                    month: '2-digit',
+                                    day: '2-digit',
+                                    hour: '2-digit',
+                                    minute: '2-digit'
+                                  })}
+                                </span>
+                              )}
+                            </div>
+
+                            <p className="text-xs text-slate-600 leading-relaxed line-clamp-2">{snippet.highlights}</p>
+                            
+                            {snippet.url && (
+                              <a
+                                href={snippet.url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center gap-1 text-xs text-sky-600 hover:text-sky-700 mt-2"
+                              >
+                                <ExternalLink className="h-3 w-3" />
+                                查看原文
+                              </a>
                             )}
                           </div>
-
-                          <p className="text-xs text-slate-600 leading-relaxed line-clamp-2">{snippet.highlights}</p>
-                          
-                          {snippet.url && (
-                            <a
-                              href={snippet.url}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="inline-flex items-center gap-1 text-xs text-sky-600 hover:text-sky-700 mt-2"
-                            >
-                              <ExternalLink className="h-3 w-3" />
-                              查看原文
-                            </a>
-                          )}
-                        </div>
 
                         <div className="flex items-center gap-1 shrink-0">
-                          {snippet.status !== 'organized' && (
+                            {snippet.status !== 'organized' && (
+                              <TooltipProvider>
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <button
+                                      onClick={() => handleConvertToMaterial(snippet.id, snippet.title)}
+                                      className="h-8 w-8 rounded-lg hover:bg-sky-50 flex items-center justify-center text-sky-600 hover:text-sky-700 transition-colors"
+                                    >
+                                      <BookOpen className="h-4 w-4" />
+                                    </button>
+                                  </TooltipTrigger>
+                                  <TooltipContent><p>转化为素材</p></TooltipContent>
+                                </Tooltip>
+                              </TooltipProvider>
+                            )}
+                            
                             <TooltipProvider>
                               <Tooltip>
                                 <TooltipTrigger asChild>
                                   <button
-                                    onClick={() => handleConvertToMaterial(snippet.id, snippet.title)}
-                                    className="h-8 w-8 rounded-lg hover:bg-sky-50 flex items-center justify-center text-sky-600 hover:text-sky-700 transition-colors"
+                                    onClick={() => handleDeleteSnippet(snippet.id, snippet.title)}
+                                    className="h-8 w-8 rounded-lg hover:bg-red-50 flex items-center justify-center text-slate-400 hover:text-red-500 transition-colors"
                                   >
-                                    <BookOpen className="h-4 w-4" />
+                                    <Trash2 className="h-4 w-4" />
                                   </button>
                                 </TooltipTrigger>
-                                <TooltipContent><p>转化为素材</p></TooltipContent>
+                                <TooltipContent><p>删除</p></TooltipContent>
                               </Tooltip>
                             </TooltipProvider>
-                          )}
-                          
-                          <TooltipProvider>
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <button
-                                  onClick={() => handleDeleteSnippet(snippet.id, snippet.title)}
-                                  className="h-8 w-8 rounded-lg hover:bg-red-50 flex items-center justify-center text-slate-400 hover:text-red-500 transition-colors"
-                                >
-                                  <Trash2 className="h-4 w-4" />
-                                </button>
-                              </TooltipTrigger>
-                              <TooltipContent><p>删除</p></TooltipContent>
-                            </Tooltip>
-                          </TooltipProvider>
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </div>
