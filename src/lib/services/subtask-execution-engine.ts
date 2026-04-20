@@ -1239,14 +1239,21 @@ export class SubtaskExecutionEngine {
       )
       .orderBy(desc(agentSubTasks.orderIndex));
 
-    // 找到最近的写作任务
+    // 找到最近的写作任务或去AI化优化任务
     // 🔴 P1-2 修复：增加 status='completed' 过滤，确保只找已完成的有效写作任务
     // 避免在"重写"场景中误匹配到失败/进行中的任务
+    // 🔴 Phase 7 修复：优先获取 deai-optimizer 的输出（优化后的版本），兜底获取写作Agent的输出
+    const deaiOptimizerTask = previousTasks.find(t => 
+      t.fromParentsExecutor === 'deai-optimizer' && t.status === 'completed'
+    );
     const writingTask = previousTasks.find(t => 
       isWritingAgent(t.fromParentsExecutor) && t.status === 'completed'
     );
 
-    // 🔴 兜底：如果没有已完成的写作任务，找最近的写作任务（兼容首次执行场景）
+    // 🔴 兜底：如果没有已完成的任务，找最近的任务（兼容首次执行场景）
+    const fallbackDeaiTask = deaiOptimizerTask || previousTasks.find(t => 
+      t.fromParentsExecutor === 'deai-optimizer'
+    );
     const fallbackWritingTask = writingTask || previousTasks.find(t => 
       isWritingAgent(t.fromParentsExecutor)
     );
@@ -1255,8 +1262,8 @@ export class SubtaskExecutionEngine {
     let articleTitle = '';
     let platform = '';
 
-    // 🔴 P1-2 修复：优先使用已完成的写作任务，兜底使用任意写作任务
-    const effectiveWritingTask = writingTask || fallbackWritingTask;
+    // 🔴 Phase 7 修复：优先使用去AI化优化后的内容，兜底使用原始写作内容
+    const effectiveWritingTask = deaiOptimizerTask || writingTask || fallbackDeaiTask || fallbackWritingTask;
     
     if (effectiveWritingTask) {
       // 提取文章内容（result_text 保持纯文本，不与平台渲染耦合）
@@ -1265,24 +1272,38 @@ export class SubtaskExecutionEngine {
         articleContent = this.extractResultTextFromResultData(effectiveWritingTask.resultData, effectiveWritingTask.fromParentsExecutor) || '';
       }
       articleTitle = this.extractArticleTitleFromResultData(effectiveWritingTask.resultData, effectiveWritingTask.taskTitle);
-      platform = getPlatformForExecutor(effectiveWritingTask.fromParentsExecutor);
+      // 🔴 Phase 7 修复：deai-optimizer 没有平台映射，需要从原始写作任务或 metadata 获取平台
+      if (effectiveWritingTask.fromParentsExecutor === 'deai-optimizer') {
+        // 优先从原始写作任务获取平台
+        const originalWritingTask = writingTask || fallbackWritingTask;
+        platform = originalWritingTask 
+          ? getPlatformForExecutor(originalWritingTask.fromParentsExecutor)
+          : ((task.metadata as Record<string, unknown>)?.platform as string) || 'wechat_official';
+      } else {
+        platform = getPlatformForExecutor(effectiveWritingTask.fromParentsExecutor);
+      }
     }
 
     // 🔥🔥🔥 【架构改造】平台渲染数据提取
     // result_text 是通用纯文本，不与平台渲染耦合
     // 平台专属的渲染数据（如小红书卡片）通过 platformRenderData 独立传递
+    // 🔴 Phase 7 修复：deai-optimizer 的 resultData 不含平台渲染数据，需从原始写作任务提取
     let platformRenderData: Record<string, unknown> | null = null;
-    if (effectiveWritingTask && platform) {
+    const platformDataSource = effectiveWritingTask?.fromParentsExecutor === 'deai-optimizer'
+      ? (writingTask || fallbackWritingTask) // deai-optimizer → 从原始写作任务获取渲染数据
+      : effectiveWritingTask;                 // 写作Agent → 直接获取
+    if (platformDataSource && platform) {
       try {
         const { extractPlatformRenderData } = await import('@/lib/platform-render/extractors');
         console.log('[SubtaskEngine] 👁️ 开始提取 platformRenderData...', {
           platform,
-          hasWritingTaskResultData: !!effectiveWritingTask.resultData,
-          writingTaskResultDataType: typeof effectiveWritingTask.resultData,
+          dataSource: platformDataSource.fromParentsExecutor,
+          hasWritingTaskResultData: !!platformDataSource.resultData,
+          writingTaskResultDataType: typeof platformDataSource.resultData,
         });
         platformRenderData = extractPlatformRenderData(
           platform,
-          effectiveWritingTask.resultData,
+          platformDataSource.resultData,
           (task.metadata as Record<string, unknown>) || {}
         );
         console.log('[SubtaskEngine] 👁️ 提取结果:', {

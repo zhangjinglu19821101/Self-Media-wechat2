@@ -234,6 +234,22 @@ export class AgentBuilder {
       canSendTo: ['A'],
       canReceiveFrom: ['A'],
     });
+
+    this.agentConfigs.set('deai-optimizer', {
+      id: 'deai-optimizer',
+      name: '去AI化优化专家',
+      role: 'De-AI Optimization Executor',
+      description: '对写作Agent生成的内容进行全维度自检和柔和改写，消除AI痕迹，使文章更像人类自然写作',
+      baseCapabilities: [
+        'editing',
+        'deai-optimization',
+        'natural-writing',
+        'style-consistency',
+      ],
+      maxConcurrentTasks: 4,
+      canSendTo: ['B'],
+      canReceiveFrom: ['B'],
+    });
   }
 
   /**

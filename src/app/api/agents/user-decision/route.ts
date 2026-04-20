@@ -100,6 +100,12 @@ const EXECUTOR_CONFIG = [
     description: '用户预览修改初稿',
     capabilities: ['预览', '编辑', '确认'],
   },
+  {
+    id: 'deai-optimizer',
+    name: '去AI化优化专家',
+    description: '对文章进行去AI化优化，消除AI痕迹',
+    capabilities: ['去AI化', '文风自然化', '句式改写', '词汇替换'],
+  },
 ];
 
 /**

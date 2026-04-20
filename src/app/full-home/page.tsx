@@ -212,10 +212,6 @@ interface InfoSnippet {
   complianceLevel: string | null;
   materialStatus: string | null;
   materialId: string | null;
-  snippetType: string | null;
-  remindAt: string | null;
-  remindStatus: string | null;
-  remindedAt: string | null;
   status: string;
   createdAt: string;
 }
@@ -4468,8 +4464,6 @@ export default function HomePage() {
                     className="h-8 text-xs border rounded-md px-2 bg-white"
                   >
                     <option value="all">全部类型</option>
-                    <option value="memory">📝 记忆</option>
-                    <option value="reminder">🔔 提醒</option>
                   </select>
                   <select
                     value={snippetStatusFilter}

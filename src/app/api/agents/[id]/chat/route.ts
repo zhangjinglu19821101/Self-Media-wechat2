@@ -231,6 +231,7 @@ ${ragResult.context}
         'insurance-xiaohongshu': '小红书创作专家',
         'insurance-zhihu': '知乎创作专家',
         'insurance-toutiao': '头条创作专家',
+        'deai-optimizer': '去AI化优化专家',
       };
 
       systemPrompt += `

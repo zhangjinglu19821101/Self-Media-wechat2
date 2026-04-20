@@ -93,6 +93,7 @@ const AGENT_NAMES: Record<AgentId, string> = {
   'insurance-xiaohongshu': '小红书图文创作专家',
   'insurance-zhihu': '知乎创作专家',
   'insurance-toutiao': '头条创作专家',
+  'deai-optimizer': '去AI化优化专家',
 };
 
 /**
@@ -153,6 +154,11 @@ export const AGENT_PROMPTS: Record<
     id: 'insurance-toutiao',
     name: AGENT_NAMES['insurance-toutiao'],
     ...readAgentPrompt('insurance-toutiao'),
+  },
+  'deai-optimizer': {
+    id: 'deai-optimizer',
+    name: AGENT_NAMES['deai-optimizer'],
+    ...readAgentPrompt('deai-optimizer'),
   },
 };
 

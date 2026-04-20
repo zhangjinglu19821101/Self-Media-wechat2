@@ -81,6 +81,7 @@ function buildSystemPrompt(domain: 'insurance' | 'ai' | 'general', instruction: 
 - **insurance-xiaohongshu**: 小红书创作专家，擅长小红书图文创作（JSON格式输出，含卡片预览）
 - **insurance-zhihu**: 知乎创作专家，擅长专业深度回答（Markdown格式输出）
 - **insurance-toutiao**: 头条创作专家，擅长信息流文章（标题党+短段落+强节奏）
+- **deai-optimizer**: 去AI化优化专家，擅长消除AI痕迹、自然化改写（写作Agent之后的优化节点）
 - **insurance-c**: 保险运营，擅长公众号运营推广（上传草稿箱等）
 - **B**: 你自己，协调者
 - **A**: 战略决策者

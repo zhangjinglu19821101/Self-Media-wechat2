@@ -131,9 +131,9 @@ export const SUPPORTED_FILE_TYPES = [
 /**
  * 获取 Agent 的配置
  */
-export function getAgentConfig(agent: 'insurance-d' | 'agent-d' | 'insurance-xiaohongshu' | 'insurance-zhihu' | 'insurance-toutiao') {
-  if (agent === 'insurance-xiaohongshu' || agent === 'insurance-zhihu' || agent === 'insurance-toutiao') {
-    // 小红书/知乎/头条复用 insurance-d 的配置（风格学习通过 style-deposition-service 按模板维度隔离）
+export function getAgentConfig(agent: 'insurance-d' | 'agent-d' | 'insurance-xiaohongshu' | 'insurance-zhihu' | 'insurance-toutiao' | 'deai-optimizer') {
+  if (agent === 'insurance-xiaohongshu' || agent === 'insurance-zhihu' || agent === 'insurance-toutiao' || agent === 'deai-optimizer') {
+    // 小红书/知乎/头条/去AI化优化 复用 insurance-d 的配置（风格学习通过 style-deposition-service 按模板维度隔离）
     return defaultStyleLearningConfig.insuranceD;
   }
   return agent === 'insurance-d'
@@ -144,8 +144,8 @@ export function getAgentConfig(agent: 'insurance-d' | 'agent-d' | 'insurance-xia
 /**
  * 获取 Agent 的文章路径
  */
-export function getAgentArticlesPath(agent: 'insurance-d' | 'agent-d' | 'insurance-xiaohongshu' | 'insurance-zhihu' | 'insurance-toutiao') {
-  if (agent === 'insurance-xiaohongshu' || agent === 'insurance-zhihu' || agent === 'insurance-toutiao') {
+export function getAgentArticlesPath(agent: 'insurance-d' | 'agent-d' | 'insurance-xiaohongshu' | 'insurance-zhihu' | 'insurance-toutiao' | 'deai-optimizer') {
+  if (agent === 'insurance-xiaohongshu' || agent === 'insurance-zhihu' || agent === 'insurance-toutiao' || agent === 'deai-optimizer') {
     return CONFIG_PATHS.insuranceDArticles;
   }
   return agent === 'insurance-d'

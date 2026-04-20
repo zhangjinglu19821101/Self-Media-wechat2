@@ -18,6 +18,7 @@ const AGENT_DRAFT_DIRS = {
   'insurance-xiaohongshu': path.join(INSURANCE_DRAFT_ROOT_DIR, 'insurance-xiaohongshu'),
   'insurance-zhihu': path.join(INSURANCE_DRAFT_ROOT_DIR, 'insurance-zhihu'),
   'insurance-toutiao': path.join(INSURANCE_DRAFT_ROOT_DIR, 'insurance-toutiao'),
+  'deai-optimizer': path.join(INSURANCE_DRAFT_ROOT_DIR, 'deai-optimizer'),
 };
 
 /**
