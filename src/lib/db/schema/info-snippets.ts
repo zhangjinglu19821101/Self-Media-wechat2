@@ -40,6 +40,7 @@ export const infoSnippets = pgTable('info_snippets', {
   sourceOrg: text('source_org'),               // 自动识别来源机构
   publishDate: text('publish_date'),           // 发布时间
   url: text('url'),                            // 直达链接
+  highlights: text('highlights'),              // 要点/亮点（历史字段，nullable）
   summary: text('summary'),                    // 自动生成摘要（15-30字核心内容摘要）
   keywords: text('keywords'),                  // 自动提取关键词（逗号分隔，3-6个）
   applicableScenes: text('applicable_scenes'), // 适用场景标签（逗号分隔）
