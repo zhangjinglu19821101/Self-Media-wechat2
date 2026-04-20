@@ -3941,47 +3941,51 @@ export default function HomePage() {
         </div>
       )}
 
-      {/* 🔥 提醒中心浮动按钮 */}
-      <TooltipProvider>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <button
-              onClick={() => setShowReminderDrawer(true)}
-              className="fixed bottom-6 right-24 z-50 h-14 w-14 rounded-full bg-gradient-to-br from-orange-500 to-amber-600 text-white shadow-lg shadow-orange-200 hover:shadow-xl hover:shadow-orange-300 hover:scale-110 transition-all duration-300 flex items-center justify-center group"
-            >
-              <Bell className="h-6 w-6 group-hover:animate-bounce" />
-              {/* 逾期提醒红点 */}
-              {reminderStats && reminderStats.total.overdue > 0 && (
-                <span className="absolute -top-1 -right-1 h-5 w-5 rounded-full bg-red-500 text-white text-xs flex items-center justify-center font-bold animate-pulse">
-                  {reminderStats.total.overdue}
-                </span>
-              )}
-            </button>
-          </TooltipTrigger>
-          <TooltipContent side="left">
-            <p className="font-medium">提醒中心 · 谁要求谁做什么</p>
-          </TooltipContent>
-        </Tooltip>
-      </TooltipProvider>
+      {/* 🔥 提醒中心浮动按钮 - 对话框打开时隐藏 */}
+      {!showCreateReminderDialog && (
+        <TooltipProvider>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                onClick={() => setShowReminderDrawer(true)}
+                className="fixed bottom-6 right-24 z-50 h-14 w-14 rounded-full bg-gradient-to-br from-orange-500 to-amber-600 text-white shadow-lg shadow-orange-200 hover:shadow-xl hover:shadow-orange-300 hover:scale-110 transition-all duration-300 flex items-center justify-center group"
+              >
+                <Bell className="h-6 w-6 group-hover:animate-bounce" />
+                {/* 逾期提醒红点 */}
+                {reminderStats && reminderStats.total.overdue > 0 && (
+                  <span className="absolute -top-1 -right-1 h-5 w-5 rounded-full bg-red-500 text-white text-xs flex items-center justify-center font-bold animate-pulse">
+                    {reminderStats.total.overdue}
+                  </span>
+                )}
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="left">
+              <p className="font-medium">提醒中心 · 谁要求谁做什么</p>
+            </TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
+      )}
 
-      {/* 🔥 信息速记浮动按钮 */}
-      <TooltipProvider>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <button
-              onClick={() => setShowSnippetDrawer(true)}
-              className="fixed bottom-6 right-6 z-50 h-14 w-14 rounded-full bg-gradient-to-br from-sky-500 to-cyan-600 text-white shadow-lg shadow-sky-200 hover:shadow-xl hover:shadow-sky-300 hover:scale-110 transition-all duration-300 flex items-center justify-center group"
-            >
-              <BookmarkPlus className="h-6 w-6 group-hover:rotate-12 transition-transform" />
-              {/* 脉冲提示动画 */}
-              <span className="absolute inset-0 rounded-full bg-sky-400 animate-ping opacity-30"></span>
-            </button>
-          </TooltipTrigger>
-          <TooltipContent side="left">
-            <p className="font-medium">信息速记 · 随时记录行业资讯</p>
-          </TooltipContent>
-        </Tooltip>
-      </TooltipProvider>
+      {/* 🔥 信息速记浮动按钮 - 对话框打开时隐藏 */}
+      {!showCreateReminderDialog && (
+        <TooltipProvider>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                onClick={() => setShowSnippetDrawer(true)}
+                className="fixed bottom-6 right-6 z-50 h-14 w-14 rounded-full bg-gradient-to-br from-sky-500 to-cyan-600 text-white shadow-lg shadow-sky-200 hover:shadow-xl hover:shadow-sky-300 hover:scale-110 transition-all duration-300 flex items-center justify-center group"
+              >
+                <BookmarkPlus className="h-6 w-6 group-hover:rotate-12 transition-transform" />
+                {/* 脉冲提示动画 */}
+                <span className="absolute inset-0 rounded-full bg-sky-400 animate-ping opacity-30"></span>
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="left">
+              <p className="font-medium">信息速记 · 随时记录行业资讯</p>
+            </TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
+      )}
 
       {/* 🔥 提醒中心抽屉 */}
       {showReminderDrawer && (
