@@ -481,6 +481,18 @@ export default function HomePage() {
   const [reminderDirection, setReminderDirection] = useState<'outbound' | 'inbound'>('outbound');
   const [reminderSearchQuery, setReminderSearchQuery] = useState('');
   const [selectedPersonFilter, setSelectedPersonFilter] = useState<string | null>(null);
+  
+  // 🔥 创建提醒对话框状态
+  const [showCreateReminderDialog, setShowCreateReminderDialog] = useState(false);
+  const [newReminderForm, setNewReminderForm] = useState({
+    requesterName: '',
+    assigneeName: '',
+    content: '',
+    remindAt: '',
+    direction: 'outbound' as 'outbound' | 'inbound',
+  });
+  const [creatingReminder, setCreatingReminder] = useState(false);
+  
   const [snippetCategoryFilter, setSnippetCategoryFilter] = useState<string>('all');
   const [snippetSearchQuery, setSnippetSearchQuery] = useState('');
   const [snippetTypeFilter, setSnippetTypeFilter] = useState('all');
@@ -1117,6 +1129,56 @@ export default function HomePage() {
       }
     } catch (error) {
       toast.error('删除失败');
+    }
+  };
+
+  // 🔥 提醒中心：创建提醒
+  const handleCreateReminder = async () => {
+    if (!newReminderForm.requesterName.trim()) {
+      toast.error('请输入要求者姓名');
+      return;
+    }
+    if (!newReminderForm.assigneeName.trim()) {
+      toast.error('请输入被要求者姓名');
+      return;
+    }
+    if (!newReminderForm.content.trim()) {
+      toast.error('请输入提醒内容');
+      return;
+    }
+    if (!newReminderForm.remindAt) {
+      toast.error('请选择提醒时间');
+      return;
+    }
+
+    setCreatingReminder(true);
+    try {
+      const result = await apiPost('/api/reminders', {
+        requesterName: newReminderForm.requesterName.trim(),
+        assigneeName: newReminderForm.assigneeName.trim(),
+        content: newReminderForm.content.trim(),
+        remindAt: newReminderForm.remindAt,
+        direction: newReminderForm.direction,
+      }) as any;
+
+      if (result.success) {
+        toast.success('提醒创建成功');
+        setShowCreateReminderDialog(false);
+        setNewReminderForm({
+          requesterName: '',
+          assigneeName: '',
+          content: '',
+          remindAt: '',
+          direction: 'outbound',
+        });
+        loadReminderData();
+      } else {
+        toast.error(result.error || '创建失败');
+      }
+    } catch (error) {
+      toast.error('创建失败');
+    } finally {
+      setCreatingReminder(false);
     }
   };
 
@@ -3877,12 +3939,21 @@ export default function HomePage() {
                   <p className="text-xs text-slate-500">谁要求谁做什么 · 双视角时间管理</p>
                 </div>
               </div>
-              <button 
-                onClick={() => setShowReminderDrawer(false)}
-                className="h-8 w-8 rounded-lg hover:bg-slate-100 flex items-center justify-center transition-colors"
-              >
-                <X className="h-5 w-5 text-slate-400" />
-              </button>
+              <div className="flex items-center gap-2">
+                <Button
+                  onClick={() => setShowCreateReminderDialog(true)}
+                  className="h-8 bg-gradient-to-r from-orange-500 to-amber-600 hover:from-orange-600 hover:to-amber-700 text-white text-sm"
+                >
+                  <Plus className="h-4 w-4 mr-1" />
+                  创建提醒
+                </Button>
+                <button 
+                  onClick={() => setShowReminderDrawer(false)}
+                  className="h-8 w-8 rounded-lg hover:bg-slate-100 flex items-center justify-center transition-colors"
+                >
+                  <X className="h-5 w-5 text-slate-400" />
+                </button>
+              </div>
             </div>
 
             {/* 统计卡片 */}
@@ -4038,6 +4109,124 @@ export default function HomePage() {
           </div>
         </div>
       )}
+
+      {/* 🔥 创建提醒对话框 */}
+      <Dialog open={showCreateReminderDialog} onOpenChange={setShowCreateReminderDialog}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Bell className="h-5 w-5 text-orange-500" />
+              创建新提醒
+            </DialogTitle>
+            <DialogDescription>
+              设置"谁要求谁做什么"，系统会按时提醒
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-4 py-4">
+            {/* 方向选择 */}
+            <div className="space-y-2">
+              <Label className="text-sm font-medium">提醒类型</Label>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setNewReminderForm(prev => ({ ...prev, direction: 'outbound' }))}
+                  className={`flex-1 py-2 px-3 rounded-lg text-sm font-medium transition-all flex items-center justify-center gap-1.5 ${
+                    newReminderForm.direction === 'outbound'
+                      ? 'bg-blue-500 text-white shadow-sm'
+                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                  }`}
+                >
+                  <ArrowRight className="h-4 w-4" />
+                  我要求别人
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setNewReminderForm(prev => ({ ...prev, direction: 'inbound' }))}
+                  className={`flex-1 py-2 px-3 rounded-lg text-sm font-medium transition-all flex items-center justify-center gap-1.5 ${
+                    newReminderForm.direction === 'inbound'
+                      ? 'bg-orange-500 text-white shadow-sm'
+                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                  }`}
+                >
+                  <ArrowLeft className="h-4 w-4" />
+                  别人要求我
+                </button>
+              </div>
+            </div>
+
+            {/* 要求者 */}
+            <div className="space-y-2">
+              <Label className="text-sm font-medium">
+                {newReminderForm.direction === 'outbound' ? '我（要求者）' : '要求者'}
+              </Label>
+              <Input
+                placeholder={newReminderForm.direction === 'outbound' ? '输入你的名字' : '输入要求者名字'}
+                value={newReminderForm.requesterName}
+                onChange={(e) => setNewReminderForm(prev => ({ ...prev, requesterName: e.target.value }))}
+                className="h-9"
+              />
+            </div>
+
+            {/* 被要求者 */}
+            <div className="space-y-2">
+              <Label className="text-sm font-medium">
+                {newReminderForm.direction === 'outbound' ? '被要求者' : '我（被要求者）'}
+              </Label>
+              <Input
+                placeholder={newReminderForm.direction === 'outbound' ? '输入被要求者名字' : '输入你的名字'}
+                value={newReminderForm.assigneeName}
+                onChange={(e) => setNewReminderForm(prev => ({ ...prev, assigneeName: e.target.value }))}
+                className="h-9"
+              />
+            </div>
+
+            {/* 提醒内容 */}
+            <div className="space-y-2">
+              <Label className="text-sm font-medium">提醒内容</Label>
+              <Textarea
+                placeholder="要做什么事..."
+                value={newReminderForm.content}
+                onChange={(e) => setNewReminderForm(prev => ({ ...prev, content: e.target.value }))}
+                rows={3}
+                className="resize-none"
+              />
+            </div>
+
+            {/* 提醒时间 */}
+            <div className="space-y-2">
+              <Label className="text-sm font-medium">提醒时间</Label>
+              <Input
+                type="datetime-local"
+                value={newReminderForm.remindAt}
+                onChange={(e) => setNewReminderForm(prev => ({ ...prev, remindAt: e.target.value }))}
+                className="h-9"
+              />
+            </div>
+          </div>
+
+          <DialogFooter className="gap-2">
+            <Button
+              variant="outline"
+              onClick={() => setShowCreateReminderDialog(false)}
+              disabled={creatingReminder}
+            >
+              取消
+            </Button>
+            <Button
+              onClick={handleCreateReminder}
+              disabled={creatingReminder}
+              className="bg-gradient-to-r from-orange-500 to-amber-600 hover:from-orange-600 hover:to-amber-700"
+            >
+              {creatingReminder ? (
+                <><Loader2 className="h-4 w-4 mr-2 animate-spin" />创建中...</>
+              ) : (
+                '创建提醒'
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* 🔥 信息速记抽屉 */}
       {showSnippetDrawer && (
