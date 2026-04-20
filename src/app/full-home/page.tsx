@@ -478,7 +478,7 @@ export default function HomePage() {
   const [showReminderDrawer, setShowReminderDrawer] = useState(false);
   const [reminderList, setReminderList] = useState<Reminder[]>([]);
   const [reminderStats, setReminderStats] = useState<ReminderStats | null>(null);
-  const [reminderDirection, setReminderDirection] = useState<'outbound' | 'inbound'>('outbound');
+  const [reminderDirection, setReminderDirection] = useState<'all' | 'outbound' | 'inbound'>('all');
   const [reminderSearchQuery, setReminderSearchQuery] = useState('');
   const [selectedPersonFilter, setSelectedPersonFilter] = useState<string | null>(null);
   
@@ -1284,7 +1284,7 @@ export default function HomePage() {
     const nextWeek = new Date(today.getTime() + 7 * 24 * 60 * 60 * 1000);
     
     const filtered = reminderList
-      .filter(r => r.direction === reminderDirection)
+      .filter(r => reminderDirection === 'all' || r.direction === reminderDirection)
       .filter(r => !reminderSearchQuery || r.content.toLowerCase().includes(reminderSearchQuery.toLowerCase()))
       .filter(r => !selectedPersonFilter || r.requesterName === selectedPersonFilter || r.assigneeName === selectedPersonFilter);
     
@@ -4075,6 +4075,16 @@ export default function HomePage() {
             <div className="px-4 py-3 border-b border-slate-100 flex items-center gap-3">
               <div className="flex bg-slate-100 rounded-lg p-1">
                 <button
+                  onClick={() => setReminderDirection('all')}
+                  className={`px-3 py-1.5 rounded-md text-sm font-medium transition-all ${
+                    reminderDirection === 'all'
+                      ? 'bg-sky-500 text-white shadow-sm'
+                      : 'text-slate-600 hover:bg-white'
+                  }`}
+                >
+                  全部
+                </button>
+                <button
                   onClick={() => setReminderDirection('outbound')}
                   className={`px-3 py-1.5 rounded-md text-sm font-medium transition-all ${
                     reminderDirection === 'outbound'
@@ -4088,7 +4098,7 @@ export default function HomePage() {
                   onClick={() => setReminderDirection('inbound')}
                   className={`px-3 py-1.5 rounded-md text-sm font-medium transition-all ${
                     reminderDirection === 'inbound'
-                      ? 'bg-orange-500 text-white shadow-sm'
+                      ? 'bg-cyan-500 text-white shadow-sm'
                       : 'text-slate-600 hover:bg-white'
                   }`}
                 >
@@ -4109,7 +4119,8 @@ export default function HomePage() {
                 <div className="text-center py-12">
                   <Bell className="mx-auto h-12 w-12 text-slate-200 mb-3" />
                   <p className="text-sm text-slate-400">
-                    {reminderDirection === 'outbound' ? '暂无你要求别人的事项' : '暂无别人要求你的事项'}
+                    {reminderDirection === 'all' ? '暂无提醒事项' : 
+                     reminderDirection === 'outbound' ? '暂无你要求别人的事项' : '暂无别人要求你的事项'}
                   </p>
                 </div>
               ) : (
