@@ -1403,3 +1403,6 @@ export * from './schema/xhs-cards';
 
 // 行业案例库表
 export * from './schema/industry-case-library';
+
+// 信息速记哈希表（去重检测）
+export * from './schema/snippet-hashes';

@@ -3,6 +3,7 @@ import { db } from '@/lib/db';
 import { infoSnippets } from '@/lib/db/schema/info-snippets';
 import { desc, eq, sql, and, ilike, or } from 'drizzle-orm';
 import { getWorkspaceId } from '@/lib/auth/context';
+import { snippetDedupService } from '@/lib/services/snippet-dedup-service';
 
 /**
  * GET /api/info-snippets
@@ -146,6 +147,18 @@ export async function POST(request: NextRequest) {
       status: 'pending',
       workspaceId,
     }).returning();
+
+    // 🔥 保存/更新哈希记录（关联 snippetId）
+    try {
+      await snippetDedupService.saveSnippetHash({
+        content: rawContent.trim(),
+        snippetId: result[0].id,
+        workspaceId,
+      });
+    } catch (hashError) {
+      console.error('[info-snippets POST] 保存哈希失败:', hashError);
+      // 不阻塞主流程
+    }
 
     return NextResponse.json({
       success: true,

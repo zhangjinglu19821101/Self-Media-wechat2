@@ -1052,11 +1052,23 @@ export default function HomePage() {
     try {
       const result = await apiPost('/api/info-snippets/analyze', {
         rawContent: snippetForm.rawContent.trim(),
-      }) as { success: boolean; data?: any };
+      }) as { success: boolean; data?: any; fromCache?: boolean; duplicateInfo?: any };
       
       if (result.success && result.data) {
         setSnippetAnalyzeResult(result.data);
-        toast.success(`AI 分析完成：${result.data.categoryLabel}`);
+        
+        // 🔥 处理重复检测结果
+        if (result.duplicateInfo?.isDuplicate) {
+          const duplicateTypeText = result.duplicateInfo.duplicateType === 'exact' 
+            ? '完全相同' 
+            : '相似';
+          toast.info(`📋 检测到重复速记（${duplicateTypeText}），${result.fromCache ? '已使用缓存的分析结果' : '请确认是否继续保存'}`);
+          if (result.duplicateInfo.similarity) {
+            console.log(`[InfoSnippets] 相似度: ${(result.duplicateInfo.similarity * 100).toFixed(1)}%`);
+          }
+        } else {
+          toast.success(`AI 分析完成：${result.data.categoryLabels?.join('、') || '分析成功'}`);
+        }
       } else {
         toast.error('AI 分析失败，请重试');
       }
