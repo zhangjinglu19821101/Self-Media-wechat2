@@ -1,12 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { infoSnippets } from '@/lib/db/schema/info-snippets';
-import { eq, sql, and } from 'drizzle-orm';
+import { eq, and } from 'drizzle-orm';
 import { getWorkspaceId } from '@/lib/auth/context';
+import { deleteRelatedMaterial } from '@/lib/services/snippet-to-material';
 
 /**
  * GET /api/info-snippets/[id]
- * 获取单条速记详情（按 workspaceId 隔离）
+ * 获取单个信息速记详情
  */
 export async function GET(
   request: NextRequest,
@@ -15,30 +16,31 @@ export async function GET(
   try {
     const workspaceId = await getWorkspaceId(request);
     const { id } = await params;
-    const result = await db.select().from(infoSnippets).where(
+
+    const snippets = await db.select().from(infoSnippets).where(
       and(
         eq(infoSnippets.id, id),
         eq(infoSnippets.workspaceId, workspaceId)
       )
     );
 
-    if (result.length === 0) {
-      return NextResponse.json({ error: '未找到该记录' }, { status: 404 });
+    if (snippets.length === 0) {
+      return NextResponse.json({ error: '未找到该速记' }, { status: 404 });
     }
 
     return NextResponse.json({
       success: true,
-      data: result[0],
+      data: snippets[0],
     });
   } catch (error: any) {
-    console.error('[info-snippet GET] 错误:', error);
+    console.error('[info-snippets/[id] GET] 错误:', error);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
 
 /**
  * PUT /api/info-snippets/[id]
- * 更新速记（按 workspaceId 隔离）
+ * 更新信息速记
  */
 export async function PUT(
   request: NextRequest,
@@ -48,46 +50,52 @@ export async function PUT(
     const workspaceId = await getWorkspaceId(request);
     const { id } = await params;
     const body = await request.json();
-    
-    const result = await db.update(infoSnippets).set({
-      title: body.title,
-      sourceOrg: body.sourceOrg,
-      publishDate: body.publishDate || null,
-      url: body.url || null,
-      summary: body.summary,
-      keywords: body.keywords,
-      applicableScenes: body.applicableScenes,
-      status: body.status || 'pending',
-      // 🔥 提醒相关字段
-      snippetType: body.snippetType || null,
-      remindAt: body.remindAt ? new Date(body.remindAt) : null,
-      remindStatus: body.remindStatus || null,
-      remindedAt: body.remindedAt === null ? null : (body.remindedAt ? new Date(body.remindedAt) : undefined),
-      updatedAt: new Date(),
-    }).where(
+
+    // 检查速记是否存在
+    const existing = await db.select().from(infoSnippets).where(
       and(
         eq(infoSnippets.id, id),
         eq(infoSnippets.workspaceId, workspaceId)
       )
-    ).returning();
+    );
 
-    if (result.length === 0) {
-      return NextResponse.json({ error: '未找到该记录' }, { status: 404 });
+    if (existing.length === 0) {
+      return NextResponse.json({ error: '未找到该速记' }, { status: 404 });
     }
+
+    // 构建更新数据
+    const updateData: Record<string, any> = {
+      updatedAt: new Date(),
+    };
+
+    // 只更新提供的字段
+    if (body.title !== undefined) updateData.title = body.title || null;
+    if (body.summary !== undefined) updateData.summary = body.summary || null;
+    if (body.keywords !== undefined) updateData.keywords = body.keywords || null;
+    if (body.applicableScenes !== undefined) updateData.applicableScenes = body.applicableScenes || null;
+    if (body.remindAt !== undefined) updateData.remindAt = body.remindAt ? new Date(body.remindAt) : null;
+    if (body.remindStatus !== undefined) updateData.remindStatus = body.remindStatus || null;
+
+    const [updated] = await db.update(infoSnippets)
+      .set(updateData)
+      .where(eq(infoSnippets.id, id))
+      .returning();
 
     return NextResponse.json({
       success: true,
-      data: result[0],
+      data: updated,
     });
   } catch (error: any) {
-    console.error('[info-snippet PUT] 错误:', error);
+    console.error('[info-snippets/[id] PUT] 错误:', error);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
 
 /**
  * DELETE /api/info-snippets/[id]
- * 删除速记（按 workspaceId 隔离）
+ * 删除信息速记
+ * 
+ * 级联删除：如果速记已转化为素材，同步删除素材库记录
  */
 export async function DELETE(
   request: NextRequest,
@@ -96,24 +104,49 @@ export async function DELETE(
   try {
     const workspaceId = await getWorkspaceId(request);
     const { id } = await params;
-    
-    const result = await db.delete(infoSnippets).where(
-      and(
-        eq(infoSnippets.id, id),
-        eq(infoSnippets.workspaceId, workspaceId)
-      )
-    ).returning();
 
-    if (result.length === 0) {
-      return NextResponse.json({ error: '未找到该记录' }, { status: 404 });
+    // 使用事务确保数据一致性
+    const result = await db.transaction(async (tx) => {
+      // 查询速记（带 workspaceId 隔离）
+      const snippets = await tx.select().from(infoSnippets).where(
+        and(
+          eq(infoSnippets.id, id),
+          eq(infoSnippets.workspaceId, workspaceId)
+        )
+      );
+
+      if (snippets.length === 0) {
+        throw new Error('NOT_FOUND');
+      }
+
+      const snippet = snippets[0];
+      const materialId = snippet.materialId;
+
+      // 删除速记记录
+      await tx.delete(infoSnippets).where(eq(infoSnippets.id, id));
+
+      return { snippet, materialId };
+    });
+
+    // 级联删除关联素材（事务外执行，避免阻塞）
+    if (result.materialId) {
+      await deleteRelatedMaterial(result.materialId);
+      console.log(`[info-snippets/[id] DELETE] 删除速记 ${id} 及关联素材 ${result.materialId}`);
     }
 
     return NextResponse.json({
       success: true,
-      message: '已删除',
+      data: {
+        id,
+        deletedMaterialId: result.materialId,
+        message: '删除成功',
+      },
     });
   } catch (error: any) {
-    console.error('[info-snippet DELETE] 错误:', error);
+    if (error.message === 'NOT_FOUND') {
+      return NextResponse.json({ error: '未找到该速记' }, { status: 404 });
+    }
+    console.error('[info-snippets/[id] DELETE] 错误:', error);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
