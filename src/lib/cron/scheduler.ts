@@ -61,6 +61,13 @@ export const CRON_JOBS = {
     endpoint: '/api/cron/escalate-unresolved-issues',
     description: '上报未解决的问题给 Agent A',
   },
+  // 每分钟检查信息速记提醒
+  SNIPPET_REMINDERS: {
+    name: 'snippet-reminders',
+    schedule: '* * * * *', // 每分钟执行一次
+    endpoint: '/api/cron/snippet-reminders',
+    description: '检查并触发到期的信息速记提醒',
+  },
 };
 
 /**
@@ -92,6 +99,11 @@ async function callEndpoint(endpoint: string): Promise<void> {
       // 动态导入避免循环依赖
       const { manuallyExecuteInProgressSubtasks } = await import('@/lib/cron');
       await manuallyExecuteInProgressSubtasks();
+      console.log(`✅ 定时任务执行成功 [${endpoint}]`);
+    } else if (endpoint === '/api/cron/snippet-reminders') {
+      // 信息速记提醒检查
+      const { triggerSnippetReminders } = await import('@/lib/cron/snippet-reminders');
+      await triggerSnippetReminders();
       console.log(`✅ 定时任务执行成功 [${endpoint}]`);
     } else {
       // 其他端点暂时使用 HTTP fetch（这些端点使用频率较低）
