@@ -9,11 +9,16 @@
 
 import { materialLibrary } from '@/lib/db/schema/material-library';
 import { db } from '@/lib/db';
-import { eq } from 'drizzle-orm';
+import { eq, and } from 'drizzle-orm';
+import type { PgTransaction } from 'drizzle-orm/pg-core';
+import type { DrizzleError } from 'drizzle-orm';
 
 // ================================================================
 // 类型定义
 // ================================================================
+
+/** Drizzle 事务类型 */
+export type DrizzleTx = PgTransaction<any, any, any>;
 
 /** 有效的速记分类 */
 export const VALID_CATEGORIES = ['real_case', 'insurance', 'medical', 'intelligence', 'quick_note'] as const;
@@ -153,12 +158,14 @@ export function buildMaterialContent(snippet: SnippetData): string {
  * @param snippet 速记数据
  * @param workspaceId 工作空间 ID
  * @param overrideType 用户指定的素材类型（可选）
+ * @param tx Drizzle 事务对象（可选，用于在事务内执行）
  * @returns 转化结果
  */
 export async function convertSnippetToMaterial(
   snippet: SnippetData,
   workspaceId: string,
   overrideType?: MaterialType,
+  tx?: DrizzleTx,
 ): Promise<ConversionResult> {
   // 安全获取 categories
   const categories = safeGetCategories(snippet.categories);
@@ -176,8 +183,11 @@ export async function convertSnippetToMaterial(
   // 构建 content
   const materialContent = buildMaterialContent(snippet);
   
+  // 使用事务客户端或普通客户端
+  const client = tx || db;
+  
   // 插入素材库
-  const [material] = await db.insert(materialLibrary).values({
+  const [material] = await client.insert(materialLibrary).values({
     title: snippet.title || '无标题速记',
     type: materialType,
     content: materialContent,
@@ -203,15 +213,22 @@ export async function convertSnippetToMaterial(
 /**
  * 删除素材库关联记录
  * 用于速记删除时的级联删除
+ * 
+ * @param materialId 素材 ID
+ * @param tx Drizzle 事务对象（可选，用于在事务内执行）
  */
-export async function deleteRelatedMaterial(materialId: string): Promise<void> {
+export async function deleteRelatedMaterial(materialId: string, tx?: DrizzleTx): Promise<void> {
   if (!materialId) return;
   
+  const client = tx || db;
+  
   try {
-    await db.delete(materialLibrary).where(eq(materialLibrary.id, materialId));
+    await client.delete(materialLibrary).where(eq(materialLibrary.id, materialId));
     console.log(`[snippet-to-material] 删除关联素材: ${materialId}`);
   } catch (error) {
     console.error(`[snippet-to-material] 删除关联素材失败: ${materialId}`, error);
-    // 不抛出错误，避免阻塞速记删除
+    // 如果在事务内，抛出错误让事务回滚
+    if (tx) throw error;
+    // 事务外不抛出错误，避免阻塞速记删除
   }
 }

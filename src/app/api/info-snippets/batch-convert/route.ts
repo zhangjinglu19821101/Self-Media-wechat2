@@ -80,8 +80,8 @@ export async function POST(request: NextRequest) {
             categories: snippet.categories,
           };
 
-          // 执行转化（在事务内）
-          const conversionResult = await convertSnippetToMaterial(snippetData, workspaceId);
+          // 执行转化（在事务内，传递 tx 参数）
+          const conversionResult = await convertSnippetToMaterial(snippetData, workspaceId, undefined, tx);
 
           // 反写 materialId
           await tx.update(infoSnippets).set({

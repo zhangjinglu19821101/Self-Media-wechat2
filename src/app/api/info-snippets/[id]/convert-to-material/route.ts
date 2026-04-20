@@ -67,11 +67,12 @@ export async function POST(
         categories: snippet.categories,
       };
 
-      // 执行转化（在事务内）
+      // 执行转化（在事务内，传递 tx 参数）
       const conversionResult = await convertSnippetToMaterial(
         snippetData,
         workspaceId,
         overrideType,
+        tx,
       );
 
       // 反写 materialId 到速记表（双向关联）

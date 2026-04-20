@@ -78,7 +78,10 @@ export async function PUT(
 
     const [updated] = await db.update(infoSnippets)
       .set(updateData)
-      .where(eq(infoSnippets.id, id))
+      .where(and(
+        eq(infoSnippets.id, id),
+        eq(infoSnippets.workspaceId, workspaceId)  // 🔒 写操作也校验 workspaceId
+      ))
       .returning();
 
     return NextResponse.json({
@@ -105,7 +108,7 @@ export async function DELETE(
     const workspaceId = await getWorkspaceId(request);
     const { id } = await params;
 
-    // 使用事务确保数据一致性
+    // 使用事务确保数据一致性（级联删除也在事务内）
     const result = await db.transaction(async (tx) => {
       // 查询速记（带 workspaceId 隔离）
       const snippets = await tx.select().from(infoSnippets).where(
@@ -125,14 +128,15 @@ export async function DELETE(
       // 删除速记记录
       await tx.delete(infoSnippets).where(eq(infoSnippets.id, id));
 
+      // 级联删除关联素材（在事务内，确保一致性）
+      if (materialId) {
+        await deleteRelatedMaterial(materialId, tx);
+      }
+
       return { snippet, materialId };
     });
 
-    // 级联删除关联素材（事务外执行，避免阻塞）
-    if (result.materialId) {
-      await deleteRelatedMaterial(result.materialId);
-      console.log(`[info-snippets/[id] DELETE] 删除速记 ${id} 及关联素材 ${result.materialId}`);
-    }
+    console.log(`[info-snippets/[id] DELETE] 删除速记 ${id}${result.materialId ? ` 及关联素材 ${result.materialId}` : ''}`);
 
     return NextResponse.json({
       success: true,

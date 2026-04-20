@@ -164,8 +164,8 @@ export async function POST(request: NextRequest) {
           categories: snippetCategories,
         };
         
-        // 在事务内执行素材转化
-        const conversionResult = await convertSnippetToMaterial(snippetData, workspaceId);
+        // 在事务内执行素材转化，传递 tx 参数
+        const conversionResult = await convertSnippetToMaterial(snippetData, workspaceId, undefined, tx);
         materialId = conversionResult.materialId;
         materialType = conversionResult.materialType;
 
