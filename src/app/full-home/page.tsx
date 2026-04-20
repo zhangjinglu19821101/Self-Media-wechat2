@@ -1152,20 +1152,16 @@ export default function HomePage() {
 
       if (result.success && result.data) {
         const parsed = result.data;
-        
+
         // 根据解析结果填充表单
         const direction = parsed.executorType === '我自己' ? 'inbound' : 'outbound';
         const requesterName = direction === 'inbound' ? parsed.requester : (parsed.requester || '我');
         const assigneeName = direction === 'inbound' ? '我' : parsed.executor;
-        
-        // 转换时间格式
-        let remindAt = '';
-        if (parsed.deadline) {
-          // 解析 ISO 时间并转换为 datetime-local 格式
-          const date = new Date(parsed.deadline);
-          remindAt = date.toISOString().slice(0, 16);
-        }
-        
+
+        // P1-2 修复：优先使用后端返回的 deadlineLocal（已处理时区）
+        // 后端返回 deadlineLocal（datetime-local 格式）和 deadlineIso（ISO 格式）
+        const remindAt = parsed.deadlineLocal || parsed.deadline || '';
+
         setNewReminderForm({
           requesterName,
           assigneeName,
@@ -1173,17 +1169,17 @@ export default function HomePage() {
           remindAt,
           direction,
         });
-        
+
         // 切换到手动模式让用户确认/修改
         setReminderInputMode('manual');
-        
+
         // 显示解析提示
         if (parsed.confidence === 'low') {
           toast.warning('解析置信度较低，请确认信息是否正确');
         } else {
           toast.success('解析成功，请确认或修改信息');
         }
-        
+
         // 如果有备注，显示出来
         if (parsed.extractionNotes) {
           console.log('[智能解析备注]', parsed.extractionNotes);

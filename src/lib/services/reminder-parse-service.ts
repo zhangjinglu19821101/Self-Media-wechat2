@@ -13,6 +13,7 @@ import { join } from 'path';
 import { LLMClient } from 'coze-coding-dev-sdk';
 import { createUserLLMClient, getPlatformLLM } from '@/lib/llm/factory';
 import { getCurrentBeijingTime } from '@/lib/utils/date-time';
+import { JsonParserEnhancer } from '@/lib/utils/json-parser-enhancer';
 
 // ================================================================
 // 类型定义
@@ -236,51 +237,38 @@ function calculateRelativeTime(timeExpression: string): string | null {
 }
 
 // ================================================================
-// JSON 响应解析
+// 核心解析方法
 // ================================================================
 
 /**
- * 从 LLM 响应中提取 JSON 对象
- * 使用栈匹配确保准确提取（避免贪婪正则误匹配）
+ * 将 ISO 时间转换为 datetime-local 格式（本地时间，无时区偏移）
+ *
+ * 问题背景：
+ * - 服务端返回 ISO 格式（如 2024-01-16T15:00:00）
+ * - 前端 datetime-local 需要本地时间格式（2024-01-16T15:00）
+ * - 直接使用 toISOString() 会导致时区偏移问题
+ *
+ * 解决方案：
+ * - 使用本地时间组件直接格式化，避免时区转换
  */
-function extractJsonObject(text: string): string | null {
-  // 策略1：直接整体解析
+function isoToLocalDatetime(isoString: string): string {
+  if (!isoString) return '';
+
   try {
-    JSON.parse(text);
-    return text;
+    const date = new Date(isoString);
+    if (isNaN(date.getTime())) return '';
+
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    const hours = String(date.getHours()).padStart(2, '0');
+    const minutes = String(date.getMinutes()).padStart(2, '0');
+
+    return `${year}-${month}-${day}T${hours}:${minutes}`;
   } catch {
-    // 不是纯 JSON，继续
+    return '';
   }
-
-  // 策略2：找最外层 { } 的平衡匹配
-  let depth = 0;
-  let start = -1;
-
-  for (let i = 0; i < text.length; i++) {
-    if (text[i] === '{') {
-      if (depth === 0) start = i;
-      depth++;
-    } else if (text[i] === '}') {
-      depth--;
-      if (depth === 0 && start !== -1) {
-        const candidate = text.substring(start, i + 1);
-        try {
-          JSON.parse(candidate);
-          return candidate;
-        } catch {
-          // 这个平衡位置不是有效 JSON，继续找
-          start = -1;
-        }
-      }
-    }
-  }
-
-  return null;
 }
-
-// ================================================================
-// 核心解析方法
-// ================================================================
 
 /**
  * 解析提醒信息
@@ -329,13 +317,21 @@ export async function parseReminderInput(
     const elapsed = Date.now() - startTime;
     console.log(`[ReminderParse] LLM 响应成功 (${elapsed}ms)，响应长度: ${response.content.length}`);
 
-    // 解析 JSON 响应
-    const jsonStr = extractJsonObject(response.content);
-    if (!jsonStr) {
-      throw new Error('响应中未找到有效 JSON 对象');
+    // P1-1 修复：使用项目统一的 JsonParserEnhancer 解析 JSON
+    // 支持多种格式：代码块、栈匹配、自动修复常见错误
+    const parseResult = JsonParserEnhancer.smartParse(response.content);
+
+    if (!parseResult.success || !parseResult.data) {
+      const errorMsg = parseResult.error || '响应中未找到有效 JSON 对象';
+      console.warn(`[ReminderParse] JSON 解析失败: ${errorMsg}`, parseResult.warnings);
+      throw new Error(errorMsg);
     }
 
-    const parsed: LLMResponse = JSON.parse(jsonStr);
+    if (parseResult.warnings && parseResult.warnings.length > 0) {
+      console.log(`[ReminderParse] JSON 解析警告: ${parseResult.warnings.join(', ')}`);
+    }
+
+    const parsed: LLMResponse = parseResult.data;
 
     if (!parsed.structuredResult?.resultContent) {
       throw new Error('响应格式不正确：缺少 structuredResult.resultContent');
@@ -385,3 +381,18 @@ export async function parseReminderInputs(
 ): Promise<ReminderParseResult[]> {
   return Promise.all(inputs.map(input => parseReminderInput(input, workspaceId)));
 }
+
+// 导出时间格式转换函数供 API 层使用
+export { isoToLocalDatetime };
+
+// ================================================================
+// 常量定义
+// ================================================================
+
+/**
+ * 输入长度限制
+ */
+export const INPUT_CONSTRAINTS = {
+  MAX_INPUT_LENGTH: 500,      // 最大输入长度（字符）
+  MIN_INPUT_LENGTH: 2,        // 最小输入长度（字符）
+} as const;
