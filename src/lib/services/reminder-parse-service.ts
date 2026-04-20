@@ -1,10 +1,22 @@
 /**
  * 提醒智能解析服务
  * 从自然语言中提取提醒关键信息
+ *
+ * 设计说明：
+ * - 本服务是工具性 LLM 调用，不走 callLLM 的 Agent 体系
+ * - 直接使用 createUserLLMClient / getPlatformLLM（参考 llm-assisted-rule-service 模式）
+ * - 避免 Agent 记忆加载、身份提示词注入等不必要的开销
  */
 
-import { callLLM } from '@/lib/agent-llm';
+import { readFileSync, existsSync } from 'fs';
+import { join } from 'path';
+import { LLMClient } from 'coze-coding-dev-sdk';
+import { createUserLLMClient, getPlatformLLM } from '@/lib/llm/factory';
 import { getCurrentBeijingTime } from '@/lib/utils/date-time';
+
+// ================================================================
+// 类型定义
+// ================================================================
 
 /**
  * 解析结果
@@ -38,28 +50,73 @@ interface LLMResponse {
   structuredResult: LLMStructuredResult;
 }
 
+// ================================================================
+// P0-2 修复：提示词缓存（模块级单例，只读一次磁盘）
+// ================================================================
+
+let _cachedPrompt: string | null = null;
+
 /**
- * 提示词加载器
+ * 加载提示词（带缓存）
+ * - 首次调用读磁盘并缓存
+ * - 后续调用直接返回缓存
+ * - 使用同步 readFileSync（与 prompt-loader.ts 保持一致）
  */
-async function loadReminderParsePrompt(): Promise<string> {
-  const fs = await import('fs/promises');
-  const path = await import('path');
-  
-  const promptPath = path.join(process.cwd(), 'src/lib/agents/prompts/reminder-parse.md');
-  return fs.readFile(promptPath, 'utf-8');
+function loadReminderParsePrompt(): string {
+  if (_cachedPrompt) return _cachedPrompt;
+
+  const promptPath = join(process.cwd(), 'src/lib/agents/prompts/reminder-parse.md');
+
+  if (!existsSync(promptPath)) {
+    throw new Error(`提示词文件不存在: ${promptPath}`);
+  }
+
+  _cachedPrompt = readFileSync(promptPath, 'utf-8');
+  console.log(`[ReminderParse] 提示词已加载并缓存，长度: ${_cachedPrompt.length} 字符`);
+  return _cachedPrompt;
 }
+
+// ================================================================
+// LLM 客户端获取（BYOK 优先，平台 Key 兜底）
+// ================================================================
+
+/**
+ * 获取 LLM 客户端
+ * - 有 workspaceId → 尝试用户 Key（BYOK）
+ * - 无 workspaceId 或用户未配 Key → 平台 Key 兜底
+ */
+async function getClient(workspaceId?: string): Promise<LLMClient> {
+  if (workspaceId) {
+    try {
+      const { client } = await createUserLLMClient(workspaceId, { timeout: 30000 });
+      return client;
+    } catch {
+      // 用户未配 Key 或 Key 无效，降级到平台 Key
+      console.log('[ReminderParse] 用户 Key 不可用，降级到平台 Key');
+    }
+  }
+  return getPlatformLLM();
+}
+
+// ================================================================
+// 相对时间计算
+// ================================================================
 
 /**
  * 计算相对时间
  * 根据用户输入的相对时间表达计算具体日期
+ *
+ * 仅作为 LLM 时间解析的补充：
+ * - LLM 可能返回原始表达但未计算 deadline
+ * - 此时用本地正则二次计算
  */
 function calculateRelativeTime(timeExpression: string): string | null {
   const now = getCurrentBeijingTime();
   const today = new Date(now);
-  
+
   // 规范化输入
   const normalized = timeExpression.toLowerCase().trim();
-  
+
   // 匹配常见模式
   const patterns: Array<{ pattern: RegExp; handler: (match: RegExpMatchArray) => Date }> = [
     // 今天
@@ -77,7 +134,6 @@ function calculateRelativeTime(timeExpression: string): string | null {
       handler: (match) => {
         const d = new Date(today);
         d.setDate(d.getDate() + 1);
-        // 检查是否有时间修饰
         const suffix = match[1] || '';
         if (suffix.includes('早') || suffix.includes('上午')) {
           d.setHours(9, 0, 0, 0);
@@ -137,7 +193,6 @@ function calculateRelativeTime(timeExpression: string): string | null {
         const targetDay = dayMap[match[1]];
         const d = new Date(today);
         const currentDay = d.getDay();
-        // 先跳到下周一，再加目标天数
         const daysUntilNextMonday = 7 - currentDay + 1;
         d.setDate(d.getDate() + daysUntilNextMonday + targetDay - 1);
         d.setHours(18, 0, 0, 0);
@@ -161,7 +216,6 @@ function calculateRelativeTime(timeExpression: string): string | null {
         const month = parseInt(match[1]) - 1;
         const day = parseInt(match[2]);
         const d = new Date(today.getFullYear(), month, day, 18, 0, 0);
-        // 如果日期已过，则为明年
         if (d < today) {
           d.setFullYear(d.getFullYear() + 1);
         }
@@ -169,7 +223,7 @@ function calculateRelativeTime(timeExpression: string): string | null {
       }
     },
   ];
-  
+
   for (const { pattern, handler } of patterns) {
     const match = normalized.match(pattern);
     if (match) {
@@ -177,9 +231,56 @@ function calculateRelativeTime(timeExpression: string): string | null {
       return result.toISOString().replace(/\.\d{3}Z$/, '');
     }
   }
-  
+
   return null;
 }
+
+// ================================================================
+// JSON 响应解析
+// ================================================================
+
+/**
+ * 从 LLM 响应中提取 JSON 对象
+ * 使用栈匹配确保准确提取（避免贪婪正则误匹配）
+ */
+function extractJsonObject(text: string): string | null {
+  // 策略1：直接整体解析
+  try {
+    JSON.parse(text);
+    return text;
+  } catch {
+    // 不是纯 JSON，继续
+  }
+
+  // 策略2：找最外层 { } 的平衡匹配
+  let depth = 0;
+  let start = -1;
+
+  for (let i = 0; i < text.length; i++) {
+    if (text[i] === '{') {
+      if (depth === 0) start = i;
+      depth++;
+    } else if (text[i] === '}') {
+      depth--;
+      if (depth === 0 && start !== -1) {
+        const candidate = text.substring(start, i + 1);
+        try {
+          JSON.parse(candidate);
+          return candidate;
+        } catch {
+          // 这个平衡位置不是有效 JSON，继续找
+          start = -1;
+        }
+      }
+    }
+  }
+
+  return null;
+}
+
+// ================================================================
+// 核心解析方法
+// ================================================================
 
 /**
  * 解析提醒信息
@@ -191,62 +292,72 @@ export async function parseReminderInput(
   input: string,
   workspaceId: string
 ): Promise<ReminderParseResult> {
-  // 加载提示词
-  const systemPrompt = await loadReminderParsePrompt();
-  
+  // 加载提示词（带缓存）
+  const systemPrompt = loadReminderParsePrompt();
+
   // 获取当前时间信息
   const now = getCurrentBeijingTime();
   const today = new Date(now);
   const dateInfo = `当前日期：${today.getFullYear()}年${today.getMonth() + 1}月${today.getDate()}日，${['日', '一', '二', '三', '四', '五', '六'][today.getDay()]}，当前时间：${today.getHours()}:${String(today.getMinutes()).padStart(2, '0')}`;
-  
+
   // 构建用户消息
   const userMessage = `${dateInfo}
 
 用户输入：${input}
 
 请根据上述信息解析提醒内容，并按照标准格式输出 JSON。`;
-  
-  // 调用 LLM
-  const response = await callLLM(
-    'reminder-parse',         // agentId
-    '提醒智能解析',            // context
-    systemPrompt,             // systemPrompt
-    userMessage,              // userPrompt
-    {
-      temperature: 0.3,
-      workspaceId,
-    }
-  );
-  
-  // 解析响应
+
+  // 获取 LLM 客户端（BYOK 优先，平台 Key 兜底）
+  const client = await getClient(workspaceId);
+
+  const startTime = Date.now();
+  console.log(`[ReminderParse] 开始解析，输入长度: ${input.length}`);
+
   try {
-    // 尝试解析 JSON
-    const jsonMatch = response.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) {
-      throw new Error('响应中未找到 JSON 对象');
+    // 调用 LLM（使用轻量模型，低温度保证稳定）
+    const response = await client.invoke(
+      [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userMessage },
+      ],
+      {
+        model: 'doubao-seed-1-6-lite-251015',
+        temperature: 0.3,
+      }
+    );
+
+    const elapsed = Date.now() - startTime;
+    console.log(`[ReminderParse] LLM 响应成功 (${elapsed}ms)，响应长度: ${response.content.length}`);
+
+    // 解析 JSON 响应
+    const jsonStr = extractJsonObject(response.content);
+    if (!jsonStr) {
+      throw new Error('响应中未找到有效 JSON 对象');
     }
-    
-    const parsed: LLMResponse = JSON.parse(jsonMatch[0]);
-    
+
+    const parsed: LLMResponse = JSON.parse(jsonStr);
+
     if (!parsed.structuredResult?.resultContent) {
-      throw new Error('响应格式不正确：缺少 resultContent');
+      throw new Error('响应格式不正确：缺少 structuredResult.resultContent');
     }
-    
+
     const result = parsed.structuredResult.resultContent;
-    
-    // 如果 LLM 没有计算出 deadline，尝试本地计算
+
+    // 如果 LLM 没有计算出 deadline，尝试本地二次计算
     if (!result.deadline && result.deadlineOriginal) {
       const calculated = calculateRelativeTime(result.deadlineOriginal);
       if (calculated) {
         result.deadline = calculated;
+        console.log(`[ReminderParse] 本地补充计算 deadline: ${result.deadlineOriginal} → ${calculated}`);
       }
     }
-    
+
     return result;
   } catch (error) {
-    console.error('[ReminderParseService] 解析 LLM 响应失败:', error);
-    
-    // 返回降级结果
+    const elapsed = Date.now() - startTime;
+    console.error(`[ReminderParse] 解析失败 (${elapsed}ms):`, error instanceof Error ? error.message : String(error));
+
+    // 降级：返回原始输入作为任务内容
     return {
       requester: '',
       requesterType: '',
