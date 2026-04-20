@@ -470,8 +470,6 @@ export default function HomePage() {
   } | null>(null);
   const [snippetForm, setSnippetForm] = useState({
     rawContent: '',
-    snippetType: 'memory' as 'memory' | 'reminder',
-    remindAt: '',
   });
   
   // 🔥 提醒中心相关状态
@@ -503,11 +501,6 @@ export default function HomePage() {
   const [snippetTypeFilter, setSnippetTypeFilter] = useState('all');
   const [snippetStatusFilter, setSnippetStatusFilter] = useState('all');
   
-  // 🔥 提醒弹框状态
-  const [triggeredReminders, setTriggeredReminders] = useState<InfoSnippet[]>([]);
-  const [showReminderDialog, setShowReminderDialog] = useState(false);
-  const [currentReminderIndex, setCurrentReminderIndex] = useState(0);
-
   // 🔥 创作引导：从 localStorage 加载草稿（仅在客户端）
   useEffect(() => {
     if (hasSplitResult) {
@@ -1357,20 +1350,15 @@ export default function HomePage() {
       toast.error('请先进行 AI 分析');
       return;
     }
-    if (snippetForm.snippetType === 'reminder' && !snippetForm.remindAt) {
-      toast.error('提醒类型必须设置提醒时间');
-      return;
-    }
     
     setSnippetSaving(true);
     try {
       await apiPost('/api/info-snippets', {
         ...snippetAnalyzeResult,
-        snippetType: snippetForm.snippetType,
-        remindAt: snippetForm.remindAt ? new Date(snippetForm.remindAt).toISOString() : null,
+        snippetType: 'memory',
       });
-      toast.success(snippetForm.snippetType === 'reminder' ? '提醒已设置' : '速记已保存');
-      setSnippetForm({ rawContent: '', snippetType: 'memory', remindAt: '' });
+      toast.success('速记已保存');
+      setSnippetForm({ rawContent: '' });
       setSnippetAnalyzeResult(null);
       loadSnippetList();
     } catch (error) {
@@ -1394,85 +1382,6 @@ export default function HomePage() {
 
   // 🔥 提醒功能：轮询检查触发的提醒
   // 使用 dismissedIdSet 记录本次会话已处理的提醒 ID，避免重复弹窗
-  const dismissedIdSetRef = useRef<Set<string>>(new Set());
-
-  const checkTriggeredReminders = useCallback(async () => {
-    try {
-      const data: any = await apiGet('/api/info-snippets/triggered-reminders');
-      if (data.success && data.data?.length > 0) {
-        // 🔒 过滤掉本次会话已处理的提醒
-        const newReminders = data.data.filter((r: InfoSnippet) => !dismissedIdSetRef.current.has(r.id));
-        if (newReminders.length > 0) {
-          setTriggeredReminders(newReminders);
-          setCurrentReminderIndex(0);
-          setShowReminderDialog(true);
-        }
-      }
-    } catch (error) {
-      console.error('[Reminders] 检查失败:', error);
-    }
-  }, []);
-
-  // 🔥 提醒功能：标记当前提醒为已处理
-  const handleDismissReminder = async () => {
-    if (triggeredReminders.length === 0) return;
-    
-    const currentReminder = triggeredReminders[currentReminderIndex];
-    try {
-      await apiPost(`/api/info-snippets/${currentReminder.id}/dismiss-reminder`);
-      dismissedIdSetRef.current.add(currentReminder.id);
-      
-      // 如果还有下一个提醒，显示下一个
-      if (currentReminderIndex < triggeredReminders.length - 1) {
-        setCurrentReminderIndex(prev => prev + 1);
-      } else {
-        // 没有更多提醒，关闭弹框
-        setShowReminderDialog(false);
-        setTriggeredReminders([]);
-      }
-    } catch (error) {
-      toast.error('操作失败');
-    }
-  };
-
-  // 🔥 提醒功能：稍后提醒（1小时后）
-  const handleSnoozeReminder = async () => {
-    if (triggeredReminders.length === 0) return;
-    
-    const currentReminder = triggeredReminders[currentReminderIndex];
-    const snoozeTime = new Date(Date.now() + 60 * 60 * 1000); // 1小时后
-    
-    try {
-      // 更新提醒时间并重置状态
-      await apiPut(`/api/info-snippets/${currentReminder.id}`, {
-        remindAt: snoozeTime.toISOString(),
-        remindStatus: 'pending',
-        remindedAt: null, // 清除触发时间，防止重复触发
-      });
-      dismissedIdSetRef.current.add(currentReminder.id);
-      toast.success('已延迟 1 小时提醒');
-      
-      // 显示下一个提醒
-      if (currentReminderIndex < triggeredReminders.length - 1) {
-        setCurrentReminderIndex(prev => prev + 1);
-      } else {
-        setShowReminderDialog(false);
-        setTriggeredReminders([]);
-      }
-    } catch (error) {
-      toast.error('操作失败');
-    }
-  };
-
-  // 🔥 页面加载时检查触发的提醒，并启动轮询
-  useEffect(() => {
-    checkTriggeredReminders();
-    
-    // 每30秒检查一次
-    const interval = setInterval(checkTriggeredReminders, 30000);
-    return () => clearInterval(interval);
-  }, [checkTriggeredReminders]);
-
   // 🔥 获取确认创建子任务按钮的禁用原因
   const getSubmitDisabledReason = () => {
     if (submitLockRef.current || isSubmitting) {
@@ -3862,81 +3771,6 @@ export default function HomePage() {
         </TabsContent>
       </Tabs>
 
-      {/* 🔥 提醒弹框 */}
-      {showReminderDialog && triggeredReminders.length > 0 && (
-        <div className="fixed inset-0 z-[70] flex items-center justify-center">
-          <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={handleDismissReminder} />
-          <div className="relative bg-white rounded-2xl shadow-2xl max-w-md w-full mx-4 overflow-hidden animate-in zoom-in-95 duration-200">
-            {/* 头部 */}
-            <div className="bg-gradient-to-r from-amber-500 to-orange-600 px-6 py-4 text-white">
-              <div className="flex items-center gap-3">
-                <div className="h-10 w-10 rounded-full bg-white/20 flex items-center justify-center">
-                  <Bell className="h-5 w-5 animate-bounce" />
-                </div>
-                <div>
-                  <h3 className="text-lg font-semibold">速记提醒</h3>
-                  <p className="text-sm text-white/80">
-                    {currentReminderIndex + 1} / {triggeredReminders.length} 条提醒
-                  </p>
-                </div>
-              </div>
-            </div>
-            
-            {/* 内容 */}
-            <div className="px-6 py-5">
-              <div className="mb-4">
-                <h4 className="text-base font-semibold text-slate-800 mb-2">
-                  {triggeredReminders[currentReminderIndex]?.title}
-                </h4>
-                <div className="flex items-center gap-3 text-xs text-slate-500 mb-3">
-                  <span className="flex items-center gap-1">
-                    <Building2 className="h-3 w-3" />
-                    {triggeredReminders[currentReminderIndex]?.sourceOrg}
-                  </span>
-                </div>
-                <div className="bg-amber-50 border border-amber-100 rounded-lg p-4">
-                  <p className="text-sm text-slate-700 leading-relaxed">
-                    {triggeredReminders[currentReminderIndex]?.summary}
-                  </p>
-                </div>
-              </div>
-              
-              {/* 链接 */}
-              {triggeredReminders[currentReminderIndex]?.url && (
-                <a
-                  href={triggeredReminders[currentReminderIndex].url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1 text-xs text-sky-600 hover:text-sky-700 mb-4"
-                >
-                  <ExternalLink className="h-3 w-3" />
-                  查看原文
-                </a>
-              )}
-            </div>
-            
-            {/* 操作按钮 */}
-            <div className="px-6 py-4 bg-slate-50 border-t border-slate-100 flex gap-3">
-              <Button
-                variant="outline"
-                onClick={handleSnoozeReminder}
-                className="flex-1"
-              >
-                <Clock className="h-4 w-4 mr-2" />
-                稍后提醒
-              </Button>
-              <Button
-                onClick={handleDismissReminder}
-                className="flex-1 bg-amber-500 hover:bg-amber-600 text-white"
-              >
-                <CheckCircle2 className="h-4 w-4 mr-2" />
-                知道了
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* 🔥 提醒中心浮动按钮 - 对话框打开时隐藏 */}
       {!showCreateReminderDialog && (
         <TooltipProvider>
@@ -4419,49 +4253,6 @@ export default function HomePage() {
               {!snippetAnalyzeResult ? (
                 // 步骤1：输入原始内容 + AI 分析
                 <div className="space-y-3">
-                  {/* 速记类型选择 */}
-                  <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={() => setSnippetForm(prev => ({ ...prev, snippetType: 'memory', remindAt: '' }))}
-                      className={`flex-1 py-2 px-3 rounded-lg text-sm font-medium transition-all flex items-center justify-center gap-1.5 ${
-                        snippetForm.snippetType === 'memory'
-                          ? 'bg-sky-500 text-white shadow-sm'
-                          : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50'
-                      }`}
-                    >
-                      <Brain className="h-4 w-4" />
-                      记忆
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setSnippetForm(prev => ({ ...prev, snippetType: 'reminder' }))}
-                      className={`flex-1 py-2 px-3 rounded-lg text-sm font-medium transition-all flex items-center justify-center gap-1.5 ${
-                        snippetForm.snippetType === 'reminder'
-                          ? 'bg-amber-500 text-white shadow-sm'
-                          : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50'
-                      }`}
-                    >
-                      <Bell className="h-4 w-4" />
-                      提醒
-                    </button>
-                  </div>
-                  
-                  {/* 提醒时间（仅提醒类型显示） */}
-                  {snippetForm.snippetType === 'reminder' && (
-                    <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
-                      <Label className="text-xs text-amber-700 mb-1 block flex items-center gap-1">
-                        <Bell className="h-3 w-3" />提醒时间 *
-                      </Label>
-                      <Input
-                        type="datetime-local"
-                        value={snippetForm.remindAt}
-                        onChange={(e) => setSnippetForm(prev => ({ ...prev, remindAt: e.target.value }))}
-                        className="h-9 text-sm bg-white"
-                      />
-                    </div>
-                  )}
-
                   {/* 唯一输入框：原始内容 */}
                   <div>
                     <Label className="text-xs text-slate-500 mb-1 block">输入信息内容 *</Label>
@@ -4643,11 +4434,7 @@ export default function HomePage() {
                     <Button
                       onClick={handleConfirmSaveSnippet}
                       disabled={snippetSaving}
-                      className={`flex-1 h-9 ${
-                        snippetForm.snippetType === 'reminder'
-                          ? 'bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-600 hover:to-orange-700'
-                          : 'bg-gradient-to-r from-sky-500 to-cyan-600 hover:from-sky-600 hover:to-cyan-700'
-                      } text-white`}
+                      className="flex-1 h-9 bg-gradient-to-r from-sky-500 to-cyan-600 hover:from-sky-600 hover:to-cyan-700 text-white"
                     >
                       {snippetSaving ? (
                         <><Loader2 className="mr-2 h-4 w-4 animate-spin" />保存中...</>
@@ -4709,7 +4496,6 @@ export default function HomePage() {
               ) : (
                 <div className="space-y-3">
                   {snippetList.map((snippet) => {
-                    const isReminder = snippet.snippetType === 'reminder';
                     // 分类颜色
                     const categoryColors: Record<string, { bg: string; text: string; border: string }> = {
                       real_case: { bg: 'bg-rose-50', text: 'text-rose-700', border: 'border-rose-200' },
@@ -4732,11 +4518,9 @@ export default function HomePage() {
                       <div
                         key={snippet.id}
                         className={`rounded-xl border p-4 transition-all hover:shadow-md ${
-                          isReminder
-                            ? 'bg-amber-50/30 border-amber-200'
-                            : snippet.complianceLevel === 'C'
-                              ? 'bg-red-50/30 border-red-200'
-                              : 'bg-white border-slate-200'
+                          snippet.complianceLevel === 'C'
+                            ? 'bg-red-50/30 border-red-200'
+                            : 'bg-white border-slate-200'
                         }`}
                       >
                         <div className="flex items-start justify-between gap-3">
@@ -4767,14 +4551,6 @@ export default function HomePage() {
                                    snippet.complianceLevel === 'B' ? '预警' : '违规'}
                                 </Badge>
                               )}
-                              
-                              {/* 提醒状态 */}
-                              {isReminder && snippet.remindStatus === 'pending' && (
-                                <Badge className="bg-amber-100 text-amber-700 text-xs">待提醒</Badge>
-                              )}
-                              {isReminder && snippet.remindStatus === 'triggered' && (
-                                <Badge className="bg-red-100 text-red-700 text-xs">已触发</Badge>
-                              )}
                             </div>
                             
                             {/* 标题 */}
@@ -4799,17 +4575,6 @@ export default function HomePage() {
                                 <span className="flex items-center gap-1">
                                   <Clock className="h-3 w-3" />
                                   {snippet.publishDate}
-                                </span>
-                              )}
-                              {isReminder && snippet.remindAt && (
-                                <span className="flex items-center gap-1 text-amber-600">
-                                  <Bell className="h-3 w-3" />
-                                  {new Date(snippet.remindAt).toLocaleString('zh-CN', {
-                                    month: '2-digit',
-                                    day: '2-digit',
-                                    hour: '2-digit',
-                                    minute: '2-digit'
-                                  })}
                                 </span>
                               )}
                             </div>
