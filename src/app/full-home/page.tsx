@@ -1028,6 +1028,7 @@ export default function HomePage() {
     } finally {
       setSnippetLoading(false);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [snippetSearchQuery, snippetStatusFilter, snippetTypeFilter]);
 
   // 🔥 信息速记：打开抽屉时加载
