@@ -16,7 +16,7 @@ import { AgentId } from '@/lib/agent-types';
 import { decode } from 'next-auth/jwt';
 
 /** 合法的 Agent ID 列表（内部服务白名单） */
-const VALID_AGENT_IDS: AgentId[] = ['A', 'B', 'C', 'D', 'insurance-c', 'insurance-d', 'insurance-xiaohongshu', 'insurance-zhihu', 'insurance-toutiao'];
+const VALID_AGENT_IDS: AgentId[] = ['A', 'B', 'C', 'D', 'insurance-c', 'insurance-d', 'insurance-xiaohongshu', 'insurance-zhihu', 'insurance-toutiao', 'deai-optimizer'];
 
 /** WS 认证结果 */
 export interface WSAuthResult {

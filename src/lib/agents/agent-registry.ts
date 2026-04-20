@@ -93,6 +93,11 @@ export const PLATFORM_CONTENT_FIELDS: Record<string, {
     format: 'text',
     description: '头条文章正文',
   },
+  'deai-optimizer': {
+    contentField: 'content',
+    format: 'text',
+    description: '去AI化优化后的正文（纯文本格式）',
+  },
 };
 
 /**

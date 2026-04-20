@@ -197,6 +197,19 @@ const AGENT_CONFIG_MAP: Record<string, {
     evalLabel: '修改记录',
     processLabel: '确认过程',
   },
+  // 🔴 去AI化优化专家
+  'deai-optimizer': {
+    icon: Sparkles,
+    label: 'deai-optimizer',
+    friendlyLabel: '去AI化优化',
+    statusText: '优化完成',
+    statusEmoji: '✨',
+    role: 'executor',
+    color: 'sky',
+    sectionLabel: '优化总结',
+    evalLabel: '优化评估',
+    processLabel: '优化过程',
+  },
   'agent c': {
     icon: ShieldCheck,
     label: 'agent C',

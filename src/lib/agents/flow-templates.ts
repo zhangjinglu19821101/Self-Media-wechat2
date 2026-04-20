@@ -29,27 +29,31 @@ const NODE_STYLES = {
   // 微信公众号样式
   wechat_user: { icon: '📱', color: 'from-green-500 to-emerald-600' },
   wechat_write: { icon: '📝', color: 'from-blue-500 to-indigo-600' },
+  wechat_deai: { icon: '✨', color: 'from-cyan-500 to-teal-600' },
   wechat_preview: { icon: '👁️', color: 'from-purple-500 to-violet-600' },
-  wechat_polish: { icon: '✨', color: 'from-sky-500 to-blue-600' },
+  wechat_polish: { icon: '🔧', color: 'from-sky-500 to-blue-600' },
   wechat_check: { icon: '✅', color: 'from-amber-500 to-orange-600' },
   wechat_upload: { icon: '📤', color: 'from-teal-500 to-cyan-600' },
   
   // 小红书样式
   xiaohongshu_user: { icon: '📕', color: 'from-red-500 to-rose-600' },
   xiaohongshu_write: { icon: '📝', color: 'from-pink-500 to-rose-600' },
+  xiaohongshu_deai: { icon: '✨', color: 'from-fuchsia-500 to-pink-600' },
   xiaohongshu_preview: { icon: '👁️', color: 'from-purple-500 to-pink-600' },
-  xiaohongshu_polish: { icon: '✨', color: 'from-fuchsia-500 to-pink-600' },
+  xiaohongshu_polish: { icon: '🔧', color: 'from-rose-500 to-red-600' },
   xiaohongshu_check: { icon: '✅', color: 'from-amber-500 to-orange-600' },
   
   // 知乎样式
   zhihu_user: { icon: '🔵', color: 'from-blue-600 to-slate-700' },
   zhihu_write: { icon: '📝', color: 'from-slate-500 to-slate-700' },
+  zhihu_deai: { icon: '✨', color: 'from-indigo-500 to-blue-600' },
   zhihu_preview: { icon: '👁️', color: 'from-purple-500 to-indigo-600' },
   zhihu_check: { icon: '✅', color: 'from-amber-500 to-orange-600' },
   
   // 头条/抖音样式
   toutiao_user: { icon: '📱', color: 'from-red-600 to-orange-600' },
   toutiao_write: { icon: '📝', color: 'from-orange-500 to-red-600' },
+  toutiao_deai: { icon: '✨', color: 'from-amber-500 to-orange-600' },
   toutiao_preview: { icon: '👁️', color: 'from-purple-500 to-orange-600' },
   toutiao_check: { icon: '✅', color: 'from-amber-500 to-orange-600' },
 } as const;
@@ -94,10 +98,11 @@ function createFlowTemplate(
 }
 
 /**
- * 微信公众号默认流程模板（6步）
+ * 微信公众号默认流程模板（7步）
  * 
  * 特点：
  * - insurance-d 撰写 HTML 长文
+ * - deai-optimizer 去AI化优化
  * - 用户预览修改初稿（可跳过）
  * - Agent T 执行合规校验
  * - insurance-d 完成合规整改（根据校验结果修改文章）
@@ -112,18 +117,20 @@ export const WECHAT_OFFICIAL_FLOW_TEMPLATE = createFlowTemplate(
   [
     { id: 'node-wechat-1', executor: 'B', title: '分析任务需求', description: '分析用户指令，提取核心观点、关键素材、目标受众，规划文章创作方向和结构建议', styleKey: 'wechat_user' },
     { id: 'node-wechat-2', executor: 'insurance-d', title: '撰写公众号文章', description: '根据分析结果和用户确认的大纲，撰写完整的公众号文章（HTML格式），遵循核心铁律和风格要求', styleKey: 'wechat_write' },
-    { id: 'node-wechat-3', executor: 'user_preview_edit', title: '预览修改初稿', description: '预览文章初稿，可进行修改调整或直接确认继续（修改后版本将用于合规校验）', styleKey: 'wechat_preview' },
-    { id: 'node-wechat-4', executor: 'T', title: '合规校验', description: '对文章进行合规性校验，检查是否包含绝对化用语、虚假承诺、违规营销等内容', styleKey: 'wechat_check' },
-    { id: 'node-wechat-5', executor: 'insurance-d', title: '完成合规整改', description: '依据合规校验结果，完成公众号文章整改（修改违规内容、调整表述）', styleKey: 'wechat_polish' },
-    { id: 'node-wechat-6', executor: 'T', title: '上传公众号草稿箱', description: '将整改后的文章上传至公众号草稿箱，配置原创声明、赞赏等设置', styleKey: 'wechat_upload' },
+    { id: 'node-wechat-3', executor: 'deai-optimizer', title: '去AI化优化', description: '对文章进行全维度自检和柔和改写，剔除AI机器腔、模板句式，让内容更自然、更像真人手写', styleKey: 'wechat_deai' },
+    { id: 'node-wechat-4', executor: 'user_preview_edit', title: '预览修改初稿', description: '预览文章初稿，可进行修改调整或直接确认继续（修改后版本将用于合规校验）', styleKey: 'wechat_preview' },
+    { id: 'node-wechat-5', executor: 'T', title: '合规校验', description: '对文章进行合规性校验，检查是否包含绝对化用语、虚假承诺、违规营销等内容', styleKey: 'wechat_check' },
+    { id: 'node-wechat-6', executor: 'insurance-d', title: '完成合规整改', description: '依据合规校验结果，完成公众号文章整改（修改违规内容、调整表述）', styleKey: 'wechat_polish' },
+    { id: 'node-wechat-7', executor: 'T', title: '上传公众号草稿箱', description: '将整改后的文章上传至公众号草稿箱，配置原创声明、赞赏等设置', styleKey: 'wechat_upload' },
   ]
 );
 
 /**
- * 小红书默认流程模板（6步，与公众号对称）
+ * 小红书默认流程模板（7步，与公众号对称）
  * 
  * 特点：
  * - insurance-xiaohongshu 创作图文（JSON格式，含卡片数据）
+ * - deai-optimizer 去AI化优化
  * - 用户预览修改图文（可跳过）
  * - Agent T 执行合规校验和生成预览图
  * - Agent B 最终审核确认
@@ -137,18 +144,20 @@ export const XIAOHONGSHU_FLOW_TEMPLATE = createFlowTemplate(
   [
     { id: 'node-xhs-1', executor: 'B', title: '分析任务需求', description: '分析用户指令，提取核心观点、关键素材、目标受众，规划小红书图文创作方向和卡片结构', styleKey: 'xiaohongshu_user' },
     { id: 'node-xhs-2', executor: 'insurance-xiaohongshu', title: '创作小红书图文', description: '根据分析结果创作小红书图文内容（JSON格式），包含标题、要点卡片、正文、标签', styleKey: 'xiaohongshu_write' },
-    { id: 'node-xhs-3', executor: 'user_preview_edit', title: '预览修改图文', description: '预览小红书图文初稿，可修改标题/要点/正文/标签或直接确认继续', styleKey: 'xiaohongshu_preview' },
-    { id: 'node-xhs-4', executor: 'T', title: '合规校验', description: '对小红书图文进行合规性校验，检查是否包含绝对化用语、虚假承诺、违规营销等内容', styleKey: 'xiaohongshu_check' },
-    { id: 'node-xhs-5', executor: 'insurance-xiaohongshu', title: '完成合规整改', description: '依据合规校验结果，完成小红书图文整改', styleKey: 'xiaohongshu_polish' },
-    { id: 'node-xhs-6', executor: 'B', title: '生成预览图', description: '生成小红书图文预览图，供用户手动发布使用', styleKey: 'xiaohongshu_check' },
+    { id: 'node-xhs-3', executor: 'deai-optimizer', title: '去AI化优化', description: '对图文内容进行全维度自检和柔和改写，剔除AI机器腔、模板句式，让内容更自然、更像真人手写', styleKey: 'xiaohongshu_deai' },
+    { id: 'node-xhs-4', executor: 'user_preview_edit', title: '预览修改图文', description: '预览小红书图文初稿，可修改标题/要点/正文/标签或直接确认继续', styleKey: 'xiaohongshu_preview' },
+    { id: 'node-xhs-5', executor: 'T', title: '合规校验', description: '对小红书图文进行合规性校验，检查是否包含绝对化用语、虚假承诺、违规营销等内容', styleKey: 'xiaohongshu_check' },
+    { id: 'node-xhs-6', executor: 'insurance-xiaohongshu', title: '完成合规整改', description: '依据合规校验结果，完成小红书图文整改', styleKey: 'xiaohongshu_polish' },
+    { id: 'node-xhs-7', executor: 'B', title: '生成预览图', description: '生成小红书图文预览图，供用户手动发布使用', styleKey: 'xiaohongshu_check' },
   ]
 );
 
 /**
- * 知乎默认流程模板（6步）
+ * 知乎默认流程模板（7步）
  * 
  * 特点：
  * - insurance-zhihu 创作深度长文
+ * - deai-optimizer 去AI化优化
  * - 用户预览修改初稿（可跳过）
  * - Agent T 执行合规校验
  * - Agent B 最终审核确认
@@ -161,18 +170,20 @@ export const ZHIHU_FLOW_TEMPLATE = createFlowTemplate(
   [
     { id: 'node-zhihu-1', executor: 'B', title: '分析任务需求', description: '分析用户指令，提取核心观点、关键素材、目标受众，规划知乎文章创作方向', styleKey: 'zhihu_user' },
     { id: 'node-zhihu-2', executor: 'insurance-zhihu', title: '创作知乎文章', description: '根据分析结果创作知乎深度长文，遵循核心铁律和风格要求', styleKey: 'zhihu_write' },
-    { id: 'node-zhihu-3', executor: 'user_preview_edit', title: '预览修改初稿', description: '预览文章初稿，可进行修改调整或直接确认继续', styleKey: 'zhihu_preview' },
-    { id: 'node-zhihu-4', executor: 'T', title: '合规校验', description: '对文章进行合规性校验，检查是否包含绝对化用语、虚假承诺、违规营销等内容', styleKey: 'zhihu_check' },
-    { id: 'node-zhihu-5', executor: 'T', title: '生成预览图', description: '生成知乎文章预览图，供用户手动发布使用', styleKey: 'zhihu_write' },
-    { id: 'node-zhihu-6', executor: 'B', title: '最终审核确认', description: '审核文章质量、合规性，确认是否可以正式发布', styleKey: 'zhihu_check' },
+    { id: 'node-zhihu-3', executor: 'deai-optimizer', title: '去AI化优化', description: '对文章进行全维度自检和柔和改写，剔除AI机器腔、模板句式，让内容更自然、更像真人手写', styleKey: 'zhihu_deai' },
+    { id: 'node-zhihu-4', executor: 'user_preview_edit', title: '预览修改初稿', description: '预览文章初稿，可进行修改调整或直接确认继续', styleKey: 'zhihu_preview' },
+    { id: 'node-zhihu-5', executor: 'T', title: '合规校验', description: '对文章进行合规性校验，检查是否包含绝对化用语、虚假承诺、违规营销等内容', styleKey: 'zhihu_check' },
+    { id: 'node-zhihu-6', executor: 'T', title: '生成预览图', description: '生成知乎文章预览图，供用户手动发布使用', styleKey: 'zhihu_write' },
+    { id: 'node-zhihu-7', executor: 'B', title: '最终审核确认', description: '审核文章质量、合规性，确认是否可以正式发布', styleKey: 'zhihu_check' },
   ]
 );
 
 /**
- * 头条/抖音默认流程模板（6步）
+ * 头条/抖音默认流程模板（7步）
  * 
  * 特点：
  * - insurance-toutiao 创作信息流文章
+ * - deai-optimizer 去AI化优化
  * - 用户预览修改初稿（可跳过）
  * - Agent T 执行合规校验
  * - Agent B 最终审核确认
@@ -185,10 +196,11 @@ export const TOUTIAO_FLOW_TEMPLATE = createFlowTemplate(
   [
     { id: 'node-toutiao-1', executor: 'B', title: '分析任务需求', description: '分析用户指令，提取核心观点、关键素材、目标受众，规划头条文章创作方向', styleKey: 'toutiao_user' },
     { id: 'node-toutiao-2', executor: 'insurance-toutiao', title: '创作头条文章', description: '根据分析结果创作头条信息流文章，遵循核心铁律和风格要求', styleKey: 'toutiao_write' },
-    { id: 'node-toutiao-3', executor: 'user_preview_edit', title: '预览修改初稿', description: '预览文章初稿，可进行修改调整或直接确认继续', styleKey: 'toutiao_preview' },
-    { id: 'node-toutiao-4', executor: 'T', title: '合规校验', description: '对文章进行合规性校验，检查是否包含绝对化用语、虚假承诺、违规营销等内容', styleKey: 'toutiao_check' },
-    { id: 'node-toutiao-5', executor: 'T', title: '生成预览图', description: '生成头条文章预览图，供用户手动发布使用', styleKey: 'toutiao_write' },
-    { id: 'node-toutiao-6', executor: 'B', title: '最终审核确认', description: '审核文章质量、合规性，确认是否可以正式发布', styleKey: 'toutiao_check' },
+    { id: 'node-toutiao-3', executor: 'deai-optimizer', title: '去AI化优化', description: '对文章进行全维度自检和柔和改写，剔除AI机器腔、模板句式，让内容更自然、更像真人手写', styleKey: 'toutiao_deai' },
+    { id: 'node-toutiao-4', executor: 'user_preview_edit', title: '预览修改初稿', description: '预览文章初稿，可进行修改调整或直接确认继续', styleKey: 'toutiao_preview' },
+    { id: 'node-toutiao-5', executor: 'T', title: '合规校验', description: '对文章进行合规性校验，检查是否包含绝对化用语、虚假承诺、违规营销等内容', styleKey: 'toutiao_check' },
+    { id: 'node-toutiao-6', executor: 'T', title: '生成预览图', description: '生成头条文章预览图，供用户手动发布使用', styleKey: 'toutiao_write' },
+    { id: 'node-toutiao-7', executor: 'B', title: '最终审核确认', description: '审核文章质量、合规性，确认是否可以正式发布', styleKey: 'toutiao_check' },
   ]
 );
 

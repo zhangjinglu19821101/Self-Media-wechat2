@@ -16,6 +16,7 @@ export type AgentRole =
   | 'insurance-xiaohongshu'
   | 'insurance-zhihu'
   | 'insurance-toutiao'
+  | 'deai-optimizer'
   | 'A' 
   | 'B' 
   | 'C' 
@@ -942,6 +943,95 @@ export const AGENT_ROLE_CONFIGS: Record<AgentRole, AgentRoleConfig> = {
       '  - 小红书图文 → 交给 insurance-xiaohongshu',
       '  - 知乎专业内容 → 交给 insurance-zhihu',
       '收到非信息流创作任务时，返回 isCompleted: false',
+    ],
+  },
+
+  // 去AI化优化 Agent 配置
+  'deai-optimizer': {
+    id: 'deai-optimizer',
+    name: '去AI化优化专家',
+    description: '对写作Agent生成的内容进行去AI化优化，让内容更自然、更像真人手写',
+    version: '1.0.0',
+    responseType: 'custom',
+    customResponseConfig: {
+      formatDescription: `返回信封格式的 JSON 对象，包含优化后的完整正文。
+
+### 情况1：优化成功
+\`\`\`json
+{
+  "isCompleted": true,
+  "result": {
+    "content": "优化后的完整正文内容（纯文本格式）",
+    "articleTitle": "文章标题（不超过15字）",
+    "platformData": {
+      "platform": "xiaohongshu|wechat_official|zhihu|toutiao",
+      "optimizationNotes": "本次优化的主要改动说明（简短）"
+    }
+  },
+  "articleTitle": "文章标题（与result.articleTitle一致）"
+}
+\`\`\`
+
+### 情况2：优化失败
+\`\`\`json
+{
+  "isCompleted": false,
+  "result": {
+    "error": "【无法执行】原因说明"
+  }
+}
+\`\`\``,
+      validationRules: [
+        'isCompleted 为 true 时，result 必须是包含 content 和 articleTitle 的对象',
+        'content 为优化后的完整正文，必须保持原文核心观点、案例、结构',
+        '优化后内容需符合目标平台文风规则',
+      ],
+      examples: [
+        `{
+  "isCompleted": true,
+  "result": {
+    "content": "说实话，很多人买了重疾险就以为万事大吉了。\\n\\n但真相是，有些情况真的不赔...",
+    "articleTitle": "买了重疾险这5种情况不赔",
+    "platformData": {
+      "platform": "xiaohongshu",
+      "optimizationNotes": "去除AI模板句，增加口语化表达"
+    }
+  },
+  "articleTitle": "买了重疾险这5种情况不赔"
+}`,
+        `{
+  "isCompleted": false,
+  "result": {
+    "error": "【无法执行】缺少原始文章内容"
+  }
+}`,
+      ],
+    },
+    tasks: [
+      {
+        id: 'deai-optimization',
+        name: '去AI化内容优化',
+        description: '对写作Agent生成的保险科普文案进行全维度自检和柔和改写，让内容更自然、更像真人手写',
+        responseDescription: '返回优化后的完整文章内容，保持原文核心观点、案例、结构',
+        outputConstraints: [
+          '输出信封格式：result.content（优化后完整正文）+ result.articleTitle',
+          '不改变原文核心观点、案例、结构框架',
+          '剔除AI机器腔、模板句式、空洞套话、生硬说教',
+          '加入口语化转折词，增加真人思考痕迹',
+          '按目标平台文风规则进行精准校准',
+          '二次合规自查，删除违规话术',
+        ],
+        responseExamples: [
+          { content: '说实话，很多人买了重疾险就以为万事大吉了...', articleTitle: '买了重疾险这5种情况不赔' },
+        ],
+      },
+    ],
+    additionalInstructions: [
+      '🔴 【强制规则：专注去AI化优化】',
+      '你只负责【内容优化】，不负责以下任何任务：',
+      '  - 内容创作 → 交给写作Agent（insurance-d/insurance-xiaohongshu/insurance-zhihu/insurance-toutiao）',
+      '  - 合规校验、MCP工具操作 → 交给 Agent T',
+      '收到非优化任务时，返回 isCompleted: false',
     ],
   },
 };
