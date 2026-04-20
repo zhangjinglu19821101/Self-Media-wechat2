@@ -74,7 +74,8 @@ export async function GET(request: NextRequest) {
  * 
  * Body: 
  * - rawContent: 原始内容
- * - category: 分类
+ * - category: 主分类
+ * - secondaryCategories: 副分类数组（跨领域多标签）
  * - title: 标题
  * - sourceOrg: 来源机构
  * - publishDate: 发布时间
@@ -96,6 +97,7 @@ export async function POST(request: NextRequest) {
     const {
       rawContent,
       category,
+      secondaryCategories,
       title,
       sourceOrg,
       publishDate,
@@ -123,6 +125,7 @@ export async function POST(request: NextRequest) {
     const result = await db.insert(infoSnippets).values({
       rawContent: rawContent.trim(),
       category: category || 'quick_note',
+      secondaryCategories: secondaryCategories || [],
       title: title || null,
       sourceOrg: sourceOrg || null,
       publishDate: publishDate || null,

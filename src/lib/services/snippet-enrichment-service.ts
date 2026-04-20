@@ -22,6 +22,7 @@ import type { SnippetCategory, MaterialStatus } from '@/lib/db/schema/info-snipp
  */
 export interface SnippetEnrichmentResult {
   category: SnippetCategory;
+  secondaryCategories: string[];  // 副分类数组（跨领域多标签）
   title: string;
   sourceOrg: string;
   publishDate: string;
@@ -133,8 +134,12 @@ function parseLLMResponse(content: string): SnippetEnrichmentResult {
     const category = validateCategory(parsed.category);
     const materialId = `${catPrefix[category] || 'QN'}-${dateStr}-${seq}`;
 
+    // 解析副分类数组
+    const secondaryCategories = validateSecondaryCategories(parsed.secondaryCategories, category);
+
     return {
       category,
+      secondaryCategories,
       title: String(parsed.title || '').slice(0, 50),
       sourceOrg: String(parsed.sourceOrg || '未知'),
       publishDate: String(parsed.publishDate || ''),
@@ -165,6 +170,24 @@ function validateCategory(val: unknown): SnippetCategory {
 }
 
 /**
+ * 校验副分类数组
+ */
+function validateSecondaryCategories(val: unknown, mainCategory: SnippetCategory): string[] {
+  const valid: SnippetCategory[] = ['real_case', 'insurance', 'intelligence', 'medical', 'quick_note'];
+  
+  if (!Array.isArray(val)) {
+    return [];
+  }
+  
+  // 过滤有效分类，且不与主分类重复
+  return val.filter((item): item is SnippetCategory => 
+    typeof item === 'string' && 
+    valid.includes(item as SnippetCategory) && 
+    item !== mainCategory
+  );
+}
+
+/**
  * 根据分类和合规等级确定素材状态
  */
 function determineMaterialStatus(category: SnippetCategory, complianceLevel: string | null): MaterialStatus {
@@ -188,6 +211,7 @@ function buildFallbackResult(rawContent: string): SnippetEnrichmentResult {
 
   return {
     category: 'quick_note',
+    secondaryCategories: [],
     title: rawContent.slice(0, 30) + (rawContent.length > 30 ? '...' : ''),
     sourceOrg: '未知',
     publishDate: '',

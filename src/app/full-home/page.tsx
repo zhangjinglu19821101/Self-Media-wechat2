@@ -183,6 +183,7 @@ interface InfoSnippet {
   id: string;
   rawContent: string | null;
   category: string | null;
+  secondaryCategories: string[] | null;
   title: string | null;
   sourceOrg: string | null;
   publishDate: string | null;
@@ -437,6 +438,8 @@ export default function HomePage() {
     rawContent: string;
     category: string;
     categoryLabel: string;
+    secondaryCategories: string[];
+    secondaryCategoryLabels: string[];
     title: string;
     sourceOrg: string;
     publishDate: string;
@@ -1052,7 +1055,7 @@ export default function HomePage() {
     try {
       const result = await apiPost('/api/info-snippets/analyze', {
         rawContent: snippetForm.rawContent.trim(),
-      });
+      }) as { success: boolean; data?: any };
       
       if (result.success && result.data) {
         setSnippetAnalyzeResult(result.data);
@@ -3620,7 +3623,7 @@ export default function HomePage() {
                 </div>
                 <div className="bg-amber-50 border border-amber-100 rounded-lg p-4">
                   <p className="text-sm text-slate-700 leading-relaxed">
-                    {triggeredReminders[currentReminderIndex]?.highlights}
+                    {triggeredReminders[currentReminderIndex]?.summary}
                   </p>
                 </div>
               </div>
@@ -3794,7 +3797,8 @@ export default function HomePage() {
                 // 步骤2：显示分析结果 + 确认保存
                 <div className="space-y-3">
                   {/* 分类标签 */}
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    {/* 主分类标签 */}
                     <Badge className={`${
                       snippetAnalyzeResult.category === 'real_case' ? 'bg-rose-100 text-rose-700' :
                       snippetAnalyzeResult.category === 'insurance' ? 'bg-blue-100 text-blue-700' :
@@ -3804,6 +3808,23 @@ export default function HomePage() {
                     } px-3 py-1`}>
                       {snippetAnalyzeResult.categoryLabel}
                     </Badge>
+                    
+                    {/* 副分类标签 */}
+                    {snippetAnalyzeResult.secondaryCategoryLabels?.map((label, idx) => (
+                      <Badge 
+                        key={idx}
+                        className={`${
+                          snippetAnalyzeResult.secondaryCategories?.[idx] === 'real_case' ? 'bg-rose-50 text-rose-600' :
+                          snippetAnalyzeResult.secondaryCategories?.[idx] === 'insurance' ? 'bg-blue-50 text-blue-600' :
+                          snippetAnalyzeResult.secondaryCategories?.[idx] === 'intelligence' ? 'bg-violet-50 text-violet-600' :
+                          snippetAnalyzeResult.secondaryCategories?.[idx] === 'medical' ? 'bg-emerald-50 text-emerald-600' :
+                          'bg-slate-50 text-slate-500'
+                        } text-xs`}
+                      >
+                        +{label}
+                      </Badge>
+                    ))}
+                    
                     {snippetAnalyzeResult.materialId && (
                       <span className="text-xs text-slate-400">ID: {snippetAnalyzeResult.materialId}</span>
                     )}
@@ -4035,10 +4056,24 @@ export default function HomePage() {
                         <div className="flex items-start justify-between gap-3">
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-2 mb-1 flex-wrap">
-                              {/* 分类标签 */}
+                              {/* 主分类标签 */}
                               <Badge className={`${catStyle.bg} ${catStyle.text} ${catStyle.border} border px-2 py-0.5`}>
                                 {categoryLabels[snippet.category || 'quick_note'] || '简要内容速记'}
                               </Badge>
+                              
+                              {/* 副分类标签（跨领域多标签） */}
+                              {(snippet.secondaryCategories as string[] || []).map((secCat) => {
+                                const secStyle = categoryColors[secCat] || categoryColors.quick_note;
+                                const secLabel = categoryLabels[secCat] || secCat;
+                                return (
+                                  <Badge 
+                                    key={secCat}
+                                    className={`${secStyle.bg} ${secStyle.text} ${secStyle.border} border px-1.5 py-0.5 text-xs opacity-80`}
+                                  >
+                                    +{secLabel}
+                                  </Badge>
+                                );
+                              })}
                               
                               {/* 合规等级 */}
                               {snippet.complianceLevel && (

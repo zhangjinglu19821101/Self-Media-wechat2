@@ -3,6 +3,7 @@
  * 
  * 用户只需输入原始内容(rawContent)，其余字段由 LLM 自动填充：
  * - category: 自动分类（身边真实案例/保险/智能化/医疗/简要内容速记）
+ * - secondaryCategories: 副分类数组（跨领域内容的多标签）
  * - title: 自动生成标题
  * - sourceOrg: 自动识别来源
  * - summary: 自动生成摘要
@@ -35,7 +36,8 @@ export const infoSnippets = pgTable('info_snippets', {
   rawContent: text('raw_content'),             // 用户输入的原始内容
   
   // LLM 自动填充字段
-  category: text('category'),                  // 自动分类: real_case | insurance | intelligence | medical | quick_note
+  category: text('category'),                  // 主分类: real_case | insurance | intelligence | medical | quick_note
+  secondaryCategories: jsonb('secondary_categories').$type<string[]>().default([]), // 副分类数组（跨领域多标签）
   title: text('title'),                        // 自动生成标题（15-30字摘要性标题）
   sourceOrg: text('source_org'),               // 自动识别来源机构
   publishDate: text('publish_date'),           // 发布时间
