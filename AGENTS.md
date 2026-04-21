@@ -1353,4 +1353,35 @@
      - 新增 `/api/db/migrate-info-snippets-v3` 迁移 API
      - 将现有 `category` + `secondaryCategories` 数据合并为 `categories` 数组
      - 创建 GIN 索引支持数组包含查询
+67. **阶段1生产可靠性加固**: 提升系统在生产环境下的稳定性和可观测性
+   - **PM2 进程守护** (`ecosystem.config.cjs`):
+     - 单实例 fork 模式（避免 WS 端口冲突），autorestart=true, max_restarts=10
+     - max_memory_restart=1500M, restart_delay=5000ms, min_uptime=10s
+     - 日志输出到 /app/work/logs/bypass/
+   - **LLM 熔断器 + 重试** (`src/lib/llm/circuit-breaker.ts`):
+     - `AgentCircuitBreaker` 类：CLOSED/OPEN/HALF_OPEN 三态
+     - 连续5次失败触发熔断，30s冷却后进入半开状态探测
+     - `retryWithBackoff()`: 指数退避+随机抖动，maxRetries=3, baseDelay=2s, maxDelay=30s
+     - 可重试错误：timeout / econnreset / 500 / 502 / 503 / 429 / rate_limit
+   - **callLLM 熔断+重试集成** (`src/lib/agent-llm.ts`):
+     - 拆分为 callLLM（外层：熔断+重试）和 callLLMInternal（内层：实际调用）
+     - 默认超时从 120s 降为 60s，默认 maxRetries=3
+     - 熔断器按 Agent 维度隔离，互不影响
+   - **数据库连接池优化** (`src/lib/db/index.ts`):
+     - 修复 getDatabase() 连接泄漏：返回全局单例
+     - 连接池参数: max=10, idle_timeout=30, connect_timeout=10, max_lifetime=1800
+     - 新增 checkDatabaseHealth(): 连通性+延迟+连接池统计
+     - 优雅关闭：SIGTERM/SIGINT 时关闭连接池（全局标记防重复注册）
+   - **增强版健康检查** (`src/app/api/health/route.ts`):
+     - 5维检查: database / circuitBreakers / websocket / engine / process info
+     - 3级健康: healthy / degraded / unhealthy（HTTP 200/503）
+     - DB 延迟>1s 为 degraded，熔断器 OPEN 为 degraded，WS 不运行 为 degraded
+   - **WebSocket 服务增强** (`src/lib/websocket-server.ts`):
+     - 新增事件监听机制: on(event, listener) / emit(event, ...args)
+     - 新增 isRunning() / getConnectedAgents() 便捷方法
+     - Agent 断连时发射 agentDisconnected 事件
+   - **Agent WS 客户端重连** (`src/lib/llm/agent-ws-client.ts`):
+     - 指数退避自动重连（初始1s，最大60s，最多10次）
+     - 30s 心跳保活，断连期间消息缓存（最多100条）
+     - 连接状态追踪: disconnected / connecting / connected / reconnecting
    - **效果**: 一条速记可同时属于多个领域，更符合实际使用场景

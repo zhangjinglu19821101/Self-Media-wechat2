@@ -50,6 +50,33 @@ class WebSocketServer {
   private port: number;
   private heartbeatInterval: NodeJS.Timeout | null = null;
 
+  // 🔴 阶段1新增：简单事件监听机制（避免继承 EventEmitter 的复杂性）
+  private eventListeners: Map<string, Array<(...args: any[]) => void>> = new Map();
+
+  /**
+   * 🔴 阶段1新增：注册事件监听
+   */
+  on(event: string, listener: (...args: any[]) => void): void {
+    if (!this.eventListeners.has(event)) {
+      this.eventListeners.set(event, []);
+    }
+    this.eventListeners.get(event)!.push(listener);
+  }
+
+  /**
+   * 🔴 阶段1新增：发射事件
+   */
+  private emit(event: string, ...args: any[]): void {
+    const listeners = this.eventListeners.get(event) || [];
+    for (const listener of listeners) {
+      try {
+        listener(...args);
+      } catch (error) {
+        console.error(`[WS] 事件监听器错误 (${event}):`, error);
+      }
+    }
+  }
+
   constructor(port: number = 5001) {
     this.port = port;
   }
@@ -144,6 +171,8 @@ class WebSocketServer {
       ws.on('close', () => {
         console.log(`❌ Agent ${agentId} disconnected from WebSocket`);
         this.clients.delete(agentId);
+        // 🔴 阶段1：发射断连事件，供外部监听（如重连调度器）
+        this.emit('agentDisconnected', agentId);
       });
 
       // 处理错误
@@ -294,11 +323,15 @@ class WebSocketServer {
             console.log(`⚠️  Agent ${agentId} heartbeat timeout (120s), closing connection`);
             client.socket.close();
             this.clients.delete(agentId);
+            // 🔴 阶段1：发射断连事件
+            this.emit('agentDisconnected', agentId);
           } else if (!client.lastPing && (now.getTime() - client.connectedAt.getTime()) > 120000) {
             // 如果从未收到过 pong，连接后 120 秒也认为断开
             console.log(`⚠️  Agent ${agentId} no pong received (120s), closing connection`);
             client.socket.close();
             this.clients.delete(agentId);
+            // 🔴 阶段1：发射断连事件
+            this.emit('agentDisconnected', agentId);
           }
         } catch (error) {
           console.error(`Error sending ping to Agent ${agentId}:`, error);
@@ -325,6 +358,20 @@ class WebSocketServer {
       connectedAgents: this.getConnectedClients(),
       clientCount: this.clients.size,
     };
+  }
+
+  /**
+   * 🔴 阶段1新增：便捷方法 - 检查 WS 服务是否运行
+   */
+  isRunning(): boolean {
+    return this.wss !== null && this.wss.listening;
+  }
+
+  /**
+   * 🔴 阶段1新增：便捷方法 - 获取已连接的 Agent 列表
+   */
+  getConnectedAgents(): AgentId[] {
+    return this.getConnectedClients();
   }
 
   /**

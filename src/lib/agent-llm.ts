@@ -116,16 +116,98 @@ export async function callLLM(
     memoryTypes?: string[];
     timeout?: number; // 新增：超时时间（毫秒）
     workspaceId?: string; // BYOK：传入 workspaceId 以使用用户 API Key
+    maxRetries?: number; // 🔴 阶段1：最大重试次数（默认 3）
+    skipCircuitBreaker?: boolean; // 🔴 阶段1：跳过熔断器检查（用于健康探测）
   }
 ): Promise<string> {
   
   if (agentId === 'B') {
     console.log(`🤖 [LLM调用] Agent B 不使用 mock，使用真实 LLM (Agent ${agentId})`);
   }
-  try {
-    const temperature = options?.temperature || 0.3;
-    const timeout = options?.timeout || 120000; // 默认 2 分钟超时
 
+  // 🔴 阶段1：熔断器检查
+  const { getCircuitBreaker, retryWithBackoff } = await import('@/lib/llm/circuit-breaker');
+  const breaker = getCircuitBreaker(agentId);
+  
+  if (!options?.skipCircuitBreaker && !breaker.allowRequest()) {
+    const stats = breaker.getStats();
+    console.error(`🛑 [CircuitBreaker] Agent ${agentId} 熔断中，拒绝请求`, stats);
+    throw new Error(
+      `LLM 熔断器开启（Agent ${agentId}），连续失败过多，请稍后重试。` +
+      `冷却剩余: ${Math.round(stats.cooldownRemaining / 1000)}s`
+    );
+  }
+
+  // 🔴 阶段1：降低默认超时（120s → 60s），减少单次调用阻塞引擎的时间
+  const maxRetries = options?.maxRetries ?? 3;
+
+  try {
+    // 🔴 阶段1：使用重试 + 指数退避包裹整个 LLM 调用
+    const result = await retryWithBackoff(
+      () => callLLMInternal(agentId, context, systemPrompt, userPrompt, options),
+      {
+        maxRetries,
+        isRetryable: (error: Error) => {
+          // 熔断器拒绝不可重试
+          if (error.message?.includes('熔断器开启')) return false;
+          // 超时、网络错误、5xx、429 可重试
+          const msg = error.message?.toLowerCase() || '';
+          if (msg.includes('timeout') || msg.includes('超时')) return true;
+          if (msg.includes('econnreset') || msg.includes('econnrefused') || msg.includes('etimedout')) return true;
+          if (msg.includes('500') || msg.includes('502') || msg.includes('503') || msg.includes('429')) return true;
+          if (msg.includes('rate_limit') || msg.includes('rate limit') || msg.includes('too many requests')) return true;
+          return false;
+        },
+      }
+    );
+
+    // 成功 → 记录到熔断器
+    breaker.recordSuccess();
+    return result;
+  } catch (error) {
+    // 失败 → 记录到熔断器
+    breaker.recordFailure();
+    
+    console.error('');
+    console.error('═══════════════════════════════════════════════════════════════════════════');
+    console.error('❌ 【执行 Agent】LLM 调用失败（重试耗尽）');
+    console.error('═══════════════════════════════════════════════════════════════════════════');
+    console.error('');
+    console.error('🤖 Agent ID:', agentId);
+    console.error('🔁 重试次数:', maxRetries);
+    console.error('错误详情:', error);
+    console.error('');
+    console.error('═══════════════════════════════════════════════════════════════════════════');
+    console.error('');
+    
+    throw new Error(`LLM 调用失败（重试 ${maxRetries} 次后）: ${error instanceof Error ? error.message : String(error)}`);
+  }
+}
+
+/**
+ * LLM 调用内部实现（不含熔断/重试，由 callLLM 统一包裹）
+ */
+async function callLLMInternal(
+  agentId: string,
+  context: string,
+  systemPrompt: string,
+  userPrompt: string,
+  options?: {
+    temperature?: number;
+    maxMemories?: number;
+    minImportance?: number;
+    memoryTypes?: string[];
+    timeout?: number;
+    workspaceId?: string;
+    maxRetries?: number;
+    skipCircuitBreaker?: boolean;
+  }
+): Promise<string> {
+    // 🔴 阶段1：降低默认超时 120s → 60s，减少单次调用阻塞引擎的时间
+    const temperature = options?.temperature || 0.3;
+    const timeout = options?.timeout || 60000;
+
+    try {
     // 🔥 加载 Agent 记忆
     const memoryContext = await getMemoryContext(agentId, context, {
       maxMemories: options?.maxMemories || 5,
@@ -188,7 +270,7 @@ export async function callLLM(
     console.log(`🤖 [LLM调用] 超时设置: ${timeout}ms`);
     
     // 根据 agentId 选择合适的模型
-    let llmConfig: any = { temperature };
+    const llmConfig: Record<string, unknown> = { temperature };
     if (isWritingAgent(agentId)) {
       // 写作类 Agent 使用更好的模型，确保格式正确性
       llmConfig.model = 'doubao-seed-2-0-pro-260215';
@@ -264,19 +346,10 @@ export async function callLLM(
 
     return response.content;
   } catch (error) {
-    console.error('');
-    console.error('═══════════════════════════════════════════════════════════════════════════');
-    console.error('❌ 【执行 Agent】LLM 调用失败');
-    console.error('═══════════════════════════════════════════════════════════════════════════');
-    console.error('');
-    console.error('🤖 Agent ID:', agentId);
-    console.error('错误详情:', error);
-    console.error('');
-    console.error('═══════════════════════════════════════════════════════════════════════════');
-    console.error('');
-    
+    // 🔴 阶段1：内层只抛原始错误，重试由外层 callLLM 负责
+    // 保留关键日志但不再包装新的 Error（避免双重包装）
     console.error(`❌ LLM 调用失败 (Agent ${agentId}):`, error);
-    throw new Error(`LLM 调用失败: ${error instanceof Error ? error.message : String(error)}`);
+    throw error;
   }
 }
 
