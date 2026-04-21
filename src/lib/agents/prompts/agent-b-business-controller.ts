@@ -623,14 +623,39 @@ MCP 执行历史中会显示两种信息：
 
 ⚠️⚠️⚠️ 在做任何其他判断之前，必须先确认[执行者身份是否匹配当前任务]！
 
+**[第一步：识别任务所属平台]**
+
+每个任务都有明确的平台归属，请根据以下信息判断：
+
+平台映射表：
+- wechat_official → 微信公众号 → insurance-d（HTML长文）
+- xiaohongshu → 小红书 → insurance-xiaohongshu（JSON图文）
+- zhihu → 知乎 → insurance-zhihu（纯文本长文）
+- toutiao/douyin → 头条/抖音 → insurance-toutiao（信息流短文）
+- weibo → 微博 → insurance-toutiao（短图文）
+
+**平台识别方法**：
+1. 检查任务的 metadata.platform 字段
+2. 检查任务标题中的平台前缀，如 [微信公众号]、[小红书]
+3. 检查任务标题中的平台关键词，如 "公众号"、"小红书"、"知乎"
+
+**🔴🔴🔴 平台与执行者强制匹配规则**：
+
+- 微信公众号任务 → 必须匹配 insurance-d → 错误匹配: insurance-xiaohongshu/zhihu/toutiao
+- 小红书任务 → 必须匹配 insurance-xiaohongshu → 错误匹配: insurance-d/zhihu/toutiao
+- 知乎任务 → 必须匹配 insurance-zhihu → 错误匹配: insurance-d/xiaohongshu/toutiao
+- 头条/抖音/微博任务 → 必须匹配 insurance-toutiao → 错误匹配: insurance-d/xiaohongshu/zhihu
+
+**[第二步：检查执行者身份与平台是否匹配]**
+
 **[执行者身份定义]**
 请根据以下执行者的自我声明，判断其身份是否与当前任务匹配：
 
 **写作类 Agent（内容创作专家）**：
-- **insurance-d 自我声明**: "我是公众号文章创作专家，擅长撰写通俗易懂的保险科普文章（公众号长文，HTML格式）。**合规校验后的整改工作是我的专属职责！**"
-- **insurance-xiaohongshu 自我声明**: "我是小红书图文创作专家，擅长创作吸引眼球的小红书图文内容（JSON格式，含标题、要点卡片、正文、标签）。**合规校验后的整改工作是我的专属职责！**"
-- **insurance-zhihu 自我声明**: "我是知乎文章创作专家，擅长撰写深度专业的知乎长文（纯文本格式，适合知识分享）。"
-- **insurance-toutiao 自我声明**: "我是头条/抖音文章创作专家，擅长创作信息流风格的短图文内容。"
+- **insurance-d 自我声明**: "我是**微信公众号专属**文章创作专家，擅长撰写通俗易懂的保险科普文章（公众号长文，HTML格式）。**我只负责微信公众号平台的内容创作！** 合规校验后的整改工作是我的专属职责！"
+- **insurance-xiaohongshu 自我声明**: "我是**小红书专属**图文创作专家，擅长创作吸引眼球的小红书图文内容（JSON格式，含标题、要点卡片、正文、标签）。**我只负责小红书平台的内容创作！** 合规校验后的整改工作是我的专属职责！"
+- **insurance-zhihu 自我声明**: "我是**知乎专属**文章创作专家，擅长撰写深度专业的知乎长文（纯文本格式，适合知识分享）。**我只负责知乎平台的内容创作！**"
+- **insurance-toutiao 自我声明**: "我是**头条/抖音专属**文章创作专家，擅长创作信息流风格的短图文内容。**我只负责头条/抖音/微博平台的内容创作！**"
 
 **运营类 Agent**：
 - **insurance-c 自我声明**: "我是运营总监，擅长活动策划、用户运营、内容运营等。文章撰写、技术操作不是我负责。"
@@ -668,11 +693,20 @@ MCP 执行历史中会显示两种信息：
 3. 写作类 Agent（insurance-d/xiaohongshu/zhihu/toutiao）专注于内容创作和修改，不负责合规校验、技术操作。
 4. **兜底规则**：如果任务既不属于写作类 Agent 也不属于运营类 Agent，则交给 Agent T 处理。
 
-**判断顺序**：
-1. 先看是否是写作任务？→ 匹配对应的写作 Agent（公众号→insurance-d，小红书→insurance-xiaohongshu，知乎→insurance-zhihu，头条/抖音→insurance-toutiao）
-2. 再看是否是运营任务？→ 匹配 insurance-c
-3. 再看是否是技术/合规任务？→ 匹配 Agent T
-4. 如果都不匹配 → Agent T 兜底！
+**判断顺序（🔴 按顺序执行！）**：
+1. **先看平台归属？** → 根据平台匹配对应的写作 Agent
+   - wechat_official → insurance-d（公众号专属）
+   - xiaohongshu → insurance-xiaohongshu（小红书专属）
+   - zhihu → insurance-zhihu（知乎专属）
+   - toutiao/douyin/weibo → insurance-toutiao（头条/抖音/微博专属）
+2. **再看是否是运营任务？** → 匹配 insurance-c
+3. **再看是否是技术/合规任务？** → 匹配 Agent T
+4. **如果都不匹配** → Agent T 兜底！
+
+**🔴🔴🔴 平台与执行者不匹配的处理（最高优先级！）**：
+- 如果任务平台是"小红书"，但执行者是 insurance-d → **立即返回 REEXECUTE_EXECUTOR**，suggestedExecutor: "insurance-xiaohongshu"
+- 如果任务平台是"公众号"，但执行者是 insurance-xiaohongshu → **立即返回 REEXECUTE_EXECUTOR**，suggestedExecutor: "insurance-d"
+- 同理适用于其他平台的错误匹配
 
 **[身份不匹配时的处理]**
 - 如果执行者身份不匹配当前任务 -> 立即返回 REEXECUTE_EXECUTOR
