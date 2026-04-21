@@ -362,6 +362,24 @@ type StatusFilter = 'all' | 'pending' | 'in_progress' | 'completed' | 'failed' |
 // ========== 预览修改节点辅助函数和组件 ==========
 
 /**
+ * 判断任务是否为预览修改节点
+ * 
+ * 兼容两种情况：
+ * 1. 新流程：executor === 'user_preview_edit'（标准虚拟执行器）
+ * 2. 旧数据：executor 是写作 Agent，但标题包含"预览修改"
+ */
+function isPreviewEditTask(task: Task): boolean {
+  if (task.executor === 'user_preview_edit') return true;
+  // 🔴 兼容旧数据：旧流程模板中预览修改节点的 executor 是写作 Agent
+  // 通过标题关键词 + waiting_user 状态识别
+  if ((task.status === 'waiting_user' || task.status === 'failed') &&
+      (task.taskTitle.includes('预览修改') || task.taskTitle.includes('预览终稿'))) {
+    return true;
+  }
+  return false;
+}
+
+/**
  * 从任务中推断预览平台类型
  * 
  * 推断优先级：
@@ -1930,7 +1948,7 @@ export function AgentTaskListNormal({ agentId, showPanel, onTogglePanel }: Agent
                                 将文章发布到头条/抖音
                               </p>
                             </>
-                          ) : displayTask.executor === 'user_preview_edit' ? (
+                          ) : isPreviewEditTask(displayTask) ? (
                             /* 预览修改节点：已确认状态 + 预览按钮 */
                             <div className="space-y-3">
                               <div className="bg-purple-50 border border-purple-200 rounded-lg p-4 text-center">
@@ -2088,7 +2106,7 @@ export function AgentTaskListNormal({ agentId, showPanel, onTogglePanel }: Agent
                         <div className="border-t border-gray-200 pt-6 mt-6">
                           {/* 🔴 虚拟执行器：预览修改节点使用专用编辑器 */}
                           {/* 🔴 P1-1 修复：failed 状态也显示预览编辑器 */}
-                          {displayTask.executor === 'user_preview_edit' && 
+                          {isPreviewEditTask(displayTask) && 
                            (displayTask.status === 'waiting_user' || displayTask.status === 'failed') ? (
                             <PreviewEditSection
                               taskId={displayTask.id}
