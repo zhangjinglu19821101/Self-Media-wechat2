@@ -1009,6 +1009,54 @@ export class SubtaskExecutionEngine {
   }
 
   /**
+   * 统一的平台确定逻辑（P1-3 修复：集中处理）
+   * 
+   * 优先级：
+   * 1. 从写作 Agent 任务获取（通过 executor 映射）
+   * 2. 从 metadata.platform 获取
+   * 3. 从 metadata.platformType 获取
+   * 4. 兜底为 'wechat_official'
+   * 
+   * @param effectiveWritingTask 当前的有效写作任务
+   * @param firstCompletedWritingTask 最近完成的写作 Agent 任务
+   * @param fallbackWritingTask 写作 Agent 兜底任务
+   * @param metadata 任务 metadata
+   * @returns 平台类型字符串
+   */
+  private determinePlatformForPreview(
+    effectiveWritingTask: typeof agentSubTasks.$inferSelect | undefined,
+    firstCompletedWritingTask: typeof agentSubTasks.$inferSelect | undefined,
+    fallbackWritingTask: typeof agentSubTasks.$inferSelect | undefined,
+    metadata: Record<string, unknown>
+  ): string {
+    // 1. 如果有效写作任务是写作 Agent，直接从 executor 映射
+    if (effectiveWritingTask && effectiveWritingTask.fromParentsExecutor !== 'deai-optimizer') {
+      return getPlatformForExecutor(effectiveWritingTask.fromParentsExecutor);
+    }
+
+    // 2. deai-optimizer 场景：从原始写作任务获取平台
+    if (effectiveWritingTask?.fromParentsExecutor === 'deai-optimizer') {
+      const originalWritingTask = firstCompletedWritingTask || fallbackWritingTask;
+      if (originalWritingTask) {
+        return getPlatformForExecutor(originalWritingTask.fromParentsExecutor);
+      }
+    }
+
+    // 3. 从 metadata 获取（支持 platform 和 platformType 两种字段）
+    const platformFromMeta = metadata?.platform;
+    if (typeof platformFromMeta === 'string' && platformFromMeta) {
+      return platformFromMeta;
+    }
+    const platformTypeFromMeta = metadata?.platformType;
+    if (typeof platformTypeFromMeta === 'string' && platformTypeFromMeta) {
+      return platformTypeFromMeta;
+    }
+
+    // 4. 兜底
+    return 'wechat_official';
+  }
+
+  /**
    * 🔴 新增：处理单个 order_index 的任务
    * 提取出独立方法，便于前序任务处理
    */
@@ -1295,6 +1343,14 @@ export class SubtaskExecutionEngine {
     let articleTitle = '';
     let platform = '';
 
+    // 🔴🔴🔴 统一的平台确定逻辑（P1-3 修复：集中处理，消除分散）
+    platform = this.determinePlatformForPreview(
+      effectiveWritingTask,
+      firstCompletedWritingTask,
+      fallbackWritingTask,
+      task.metadata as Record<string, unknown>
+    );
+
     if (effectiveWritingTask) {
       // 提取文章内容（result_text 保持纯文本，不与平台渲染耦合）
       articleContent = effectiveWritingTask.resultText || '';
@@ -1302,17 +1358,6 @@ export class SubtaskExecutionEngine {
         articleContent = this.extractResultTextFromResultData(effectiveWritingTask.resultData, effectiveWritingTask.fromParentsExecutor) || '';
       }
       articleTitle = this.extractArticleTitleFromResultData(effectiveWritingTask.resultData, effectiveWritingTask.taskTitle);
-
-      // 确定平台：合规整改任务的 executor 是写作 Agent，可直接映射平台
-      if (effectiveWritingTask.fromParentsExecutor === 'deai-optimizer') {
-        // deai-optimizer 没有平台映射，复用单次遍历结果从写作任务获取平台
-        const originalWritingTask = firstCompletedWritingTask || fallbackWritingTask;
-        platform = originalWritingTask
-          ? getPlatformForExecutor(originalWritingTask.fromParentsExecutor)
-          : ((task.metadata as Record<string, unknown>)?.platform as string) || 'wechat_official';
-      } else {
-        platform = getPlatformForExecutor(effectiveWritingTask.fromParentsExecutor);
-      }
     }
 
     // 🔥🔥🔥 【架构改造】平台渲染数据提取
@@ -1372,13 +1417,7 @@ export class SubtaskExecutionEngine {
       hasPlatformRenderData: !!platformRenderData,
     });
 
-    // 3. 获取同组所有任务以确定平台信息（如果写作任务没找到平台）
-    if (!platform) {
-      const metadata = (task.metadata as any) || {};
-      platform = metadata.platform || metadata.platformType || 'wechat_official';
-    }
-
-    // 4. 设置为 waiting_user，存入文章内容供前端预览
+    // 3. 设置为 waiting_user，存入文章内容供前端预览
     // articleContent = 纯文本正文（通用，与平台无关）
     // platformRenderData = 平台渲染数据（结构化，按平台定义）
     const overrideResultData = {
