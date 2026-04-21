@@ -148,7 +148,7 @@ export const XIAOHONGSHU_FLOW_TEMPLATE = createFlowTemplate(
     { id: 'node-xhs-4', executor: 'user_preview_edit', title: '用户预览修改图文', description: '用户预览小红书图文初稿，可修改标题/要点/正文/标签或直接确认继续。此节点由用户操作，非Agent执行', styleKey: 'xiaohongshu_preview' },
     { id: 'node-xhs-5', executor: 'T', title: '合规校验', description: '对小红书图文进行合规性校验，检查是否包含绝对化用语、虚假承诺、违规营销等内容', styleKey: 'xiaohongshu_check' },
     { id: 'node-xhs-6', executor: 'insurance-xiaohongshu', title: '完成合规整改', description: '依据合规校验结果，完成小红书图文整改', styleKey: 'xiaohongshu_polish' },
-    { id: 'node-xhs-7', executor: 'user_preview_edit', title: '用户最终预览确认', description: '合规整改后的最终预览，用户确认图文内容无误后即可发布。可修改标题/要点/正文/标签，确认后生成预览图供手动发布。此节点由用户操作，非Agent执行', styleKey: 'xiaohongshu_preview' },
+    { id: 'node-xhs-7', executor: 'user_preview_edit', title: '用户预览终稿', description: '合规整改后的终稿确认，用户审阅最终图文内容，可修改标题/要点/正文/标签或直接确认。此节点由用户操作，非Agent执行，不涉及上传发布', styleKey: 'xiaohongshu_preview' },
   ]
 );
 
