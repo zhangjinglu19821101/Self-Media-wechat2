@@ -367,13 +367,16 @@ type StatusFilter = 'all' | 'pending' | 'in_progress' | 'completed' | 'failed' |
  * 兼容两种情况：
  * 1. 新流程：executor === 'user_preview_edit'（标准虚拟执行器）
  * 2. 旧数据：executor 是写作 Agent，但标题包含"预览修改"
+ * 
+ * ⚠️ P0 修复：标题关键词匹配必须覆盖所有状态（不仅仅是 waiting_user/failed），
+ * 否则旧数据中 completed 状态的预览修改节点会匹配到写作 Agent 的"发布文章"按钮，
+ * 导致用户点击后跳转到错误的发布页面（内容是确认信息而非完整文章）。
  */
 function isPreviewEditTask(task: Task): boolean {
   if (task.executor === 'user_preview_edit') return true;
   // 🔴 兼容旧数据：旧流程模板中预览修改节点的 executor 是写作 Agent
-  // 通过标题关键词 + waiting_user 状态识别
-  if ((task.status === 'waiting_user' || task.status === 'failed') &&
-      (task.taskTitle.includes('预览修改') || task.taskTitle.includes('预览终稿'))) {
+  // 通过标题关键词识别（必须覆盖所有状态，否则 completed 状态会误匹配写作 Agent 按钮分支）
+  if (task.taskTitle.includes('预览修改') || task.taskTitle.includes('预览终稿')) {
     return true;
   }
   return false;
@@ -1892,8 +1895,32 @@ export function AgentTaskListNormal({ agentId, showPanel, onTogglePanel }: Agent
                       {/* 🔥 已完成任务的发布/预览按钮 */}
                       {displayTask.status === 'completed' && (
                         <div className="border-t border-gray-200 pt-4 mt-4">
-                          {/* 小红书任务：直接展示预览 */}
-                          {displayTask.executor === 'insurance-xiaohongshu' ? (
+                          {/* 🔴 P0修复：isPreviewEditTask 必须在写作 Agent 检查之前，
+                              否则旧数据（executor=写作Agent + 标题含"预览修改"）会匹配到写作Agent的按钮分支 */}
+                          {isPreviewEditTask(displayTask) ? (
+                            /* 预览修改节点：已确认状态 + 预览按钮 */
+                            <div className="space-y-3">
+                              <div className="bg-purple-50 border border-purple-200 rounded-lg p-4 text-center">
+                                <CheckCircle2 className="w-8 h-8 mx-auto text-purple-600 mb-2" />
+                                <p className="text-sm text-purple-800 font-medium">
+                                  已确认文章内容
+                                </p>
+                                <p className="text-xs text-purple-600 mt-1">
+                                  初稿已通过预览确认，继续执行合规校验
+                                </p>
+                              </div>
+                              {/* 🔥 小红书平台：添加预览按钮 */}
+                              {displayTask.metadata?.platform === 'xiaohongshu' && (
+                                <div className="flex justify-center">
+                                  <XiaohongshuPreview 
+                                    commandResultId={displayTask.commandResultId}
+                                    variant="outline" 
+                                    size="sm"
+                                  />
+                                </div>
+                              )}
+                            </div>
+                          ) : displayTask.executor === 'insurance-xiaohongshu' ? (
                             /* 小红书：图文预览 */
                             <>
                               <div className="flex gap-2">
@@ -1948,29 +1975,6 @@ export function AgentTaskListNormal({ agentId, showPanel, onTogglePanel }: Agent
                                 将文章发布到头条/抖音
                               </p>
                             </>
-                          ) : isPreviewEditTask(displayTask) ? (
-                            /* 预览修改节点：已确认状态 + 预览按钮 */
-                            <div className="space-y-3">
-                              <div className="bg-purple-50 border border-purple-200 rounded-lg p-4 text-center">
-                                <CheckCircle2 className="w-8 h-8 mx-auto text-purple-600 mb-2" />
-                                <p className="text-sm text-purple-800 font-medium">
-                                  已确认文章内容
-                                </p>
-                                <p className="text-xs text-purple-600 mt-1">
-                                  初稿已通过预览确认，继续执行合规校验
-                                </p>
-                              </div>
-                              {/* 🔥 小红书平台：添加预览按钮 */}
-                              {displayTask.metadata?.platform === 'xiaohongshu' && (
-                                <div className="flex justify-center">
-                                  <XiaohongshuPreview 
-                                    commandResultId={displayTask.commandResultId}
-                                    variant="outline" 
-                                    size="sm"
-                                  />
-                                </div>
-                              )}
-                            </div>
                           ) : null}
                         </div>
                       )}
