@@ -1239,32 +1239,50 @@ export class SubtaskExecutionEngine {
       )
       .orderBy(desc(agentSubTasks.orderIndex));
 
-    // 找到最近的写作任务或去AI化优化任务
-    // 🔴 P1-2 修复：增加 status='completed' 过滤，确保只找已完成的有效写作任务
-    // 避免在"重写"场景中误匹配到失败/进行中的任务
-    // 🔴 Phase 7 修复：优先获取 deai-optimizer 的输出（优化后的版本），兜底获取写作Agent的输出
-    const deaiOptimizerTask = previousTasks.find(t => 
-      t.fromParentsExecutor === 'deai-optimizer' && t.status === 'completed'
-    );
-    const writingTask = previousTasks.find(t => 
-      isWritingAgent(t.fromParentsExecutor) && t.status === 'completed'
+    // 🔴🔴🔴 区分"初稿预览"和"最终预览"
+    // - 初稿预览（order_index=4，合规校验之前）：优先获取 deai-optimizer 或写作 Agent 的输出
+    // - 最终预览（order_index=7，合规整改之后）：优先获取最近一个写作 Agent 的输出（合规整改后的版本）
+    const hasComplianceFixBefore = previousTasks.some(t =>
+      isWritingAgent(t.fromParentsExecutor) && t.status === 'completed' &&
+      (t.taskTitle.includes('合规整改') || t.taskTitle.includes('整改'))
     );
 
-    // 🔴 兜底：如果没有已完成的任务，找最近的任务（兼容首次执行场景）
-    const fallbackDeaiTask = deaiOptimizerTask || previousTasks.find(t => 
-      t.fromParentsExecutor === 'deai-optimizer'
-    );
-    const fallbackWritingTask = writingTask || previousTasks.find(t => 
-      isWritingAgent(t.fromParentsExecutor)
-    );
+    let effectiveWritingTask: typeof agentSubTasks.$inferSelect | undefined;
+
+    if (hasComplianceFixBefore) {
+      // 🔴 最终预览（合规整改后）：直接取最近的已完成写作 Agent 任务（即合规整改任务）
+      effectiveWritingTask = previousTasks.find(t =>
+        isWritingAgent(t.fromParentsExecutor) && t.status === 'completed'
+      );
+      console.log('[SubtaskEngine] 👁️ 最终预览模式：使用合规整改后的内容', {
+        taskId: effectiveWritingTask?.id,
+        executor: effectiveWritingTask?.fromParentsExecutor,
+        title: effectiveWritingTask?.taskTitle,
+      });
+    } else {
+      // 🔴 初稿预览（合规校验前）：优先获取 deai-optimizer 输出，兜底获取写作 Agent 输出
+      const deaiOptimizerTask = previousTasks.find(t =>
+        t.fromParentsExecutor === 'deai-optimizer' && t.status === 'completed'
+      );
+      const writingTask = previousTasks.find(t =>
+        isWritingAgent(t.fromParentsExecutor) && t.status === 'completed'
+      );
+      const fallbackDeaiTask = deaiOptimizerTask || previousTasks.find(t =>
+        t.fromParentsExecutor === 'deai-optimizer'
+      );
+      const fallbackWritingTask = writingTask || previousTasks.find(t =>
+        isWritingAgent(t.fromParentsExecutor)
+      );
+      effectiveWritingTask = deaiOptimizerTask || writingTask || fallbackDeaiTask || fallbackWritingTask;
+      console.log('[SubtaskEngine] 👁️ 初稿预览模式：使用去AI化/原始写作内容', {
+        source: deaiOptimizerTask ? 'deai-optimizer' : (writingTask ? 'writing-agent' : 'fallback'),
+      });
+    }
 
     let articleContent = '';
     let articleTitle = '';
     let platform = '';
 
-    // 🔴 Phase 7 修复：优先使用去AI化优化后的内容，兜底使用原始写作内容
-    const effectiveWritingTask = deaiOptimizerTask || writingTask || fallbackDeaiTask || fallbackWritingTask;
-    
     if (effectiveWritingTask) {
       // 提取文章内容（result_text 保持纯文本，不与平台渲染耦合）
       articleContent = effectiveWritingTask.resultText || '';
@@ -1272,11 +1290,14 @@ export class SubtaskExecutionEngine {
         articleContent = this.extractResultTextFromResultData(effectiveWritingTask.resultData, effectiveWritingTask.fromParentsExecutor) || '';
       }
       articleTitle = this.extractArticleTitleFromResultData(effectiveWritingTask.resultData, effectiveWritingTask.taskTitle);
-      // 🔴 Phase 7 修复：deai-optimizer 没有平台映射，需要从原始写作任务或 metadata 获取平台
+
+      // 确定平台：合规整改任务的 executor 是写作 Agent，可直接映射平台
       if (effectiveWritingTask.fromParentsExecutor === 'deai-optimizer') {
-        // 优先从原始写作任务获取平台
-        const originalWritingTask = writingTask || fallbackWritingTask;
-        platform = originalWritingTask 
+        // deai-optimizer 没有平台映射，需要从同组其他写作任务或 metadata 获取平台
+        const originalWritingTask = previousTasks.find(t =>
+          isWritingAgent(t.fromParentsExecutor) && t.status === 'completed'
+        );
+        platform = originalWritingTask
           ? getPlatformForExecutor(originalWritingTask.fromParentsExecutor)
           : ((task.metadata as Record<string, unknown>)?.platform as string) || 'wechat_official';
       } else {
@@ -1287,11 +1308,27 @@ export class SubtaskExecutionEngine {
     // 🔥🔥🔥 【架构改造】平台渲染数据提取
     // result_text 是通用纯文本，不与平台渲染耦合
     // 平台专属的渲染数据（如小红书卡片）通过 platformRenderData 独立传递
-    // 🔴 Phase 7 修复：deai-optimizer 的 resultData 不含平台渲染数据，需从原始写作任务提取
+    // 🔴 最终预览模式：合规整改任务可能有 platformRenderData（在其 resultData 中）
+    // 🔴 初稿预览模式：deai-optimizer 的 resultData 不含平台渲染数据，需从原始写作任务提取
     let platformRenderData: Record<string, unknown> | null = null;
-    const platformDataSource = effectiveWritingTask?.fromParentsExecutor === 'deai-optimizer'
-      ? (writingTask || fallbackWritingTask) // deai-optimizer → 从原始写作任务获取渲染数据
-      : effectiveWritingTask;                 // 写作Agent → 直接获取
+    let platformDataSource: typeof agentSubTasks.$inferSelect | undefined;
+    if (effectiveWritingTask?.fromParentsExecutor === 'deai-optimizer') {
+      // deai-optimizer → 从原始写作任务获取渲染数据
+      platformDataSource = previousTasks.find(t =>
+        isWritingAgent(t.fromParentsExecutor) && t.status === 'completed'
+      );
+    } else if (hasComplianceFixBefore) {
+      // 合规整改后 → 尝试从整改任务获取渲染数据，兜底从原始写作任务获取
+      const originalWritingTask = previousTasks.find(t =>
+        isWritingAgent(t.fromParentsExecutor) && t.status === 'completed' &&
+        !t.taskTitle.includes('合规整改') && !t.taskTitle.includes('整改')
+      );
+      platformDataSource = (effectiveWritingTask?.resultData && Object.keys(effectiveWritingTask.resultData as object).length > 0)
+        ? effectiveWritingTask
+        : originalWritingTask;
+    } else {
+      platformDataSource = effectiveWritingTask;
+    }
     if (platformDataSource && platform) {
       try {
         const { extractPlatformRenderData } = await import('@/lib/platform-render/extractors');
@@ -1324,8 +1361,9 @@ export class SubtaskExecutionEngine {
     }
 
     console.log('[SubtaskEngine] 👁️ 前序写作任务信息:', {
-      writingTaskId: effectiveWritingTask?.id,
-      isCompleted: writingTask?.id === effectiveWritingTask?.id,
+      effectiveTaskId: effectiveWritingTask?.id,
+      effectiveExecutor: effectiveWritingTask?.fromParentsExecutor,
+      isFinalPreview: hasComplianceFixBefore,
       hasContent: articleContent.length > 0,
       contentLength: articleContent.length,
       platform,
@@ -1347,14 +1385,14 @@ export class SubtaskExecutionEngine {
       articleTitle,
       platform,
       platformRenderData,  // 🔥 新增：平台专属渲染数据
-      writingTaskId: writingTask?.id || null,
+      writingTaskId: effectiveWritingTask?.id || null,
       canEdit: true,
       canSkip: true,
     };
 
-    const waitingMessage = articleContent
-      ? '请预览文章初稿，您可以修改内容或直接确认继续'
-      : '未找到前序文章内容，请确认后继续';
+    const waitingMessage = hasComplianceFixBefore
+      ? (articleContent ? '合规整改已完成，请最终预览确认文章内容' : '未找到合规整改后的内容，请确认后继续')
+      : (articleContent ? '请预览文章初稿，您可以修改内容或直接确认继续' : '未找到前序文章内容，请确认后继续');
 
     await this.markTaskWaitingUser(lockedTask, waitingMessage, overrideResultData);
 
