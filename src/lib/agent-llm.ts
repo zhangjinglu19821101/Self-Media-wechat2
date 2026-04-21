@@ -171,7 +171,13 @@ export async function callLLM(
     timeout?: number; // 新增：超时时间（毫秒）
     workspaceId?: string; // BYOK：传入 workspaceId 以使用用户 API Key
     maxRetries?: number; // 🔴 阶段1：最大重试次数（默认 3）
-    skipCircuitBreaker?: boolean; // 🔴 阶段1：跳过熔断器检查（用于健康探测）
+    /**
+     * 🔴 P1 修复：skipCircuitBreaker 仅限内部健康探测使用
+     * ⚠️ 业务代码禁止使用此选项！所有 LLM 调用必须经过熔断器保护。
+     * 如果需要跳过熔断器，请在 circuit-breaker.ts 中调整阈值。
+     * @internal
+     */
+    skipCircuitBreaker?: boolean;
   }
 ): Promise<string> {
   
@@ -182,6 +188,14 @@ export async function callLLM(
   // 🔴 阶段1：熔断器检查
   const { getCircuitBreaker, retryWithBackoff } = await import('@/lib/llm/circuit-breaker');
   const breaker = getCircuitBreaker(agentId);
+  
+  // 🔴 P1 修复：skipCircuitBreaker 仅限健康探测，业务代码使用会打印警告
+  if (options?.skipCircuitBreaker) {
+    // 获取调用栈以定位滥用位置
+    const stack = new Error().stack;
+    const caller = stack?.split('\n')[2]?.trim() || 'unknown';
+    console.warn(`⚠️ [CircuitBreaker] skipCircuitBreaker=true 被 ${caller} 使用，此选项仅限健康探测！`);
+  }
   
   if (!options?.skipCircuitBreaker && !breaker.allowRequest()) {
     const stats = breaker.getStats();
@@ -261,6 +275,7 @@ async function callLLMInternal(
     timeout?: number;
     workspaceId?: string;
     maxRetries?: number;
+    /** @internal 仅限健康探测使用 */
     skipCircuitBreaker?: boolean;
   }
 ): Promise<string> {
@@ -341,7 +356,13 @@ async function callLLMInternal(
       console.log(`🤖 [LLM调用] ${agentId} 使用模型: doubao-seed-2-0-pro-260215`);
     }
     
-    // 使用 Promise.race 实现超时
+    // 🔴 P1 修复：将 inflight AbortController 的信号传递给 LLM 调用
+    // 这样在超时重试时，旧请求可以被真正中断（而非仅靠 Promise.race 忽略结果）
+    if (abortController.signal) {
+      llmConfig.signal = abortController.signal;
+    }
+
+    // 使用 Promise.race 实现超时（双重保障：AbortController + setTimeout）
     let responsePromiseResolved = false;
     let timeoutPromiseRejected = false;
     

@@ -14,14 +14,20 @@
  * - 查看日志：pm2 logs ai-venture
  * - 停止服务：pm2 stop ai-venture
  * - 重启服务：pm2 restart ai-venture
+ * 
+ * 🔴 P1 修复：
+ * - wait_ready: true + start.sh 中 process.send('ready')，确保服务就绪后才接收流量
+ * - exec_mode: 'fork'（去除歧义，与 instances: 1 保持一致）
+ * - 新增 env_production 区块
  */
 
 module.exports = {
   apps: [
     {
       name: 'ai-venture',
-      script: './scripts/start.sh',
-      interpreter: '/bin/bash',
+      // 🔴 P1 修复：改用 Node.js 入口脚本（支持 process.send('ready')）
+      script: './scripts/start.js',
+      // 不再使用 bash 解释器（Node.js 是默认解释器）
 
       // ========== 基础配置 ==========
       cwd: process.env.COZE_WORKSPACE_PATH || '/workspace/projects',
@@ -34,6 +40,13 @@ module.exports = {
         NODE_ENV: 'development',
         DEPLOY_RUN_PORT: '5000',
         PORT: '5000',
+      },
+      // 🔴 P1 修复：新增 env_production 区块，确保生产环境关键变量存在
+      env_production: {
+        NODE_ENV: 'production',
+        DEPLOY_RUN_PORT: '5000',
+        PORT: '5000',
+        COZE_PROJECT_ENV: 'PROD',
       },
 
       // ========== 进程守护 ==========
@@ -56,15 +69,18 @@ module.exports = {
       log_date_format: 'YYYY-MM-DD HH:mm:ss Z',
 
       // ========== 健康检查 ==========
-      // 启动等待时间（Next.js 启动较慢，给予足够时间）
-      wait_ready: false,
+      // 🔴 P1 修复：wait_ready: true — 等待 start.sh 通过 IPC 发送 'ready' 信号
+      // 确保服务端口监听就绪后 PM2 才标记进程为 online
+      // start.sh 中需要在端口就绪后执行: process.send('ready')
+      wait_ready: true,
       // 监听超时（30s 内未 ready 视为启动失败）
       listen_timeout: 30000,
       // 进程无响应超时（kill_timeout 后发送 SIGKILL）
       kill_timeout: 10000,
 
       // ========== 进程管理 ==========
-      // 不以集群模式运行（单实例，避免 WebSocket 端口冲突）
+      // 🔴 P1 修复：显式声明 fork 模式（单实例，避免 WebSocket 端口冲突）
+      // instances: 1 + exec_mode: 'fork' 是 PM2 单实例的正确配置
       instances: 1,
       exec_mode: 'fork',
       // 自动重启的最低运行时间（低于此时间重启视为异常）

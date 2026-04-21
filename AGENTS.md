@@ -1360,7 +1360,7 @@
      - 日志输出到 /app/work/logs/bypass/
    - **LLM 熔断器 + 重试** (`src/lib/llm/circuit-breaker.ts`):
      - `AgentCircuitBreaker` 类：CLOSED/OPEN/HALF_OPEN 三态
-     - 连续5次失败触发熔断，30s冷却后进入半开状态探测
+     - 连续8次失败触发熔断（写作Agent阈值10），30s冷却后进入半开状态探测
      - `retryWithBackoff()`: 指数退避+随机抖动，maxRetries=3, baseDelay=2s, maxDelay=30s
      - 可重试错误：timeout / econnreset / 500 / 502 / 503 / 429 / rate_limit
    - **callLLM 熔断+重试集成** (`src/lib/agent-llm.ts`):
@@ -1369,12 +1369,13 @@
      - 熔断器按 Agent 维度隔离，互不影响
    - **数据库连接池优化** (`src/lib/db/index.ts`):
      - 修复 getDatabase() 连接泄漏：返回全局单例
-     - 连接池参数: max=10, idle_timeout=30, connect_timeout=10, max_lifetime=1800
+     - 连接池参数: max=10, idle_timeout=60, connect_timeout=10, max_lifetime=1800, keep_alive=true
      - 新增 checkDatabaseHealth(): 连通性+延迟+连接池统计
      - 优雅关闭：SIGTERM/SIGINT 时关闭连接池（全局标记防重复注册）
    - **增强版健康检查** (`src/app/api/health/route.ts`):
      - 5维检查: database / circuitBreakers / websocket / engine / process info
-     - 3级健康: healthy / degraded / unhealthy（HTTP 200/503）
+     - 3级健康: healthy(200) / degraded(503) / unhealthy(503)
+     - 5s 内存缓存避免高频探测每次查库（fromCache 标记）
      - DB 延迟>1s 为 degraded，熔断器 OPEN 为 degraded，WS 不运行 为 degraded
    - **WebSocket 服务增强** (`src/lib/websocket-server.ts`):
      - 新增事件监听机制: on(event, listener) / emit(event, ...args)
@@ -1416,3 +1417,36 @@
      - 新增默认 `agentDisconnected` 事件消费者（日志输出）
      - SIGTERM/SIGINT 注册使用全局标记 `_wsServerShutdownRegistered` 防重复
    - **效果**: 一条速记可同时属于多个领域，更符合实际使用场景
+69. **P1 评审修复**: 修复技术评审发现的 8 个 P1 级问题
+   - **ecosystem.config.cjs**: PM2 配置修正
+     - `wait_ready: true`：等待进程就绪后才接收流量（避免启动期 502）
+     - 新增 `scripts/start.js`：Node.js 入口脚本，端口就绪后通过 IPC 发送 `process.send('ready')`
+     - 不再使用 bash 解释器（无法调用 process.send）
+     - 新增 `env_production` 区块：生产环境关键变量（COZE_PROJECT_ENV 等）
+     - 显式声明 `exec_mode: 'fork'`（与 instances: 1 保持一致）
+   - **circuit-breaker.ts**: 支持按 Agent 配置熔断阈值
+     - 默认 `failureThreshold` 从 5 提高到 8（减少生产环境误触发）
+     - 新增 `AGENT_CONFIG_OVERRIDES`：写作类 Agent 阈值设为 10（调用链更长、超时更频繁）
+     - `getCircuitBreaker()`: 合并顺序 DEFAULT_CONFIG → AGENT_CONFIG_OVERRIDES → 调用方 config
+   - **agent-llm.ts**: AbortController 信号传递到 LLM 调用
+     - `callLLMInternal()` 中将 inflight AbortController 的 signal 传递给 `llm.invoke()`
+     - 超时重试时可以真正中断旧请求（而非仅靠 Promise.race 忽略结果）
+     - 双重保障：AbortController 中断 + setTimeout 超时
+   - **agent-llm.ts**: skipCircuitBreaker 滥用限制
+     - `skipCircuitBreaker` 标注为 `@internal`，仅限健康探测使用
+     - 使用时打印警告日志（含调用栈），方便定位滥用位置
+   - **db/index.ts**: idle_timeout 调整 + keepalive
+     - `idle_timeout` 从 30s 提高到 60s（适应 LLM 长调用场景）
+     - 新增 `keep_alive: true`（防止防火墙/NAT 设备断开空闲连接）
+   - **api/health/route.ts**: degraded 返回 503 + 幂等性缓存
+     - `degraded` 状态码从 200 改为 503（外部监控可区分正常和降级）
+     - 新增 5s 内存缓存（globalThis 持久化），避免高频探测每次查库
+     - 缓存命中时返回 `fromCache: true` + `cacheAgeMs` 字段
+   - **agent-ws-client.ts**: disconnect() 状态重叠修复
+     - `disconnect()` 中移除所有监听器（`removeAllListeners()`），避免 close 事件触发冗余状态
+     - 统一在 disconnect() 中设置状态和触发回调，不依赖 ws.on('close')
+     - 状态变更前检查 `this.state !== 'disconnected'`，避免重复触发 onDisconnect
+   - **websocket-server.ts**: 心跳 lastPing 更新时机统一
+     - `lastPing` 仅在 WebSocket 协议层 `pong` 事件中更新
+     - 应用层消息 `type: 'pong'` 不再更新 `lastPing`（避免与协议层混淆）
+     - 协议层 ping/pong 是自动的（ws.ping() → 客户端自动回复 ws.pong()），更可靠

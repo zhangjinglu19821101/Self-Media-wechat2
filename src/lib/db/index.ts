@@ -25,18 +25,22 @@ const DATABASE_URL = process.env.DATABASE_URL ||
  * 
  * 参数说明：
  * - max: 连接池大小，10 足够单实例使用（引擎串行 + API 并发）
- * - idle_timeout: 空闲连接超时 30s，平衡连接复用和资源释放
+ * - idle_timeout: 空闲连接超时 60s（🔴 P1 修复：从 30s 提高到 60s）
+ *   30s 对 LLM 调用场景（可能 >30s）过短，空闲连接被回收后下次查询需重建
  * - connect_timeout: 连接建立超时 10s，快速失败而非长时间阻塞
  * - max_lifetime: 连接最长生命周期 30min，避免长时间运行导致的连接状态异常
+ * - keep_alive: 🔴 P1 修复：启用 TCP keepalive，防止长空闲连接被中间设备断开
  */
 function createConnection(): postgres.Sql {
   return postgres(DATABASE_URL, {
     ssl: 'require',
     max: 10,
-    idle_timeout: 30,
+    idle_timeout: 60, // 🔴 P1 修复：30→60s，适应 LLM 长调用场景
     connect_timeout: 10,
     // 🔴 阶段1新增：连接最长生命周期，防止长时间运行的连接状态异常
     max_lifetime: 30 * 60, // 30 分钟
+    // 🔴 P1 修复：启用 TCP keepalive，防止防火墙/NAT 设备断开空闲连接
+    keep_alive: true,
     // 🔴 阶段1新增：连接创建回调（用于监控）
     onconnect: () => {
       console.log('[DB] 新连接已建立');

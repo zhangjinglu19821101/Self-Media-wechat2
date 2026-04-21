@@ -190,6 +190,12 @@ export class AgentWSClient {
 
   /**
    * 主动断开连接（不重连）
+   * 🔴 P1 修复：统一处理断连状态，避免与 ws.on('close') 处理重叠
+   * 
+   * 关键设计：
+   * 1. 先设置 intentionallyDisconnected = true（阻止 scheduleReconnect）
+   * 2. 移除 close 监听器（避免 ws.close() 触发 close → scheduleReconnect 竞态）
+   * 3. 统一在本方法中设置状态和触发回调
    */
   disconnect(): void {
     console.log(`[AgentWS:${this.config.agentId}] 主动断开连接`);
@@ -200,13 +206,20 @@ export class AgentWSClient {
     this.clearConnectTimer();
 
     if (this.ws) {
-      // 移除 close 监听器，避免触发重连
-      this.ws.removeAllListeners('close');
+      // 🔴 P1 修复：移除所有监听器后关闭，避免 close 事件触发冗余的状态设置
+      // ws.on('close') 中的 state = 'disconnected' 和 onDisconnect() 回调
+      // 已由本方法统一处理，无需 close 事件重复触发
+      this.ws.removeAllListeners();
       this.ws.close(1000, 'Agent 主动断开');
       this.ws = null;
     }
 
-    this.state = 'disconnected';
+    // 🔴 P1 修复：统一在此设置状态和触发回调，不依赖 ws.on('close')
+    // 避免状态重叠：disconnect() 设置一次 + close 事件又设置一次
+    if (this.state !== 'disconnected') {
+      this.state = 'disconnected';
+      this.config.onDisconnect('Agent 主动断开');
+    }
     this.pendingMessages = [];
   }
 

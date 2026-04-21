@@ -181,6 +181,10 @@ class WebSocketServer {
       });
 
       // 处理 pong
+      // 🔴 P1 修复：只在 WebSocket 协议层 pong 事件中更新 lastPing
+      // 应用层消息 type:'pong' 不再更新 lastPing，避免与协议层 pong 混淆
+      // 协议层 ping/pong 是自动的（ws.ping() → 客户端自动回复 ws.pong()）
+      // 应用层 type:'pong' 可能延迟或丢失，不应作为心跳依据
       ws.on('pong', () => {
         const client = this.clients.get(agentId);
         if (client) {
@@ -284,13 +288,14 @@ class WebSocketServer {
   private handleMessage(client: WSClient, message: WSMessage): void {
     switch (message.type) {
       case 'ping':
-        // 响应 ping 消息
+        // 响应应用层 ping 消息（与 WebSocket 协议层 ping/pong 无关）
         client.socket.send(JSON.stringify({ type: 'pong' }));
         break;
 
       case 'pong':
-        // 更新心跳时间
-        client.lastPing = new Date();
+        // 🔴 P1 修复：应用层 pong 不再更新 lastPing
+        // lastPing 统一由 WebSocket 协议层 pong 事件更新（见 ws.on('pong')）
+        // 应用层 pong 仅作为消息确认，不作为心跳检测依据
         break;
 
       default:

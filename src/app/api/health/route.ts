@@ -11,8 +11,12 @@
  * 5. 进程基础信息（内存、运行时间、Node 版本）
  * 
  * 响应格式：
- * - 200: 所有检查通过或降级（degraded）
- * - 503: 有关键检查失败（unhealthy）
+ * - 200: 所有检查通过（healthy）
+ * - 503: 有检查降级或失败（degraded / unhealthy）
+ * 
+ * 🔴 P1 修复：
+ * - degraded 返回 503（而非 200），外部监控可区分正常和降级
+ * - 新增 5s 内存缓存，避免高频探测（如 LB 每 10s）每次都查库
  */
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -67,7 +71,42 @@ interface HealthCheckResult {
   };
 }
 
+// 🔴 P1 新增：健康检查内存缓存（5s TTL）
+// 负载均衡器通常每 10s 探测一次，5s 缓存可以避免每次都查库
+// 使用 globalThis 确保跨请求持久化（Next.js 模块可能在热更新时重新加载）
+const HEALTH_CACHE_TTL_MS = 5000; // 5 秒缓存
+
+interface HealthCache {
+  data: Record<string, unknown>;
+  status: number;
+  cachedAt: number;
+}
+
+declare global {
+  // eslint-disable-next-line no-var
+  var __healthCheckCache: HealthCache | undefined;
+}
+
+function getHealthCache(): HealthCache | null {
+  return globalThis.__healthCheckCache || null;
+}
+
+function setHealthCache(cache: HealthCache): void {
+  globalThis.__healthCheckCache = cache;
+}
+
 export async function GET(request: NextRequest) {
+  // 🔴 P1 修复：检查缓存是否有效
+  const now = Date.now();
+  const cachedHealthResult = getHealthCache();
+  if (cachedHealthResult && (now - cachedHealthResult.cachedAt) < HEALTH_CACHE_TTL_MS) {
+    // 返回缓存结果，附加 fromCache 标记
+    return NextResponse.json(
+      { ...cachedHealthResult.data, fromCache: true, cacheAgeMs: now - cachedHealthResult.cachedAt },
+      { status: cachedHealthResult.status }
+    );
+  }
+
   const startTime = Date.now();
   let overallStatus: HealthLevel = 'healthy';
 
@@ -184,14 +223,22 @@ export async function GET(request: NextRequest) {
   result.status = overallStatus;
   const totalLatency = Date.now() - startTime;
 
-  // 根据 health level 选择 HTTP 状态码
-  const httpStatus = overallStatus === 'unhealthy' ? 503 : 200;
+  // 🔴 P1 修复：degraded 也返回 503，让外部监控可以区分
+  // healthy → 200, degraded → 503, unhealthy → 503
+  const httpStatus = overallStatus === 'healthy' ? 200 : 503;
 
   // 添加总延迟信息（方便监控）
   const response = {
     ...result,
     checkLatencyMs: totalLatency,
   };
+
+  // 🔴 P1 修复：缓存结果（使用 globalThis 持久化）
+  setHealthCache({
+    data: response,
+    status: httpStatus,
+    cachedAt: now,
+  });
 
   return NextResponse.json(response, { status: httpStatus });
 }

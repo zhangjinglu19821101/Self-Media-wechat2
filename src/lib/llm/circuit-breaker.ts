@@ -26,9 +26,28 @@ export interface CircuitBreakerConfig {
 }
 
 const DEFAULT_CONFIG: CircuitBreakerConfig = {
-  failureThreshold: 5,
+  failureThreshold: 8, // 🔴 P1 修复：从 5 提高到 8，减少生产环境误触发
   cooldownMs: 30000,
   halfOpenTimeoutMs: 60000,
+};
+
+/**
+ * 🔴 P1 新增：按 Agent 维度的熔断器配置覆盖
+ * 
+ * 某些 Agent（如写作类 Agent）的 LLM 调用更复杂、更容易因超时失败，
+ * 需要更高的 failureThreshold 以避免误触发熔断。
+ * 
+ * 新增 Agent 时，如需特殊配置在此添加即可。
+ */
+const AGENT_CONFIG_OVERRIDES: Partial<Record<string, Partial<CircuitBreakerConfig>>> = {
+  // 写作类 Agent：调用链更长、超时更频繁，给更大的容错空间
+  'insurance-d': { failureThreshold: 10 },
+  'insurance-xiaohongshu': { failureThreshold: 10 },
+  'insurance-zhihu': { failureThreshold: 10 },
+  'insurance-toutiao': { failureThreshold: 10 },
+  // Agent B（协调者）：调用频率高但内容简短，保持默认
+  // Agent T（技术专家）：MCP 调用可能偶尔超时，稍微放宽
+  'T': { failureThreshold: 8 },
 };
 
 // ========== 单个 Agent 的熔断器实例 ==========
@@ -179,11 +198,15 @@ const circuitBreakers = new Map<string, AgentCircuitBreaker>();
 
 /**
  * 获取指定 Agent 的熔断器
+ * 🔴 P1 修复：支持按 Agent 维度配置覆盖
  */
 export function getCircuitBreaker(agentId: string, config?: Partial<CircuitBreakerConfig>): AgentCircuitBreaker {
   if (!circuitBreakers.has(agentId)) {
+    // 合并顺序：DEFAULT_CONFIG → AGENT_CONFIG_OVERRIDES → 调用方传入的 config
+    const agentOverride = AGENT_CONFIG_OVERRIDES[agentId] || {};
     circuitBreakers.set(agentId, new AgentCircuitBreaker({
       ...DEFAULT_CONFIG,
+      ...agentOverride,
       ...config,
     }));
   }
