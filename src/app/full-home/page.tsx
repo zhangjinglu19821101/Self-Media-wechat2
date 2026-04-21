@@ -394,7 +394,7 @@ export default function HomePage() {
   // 🔥 创作引导相关状态
   const [showCreationGuide, setShowCreationGuide] = useState(true);
   const [activeGuideCard, setActiveGuideCard] = useState<'content' | 'structure' | 'platform' | 'guide' | null>(null);
-  const [activeGuideTab, setActiveGuideTab] = useState<'opinion' | 'emotion' | 'material' | 'case'>('opinion');
+  const [activeGuideTab, setActiveGuideTab] = useState<'opinion' | 'emotion' | 'material' | 'snippet' | 'case'>('opinion');
   
   // 🔥 横向流程图节点选中状态（用于联动详情面板）
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
@@ -1086,6 +1086,13 @@ export default function HomePage() {
     }
   }, [showSnippetDrawer, loadSnippetList]);
 
+  // 🔥 信息速记：切到速记tab时加载
+  useEffect(() => {
+    if (activeGuideTab === 'snippet') {
+      loadSnippetList();
+    }
+  }, [activeGuideTab, loadSnippetList]);
+
   // 🔥 提醒中心：加载提醒数据和统计
   const loadReminderData = useCallback(async () => {
     try {
@@ -1386,6 +1393,78 @@ export default function HomePage() {
       loadSnippetList();
     } catch (error) {
       toast.error('删除失败');
+    }
+  };
+
+  // 🔥 信息速记：选为素材（已入库的直接选，未入库的先入库再选）
+  const handleSelectSnippetAsMaterial = async (snippet: InfoSnippet) => {
+    try {
+      let materialId = snippet.materialId;
+
+      // 未入库：先入库
+      if (!materialId) {
+        const convertResult: any = await apiPost(`/api/info-snippets/${snippet.id}/convert-to-material`);
+        if (convertResult.success && convertResult.data?.materialId) {
+          materialId = convertResult.data.materialId;
+          toast.success(`已入库并选为素材`);
+          loadSnippetList(); // 刷新列表状态
+        } else {
+          toast.error(convertResult.error || '入库失败');
+          return;
+        }
+      } else {
+        toast.success('已选为素材');
+      }
+
+      // 添加到已选素材（用 materialId 查素材详情或直接构造）
+      if (materialId && !selectedMaterialIds.includes(materialId)) {
+        setSelectedMaterialIds(prev => [...prev, materialId]);
+        setSelectedMaterials(prev => [...prev, {
+          id: materialId!,
+          title: snippet.title || '无标题速记',
+          type: 'data',
+          content: snippet.rawContent || snippet.summary || '',
+        }]);
+      }
+    } catch (error: any) {
+      console.error('[InfoSnippets] 选为素材失败:', error);
+      toast.error(error?.message || '操作失败');
+    }
+  };
+
+  // 🔥 信息速记：在素材tab中选为素材（复用素材选择交互）
+  const handleSelectSnippetInMaterialTab = async (snippet: InfoSnippet) => {
+    try {
+      let materialId = snippet.materialId;
+
+      // 未入库：先入库
+      if (!materialId) {
+        const convertResult: any = await apiPost(`/api/info-snippets/${snippet.id}/convert-to-material`);
+        if (convertResult.success && convertResult.data?.materialId) {
+          materialId = convertResult.data.materialId;
+          toast.success(`「${snippet.title || '速记'}」已入库并选为素材`);
+          loadSnippetList(); // 刷新列表状态
+        } else {
+          toast.error(convertResult.error || '入库失败');
+          return;
+        }
+      } else if (!selectedMaterialIds.includes(materialId)) {
+        toast.success(`已选为素材`);
+      }
+
+      // 添加到已选素材
+      if (materialId && !selectedMaterialIds.includes(materialId)) {
+        setSelectedMaterialIds(prev => [...prev, materialId]);
+        setSelectedMaterials(prev => [...prev, {
+          id: materialId!,
+          title: snippet.title || '无标题速记',
+          type: 'data',
+          content: snippet.rawContent || snippet.summary || '',
+        }]);
+      }
+    } catch (error: any) {
+      console.error('[InfoSnippets] 选为素材失败:', error);
+      toast.error(error?.message || '操作失败');
     }
   };
 
@@ -2711,7 +2790,25 @@ export default function HomePage() {
                         }`}
                       >
                         关联素材
+                        {selectedMaterials.length > 0 && (
+                          <span className="ml-1 text-xs bg-indigo-100 text-indigo-700 px-1.5 py-0.5 rounded-full">{selectedMaterials.length}</span>
+                        )}
                         {activeGuideTab === 'material' && (
+                          <div className="absolute bottom-0 left-0 right-0 h-[2px] bg-sky-500 rounded-t-full" />
+                        )}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setActiveGuideTab('snippet')}
+                        className={`px-6 py-3 text-sm font-medium transition-all relative ${
+                          activeGuideTab === 'snippet'
+                            ? 'text-sky-600 bg-white'
+                            : 'text-slate-500 hover:text-slate-700 hover:bg-slate-100/50'
+                        }`}
+                      >
+                        <BookOpen className="w-3.5 h-3.5 inline mr-1" />
+                        信息速记
+                        {activeGuideTab === 'snippet' && (
                           <div className="absolute bottom-0 left-0 right-0 h-[2px] bg-sky-500 rounded-t-full" />
                         )}
                       </button>
@@ -2904,6 +3001,126 @@ export default function HomePage() {
                                   ))}
                                 </div>
                               )}
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {/* 信息速记 Tab */}
+                      {activeGuideTab === 'snippet' && (
+                        <div className="space-y-4">
+                          <div className="flex items-center justify-between mb-1">
+                            <div className="flex items-center gap-2">
+                              <span className="text-sm font-medium text-slate-700">从信息速记选择</span>
+                              <span className="text-xs text-slate-400">选择速记作为创作素材</span>
+                            </div>
+                            <Button variant="ghost" size="sm" onClick={() => loadSnippetList()} disabled={snippetLoading} className="h-8 px-3 text-xs text-sky-500">
+                              <RefreshCw className={`w-3.5 h-3.5 mr-1.5 ${snippetLoading ? 'animate-spin' : ''}`} />
+                              刷新
+                            </Button>
+                          </div>
+
+                          {/* 已选素材 Badge */}
+                          {selectedMaterials.length > 0 && (
+                            <div className="flex flex-wrap gap-2 p-3 bg-slate-50 rounded-lg">
+                              {selectedMaterials.map(mat => (
+                                <Badge
+                                  key={mat.id}
+                                  variant="secondary"
+                                  className="text-sm bg-indigo-50 text-indigo-700 border-indigo-200 cursor-pointer hover:bg-indigo-100 gap-1.5 pr-2"
+                                  onClick={() => toggleMaterialSelection(mat)}
+                                >
+                                  {mat.title.length > 12 ? mat.title.slice(0, 12) + '...' : mat.title}
+                                  <span className="text-indigo-400 hover:text-red-400 text-sm">×</span>
+                                </Badge>
+                              ))}
+                            </div>
+                          )}
+
+                          {/* 速记列表 */}
+                          {snippetLoading ? (
+                            <div className="flex items-center justify-center py-8">
+                              <Loader2 className="h-5 w-5 animate-spin text-sky-500" />
+                            </div>
+                          ) : snippetList.length === 0 ? (
+                            <div className="text-center py-8">
+                              <BookOpen className="mx-auto h-10 w-10 text-slate-200 mb-2" />
+                              <p className="text-sm text-slate-400">暂无速记记录</p>
+                              <p className="text-xs text-slate-300 mt-1">可通过右侧「信息速记」入口记录</p>
+                            </div>
+                          ) : (
+                            <div className="space-y-2 max-h-[360px] overflow-y-auto">
+                              {snippetList.map((snippet) => {
+                                const snippetCategories = (snippet.categories as string[] || ['quick_note']);
+                                const categoryColors: Record<string, { bg: string; text: string }> = {
+                                  real_case: { bg: 'bg-rose-50', text: 'text-rose-700' },
+                                  insurance: { bg: 'bg-blue-50', text: 'text-blue-700' },
+                                  intelligence: { bg: 'bg-violet-50', text: 'text-violet-700' },
+                                  medical: { bg: 'bg-emerald-50', text: 'text-emerald-700' },
+                                  quick_note: { bg: 'bg-slate-50', text: 'text-slate-600' },
+                                };
+                                const categoryLabels: Record<string, string> = {
+                                  real_case: '案例',
+                                  insurance: '保险',
+                                  intelligence: '智能',
+                                  medical: '医疗',
+                                  quick_note: '速记',
+                                };
+                                const isSelected = snippet.materialId ? selectedMaterialIds.includes(snippet.materialId) : false;
+
+                                return (
+                                  <div
+                                    key={snippet.id}
+                                    className={`px-3 py-2.5 rounded-lg border transition-all ${
+                                      isSelected
+                                        ? 'border-indigo-300 bg-indigo-50'
+                                        : 'border-slate-200 bg-white hover:border-slate-300'
+                                    }`}
+                                  >
+                                    <div className="flex items-start justify-between gap-2">
+                                      <div className="flex-1 min-w-0">
+                                        <div className="flex items-center gap-1.5 mb-1">
+                                          {snippetCategories.map((cat) => {
+                                            const style = categoryColors[cat] || categoryColors.quick_note;
+                                            const label = categoryLabels[cat] || cat;
+                                            return (
+                                              <span key={cat} className={`text-[10px] px-1.5 py-0.5 rounded ${style.bg} ${style.text}`}>
+                                                {label}
+                                              </span>
+                                            );
+                                          })}
+                                          {snippet.complianceLevel && (
+                                            <span className={`text-[10px] px-1.5 py-0.5 rounded ${
+                                              snippet.complianceLevel === 'A' ? 'bg-green-50 text-green-700' :
+                                              snippet.complianceLevel === 'B' ? 'bg-amber-50 text-amber-700' :
+                                              'bg-red-50 text-red-700'
+                                            }`}>
+                                              {snippet.complianceLevel === 'A' ? '合规' : snippet.complianceLevel === 'B' ? '预警' : '违规'}
+                                            </span>
+                                          )}
+                                        </div>
+                                        <p className="text-sm font-medium text-slate-700 truncate">
+                                          {snippet.title || '无标题'}
+                                        </p>
+                                        {snippet.summary && (
+                                          <p className="text-xs text-slate-500 mt-0.5 line-clamp-1">{snippet.summary}</p>
+                                        )}
+                                      </div>
+                                      <button
+                                        type="button"
+                                        onClick={() => handleSelectSnippetInMaterialTab(snippet)}
+                                        className={`shrink-0 text-[11px] px-2.5 py-1 rounded-md transition-colors font-medium ${
+                                          isSelected
+                                            ? 'bg-indigo-100 text-indigo-700 border border-indigo-300'
+                                            : 'bg-sky-500 text-white hover:bg-sky-600'
+                                        }`}
+                                      >
+                                        {isSelected ? '已选' : (snippet.materialId ? '选择' : '入库并选择')}
+                                      </button>
+                                    </div>
+                                  </div>
+                                );
+                              })}
                             </div>
                           )}
                         </div>
@@ -4622,28 +4839,48 @@ export default function HomePage() {
                           </div>
 
                           <div className="flex items-center gap-1 shrink-0">
+                            {/* 选为素材按钮 */}
+                            <TooltipProvider>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <button
+                                    onClick={() => handleSelectSnippetAsMaterial(snippet)}
+                                    className={`h-7 px-2 rounded-md flex items-center justify-center text-xs font-medium gap-1 transition-colors ${
+                                      snippet.materialId && selectedMaterialIds.includes(snippet.materialId)
+                                        ? 'bg-indigo-100 text-indigo-700 border border-indigo-300'
+                                        : 'bg-sky-50 text-sky-600 border border-sky-200 hover:bg-sky-100 hover:text-sky-700'
+                                    }`}
+                                  >
+                                    <BookmarkPlus className="h-3 w-3" />
+                                    {snippet.materialId ? '选为素材' : '入库并选为素材'}
+                                  </button>
+                                </TooltipTrigger>
+                                <TooltipContent>
+                                  <p>{snippet.materialId ? '将此素材添加到创作引导' : '先入库到素材库，再添加到创作引导'}</p>
+                                </TooltipContent>
+                              </Tooltip>
+                            </TooltipProvider>
                             {/* 入库状态标识 */}
                             {snippet.materialId ? (
                               <TooltipProvider>
                                 <Tooltip>
                                   <TooltipTrigger asChild>
-                                    <span className="h-7 px-2 rounded-md bg-green-50 border border-green-200 flex items-center justify-center text-green-600 text-xs font-medium gap-1">
+                                    <span className="h-7 w-7 rounded-md bg-green-50 border border-green-200 flex items-center justify-center text-green-600">
                                       <Check className="h-3 w-3" />
-                                      已入库
                                     </span>
                                   </TooltipTrigger>
-                                  <TooltipContent><p>已自动入库到素材库，可直接用于创作</p></TooltipContent>
+                                  <TooltipContent><p>已入库到素材库</p></TooltipContent>
                                 </Tooltip>
                               </TooltipProvider>
                             ) : (
                               <TooltipProvider>
                                 <Tooltip>
                                   <TooltipTrigger asChild>
-                                    <span className="h-7 px-2 rounded-md bg-amber-50 border border-amber-200 flex items-center justify-center text-amber-600 text-xs font-medium">
-                                      待入库
+                                    <span className="h-7 w-7 rounded-md bg-amber-50 border border-amber-200 flex items-center justify-center text-amber-600">
+                                      <AlertCircle className="h-3 w-3" />
                                     </span>
                                   </TooltipTrigger>
-                                  <TooltipContent><p>素材入库异常，可重新保存</p></TooltipContent>
+                                  <TooltipContent><p>素材入库异常，可点击"入库并选为素材"重新入库</p></TooltipContent>
                                 </Tooltip>
                               </TooltipProvider>
                             )}

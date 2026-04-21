@@ -1450,3 +1450,32 @@
      - `lastPing` 仅在 WebSocket 协议层 `pong` 事件中更新
      - 应用层消息 `type: 'pong'` 不再更新 `lastPing`（避免与协议层混淆）
      - 协议层 ping/pong 是自动的（ws.ping() → 客户端自动回复 ws.pong()），更可靠
+70. **信息速记与素材选择关联**: 修复信息速记内容无法在任务拆解的素材选择中使用的问题
+   - **信息速记抽屉**: 每条速记新增「选为素材」/「入库并选为素材」按钮
+     - 已入库速记：显示「选为素材」按钮，直接添加到创作引导
+     - 未入库速记：显示「入库并选为素材」按钮，先自动入库再添加到创作引导
+     - 入库状态标识从文字标签改为图标（绿色勾/琥珀色感叹号），节省空间
+     - 选中状态时按钮变为「已选」样式（indigo高亮）
+   - **创作引导素材tab**: 新增「信息速记」子tab
+     - 显示用户的信息速记列表（与抽屉共享数据）
+     - 分类标签+合规等级+标题+摘要的紧凑展示
+     - 点击「选择」/「入库并选择」即可将速记关联到创作引导
+     - 切换到速记tab时自动加载最新速记列表
+     - 已选素材Badge区域复用素材tab的交互
+   - **数据流**:
+     ```
+     信息速记 → 点击「选为素材」
+       → 有 materialId: 直接添加到 selectedMaterials
+       → 无 materialId: 调用 /api/info-snippets/[id]/convert-to-material 入库
+         → 入库成功后添加到 selectedMaterials
+           → 提交时 materialIds 一并传给 simple-split API
+             → insurance-d 提示词注入素材内容
+     ```
+   - **修改文件**:
+     - `src/app/full-home/page.tsx`:
+       - activeGuideTab 类型新增 'snippet'
+       - 新增 handleSelectSnippetAsMaterial() 方法（速记抽屉用）
+       - 新增 handleSelectSnippetInMaterialTab() 方法（素材tab用）
+       - 信息速记抽屉按钮区域重构
+       - 素材tab新增「信息速记」子tab按钮和内容
+       - 新增 useEffect：切到 snippet tab 时自动加载速记列表
