@@ -5,6 +5,60 @@
  * 🔥 集成 Agent 记忆系统，加载历史经验和知识
  */
 
+// 🔴 P0 修复：请求去重守卫 — 防止同一 Agent 的并发 LLM 调用（幽灵请求）
+// 当超时触发重试时，前一个请求可能仍在服务端执行，需要：
+// 1. 记录每个 Agent 正在执行的请求
+// 2. 重试前取消前一个请求的 AbortController
+// 3. 避免同一 Agent 同时发出多个 LLM 调用
+const inflightRequests = new Map<string, {
+  abortController: AbortController;
+  startedAt: number;
+}>();
+
+/**
+ * 注册正在执行的 LLM 请求
+ * @returns AbortController 用于取消请求
+ */
+function registerInflightRequest(agentId: string): AbortController {
+  // 如果有前一个请求，尝试取消它（超时重试场景）
+  const existing = inflightRequests.get(agentId);
+  if (existing) {
+    try {
+      existing.abortController.abort();
+      console.warn(`[LLM Guard] 取消 Agent ${agentId} 的前一个请求（运行 ${Date.now() - existing.startedAt}ms）`);
+    } catch {
+      // 忽略取消失败
+    }
+  }
+
+  const controller = new AbortController();
+  inflightRequests.set(agentId, {
+    abortController: controller,
+    startedAt: Date.now(),
+  });
+  return controller;
+}
+
+/**
+ * 注销正在执行的 LLM 请求
+ */
+function unregisterInflightRequest(agentId: string): void {
+  inflightRequests.delete(agentId);
+}
+
+/**
+ * 获取当前正在执行的请求统计（用于健康检查）
+ */
+export function getInflightRequestStats(): Record<string, { runningMs: number }> {
+  const stats: Record<string, { runningMs: number }> = {};
+  const now = Date.now();
+  const entries = Array.from(inflightRequests.entries());
+  for (const [agentId, req] of entries) {
+    stats[agentId] = { runningMs: now - req.startedAt };
+  }
+  return stats;
+}
+
 /**
  * 计算日期加上指定天数后的日期
  * @param dateStr 起始日期（YYYY-MM-DD 格式）
@@ -150,6 +204,8 @@ export async function callLLM(
         isRetryable: (error: Error) => {
           // 熔断器拒绝不可重试
           if (error.message?.includes('熔断器开启')) return false;
+          // 🔴 P0 修复：被取消的请求不可重试（已被新请求替代）
+          if (error.message?.includes('请求被取消')) return false;
           // 超时、网络错误、5xx、429 可重试
           const msg = error.message?.toLowerCase() || '';
           if (msg.includes('timeout') || msg.includes('超时')) return true;
@@ -186,6 +242,11 @@ export async function callLLM(
 
 /**
  * LLM 调用内部实现（不含熔断/重试，由 callLLM 统一包裹）
+ * 
+ * 🔴 P0 修复：集成请求去重守卫
+ * - 每次调用注册 inflight 请求
+ * - 超时重试时自动取消前一个请求的 AbortController
+ * - 调用完成后（无论成功失败）注销 inflight 请求
  */
 async function callLLMInternal(
   agentId: string,
@@ -203,6 +264,9 @@ async function callLLMInternal(
     skipCircuitBreaker?: boolean;
   }
 ): Promise<string> {
+    // 🔴 P0 修复：注册请求去重守卫，超时重试时自动取消前一个请求
+    const abortController = registerInflightRequest(agentId);
+
     // 🔴 阶段1：降低默认超时 120s → 60s，减少单次调用阻塞引擎的时间
     const temperature = options?.temperature || 0.3;
     const timeout = options?.timeout || 60000;
@@ -346,10 +410,18 @@ async function callLLMInternal(
 
     return response.content;
   } catch (error) {
+    // 🔴 P0 修复：如果是被取消的请求（前一个请求被重试取消），直接抛出
+    if (abortController.signal.aborted) {
+      console.warn(`[LLM Guard] Agent ${agentId} 请求已被取消（被重试替代），跳过`);
+      throw new Error(`LLM 请求被取消（Agent ${agentId}，超时重试）`);
+    }
     // 🔴 阶段1：内层只抛原始错误，重试由外层 callLLM 负责
     // 保留关键日志但不再包装新的 Error（避免双重包装）
     console.error(`❌ LLM 调用失败 (Agent ${agentId}):`, error);
     throw error;
+  } finally {
+    // 🔴 P0 修复：无论成功失败，都注销 inflight 请求
+    unregisterInflightRequest(agentId);
   }
 }
 

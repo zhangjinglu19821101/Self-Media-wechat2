@@ -62,6 +62,12 @@ export class AgentWSClient {
   private reconnectTimer: NodeJS.Timeout | null = null;
   private heartbeatTimer: NodeJS.Timeout | null = null;
   private connectTimer: NodeJS.Timeout | null = null;
+  // 🔴 P0 修复：心跳超时定时器（发送 ping 后等待 pong 的超时）
+  private heartbeatTimeoutTimer: NodeJS.Timeout | null = null;
+  /** 是否正在等待 pong 响应 */
+  private waitingForPong = false;
+  /** 🔴 P0 修复：主动断开标志，阻止 scheduleReconnect 触发重连 */
+  private intentionallyDisconnected = false;
   // 断连期间的消息缓存（最多 100 条，防止内存泄漏）
   private pendingMessages: string[] = [];
 
@@ -114,6 +120,7 @@ export class AgentWSClient {
       this.clearConnectTimer();
       this.state = 'connected';
       this.reconnectAttempt = 0;
+      this.intentionallyDisconnected = false; // 🔴 P0 修复：重置主动断开标志
       console.log(`[AgentWS:${this.config.agentId}] ✅ 已连接`);
 
       // 发送缓存消息
@@ -134,9 +141,16 @@ export class AgentWSClient {
       }
     });
 
+    // 🔴 P0 修复：pong 响应处理 — 清除心跳超时定时器
+    this.ws.on('pong', () => {
+      this.waitingForPong = false;
+      this.clearHeartbeatTimeout();
+    });
+
     this.ws.on('close', (code: number, reason: Buffer) => {
       this.clearConnectTimer();
       this.stopHeartbeat();
+      this.clearHeartbeatTimeout();
       const reasonStr = reason.toString() || `code=${code}`;
       console.log(`[AgentWS:${this.config.agentId}] ❌ 连接断开: ${reasonStr}`);
       this.state = 'disconnected';
@@ -179,8 +193,10 @@ export class AgentWSClient {
    */
   disconnect(): void {
     console.log(`[AgentWS:${this.config.agentId}] 主动断开连接`);
+    this.intentionallyDisconnected = true; // 🔴 P0 修复：设置标志阻止重连
     this.clearReconnectTimer();
     this.stopHeartbeat();
+    this.clearHeartbeatTimeout();
     this.clearConnectTimer();
 
     if (this.ws) {
@@ -227,8 +243,15 @@ export class AgentWSClient {
 
   /**
    * 调度重连（指数退避）
+   * 🔴 P0 修复：增加 intentionallyDisconnected 幂等保护
    */
   private scheduleReconnect(): void {
+    // 🔴 P0 修复：主动断开时不重连
+    if (this.intentionallyDisconnected) {
+      console.log(`[AgentWS:${this.config.agentId}] 主动断开，跳过重连`);
+      return;
+    }
+
     // 检查最大重连次数
     if (this.config.maxReconnects >= 0 && this.reconnectAttempt >= this.config.maxReconnects) {
       console.error(
@@ -260,12 +283,39 @@ export class AgentWSClient {
 
   /**
    * 启动心跳
+   * 🔴 P0 修复：发送 ping 后设置超时定时器，超时未收到 pong 则断开连接
+   * 
+   * 心跳机制：
+   * 1. 每 heartbeatIntervalMs 发送一次 ping
+   * 2. 发送 ping 后设置超时定时器（heartbeatIntervalMs * 2）
+   * 3. 收到 pong → 清除超时定时器
+   * 4. 超时未收到 pong → 判定连接断开，触发重连
    */
   private startHeartbeat(): void {
     this.stopHeartbeat();
     this.heartbeatTimer = setInterval(() => {
       if (this.ws?.readyState === WebSocket.OPEN) {
+        // 🔴 P0 修复：如果上一次 ping 还没收到 pong，说明连接已断开
+        if (this.waitingForPong) {
+          console.warn(`[AgentWS:${this.config.agentId}] ⚠️ 心跳超时：上一次 ping 未收到 pong，判定连接断开`);
+          this.stopHeartbeat();
+          this.clearHeartbeatTimeout();
+          this.ws.terminate(); // 强制断开，触发 close 事件 → scheduleReconnect
+          return;
+        }
+
         this.ws.ping();
+        this.waitingForPong = true;
+
+        // 🔴 P0 修复：设置 pong 超时定时器
+        this.clearHeartbeatTimeout();
+        this.heartbeatTimeoutTimer = setTimeout(() => {
+          if (this.waitingForPong && this.state === 'connected') {
+            console.warn(`[AgentWS:${this.config.agentId}] ⚠️ pong 超时 (${this.config.heartbeatIntervalMs * 2}ms)，判定连接断开`);
+            this.stopHeartbeat();
+            this.ws?.terminate();
+          }
+        }, this.config.heartbeatIntervalMs * 2); // 2 倍心跳间隔作为超时
       }
     }, this.config.heartbeatIntervalMs);
   }
@@ -314,6 +364,16 @@ export class AgentWSClient {
     if (this.connectTimer) {
       clearTimeout(this.connectTimer);
       this.connectTimer = null;
+    }
+  }
+
+  /**
+   * 🔴 P0 修复：清理心跳超时定时器
+   */
+  private clearHeartbeatTimeout(): void {
+    if (this.heartbeatTimeoutTimer) {
+      clearTimeout(this.heartbeatTimeoutTimer);
+      this.heartbeatTimeoutTimer = null;
     }
   }
 }

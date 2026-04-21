@@ -20,6 +20,7 @@ const PUBLIC_PATHS = [
   '/api/auth',          // NextAuth 内部路径 - 必须完全放行
   '/api/db',            // 数据库迁移
   '/api/health',        // 健康检查
+  '/api/system/health', // 🔴 P0 修复：系统健康检查端点（负载均衡器探测用）
   '/api/cron',          // 定时任务（内部调用）
   '/api/agents/receipt',// Agent 回调
   '/api/cache',         // 缓存统计（开发用）

@@ -37,6 +37,10 @@ class AgentCircuitBreaker {
   private failureCount = 0;
   private lastFailureTime: number | null = null;
   private readonly config: CircuitBreakerConfig;
+  /** HALF_OPEN 进入时间戳（用于超时回退 OPEN） */
+  private halfOpenEnteredAt: number | null = null;
+  /** HALF_OPEN 状态下已放行的探测请求数（最多放行 1 个） */
+  private halfOpenProbeInFlight = false;
 
   constructor(config: CircuitBreakerConfig = DEFAULT_CONFIG) {
     this.config = config;
@@ -56,15 +60,34 @@ class AgentCircuitBreaker {
         if (this.lastFailureTime && Date.now() - this.lastFailureTime >= this.config.cooldownMs) {
           console.log(`[CircuitBreaker] 冷却期结束，进入 HALF_OPEN 状态`);
           this.state = 'HALF_OPEN';
-          return true; // 允许一个探测请求
+          this.halfOpenEnteredAt = Date.now();
+          this.halfOpenProbeInFlight = false;
+          // 继续走 HALF_OPEN 分支
+          // falls through
+        } else {
+          return false; // 仍在冷却期
         }
-        return false; // 仍在冷却期
       }
 
-      case 'HALF_OPEN':
-        // HALF_OPEN 只允许一个探测请求（已在 OPEN→HALF_OPEN 转换时放行）
-        // 后续请求在探测结果出来前仍拒绝
-        return false;
+      // eslint-disable-next-line no-fallthrough
+      case 'HALF_OPEN': {
+        // 🔴 P0 修复：HALF_OPEN 超时后回退到 OPEN
+        if (this.halfOpenEnteredAt && Date.now() - this.halfOpenEnteredAt >= this.config.halfOpenTimeoutMs) {
+          console.warn(`[CircuitBreaker] HALF_OPEN 探测超时 (${this.config.halfOpenTimeoutMs}ms)，回退 OPEN 状态`);
+          this.state = 'OPEN';
+          this.lastFailureTime = Date.now();
+          this.halfOpenEnteredAt = null;
+          return false;
+        }
+
+        // 🔴 P0 修复：HALF_OPEN 只放行 1 个探测请求，后续请求拒绝
+        if (this.halfOpenProbeInFlight) {
+          return false; // 已有探测请求在途，拒绝
+        }
+
+        this.halfOpenProbeInFlight = true;
+        return true;
+      }
     }
   }
 
@@ -74,6 +97,8 @@ class AgentCircuitBreaker {
   recordSuccess(): void {
     if (this.state === 'HALF_OPEN') {
       console.log(`[CircuitBreaker] 探测成功，恢复 CLOSED 状态`);
+      this.halfOpenEnteredAt = null;
+      this.halfOpenProbeInFlight = false;
     }
     this.failureCount = 0;
     this.state = 'CLOSED';
@@ -83,13 +108,16 @@ class AgentCircuitBreaker {
    * 记录失败
    */
   recordFailure(): void {
-    this.failureCount++;
+    // 🔴 P0 修复：failureCount 上限保护，避免无限增长
+    this.failureCount = Math.min(this.failureCount + 1, this.config.failureThreshold + 10);
     this.lastFailureTime = Date.now();
 
     if (this.state === 'HALF_OPEN') {
       // 探测失败，回到 OPEN
       console.warn(`[CircuitBreaker] 探测失败，回到 OPEN 状态`);
       this.state = 'OPEN';
+      this.halfOpenEnteredAt = null;
+      this.halfOpenProbeInFlight = false;
       return;
     }
 
@@ -97,6 +125,7 @@ class AgentCircuitBreaker {
     if (this.failureCount >= this.config.failureThreshold) {
       console.error(`[CircuitBreaker] 连续失败 ${this.failureCount} 次，达到阈值 ${this.config.failureThreshold}，进入 OPEN 状态`);
       this.state = 'OPEN';
+      this.halfOpenEnteredAt = null;
     }
   }
 
@@ -108,6 +137,11 @@ class AgentCircuitBreaker {
     if (this.state === 'OPEN' && this.lastFailureTime &&
         Date.now() - this.lastFailureTime >= this.config.cooldownMs) {
       return 'HALF_OPEN';
+    }
+    // 🔴 P0 修复：HALF_OPEN 超时检查
+    if (this.state === 'HALF_OPEN' && this.halfOpenEnteredAt &&
+        Date.now() - this.halfOpenEnteredAt >= this.config.halfOpenTimeoutMs) {
+      return 'OPEN'; // 反映实际回退后的状态
     }
     return this.state;
   }
@@ -123,6 +157,7 @@ class AgentCircuitBreaker {
       cooldownRemaining: this.state === 'OPEN' && this.lastFailureTime
         ? Math.max(0, this.config.cooldownMs - (Date.now() - this.lastFailureTime))
         : 0,
+      halfOpenProbeInFlight: this.halfOpenProbeInFlight,
     };
   }
 
@@ -132,6 +167,8 @@ class AgentCircuitBreaker {
   reset(): void {
     this.failureCount = 0;
     this.lastFailureTime = null;
+    this.halfOpenEnteredAt = null;
+    this.halfOpenProbeInFlight = false;
     this.state = 'CLOSED';
     console.log(`[CircuitBreaker] 手动重置为 CLOSED 状态`);
   }

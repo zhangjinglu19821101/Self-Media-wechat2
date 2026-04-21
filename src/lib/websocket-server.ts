@@ -253,6 +253,9 @@ class WebSocketServer {
 
   /**
    * 广播消息给所有已连接的 Agent
+   * 
+   * 🔴 注意：内部调用 sendToAgent()，该方法会检查 socket.readyState === WebSocket.OPEN，
+   * 因此未就绪的连接会自动跳过，无需额外过滤。
    */
   broadcast(message: WSMessage): void {
     this.clients.forEach((client) => {
@@ -369,6 +372,7 @@ class WebSocketServer {
 
   /**
    * 🔴 阶段1新增：便捷方法 - 获取已连接的 Agent 列表
+   * （与 getConnectedClients 功能相同，保留作为语义化别名）
    */
   getConnectedAgents(): AgentId[] {
     return this.getConnectedClients();
@@ -402,9 +406,17 @@ class WebSocketServer {
 // 防止 Next.js 热重载导致多次启动
 declare global {
   var _wsServerInstance: WebSocketServer | undefined;
+  // 🔴 P0 修复：防止 SIGTERM/SIGINT 重复注册
+  var _wsServerShutdownRegistered: boolean | undefined;
 }
 
 export const wsServer = global._wsServerInstance || new WebSocketServer(5001);
+
+// 🔴 P0 修复：注册默认的 agentDisconnected 事件消费者（日志 + 健康指标）
+wsServer.on('agentDisconnected', (agentId: AgentId) => {
+  console.log(`[WS] Agent ${agentId} 断开连接 — 可能需要重连调度`);
+  // 此处可扩展：通知执行引擎、更新健康指标等
+});
 
 // 在 Node.js 环境中自动启动服务器（确保只启动一次）
 if (typeof window === 'undefined') {
@@ -441,14 +453,18 @@ if (typeof window === 'undefined') {
   // 异步启动服务器
   startServer();
 
-  // 优雅关闭
-  process.on('SIGTERM', () => {
-    console.log('Received SIGTERM, shutting down WebSocket server...');
-    wsServer.stop();
-  });
+  // 🔴 P0 修复：优雅关闭 — 使用全局标记防止与 db/index.ts 重复注册 SIGTERM/SIGINT
+  if (!global._wsServerShutdownRegistered) {
+    global._wsServerShutdownRegistered = true;
 
-  process.on('SIGINT', () => {
-    console.log('Received SIGINT, shutting down WebSocket server...');
-    wsServer.stop();
-  });
+    process.on('SIGTERM', () => {
+      console.log('Received SIGTERM, shutting down WebSocket server...');
+      wsServer.stop();
+    });
+
+    process.on('SIGINT', () => {
+      console.log('Received SIGINT, shutting down WebSocket server...');
+      wsServer.stop();
+    });
+  }
 }

@@ -6,6 +6,10 @@
  * 2. 修复 getDatabase() 连接泄漏（不再每次创建新连接）
  * 3. 新增连接健康检查（用于 /api/health）
  * 4. 优雅关闭（进程退出时释放连接池）
+ * 
+ * 🔴 P0 修复：
+ * 5. getDatabase/getDatabaseWithRetry 返回类型统一
+ * 6. closeDatabase() 竞态保护
  */
 
 import { drizzle } from 'drizzle-orm/postgres-js';
@@ -48,13 +52,18 @@ function createConnection(): postgres.Sql {
 const client = createConnection();
 export const db = drizzle(client, { schema });
 
+// 🔴 P0 修复：统一返回类型
+type DatabaseInstance = ReturnType<typeof drizzle>;
+
 /**
  * 获取数据库连接实例
  * 
  * 🔴 阶段1修复：直接返回全局单例，不再每次创建新连接
  * 旧版 getDatabase() 每次创建新连接但不关闭，导致连接泄漏
+ * 
+ * 🔴 P0 修复：返回类型与 getDatabaseWithRetry 统一
  */
-export function getDatabase() {
+export function getDatabase(): DatabaseInstance {
   return db;
 }
 
@@ -62,8 +71,9 @@ export function getDatabase() {
  * 获取数据库连接实例（带重试机制）
  * 
  * 🔴 阶段1优化：重试间隔改为指数退避，避免固定间隔导致的重试风暴
+ * 🔴 P0 修复：返回类型与 getDatabase 统一（均为 DatabaseInstance）
  */
-export async function getDatabaseWithRetry(retries = 3, baseDelay = 1000): Promise<ReturnType<typeof drizzle>> {
+export async function getDatabaseWithRetry(retries = 3, baseDelay = 1000): Promise<DatabaseInstance> {
   for (let i = 0; i < retries; i++) {
     try {
       // 直接尝试执行一个简单查询验证连接可用
@@ -125,11 +135,21 @@ export async function checkDatabaseHealth(): Promise<{
   }
 }
 
+// 🔴 P0 修复：closeDatabase 竞态保护
+let dbClosing = false;
+
 /**
  * 🔴 阶段1新增：优雅关闭数据库连接
  * 在进程退出时调用，确保所有连接正确释放
+ * 
+ * 🔴 P0 修复：使用 closing 标志防止并发关闭和竞态
  */
 export async function closeDatabase(): Promise<void> {
+  if (dbClosing) {
+    console.log('[DB] 连接池正在关闭中，跳过重复调用');
+    return;
+  }
+  dbClosing = true;
   try {
     console.log('[DB] 正在关闭数据库连接池...');
     await client.end();

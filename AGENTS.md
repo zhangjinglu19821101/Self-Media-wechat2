@@ -1384,4 +1384,35 @@
      - 指数退避自动重连（初始1s，最大60s，最多10次）
      - 30s 心跳保活，断连期间消息缓存（最多100条）
      - 连接状态追踪: disconnected / connecting / connected / reconnecting
+68. **P0 评审修复**: 修复技术评审发现的 6 个 P0 级问题
+   - **circuit-breaker.ts**: HALF_OPEN 超时回退 OPEN 逻辑补全
+     - 新增 `halfOpenEnteredAt` 和 `halfOpenProbeInFlight` 字段
+     - HALF_OPEN 超时（60s）后自动回退到 OPEN 状态
+     - HALF_OPEN 只放行 1 个探测请求，后续请求拒绝
+     - `failureCount` 上限保护：`Math.min(count, threshold + 10)`
+     - `recordSuccess()` 在 HALF_OPEN→CLOSED 时重置 `halfOpenProbeInFlight`
+     - `getState()` 增加 HALF_OPEN 超时检查
+   - **agent-llm.ts**: 请求去重守卫（防止超时重试产生幽灵请求）
+     - 新增 `inflightRequests` Map：按 agentId 追踪正在执行的请求
+     - `registerInflightRequest()`: 注册请求，自动取消前一个同 Agent 请求的 AbortController
+     - `unregisterInflightRequest()`: 注销请求（finally 块中调用）
+     - `callLLMInternal()`: 集成请求去重守卫 + abort 感知 + finally 注销
+     - `isRetryable()`: "请求被取消"不可重试（已被新请求替代）
+     - `getInflightRequestStats()`: 用于健康检查
+   - **db/index.ts**: 返回类型统一 + closeDatabase 竞态保护
+     - 新增 `DatabaseInstance` 类型别名，`getDatabase()` 和 `getDatabaseWithRetry()` 返回类型统一
+     - `closeDatabase()`: 新增 `dbClosing` 标志防止并发关闭
+   - **middleware.ts**: `/api/system/health` 加入公开路径
+     - 负载均衡器探测该端点时不再被重定向到登录页
+   - **agent-ws-client.ts**: 心跳超时判断改用 setTimeout + 幂等保护
+     - 心跳机制重写：发送 ping → 设置超时定时器 → 超时未收到 pong → 断开连接
+     - 新增 `heartbeatTimeoutTimer` 和 `waitingForPong` 字段
+     - 新增 `clearHeartbeatTimeout()` 方法
+     - `scheduleReconnect()`: 新增 `intentionallyDisconnected` 标志，主动断开时不重连
+     - `disconnect()`: 设置 `intentionallyDisconnected = true`
+     - `ws.on('pong')`: 清除心跳超时定时器
+   - **websocket-server.ts**: broadcast 意图明确 + agentDisconnected 事件 + SIGTERM 重复注册
+     - `broadcast()` JSDoc 明确说明 `sendToAgent` 内部有就绪检查
+     - 新增默认 `agentDisconnected` 事件消费者（日志输出）
+     - SIGTERM/SIGINT 注册使用全局标记 `_wsServerShutdownRegistered` 防重复
    - **效果**: 一条速记可同时属于多个领域，更符合实际使用场景
