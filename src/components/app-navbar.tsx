@@ -37,6 +37,7 @@ import {
   Copy,
   Users,
   Bell,
+  User,
 } from 'lucide-react';
 
 interface NavItem {
@@ -57,6 +58,7 @@ const OTHER_NAV_ITEMS: NavItem[] = [
   { href: '/publish/history', label: '发布记录', icon: <Rocket className="w-4 h-4" /> },
   { href: '/materials', label: '素材库', icon: <BookOpen className="w-4 h-4" /> },
   { href: '/digital-assets', label: '数字资产', icon: <FileText className="w-4 h-4" /> },
+  { href: '/settings/account', label: '账户设置', icon: <User className="w-4 h-4" /> },
   { href: '/settings/api-keys', label: 'API Key', icon: <Key className="w-4 h-4" /> },
   { href: '/settings/team', label: '团队管理', icon: <Users className="w-4 h-4" /> },
 ];
@@ -81,7 +83,7 @@ export function AppNavbar() {
     fetch('/api/auth/session')
       .then(res => res.json())
       .then(data => {
-        setIsSuperAdmin(data?.user?.role === 'super_admin');
+        setIsSuperAdmin(data?.data?.role === 'super_admin');
       })
       .catch(() => {});
 
