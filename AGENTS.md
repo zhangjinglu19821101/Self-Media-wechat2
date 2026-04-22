@@ -1479,3 +1479,18 @@
        - 信息速记抽屉按钮区域重构
        - 素材tab新增「信息速记」子tab按钮和内容
        - 新增 useEffect：切到 snippet tab 时自动加载速记列表
+71. **登录窗口第一次登录失败修复**: 修复"登录窗口，点击登录，第一次都是登录不上的"问题
+   - **问题根因**:
+     - `router.push()` 没有 await，导致跳转和刷新时序混乱
+     - 没有等待 session cookie 设置就立即跳转
+     - NextAuth 需要一点时间来设置 cookie 和更新 session 状态
+   - **修复方案**:
+     - `router.push(callbackUrl)` 改为 `await router.push(callbackUrl)`
+     - 增加 200ms 延迟等待 session cookie 设置
+     - 正确顺序：先 await 跳转，再刷新确保 session 状态更新
+   - **修复文件**:
+     - `src/app/login/page.tsx`:
+       - 移除 useSession（避免 SessionProvider 错误）
+       - 增加 200ms 延迟等待 cookie 设置
+       - router.push 改为 await
+       - 跳转后调用 router.refresh

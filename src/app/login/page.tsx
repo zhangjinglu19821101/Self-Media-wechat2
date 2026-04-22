@@ -53,7 +53,13 @@ function LoginContent() {
           setError('邮箱或密码不正确');
         }
       } else {
-        router.push(callbackUrl);
+        // 等待 session cookie 设置（NextAuth 需要一点时间来设置 cookie）
+        await new Promise(resolve => setTimeout(resolve, 200));
+        
+        // 正确顺序：先 await 跳转，再刷新
+        await router.push(callbackUrl);
+        
+        // 刷新确保 session 状态更新
         router.refresh();
       }
     } catch (err) {
