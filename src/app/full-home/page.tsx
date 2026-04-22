@@ -44,11 +44,11 @@ const SNIPPET_CATEGORY_COLORS: Record<string, { bg: string; text: string; border
 };
 
 const SNIPPET_CATEGORY_LABELS: Record<string, string> = {
-  real_case: '案例',
+  real_case: '身边真实案例',
   insurance: '保险',
-  intelligence: '智能',
+  intelligence: '智能化',
   medical: '医疗',
-  quick_note: '速记',
+  quick_note: '简要速记',
 };
 
 // 🔥 提醒中心类型定义
@@ -1418,6 +1418,13 @@ export default function HomePage() {
     try {
       let materialId = snippet.materialId;
 
+      // 已入库且已选中 → 取消选择
+      if (materialId && selectedMaterialIds.includes(materialId)) {
+        setSelectedMaterialIds(prev => prev.filter(id => id !== materialId));
+        setSelectedMaterials(prev => prev.filter(m => m.id !== materialId));
+        return;
+      }
+
       // 未入库：先入库
       if (!materialId) {
         const convertResult: any = await apiPost(`/api/info-snippets/${snippet.id}/convert-to-material`);
@@ -1429,11 +1436,11 @@ export default function HomePage() {
           toast.error(convertResult.error || '入库失败');
           return;
         }
-      } else {
+      } else if (!selectedMaterialIds.includes(materialId)) {
         toast.success('已选为素材');
       }
 
-      // 添加到已选素材（用 materialId 查素材详情或直接构造）
+      // 已入库且未选中 → 添加到已选素材
       if (materialId && !selectedMaterialIds.includes(materialId)) {
         setSelectedMaterialIds(prev => [...prev, materialId]);
         setSelectedMaterials(prev => [...prev, {
@@ -4825,11 +4832,19 @@ export default function HomePage() {
                                     }`}
                                   >
                                     <BookmarkPlus className="h-3 w-3" />
-                                    {snippet.materialId ? '选为素材' : '入库并选为素材'}
+                                    {snippet.materialId && selectedMaterialIds.includes(snippet.materialId)
+                                      ? '取消选择'
+                                      : snippet.materialId
+                                        ? '选为素材'
+                                        : '入库并选为素材'}
                                   </button>
                                 </TooltipTrigger>
                                 <TooltipContent>
-                                  <p>{snippet.materialId ? '将此素材添加到创作引导' : '先入库到素材库，再添加到创作引导'}</p>
+                                  <p>{snippet.materialId && selectedMaterialIds.includes(snippet.materialId)
+                                    ? '从创作引导中移除此素材'
+                                    : snippet.materialId
+                                      ? '将此素材添加到创作引导'
+                                      : '先入库到素材库，再添加到创作引导'}</p>
                                 </TooltipContent>
                               </Tooltip>
                             </TooltipProvider>
