@@ -120,7 +120,15 @@ export default function AccountSettingsPage() {
 
     setChangingPassword(true);
     try {
-      const res = await apiPost<{ success: boolean; message: string }>(
+      const res = await apiPost<{
+        success: boolean;
+        message: string;
+        error?: string;
+        locked?: boolean;
+        remainingMs?: number;
+        attemptsLeft?: number;
+        willLock?: boolean;
+      }>(
         '/api/auth/change-password',
         {
           currentPassword,
@@ -139,11 +147,25 @@ export default function AccountSettingsPage() {
           router.push('/login');
         }, 1500);
       } else {
-        toast.error(res.message || '密码修改失败');
+        // 处理特定错误
+        if (res.locked) {
+          const minutes = Math.ceil((res.remainingMs || 0) / 60000);
+          toast.error(`账户已锁定，请 ${minutes} 分钟后重试`, { duration: 5000 });
+        } else if (res.attemptsLeft !== undefined) {
+          if (res.willLock) {
+            toast.error(`当前密码错误！再错一次账户将被锁定 30 分钟`, { duration: 5000 });
+          } else {
+            toast.error(`当前密码错误，剩余 ${res.attemptsLeft} 次尝试机会`);
+          }
+        } else {
+          toast.error(res.error || res.message || '密码修改失败');
+        }
       }
     } catch (err: any) {
       if (err?.status === 401) {
         toast.error('当前密码错误');
+      } else if (err?.status === 429) {
+        toast.error('操作过于频繁，请稍后重试');
       } else {
         toast.error('密码修改失败，请稍后重试');
       }
