@@ -1511,3 +1511,11 @@
        - `agentResult` 新增 `briefResponse`/`selfEvaluation`/`executionSummary` 顶层字段
        - `executorOutput.result` 改为 `originalResult`（执行结论声明）
      - `src/lib/agents/prompts/deai-optimizer.md`: 输出格式升级为标准执行格式
+73. **写作 Agent LLM 超时修复**: 解决 deai-optimizer 等写作 Agent 调用 `doubao-seed-2-0-pro-260215` 模型时系统性超时的问题
+   - **问题**: 写作 Agent 使用高质量模型 `doubao-seed-2-0-pro-260215`，正常响应时间 65-80 秒，但 `callLLM` 默认超时 60 秒
+   - **根因**: `callExecutorAgentDirectly` 中 `callLLM` 未传 `timeout` 参数，走默认 60s；而该模型对长文本任务需 70s+
+   - **影响**: deai-optimizer 3 次重试均超时（总耗时 256s），insurance-d 等写作 Agent 也存在相同风险
+   - **修复**:
+     - `subtask-execution-engine.ts`: 写作 Agent `callLLM` 超时从 60s 提升到 180s（与 Agent B 一致）
+     - 涉及2处调用点：直接执行路径 + reExecution 路径
+     - `agent-execution-result.ts`: `ExecutorDirectResult` 接口补充 `briefResponse`/`selfEvaluation` 字段

@@ -7694,12 +7694,16 @@ ${userFeedbackText}
       console.log('[执行Agent调用] LLM调用开始时间:', getCurrentBeijingTime().toISOString());
       
       const llmStartAt = getCurrentBeijingTime();
+      // 🔴🔴🔴 写作 Agent 超时修复：
+      // doubao-seed-2-0-pro-260215 模型正常响应 65-80 秒，60s 超时必然失败
+      // 写作 Agent 需要 180s 超时（与 Agent B 一致），其他 Agent 保持 60s
+      const _llmTimeout = _isWritingAgent ? 180000 : 60000;
       const response = await callLLM(
         task.fromParentsExecutor,
         '直接执行任务',
         agentPrompt,
         fullPrompt,
-        { workspaceId: task.workspaceId || undefined }
+        { workspaceId: task.workspaceId || undefined, timeout: _llmTimeout }
       );
       const llmEndAt = getCurrentBeijingTime();
       
@@ -8162,12 +8166,14 @@ ${agentBDecision ?
 `;
 
     try {
+      // 🔴 写作 Agent 超时修复：reExecution 路径也需要更长超时
+      const _reExecTimeout = isWritingAgent(task.fromParentsExecutor) ? 180000 : 60000;
       const response = await callLLM(
         task.fromParentsExecutor,
         '继续执行任务',
         '你是 ' + task.fromParentsExecutor + '，请根据以上信息继续执行任务',
         prompt,
-        { workspaceId: task.workspaceId || undefined }
+        { workspaceId: task.workspaceId || undefined, timeout: _reExecTimeout }
       );
 
       // ========== 🔴 记录执行 Agent 交互（正常情况） ==========

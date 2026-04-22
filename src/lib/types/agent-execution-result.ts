@@ -96,6 +96,10 @@ export interface ExecutorDirectResult {
   
   // 🔴 新增：执行时使用的 capabilities（供 Agent B 参考）
   executedWithCapabilities?: any[];
+  
+  // 🔴 P0-1 修复：标准执行格式字段（deai-optimizer 等新 Agent 使用）
+  briefResponse?: string;
+  selfEvaluation?: string;
 }
 
 /**
