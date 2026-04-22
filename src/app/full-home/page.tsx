@@ -388,6 +388,9 @@ export default function HomePage() {
   }>({ pending: 0, in_progress: 0, waiting_user: 0 });
   const [loadingStats, setLoadingStats] = useState(false);
 
+  // 🔥 新增：超级管理员状态
+  const [isSuperAdmin, setIsSuperAdmin] = useState(false);
+
   // 🔥 创作引导相关状态
   const [showCreationGuide, setShowCreationGuide] = useState(true);
   const [activeGuideCard, setActiveGuideCard] = useState<'content' | 'structure' | 'platform' | 'guide' | null>(null);
@@ -517,6 +520,16 @@ export default function HomePage() {
       }
     }
   }, [hasSplitResult, tempSessionId]);
+
+  // 🔥 新增：检查是否是超级管理员
+  useEffect(() => {
+    fetch('/api/auth/session')
+      .then(res => res.json())
+      .then(data => {
+        setIsSuperAdmin(data?.user?.role === 'super_admin');
+      })
+      .catch(() => {});
+  }, []);
 
   // 🔥 创作引导：监听变化，debounce 保存到 localStorage
   useEffect(() => {
@@ -1886,16 +1899,19 @@ export default function HomePage() {
                       风格初始化
                     </Link>
                   </Button>
-                  <Button 
-                    size="sm" 
-                    asChild
-                    className="bg-gradient-to-r from-cyan-500 to-teal-500 hover:from-cyan-600 hover:to-teal-600 text-white shadow-lg shadow-cyan-200/50"
-                  >
-                    <Link href="/style-replica">
-                      <PenTool className="w-4 h-4 mr-2" />
-                      风格复刻
-                    </Link>
-                  </Button>
+                  {/* 风格复刻 - 只有超级管理员可见 */}
+                  {isSuperAdmin && (
+                    <Button 
+                      size="sm" 
+                      asChild
+                      className="bg-gradient-to-r from-cyan-500 to-teal-500 hover:from-cyan-600 hover:to-teal-600 text-white shadow-lg shadow-cyan-200/50"
+                    >
+                      <Link href="/style-replica">
+                        <PenTool className="w-4 h-4 mr-2" />
+                        风格复刻
+                      </Link>
+                    </Button>
+                  )}
                   <Button 
                     size="sm" 
                     asChild
@@ -1906,16 +1922,19 @@ export default function HomePage() {
                       账号管理
                     </Link>
                   </Button>
-                  <Button 
-                    size="sm" 
-                    asChild
-                    className="bg-gradient-to-r from-sky-500 to-cyan-500 hover:from-sky-600 hover:to-cyan-600 text-white shadow-lg shadow-sky-200/50"
-                  >
-                    <Link href="/template">
-                      <HelpCircle className="w-4 h-4 mr-2" />
-                      样式模板
-                    </Link>
-                  </Button>
+                  {/* 样式模板 - 只有超级管理员可见 */}
+                  {isSuperAdmin && (
+                    <Button 
+                      size="sm" 
+                      asChild
+                      className="bg-gradient-to-r from-sky-500 to-cyan-500 hover:from-sky-600 hover:to-cyan-600 text-white shadow-lg shadow-sky-200/50"
+                    >
+                      <Link href="/template">
+                        <HelpCircle className="w-4 h-4 mr-2" />
+                        样式模板
+                      </Link>
+                    </Button>
+                  )}
                 </div>
               </div>
             </CardHeader>
