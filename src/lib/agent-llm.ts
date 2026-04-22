@@ -284,7 +284,12 @@ async function callLLMInternal(
 
     // 🔴 阶段1：降低默认超时 120s → 60s，减少单次调用阻塞引擎的时间
     const temperature = options?.temperature || 0.3;
-    const timeout = options?.timeout || 60000;
+    // 🔴🔴🔴 P0 修复：使用高质量模型的 Agent 自动延长超时到 180s
+    // doubao-seed-2-0-pro-260215 正常响应 65-80 秒，60s 必然超时
+    // 涵盖：写作 Agent（WRITING_AGENTS）+ deai-optimizer 等使用高质量模型的 Agent
+    const _usesHighQualityModel = isWritingAgent(agentId) || agentId === 'deai-optimizer';
+    const _defaultTimeout = _usesHighQualityModel ? 180000 : 60000;
+    const timeout = options?.timeout || _defaultTimeout;
 
     try {
     // 🔥 加载 Agent 记忆
@@ -350,8 +355,8 @@ async function callLLMInternal(
     
     // 根据 agentId 选择合适的模型
     const llmConfig: Record<string, unknown> = { temperature };
-    if (isWritingAgent(agentId)) {
-      // 写作类 Agent 使用更好的模型，确保格式正确性
+    if (_usesHighQualityModel) {
+      // 写作类 Agent + deai-optimizer 使用更好的模型，确保格式正确性
       llmConfig.model = 'doubao-seed-2-0-pro-260215';
       console.log(`🤖 [LLM调用] ${agentId} 使用模型: doubao-seed-2-0-pro-260215`);
     }

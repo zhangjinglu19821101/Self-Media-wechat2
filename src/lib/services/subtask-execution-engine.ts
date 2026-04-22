@@ -7283,6 +7283,8 @@ export class SubtaskExecutionEngine {
       // 🔴🔴🔴 B5修复：写作 Agent 使用 PromptAssemblerService 动态拼接
       // 其他 Agent 仍使用传统的 loadAgentPrompt
       const _isWritingAgent = isWritingAgent(task.fromParentsExecutor);
+      // 🔴🔴🔴 P0 修复：deai-optimizer 使用高质量模型，需要同样的长超时
+      const _needsLongTimeout = _isWritingAgent || task.fromParentsExecutor === 'deai-optimizer';
       const isInsuranceD = task.fromParentsExecutor === 'insurance-d'; // 公众号特有逻辑（自动上传等）
       const isInsuranceXhs = task.fromParentsExecutor === 'insurance-xiaohongshu'; // 小红书特有逻辑标识
       
@@ -7694,10 +7696,10 @@ ${userFeedbackText}
       console.log('[执行Agent调用] LLM调用开始时间:', getCurrentBeijingTime().toISOString());
       
       const llmStartAt = getCurrentBeijingTime();
-      // 🔴🔴🔴 写作 Agent 超时修复：
+      // 🔴🔴🔴 写作 Agent + deai-optimizer 超时修复：
       // doubao-seed-2-0-pro-260215 模型正常响应 65-80 秒，60s 超时必然失败
-      // 写作 Agent 需要 180s 超时（与 Agent B 一致），其他 Agent 保持 60s
-      const _llmTimeout = _isWritingAgent ? 180000 : 60000;
+      // 使用高质量模型的 Agent 需要 180s 超时（与 Agent B 一致），其他 Agent 保持 60s
+      const _llmTimeout = _needsLongTimeout ? 180000 : 60000;
       const response = await callLLM(
         task.fromParentsExecutor,
         '直接执行任务',
@@ -8166,8 +8168,8 @@ ${agentBDecision ?
 `;
 
     try {
-      // 🔴 写作 Agent 超时修复：reExecution 路径也需要更长超时
-      const _reExecTimeout = isWritingAgent(task.fromParentsExecutor) ? 180000 : 60000;
+      // 🔴 写作 Agent + deai-optimizer 超时修复：reExecution 路径也需要更长超时
+      const _reExecTimeout = (isWritingAgent(task.fromParentsExecutor) || task.fromParentsExecutor === 'deai-optimizer') ? 180000 : 60000;
       const response = await callLLM(
         task.fromParentsExecutor,
         '继续执行任务',

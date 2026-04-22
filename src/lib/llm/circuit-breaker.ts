@@ -45,6 +45,8 @@ const AGENT_CONFIG_OVERRIDES: Partial<Record<string, Partial<CircuitBreakerConfi
   'insurance-xiaohongshu': { failureThreshold: 10 },
   'insurance-zhihu': { failureThreshold: 10 },
   'insurance-toutiao': { failureThreshold: 10 },
+  // deai-optimizer：使用高质量模型，响应时间长，给更大容错空间
+  'deai-optimizer': { failureThreshold: 10 },
   // Agent B（协调者）：调用频率高但内容简短，保持默认
   // Agent T（技术专家）：MCP 调用可能偶尔超时，稍微放宽
   'T': { failureThreshold: 8 },
