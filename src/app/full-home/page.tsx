@@ -34,6 +34,23 @@ import { HorizontalFlowDiagram } from '@/components/creation-guide/horizontal-fl
 import { NodeDetailPanel } from '@/components/creation-guide/node-detail-drawer';
 import type { FlowNode } from '@/components/creation-guide/types';
 
+// 🔥 信息速记分类颜色和标签（模块级常量，避免每次渲染重复创建）
+const SNIPPET_CATEGORY_COLORS: Record<string, { bg: string; text: string }> = {
+  real_case: { bg: 'bg-rose-50', text: 'text-rose-700' },
+  insurance: { bg: 'bg-blue-50', text: 'text-blue-700' },
+  intelligence: { bg: 'bg-violet-50', text: 'text-violet-700' },
+  medical: { bg: 'bg-emerald-50', text: 'text-emerald-700' },
+  quick_note: { bg: 'bg-slate-50', text: 'text-slate-600' },
+};
+
+const SNIPPET_CATEGORY_LABELS: Record<string, string> = {
+  real_case: '案例',
+  insurance: '保险',
+  intelligence: '智能',
+  medical: '医疗',
+  quick_note: '速记',
+};
+
 // 🔥 提醒中心类型定义
 interface Reminder {
   id: string;
@@ -1437,7 +1454,14 @@ export default function HomePage() {
     try {
       let materialId = snippet.materialId;
 
-      // 未入库：先入库
+      // 情形1: 已入库且已选中 → 取消选择
+      if (materialId && selectedMaterialIds.includes(materialId)) {
+        setSelectedMaterialIds(prev => prev.filter(id => id !== materialId));
+        setSelectedMaterials(prev => prev.filter(m => m.id !== materialId));
+        return;
+      }
+
+      // 情形2: 未入库 → 先入库
       if (!materialId) {
         const convertResult: any = await apiPost(`/api/info-snippets/${snippet.id}/convert-to-material`);
         if (convertResult.success && convertResult.data?.materialId) {
@@ -1452,7 +1476,7 @@ export default function HomePage() {
         toast.success(`已选为素材`);
       }
 
-      // 添加到已选素材
+      // 情形3: 已入库且未选中 → 添加到已选素材
       if (materialId && !selectedMaterialIds.includes(materialId)) {
         setSelectedMaterialIds(prev => [...prev, materialId]);
         setSelectedMaterials(prev => [...prev, {
@@ -3029,20 +3053,6 @@ export default function HomePage() {
                               <div className="space-y-2 max-h-[280px] overflow-y-auto">
                                 {snippetList.map((snippet) => {
                                   const snippetCategories = (snippet.categories as string[] || ['quick_note']);
-                                  const categoryColors: Record<string, { bg: string; text: string }> = {
-                                    real_case: { bg: 'bg-rose-50', text: 'text-rose-700' },
-                                    insurance: { bg: 'bg-blue-50', text: 'text-blue-700' },
-                                    intelligence: { bg: 'bg-violet-50', text: 'text-violet-700' },
-                                    medical: { bg: 'bg-emerald-50', text: 'text-emerald-700' },
-                                    quick_note: { bg: 'bg-slate-50', text: 'text-slate-600' },
-                                  };
-                                  const categoryLabels: Record<string, string> = {
-                                    real_case: '案例',
-                                    insurance: '保险',
-                                    intelligence: '智能',
-                                    medical: '医疗',
-                                    quick_note: '速记',
-                                  };
                                   const isSelected = snippet.materialId ? selectedMaterialIds.includes(snippet.materialId) : false;
 
                                   return (
@@ -3058,8 +3068,8 @@ export default function HomePage() {
                                         <div className="flex-1 min-w-0">
                                           <div className="flex items-center gap-1.5 mb-1">
                                             {snippetCategories.map((cat) => {
-                                              const style = categoryColors[cat] || categoryColors.quick_note;
-                                              const label = categoryLabels[cat] || cat;
+                                              const style = SNIPPET_CATEGORY_COLORS[cat] || SNIPPET_CATEGORY_COLORS.quick_note;
+                                              const label = SNIPPET_CATEGORY_LABELS[cat] || cat;
                                               return (
                                                 <span key={cat} className={`text-[10px] px-1.5 py-0.5 rounded ${style.bg} ${style.text}`}>
                                                   {label}
@@ -4709,21 +4719,6 @@ export default function HomePage() {
               ) : (
                 <div className="space-y-3">
                   {snippetList.map((snippet) => {
-                    // 分类颜色
-                    const categoryColors: Record<string, { bg: string; text: string; border: string }> = {
-                      real_case: { bg: 'bg-rose-50', text: 'text-rose-700', border: 'border-rose-200' },
-                      insurance: { bg: 'bg-blue-50', text: 'text-blue-700', border: 'border-blue-200' },
-                      intelligence: { bg: 'bg-violet-50', text: 'text-violet-700', border: 'border-violet-200' },
-                      medical: { bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-200' },
-                      quick_note: { bg: 'bg-slate-50', text: 'text-slate-600', border: 'border-slate-200' },
-                    };
-                    const categoryLabels: Record<string, string> = {
-                      real_case: '身边真实案例',
-                      insurance: '保险',
-                      intelligence: '智能化',
-                      medical: '医疗',
-                      quick_note: '简要速记',
-                    };
                     // 获取分类数组（并列多标签）
                     const snippetCategories = (snippet.categories as string[] || ['quick_note']);
                     
@@ -4741,8 +4736,8 @@ export default function HomePage() {
                             <div className="flex items-center gap-2 mb-1 flex-wrap">
                               {/* 分类标签（并列多标签，无主次之分） */}
                               {snippetCategories.map((cat) => {
-                                const catStyle = categoryColors[cat] || categoryColors.quick_note;
-                                const catLabel = categoryLabels[cat] || cat;
+                                const catStyle = SNIPPET_CATEGORY_COLORS[cat] || SNIPPET_CATEGORY_COLORS.quick_note;
+                                const catLabel = SNIPPET_CATEGORY_LABELS[cat] || cat;
                                 return (
                                   <Badge 
                                     key={cat}
