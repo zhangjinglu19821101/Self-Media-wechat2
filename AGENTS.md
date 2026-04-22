@@ -1494,3 +1494,20 @@
        - 增加 200ms 延迟等待 cookie 设置
        - router.push 改为 await
        - 跳转后调用 router.refresh
+72. **deai-optimizer 输出格式升级 + P0/P0 修复**: 解决 deai-optimizer（去AI化优化 Agent）LLM 输出格式不标准导致前端显示异常的问题
+   - **deai-optimizer.md 升级**: 从简版信封格式升级为标准执行格式（briefResponse/selfEvaluation/structuredResult）
+   - **P0-1 修复**: `convertExecutorDirectToAgentResult` 函数丢失 `briefResponse`/`selfEvaluation`/`executionSummary`
+     - 根因：函数构建 `agentResult` 时未从 `directResult` 传递这些字段到顶层
+     - 影响：前端 briefResponse 提取链全部命中 undefined → 兜底 JSON.stringify → 显示含 HTML 的原始 JSON
+     - 修复：在 `agentResult` 中增加 `briefResponse`/`selfEvaluation`/`executionSummary` 赋值
+   - **P0-2 修复**: `executorOutput.result` 被 HTML 正文覆盖
+     - 根因：第 319 行 `resultConclusion = plainText`（HTML 正文），第 387 行 `executorOutput.result = resultConclusion`
+     - 影响：`result` 语义从"执行结论声明"变为"HTML正文"，下游获取到 HTML 而非简短结论
+     - 修复：新增 `originalResult` 变量保留 LLM 原始 `result`，`executorOutput.result` 使用 `originalResult`
+   - **修复文件**:
+     - `src/lib/services/subtask-execution-engine.ts`:
+       - 新增 `originalResult` 变量（保留 LLM 原始执行结论）
+       - 移除 `resultConclusion` 变量（不再需要）
+       - `agentResult` 新增 `briefResponse`/`selfEvaluation`/`executionSummary` 顶层字段
+       - `executorOutput.result` 改为 `originalResult`（执行结论声明）
+     - `src/lib/agents/prompts/deai-optimizer.md`: 输出格式升级为标准执行格式

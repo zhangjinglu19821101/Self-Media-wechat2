@@ -268,7 +268,6 @@ function convertExecutorDirectToAgentResult(
   let reasoning: string | undefined;
   let structuredResult: any;
   let additionalInfo: Record<string, any> | undefined;
-  let resultConclusion: string | undefined;
   
   // 🔴🔴🔴 【统一辅助函数】从 resultContent 中提取纯文本
   // resultContent 可能是：纯文本 / JSON字符串 / 对象
@@ -307,6 +306,13 @@ function convertExecutorDirectToAgentResult(
     return undefined;
   };
   
+  // 🔴🔴🔴 P0-2 修复：保留 LLM 原始 result（执行结论声明），不再覆盖为 HTML 正文
+  // executorOutput.result = LLM 的 result 字段（"【执行结论】..."）
+  // executorOutput.output = 从 structuredResult.resultContent 提取的正文内容（HTML/纯文本）
+  const originalResult = typeof directResult.result === 'string'
+    ? directResult.result
+    : (directResult.result?.content || directResult.result?.output || '');
+
   if (directResult.structuredResult && typeof directResult.structuredResult === 'object') {
     structuredResult = directResult.structuredResult;
     
@@ -316,11 +322,9 @@ function convertExecutorDirectToAgentResult(
     const plainText = extractPlainText(srResultContent);
     if (plainText && plainText.length > 50) {
       outputContent = plainText;
-      resultConclusion = plainText;
     } else if (directResult.output) {
       // structuredResult 里没有内容，从 output 提取
       outputContent = directResult.output;
-      resultConclusion = directResult.output;
     }
     
     suggestions = structuredResult.completionJudgment?.suggestions;
@@ -329,16 +333,13 @@ function convertExecutorDirectToAgentResult(
   // 🔴 其次从 directResult.output 提取（insurance-d 使用此字段）
   else if (directResult.output) {
     outputContent = directResult.output;
-    resultConclusion = directResult.output;
   } else {
-    // 从 legacy 字段提取
+    // 从 legacy 字段提取（仅当没有 structuredResult 时）
     if (directResult.result) {
       if (typeof directResult.result === 'string') {
         outputContent = directResult.result;
-        resultConclusion = directResult.result;
       } else if (directResult.result?.content || directResult.result?.output) {
         outputContent = directResult.result.content || directResult.result.output;
-        resultConclusion = directResult.result.content || directResult.result.output;
       }
     }
     suggestions = directResult.suggestion;
@@ -367,25 +368,41 @@ function convertExecutorDirectToAgentResult(
   const isTaskDown = directResult.isCompleted === true;
   
   // 从 result 字段中提取无法执行的原因
+  // 🔴 P0-2 修复：使用原始 result（执行结论）判断问题，而非 HTML 正文
   let problem: string | undefined;
   if (isNeedMcp && !isTaskDown) {
     if (suggestions) {
       problem = suggestions;
-    } else if (resultConclusion && resultConclusion.includes('【无法执行】')) {
-      problem = resultConclusion;
+    } else if (originalResult && originalResult.includes('【无法执行】')) {
+      problem = originalResult;
     } else {
       problem = '执行 Agent 需要帮助';
     }
   }
   
+  // 🔴🔴🔴 P0-1 修复：将 briefResponse/selfEvaluation/executionSummary 传递到顶层
+  // 前端从 step_history 的 responseContent 中提取这些字段，必须存在于顶层
+  const briefResponse = typeof directResult.briefResponse === 'string'
+    ? directResult.briefResponse
+    : undefined;
+  const selfEvaluation = typeof directResult.selfEvaluation === 'string'
+    ? directResult.selfEvaluation
+    : undefined;
+  const executionSummaryFromDirect = structuredResult?.executionSummary
+    ? { ...structuredResult.executionSummary }
+    : undefined;
+
   const agentResult: ExecutorAgentResult = {
     isCompleted: isCompleted,
     isNeedMcp,
     isTaskDown,
     problem: problem,
+    briefResponse,
+    selfEvaluation,
+    executionSummary: executionSummaryFromDirect,
     executorOutput: {
-      result: resultConclusion,
-      output: outputContent,
+      result: originalResult,  // 🔴 P0-2：使用原始 result（执行结论声明，如"【执行结论】..."）
+      output: outputContent,                       // 正文内容（HTML/纯文本）
       suggestions,
       reasoning,
       structuredResult,
