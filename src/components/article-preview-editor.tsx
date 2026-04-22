@@ -30,6 +30,9 @@ import {
 import { toast } from 'sonner';
 import { getCurrentBeijingTime } from '@/lib/utils/date-time';
 
+// 🔥 小红书正文格式渲染器
+import { XhsTextRenderer } from '@/components/xhs-text-renderer';
+
 // ============ 共享解析模块 ============
 import { 
   GRADIENT_SCHEMES, 
@@ -645,25 +648,20 @@ function XiaohongshuContentPreview({
             {parsed.title || '小红书笔记'}
           </h2>
           
-          {/* 正文 */}
+          {/* 正文 - 使用小红书真实格式渲染器 */}
           {parsed.fullText && (
-            <div className="relative">
-              <p className={`text-sm text-gray-700 leading-relaxed mb-2 ${isFullTextExpanded ? '' : 'line-clamp-3'}`}>
-                {parsed.fullText}
-              </p>
-              {/* 展开/收起按钮 */}
-              <button
-                onClick={() => setIsFullTextExpanded(!isFullTextExpanded)}
-                className="text-xs text-red-500 font-semibold hover:text-red-600 transition-colors underline decoration-dotted underline-offset-2 mb-3"
-              >
-                {isFullTextExpanded ? '收起' : '展开全文'}
-              </button>
-            </div>
+            <XhsTextRenderer
+              content={parsed.fullText}
+              collapsed={!isFullTextExpanded}
+              maxLines={3}
+              onToggleCollapse={() => setIsFullTextExpanded(!isFullTextExpanded)}
+              className="mb-2"
+            />
           )}
           
           {/* 标签 */}
           {parsed.tags.length > 0 && (
-            <div className="flex flex-wrap gap-2 mb-3">
+            <div className="flex flex-wrap gap-2 mb-3 mt-2">
               {parsed.tags.map((tag, idx) => (
                 <span key={idx} className="text-xs text-blue-500 font-medium">
                   #{tag}

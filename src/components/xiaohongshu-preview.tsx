@@ -30,6 +30,9 @@ import {
   type XiaohongshuContent
 } from '@/lib/xhs-parser';
 
+// 🔥 小红书正文格式渲染器
+import { XhsTextRenderer } from '@/components/xhs-text-renderer';
+
 // 🔥 P1-3: 已持久化的卡片（从 OSS 加载）
 interface PersistedCardUrl {
   cardId: string;
@@ -616,34 +619,27 @@ export function XiaohongshuPreview({
                     {content.title || '小红书笔记'}
                   </h2>
                   
-                  {/* 正文 */}
+                  {/* 正文 - 使用小红书真实格式渲染器 */}
                   {(content.content || content.fullText) && (
-                    <div className="relative">
-                      <p className={`text-sm text-gray-700 leading-relaxed mb-2 ${isFullTextExpanded ? '' : 'line-clamp-3'}`}>
-                        {content.content || content.fullText}
-                      </p>
-                    </div>
+                    <XhsTextRenderer
+                      content={content.content || content.fullText || ''}
+                      collapsed={!isFullTextExpanded}
+                      maxLines={3}
+                      onToggleCollapse={() => setIsFullTextExpanded(!isFullTextExpanded)}
+                      className="mb-2"
+                    />
                   )}
                   
-                  {/* 标签 + 展开按钮 */}
-                  <div className="flex items-center gap-2 mb-3 flex-wrap">
-                    {content.tags && content.tags.length > 0 && (
-                      <>
-                        {content.tags.map((tag, idx) => (
-                          <span key={idx} className="text-xs text-blue-500 font-medium">
-                            #{tag}
-                          </span>
-                        ))}
-                      </>
-                    )}
-                    {/* 展开/收起按钮 - 始终显示 */}
-                    <button
-                      onClick={() => setIsFullTextExpanded(!isFullTextExpanded)}
-                      className="text-xs text-red-500 font-semibold hover:text-red-600 transition-colors underline decoration-dotted underline-offset-2"
-                    >
-                      {isFullTextExpanded ? '收起' : '展开全文'}
-                    </button>
-                  </div>
+                  {/* 标签 */}
+                  {content.tags && content.tags.length > 0 && (
+                    <div className="flex items-center gap-2 mb-3 flex-wrap mt-2">
+                      {content.tags.map((tag, idx) => (
+                        <span key={idx} className="text-xs text-blue-500 font-medium">
+                          #{tag}
+                        </span>
+                      ))}
+                    </div>
+                  )}
                   
                   {/* 发布信息 */}
                   <div className="flex items-center justify-between text-xs text-gray-400">
