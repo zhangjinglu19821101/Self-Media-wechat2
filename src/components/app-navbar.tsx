@@ -48,7 +48,6 @@ interface NavItem {
 /** 主导航项（直接显示） */
 const MAIN_NAV_ITEMS: NavItem[] = [
   { href: '/style-init', label: '风格初始化', icon: <Palette className="w-4 h-4" /> },
-  { href: '/style-replica', label: '风格复刻', icon: <Copy className="w-4 h-4" /> },
   { href: '/account-management', label: '账号管理', icon: <Settings className="w-4 h-4" /> },
 ];
 
