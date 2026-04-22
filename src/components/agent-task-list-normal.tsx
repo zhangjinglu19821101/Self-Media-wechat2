@@ -575,14 +575,11 @@ function AgentSelfStatementCard({ history }: { history: StepHistory }) {
     : '';
   
   // ========== 执行类 Agent 字段提取（风格分析等任务使用）==========
-  // 🔴 修复：判断是否是信封格式（有 result.content），避免显示 HTML
-  const isEnvelopeFormat = responseContent?.result?.content !== undefined;
-  
   const briefResponse = !isAgentBReviewer
     ? (responseContent?.briefResponse || 
        responseContent?.resultSummary ||
        responseContent?.summary ||
-       (isEnvelopeFormat ? undefined : responseContent?.result) ||  // 信封格式跳过 result 对象
+       responseContent?.result ||
        (typeof responseContent === 'string' ? responseContent.substring(0, 500) : '') ||
        '')
     : '';
