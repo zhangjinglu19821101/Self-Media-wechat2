@@ -35,12 +35,12 @@ import { NodeDetailPanel } from '@/components/creation-guide/node-detail-drawer'
 import type { FlowNode } from '@/components/creation-guide/types';
 
 // 🔥 信息速记分类颜色和标签（模块级常量，避免每次渲染重复创建）
-const SNIPPET_CATEGORY_COLORS: Record<string, { bg: string; text: string }> = {
-  real_case: { bg: 'bg-rose-50', text: 'text-rose-700' },
-  insurance: { bg: 'bg-blue-50', text: 'text-blue-700' },
-  intelligence: { bg: 'bg-violet-50', text: 'text-violet-700' },
-  medical: { bg: 'bg-emerald-50', text: 'text-emerald-700' },
-  quick_note: { bg: 'bg-slate-50', text: 'text-slate-600' },
+const SNIPPET_CATEGORY_COLORS: Record<string, { bg: string; text: string; border: string }> = {
+  real_case: { bg: 'bg-rose-50', text: 'text-rose-700', border: 'border-rose-200' },
+  insurance: { bg: 'bg-blue-50', text: 'text-blue-700', border: 'border-blue-200' },
+  intelligence: { bg: 'bg-violet-50', text: 'text-violet-700', border: 'border-violet-200' },
+  medical: { bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-200' },
+  quick_note: { bg: 'bg-slate-50', text: 'text-slate-600', border: 'border-slate-200' },
 };
 
 const SNIPPET_CATEGORY_LABELS: Record<string, string> = {
