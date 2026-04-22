@@ -655,7 +655,7 @@ export default function HomePage() {
       if (data?.success) {
         setAccountConfigs(data.data || []);
         // 🔥 简化：自动全选所有已配置的账号
-        // 用户在"账号管理"页配置了账号就意味着要发布，无需手动勾选
+        // 用户在"发布平台管理"页配置了账号就意味着要发布，无需手动勾选
         if (data.data?.length > 0 && !hasAutoSelectedAccount.current) {
           const allAccountIds = data.data.map((c: any) => c.account.id);
           setSelectedAccountIds(allAccountIds);
@@ -2000,7 +2000,7 @@ export default function HomePage() {
                   >
                     <Link href="/account-management">
                       <Settings className="w-4 h-4 mr-2" />
-                      账号管理
+                      发布平台管理
                     </Link>
                   </Button>
                   {/* 样式模板 - 只有超级管理员可见 */}

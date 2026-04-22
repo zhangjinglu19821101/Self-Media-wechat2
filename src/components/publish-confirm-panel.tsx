@@ -241,7 +241,7 @@ export function PublishConfirmPanel({
 
           {accounts.length === 0 && !loading && (
             <p className="text-sm text-slate-400 py-2">
-              尚未配置平台账号，请先在「账号管理」中添加
+              尚未配置平台账号，请先在「发布平台管理」中添加
             </p>
           )}
         </div>

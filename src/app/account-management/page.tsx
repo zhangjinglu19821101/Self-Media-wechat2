@@ -358,7 +358,7 @@ export default function AccountManagementPage() {
           <div>
             <h1 className="text-2xl font-bold flex items-center gap-2">
               <Settings className="w-7 h-7 text-sky-500" />
-              风格模板与账号管理
+              风格模板与发布平台管理
             </h1>
             <p className="text-sm text-muted-foreground mt-1">
               管理风格模板，将模板绑定到不同平台的账号
