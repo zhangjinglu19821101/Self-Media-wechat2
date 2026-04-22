@@ -163,21 +163,31 @@ export async function GET(request: NextRequest) {
           }
         }
 
-        // 对于小红书，articleContent 保持为纯文本（来自 resultText）
-        // 前端通过 platformRenderData 渲染卡片
+        // 🔥🔥🔥 【修复公众号预览】根据平台类型决定 articleContent 来源
+        // writingPlatform 已在上方声明
+        
         if (platformData && platformData.platform === 'xiaohongshu') {
-          // 🔥🔥🔥 【架构改造】articleContent 不再是 JSON 字符串，改为纯文本
-          // 旧逻辑：articleContent = JSON.stringify({...}) → 前端 parseXhsContent() 解析
-          // 新逻辑：articleContent = 纯文本正文，platformRenderData = 结构化卡片数据
+          // 小红书：articleContent 保持纯文本，platformRenderData 提供卡片数据
           articleContent = structuredResult?.resultContent?.content || writingTask.resultText || '';
           articleTitle = platformData.title || structuredResult?.resultContent?.articleTitle || '';
           platform = 'xiaohongshu';
+        } else if (writingPlatform === 'wechat_official') {
+          // 公众号：优先使用 platformRenderData 中的 htmlContent
+          if (platformRenderData && typeof platformRenderData === 'object' && 'htmlContent' in platformRenderData) {
+            articleContent = (platformRenderData as any).htmlContent || '';
+          } else {
+            // 兜底：使用信封格式中的 result.content
+            articleContent = structuredResult?.resultContent?.content || 
+                            structuredResult?.resultContent?.htmlContent || 
+                            writingTask.resultText || '';
+          }
+          articleTitle = extractArticleTitleFromResultData(writingTask.resultData, writingTask.taskTitle);
+          platform = 'wechat_official';
         } else {
           // 其他平台使用 resultText
           articleContent = writingTask.resultText || '';
           articleTitle = extractArticleTitleFromResultData(writingTask.resultData, writingTask.taskTitle);
-          // 🔥🔥🔥 【P1-3修复】使用 agent-registry 中的统一映射函数
-          platform = resultData.platform || getPlatformForExecutor(writingTask.fromParentsExecutor);
+          platform = resultData.platform || writingPlatform;
         }
       }
     }

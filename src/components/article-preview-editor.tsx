@@ -158,10 +158,21 @@ export function ArticlePreviewEditor({
         });
         
         if (!cancelled && data.success) {
-          setContent(data.data.articleContent || '');
+          // 🔥🔥🔥 【修复公众号预览】公众号优先使用 platformRenderData.htmlContent
+          const apiPlatform = data.data.platform as string;
+          const apiPlatformRenderData = data.data.platformRenderData;
+          
+          let finalContent = data.data.articleContent || '';
+          if (apiPlatform === 'wechat_official' && 
+              apiPlatformRenderData && 
+              typeof apiPlatformRenderData === 'object' && 
+              'htmlContent' in apiPlatformRenderData) {
+            finalContent = (apiPlatformRenderData as any).htmlContent || finalContent;
+          }
+          
+          setContent(finalContent);
           setTitle(data.data.articleTitle || '');
-          // 🔥🔥🔥 【架构改造】从 API 响应获取平台渲染数据
-          setPlatformRenderData(data.data.platformRenderData || null);
+          setPlatformRenderData(apiPlatformRenderData || null);
         } else if (!cancelled && !data.success) {
           toast.error('加载文章内容失败: ' + (data.error || '未知错误'));
         }
@@ -300,7 +311,14 @@ export function ArticlePreviewEditor({
 
         <TabsContent value="preview" className="mt-0">
           {platform === 'wechat_official' ? (
-            <WechatHtmlPreview html={content} />
+            // 🔥🔥🔥 【修复公众号预览】优先使用 platformRenderData.htmlContent
+            <WechatHtmlPreview 
+              html={
+                (platformRenderData && typeof platformRenderData === 'object' && 'htmlContent' in platformRenderData)
+                  ? (platformRenderData as any).htmlContent || content
+                  : content
+              } 
+            />
           ) : platform === 'xiaohongshu' ? (
             <XiaohongshuContentPreview 
               content={content} 
