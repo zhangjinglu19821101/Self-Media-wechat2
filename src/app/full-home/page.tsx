@@ -1843,14 +1843,16 @@ export default function HomePage() {
 
 
 
-          {/* 对比草稿与终稿 Tab - 副天蓝色主题 */}
-          <TabsTrigger 
-            value="article-compare" 
-            className="relative px-4 py-2.5 rounded-lg transition-all duration-300 data-[state=active]:bg-gradient-to-r data-[state=active]:from-indigo-500 data-[state=active]:to-violet-600 data-[state=active]:text-white data-[state=active]:shadow-md data-[state=active]:shadow-indigo-200 hover:bg-white/70"
-          >
-            <GitCompare className="w-5 h-5 mr-2" />
-            <span className="font-medium">对比草稿</span>
-          </TabsTrigger>
+          {/* 对比草稿与终稿 Tab - 副天蓝色主题 - 只有超级管理员可见 */}
+          {isSuperAdmin && (
+            <TabsTrigger 
+              value="article-compare" 
+              className="relative px-4 py-2.5 rounded-lg transition-all duration-300 data-[state=active]:bg-gradient-to-r data-[state=active]:from-indigo-500 data-[state=active]:to-violet-600 data-[state=active]:text-white data-[state=active]:shadow-md data-[state=active]:shadow-indigo-200 hover:bg-white/70"
+            >
+              <GitCompare className="w-5 h-5 mr-2" />
+              <span className="font-medium">对比草稿</span>
+            </TabsTrigger>
+          )}
 
           {/* 内容导出 Tab - 渐变紫粉色主题 */}
           <TabsTrigger 
@@ -3655,96 +3657,98 @@ export default function HomePage() {
 
 
 
-        <TabsContent value="article-compare">
-          <Card>
-            <CardHeader>
-              <CardTitle>
-                <GitCompare className="w-5 h-5 mr-2 inline" />
-                对比草稿与终稿
-              </CardTitle>
-              <CardDescription>
-                查看文章不同版本之间的差异对比
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-6">
-              <div className="bg-purple-50 border border-purple-200 rounded-lg p-4">
-                <h4 className="font-semibold text-purple-900 mb-3 text-base">📋 功能说明</h4>
-                <ul className="text-sm text-purple-800 space-y-2">
-                  <li>• 选择任务的 commandResultId 加载文章历史版本</li>
-                  <li>• 对比不同版本之间的文本差异</li>
-                  <li>• 查看草稿与终稿的修改内容</li>
-                  <li>• 红色表示删除，绿色表示新增</li>
-                </ul>
-              </div>
-
-              <div className="space-y-4">
-                <div>
-                  <label className="block text-sm font-medium mb-2">选择任务 (commandResultId)</label>
-                  <div className="flex gap-2">
-                    <Input
-                      value={selectedCommandResultId}
-                      onChange={(e) => setSelectedCommandResultId(e.target.value)}
-                      placeholder="输入 commandResultId"
-                      className="flex-1"
-                    />
-                    <Button
-                      onClick={() => loadArticleVersions(selectedCommandResultId)}
-                      disabled={!selectedCommandResultId || loadingVersions}
-                    >
-                      {loadingVersions ? (
-                        <>
-                          <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                          加载中...
-                        </>
-                      ) : (
-                        '加载版本'
-                      )}
-                    </Button>
-                  </div>
+        {/* 对比草稿与终稿 Tab - 只有超级管理员可见 */}
+        {isSuperAdmin && (
+          <TabsContent value="article-compare">
+            <Card>
+              <CardHeader>
+                <CardTitle>
+                  <GitCompare className="w-5 h-5 mr-2 inline" />
+                  对比草稿与终稿
+                </CardTitle>
+                <CardDescription>
+                  查看文章不同版本之间的差异对比
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-6">
+                <div className="bg-purple-50 border border-purple-200 rounded-lg p-4">
+                  <h4 className="font-semibold text-purple-900 mb-3 text-base">📋 功能说明</h4>
+                  <ul className="text-sm text-purple-800 space-y-2">
+                    <li>• 选择任务的 commandResultId 加载文章历史版本</li>
+                    <li>• 对比不同版本之间的文本差异</li>
+                    <li>• 查看草稿与终稿的修改内容</li>
+                    <li>• 红色表示删除，绿色表示新增</li>
+                  </ul>
                 </div>
 
-                {articleVersions.length === 0 && !loadingVersions && (
-                  <div className="text-center py-8 text-gray-500">
-                    请输入 commandResultId 并点击"加载版本"
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium mb-2">选择任务 (commandResultId)</label>
+                    <div className="flex gap-2">
+                      <Input
+                        value={selectedCommandResultId}
+                        onChange={(e) => setSelectedCommandResultId(e.target.value)}
+                        placeholder="输入 commandResultId"
+                        className="flex-1"
+                      />
+                      <Button
+                        onClick={() => loadArticleVersions(selectedCommandResultId)}
+                        disabled={!selectedCommandResultId || loadingVersions}
+                      >
+                        {loadingVersions ? (
+                          <>
+                            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                            加载中...
+                          </>
+                        ) : (
+                          '加载版本'
+                        )}
+                      </Button>
+                    </div>
                   </div>
-                )}
 
-                {articleVersions.length > 0 && (
-                  <>
-                    <div className="grid grid-cols-2 gap-4">
-                      <div>
-                        <label className="block text-sm font-medium mb-2">版本 1</label>
-                        <Select value={selectedVersion1} onValueChange={setSelectedVersion1}>
-                          <SelectTrigger>
-                            <SelectValue placeholder="选择版本" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {articleVersions.map((version, index) => {
-                              const val = version.timestamp?.toString() || `v1-${index}`;
-                              return (
-                              <SelectItem key={val} value={val}>
-                                {version.title || `版本 ${index + 1}`}
-                                {version.timestamp && (
-                                  <span className="text-gray-500 ml-2">
-                                    {new Date(version.timestamp).toLocaleString()}
-                                  </span>
-                                )}
-                              </SelectItem>
-                              );
-                            })}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium mb-2">版本 2</label>
-                        <Select value={selectedVersion2} onValueChange={setSelectedVersion2}>
-                          <SelectTrigger>
-                            <SelectValue placeholder="选择版本" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {articleVersions.map((version, index) => {
-                              const val = version.timestamp?.toString() || `v2-${index}`;
-                              return (
+                  {articleVersions.length === 0 && !loadingVersions && (
+                    <div className="text-center py-8 text-gray-500">
+                      请输入 commandResultId 并点击"加载版本"
+                    </div>
+                  )}
+
+                  {articleVersions.length > 0 && (
+                    <>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-sm font-medium mb-2">版本 1</label>
+                          <Select value={selectedVersion1} onValueChange={setSelectedVersion1}>
+                            <SelectTrigger>
+                              <SelectValue placeholder="选择版本" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {articleVersions.map((version, index) => {
+                                const val = version.timestamp?.toString() || `v1-${index}`;
+                                return (
+                                <SelectItem key={val} value={val}>
+                                  {version.title || `版本 ${index + 1}`}
+                                  {version.timestamp && (
+                                    <span className="text-gray-500 ml-2">
+                                      {new Date(version.timestamp).toLocaleString()}
+                                    </span>
+                                  )}
+                                </SelectItem>
+                                );
+                              })}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium mb-2">版本 2</label>
+                          <Select value={selectedVersion2} onValueChange={setSelectedVersion2}>
+                            <SelectTrigger>
+                              <SelectValue placeholder="选择版本" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {articleVersions.map((version, index) => {
+                                const val = version.timestamp?.toString() || `v2-${index}`;
+                                return (
                               <SelectItem key={val} value={val}>
                                 {version.title || `版本 ${index + 1}`}
                                 {version.timestamp && (
@@ -3779,6 +3783,7 @@ export default function HomePage() {
             </CardContent>
           </Card>
         </TabsContent>
+        )}
 
         {/* 内容导出 Tab */}
         <TabsContent value="content-export" className="space-y-4">
