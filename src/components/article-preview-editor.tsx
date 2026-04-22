@@ -41,6 +41,9 @@ import {
   type XhsParsedContent 
 } from '@/lib/xhs-parser';
 
+// 🔥 微信公众号文章渲染器
+import { WechatArticleRenderer } from '@/components/wechat-article-renderer';
+
 // ============ 类型定义 ============
 
 export type PreviewPlatform = 'wechat_official' | 'xiaohongshu' | 'zhihu' | 'douyin' | 'weibo';
@@ -369,20 +372,13 @@ export function ArticlePreviewEditor({
 
 function WechatHtmlPreview({ html }: { html: string }) {
   return (
-    <Card className="overflow-hidden">
-      <CardHeader className="pb-2">
-        <CardTitle className="text-sm text-muted-foreground flex items-center gap-1">
-          <FileText className="h-4 w-4" />
-          微信公众号文章预览
-        </CardTitle>
-      </CardHeader>
-      <CardContent>
-        <div 
-          className="prose prose-sm max-w-none overflow-auto max-h-[500px] p-4 bg-white rounded border"
-          dangerouslySetInnerHTML={{ __html: html || '<p class="text-muted-foreground">暂无内容</p>' }}
-        />
-      </CardContent>
-    </Card>
+    <div className="overflow-hidden">
+      <WechatArticleRenderer 
+        html={html} 
+        collapsed={true}
+        maxHeight={450}
+      />
+    </div>
   );
 }
 
