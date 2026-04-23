@@ -38,6 +38,11 @@ interface PreviewEditResultData {
   originalContentLength: number;
   finalContentLength: number;
   confirmedAt: string;
+  // 🔴 新增：供 preview-article API 直接读取的顶层字段
+  articleContent?: string;
+  articleTitle?: string;
+  platform?: string;
+  platformRenderData?: any;
   executorOutput: {
     output: string;
     result: {
@@ -49,9 +54,7 @@ interface PreviewEditResultData {
         wasModified: boolean;
       };
     };
-    articleTitle: string;
   };
-  articleTitle: string;
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -654,6 +657,7 @@ export async function POST(request: NextRequest) {
       let originalContent = '';
       let articleTitle = '';
       let previewPlatform = 'wechat_official';
+      let originalPlatformRenderData: any = null;  // 🔴 新增：保存原始 platformRenderData
       try {
         const rd = typeof subTask.resultData === 'string'
           ? JSON.parse(subTask.resultData)
@@ -661,6 +665,7 @@ export async function POST(request: NextRequest) {
         originalContent = rd.articleContent || '';
         articleTitle = rd.articleTitle || '';
         previewPlatform = rd.platform || 'wechat_official';
+        originalPlatformRenderData = rd.platformRenderData || null;  // 🔴 新增：提取原始 platformRenderData
       } catch {
         // ignore
       }
@@ -671,6 +676,33 @@ export async function POST(request: NextRequest) {
       const finalTitle = previewAction === 'save' && modifiedTitle
         ? modifiedTitle
         : articleTitle;
+      
+      // 🔴 新增：构建更新后的 platformRenderData
+      // 原则：从哪个字段展示就保存回哪个字段
+      let updatedPlatformRenderData = originalPlatformRenderData;
+      if (previewAction === 'save' && modifiedContent) {
+        if (previewPlatform === 'wechat_official') {
+          // 公众号：更新 platformRenderData.htmlContent
+          updatedPlatformRenderData = {
+            ...(originalPlatformRenderData || {}),
+            htmlContent: finalContent,  // 🔴 关键：保存回 htmlContent 字段
+          };
+        } else if (previewPlatform === 'xiaohongshu') {
+          // 小红书：尝试解析 JSON 更新 platformRenderData
+          try {
+            const jsonMatch = finalContent.match(/\{[\s\S]*"title"[\s\S]*"points"[\s\S]*\}/);
+            if (jsonMatch) {
+              const xhsData = JSON.parse(jsonMatch[0]);
+              updatedPlatformRenderData = {
+                ...(originalPlatformRenderData || {}),
+                ...xhsData,
+              };
+            }
+          } catch {
+            // 解析失败，保持原样
+          }
+        }
+      }
 
       // 3. 标记预览任务为完成
       // 🔴 关键设计：用户修改的内容存入本节点的 result_text
@@ -682,6 +714,7 @@ export async function POST(request: NextRequest) {
       // 🔴 P2-1 修复：使用类型定义的 PreviewEditResultData
       // 构建标准化的 result 结构，确保 extractResultTextFromResultData 能正确提取
       // 使用 executorOutput.output 字段（路径 1，最高优先级），写入纯文本
+      // 🔴 关键修复：从哪个字段展示就保存回哪个字段
       const previewResult: PreviewEditResultData = {
         isCompleted: true,
         isNeedMcp: false,
@@ -692,6 +725,11 @@ export async function POST(request: NextRequest) {
         originalContentLength: originalContent.length,
         finalContentLength: finalContent.length,
         confirmedAt: new Date().toISOString(),
+        // 🔴 新增：顶层字段，供 preview-article API 直接读取
+        articleContent: finalContent,
+        articleTitle: finalTitle,
+        platform: previewPlatform,
+        platformRenderData: updatedPlatformRenderData,  // 🔴 关键：保存更新后的 platformRenderData
         // 🔴 核心：executorOutput.output 写入纯文本，extractResultTextFromResultData 路径 1 可提取
         executorOutput: {
           output: finalContent,
@@ -704,9 +742,7 @@ export async function POST(request: NextRequest) {
               wasModified: previewAction === 'save',
             },
           },
-          articleTitle: finalTitle,
         },
-        articleTitle: finalTitle,
       };
 
       await engine.markTaskCompleted(subTask, previewResult);
