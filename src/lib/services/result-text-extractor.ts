@@ -304,6 +304,34 @@ export function extractResultTextFromResultData(
     return String(data || '');
   }
 
+  // ===== 路径 0：特殊处理 - 预览修改节点优先使用 platformRenderData.htmlContent =====
+  // 🔴 关键修复：预览修改节点中，用户修改的是 platformRenderData.htmlContent
+  // 必须优先从这个字段提取，而不是从 executorOutput.output 提取纯文本
+  if (data.interactionType === 'preview_edit_article' || data.platformRenderData) {
+    // 公众号：优先使用 platformRenderData.htmlContent
+    if (data.platformRenderData && 
+        typeof data.platformRenderData === 'object' && 
+        'htmlContent' in data.platformRenderData &&
+        isValidContentText((data.platformRenderData as any).htmlContent, 10)) {
+      log(`路径0 platformRenderData.htmlContent（预览修改节点），长度: ${(data.platformRenderData as any).htmlContent.length}`);
+      return (data.platformRenderData as any).htmlContent;
+    }
+    // 小红书：优先使用 platformRenderData（完整JSON结构）中的内容
+    if (data.platformRenderData && 
+        typeof data.platformRenderData === 'object') {
+      const prd = data.platformRenderData as any;
+      // 尝试从 platformRenderData 中提取内容
+      if (isValidContentText(prd.content, 10)) {
+        log(`路径0 platformRenderData.content（预览修改节点），长度: ${prd.content.length}`);
+        return prd.content;
+      }
+      if (isValidContentText(prd.fullText, 10)) {
+        log(`路径0 platformRenderData.fullText（预览修改节点），长度: ${prd.fullText.length}`);
+        return prd.fullText;
+      }
+    }
+  }
+
   // ===== 路径 1：executorOutput.output =====
   if (isValidContentText(data.executorOutput?.output, 10)) {
     log(`路径1 executorOutput.output，长度: ${data.executorOutput.output.length}`);
