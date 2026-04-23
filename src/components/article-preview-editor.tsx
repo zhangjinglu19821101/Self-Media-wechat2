@@ -295,19 +295,6 @@ export function ArticlePreviewEditor({
               修改文章
             </Button>
           )}
-          {isEditing && (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => {
-                setIsEditing(false);
-                setActiveTab('preview');
-              }}
-            >
-              <X className="h-4 w-4 mr-1" />
-              取消编辑
-            </Button>
-          )}
         </div>
       </div>
 
@@ -345,7 +332,6 @@ export function ArticlePreviewEditor({
 
         <TabsContent value="preview" className="mt-0">
           {platform === 'wechat_official' ? (
-            // 🔥🔥🔥 【修复公众号预览】优先使用 platformRenderData.htmlContent
             <WechatHtmlPreview 
               html={
                 (platformRenderData && typeof platformRenderData === 'object' && 'htmlContent' in platformRenderData)
