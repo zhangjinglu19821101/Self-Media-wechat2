@@ -304,31 +304,25 @@ export function extractResultTextFromResultData(
     return String(data || '');
   }
 
-  // ===== 路径 0：特殊处理 - 预览修改节点优先使用 platformRenderData.htmlContent =====
-  // 🔴 关键修复：预览修改节点中，用户修改的是 platformRenderData.htmlContent
-  // 必须优先从这个字段提取，而不是从 executorOutput.output 提取纯文本
-  if (data.interactionType === 'preview_edit_article' || data.platformRenderData) {
-    // 公众号：优先使用 platformRenderData.htmlContent
-    if (data.platformRenderData && 
-        typeof data.platformRenderData === 'object' && 
-        'htmlContent' in data.platformRenderData &&
-        isValidContentText((data.platformRenderData as any).htmlContent, 10)) {
-      log(`路径0 platformRenderData.htmlContent（预览修改节点），长度: ${(data.platformRenderData as any).htmlContent.length}`);
-      return (data.platformRenderData as any).htmlContent;
+  // ===== 路径 0：预览修改节点特殊处理 =====
+  // 🔴 设计原则：预览修改节点的核心内容在 platformRenderData 中
+  // 只有明确是预览修改节点时，才走这个特殊路径（避免影响其他类型任务）
+  if (data.interactionType === 'preview_edit_article') {
+    log('检测到预览修改节点，优先从 platformRenderData 提取');
+    const prd = data.platformRenderData;
+    if (prd && typeof prd === 'object') {
+      // 🔥 复用已有的 extractFromResultContentObject 函数
+      // 该函数已实现：平台优先 → 通用扫描 → 动态发现
+      const extracted = extractFromResultContentObject(prd, executor);
+      if (extracted) {
+        log(`路径0 platformRenderData 提取成功，长度: ${extracted.length}`);
+        return extracted;
+      }
     }
-    // 小红书：优先使用 platformRenderData（完整JSON结构）中的内容
-    if (data.platformRenderData && 
-        typeof data.platformRenderData === 'object') {
-      const prd = data.platformRenderData as any;
-      // 尝试从 platformRenderData 中提取内容
-      if (isValidContentText(prd.content, 10)) {
-        log(`路径0 platformRenderData.content（预览修改节点），长度: ${prd.content.length}`);
-        return prd.content;
-      }
-      if (isValidContentText(prd.fullText, 10)) {
-        log(`路径0 platformRenderData.fullText（预览修改节点），长度: ${prd.fullText.length}`);
-        return prd.fullText;
-      }
+    // 兜底：使用顶层 articleContent
+    if (isValidContentText(data.articleContent, 10)) {
+      log(`路径0 articleContent 兜底，长度: ${data.articleContent.length}`);
+      return data.articleContent;
     }
   }
 
