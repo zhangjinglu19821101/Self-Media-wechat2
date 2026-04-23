@@ -214,8 +214,40 @@ export function ArticlePreviewEditor({
     }
   }, [content, title, onComplete]);
 
-  // 处理保存修改
-  const handleSave = useCallback(async () => {
+  // 🔴 新增：保存草稿（只保存到后端，不改变状态）
+  const [isSavingDraft, setIsSavingDraft] = useState(false);
+
+  const handleSaveDraft = useCallback(async () => {
+    setIsSavingDraft(true);
+    try {
+      const res = await fetch('/api/agents/preview-article/save-draft', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          taskId,
+          content,
+          title,
+          platform,
+        }),
+      });
+
+      const data = await res.json();
+
+      if (data.success) {
+        toast.success('草稿已保存');
+      } else {
+        toast.error('保存失败: ' + (data.error || '未知错误'));
+      }
+    } catch (err) {
+      console.error('[ArticlePreviewEditor] 保存草稿失败:', err);
+      toast.error('保存草稿失败');
+    } finally {
+      setIsSavingDraft(false);
+    }
+  }, [taskId, content, title, platform]);
+
+  // 处理确认并继续（提交到下一步）
+  const handleConfirm = useCallback(async () => {
     setIsSubmitting(true);
     try {
       onComplete({
@@ -359,28 +391,62 @@ export function ArticlePreviewEditor({
           )}
         </div>
         <div className="flex items-center gap-2">
-          {canSkip && !isEditing && (
-            <Button
-              variant="outline"
-              onClick={handleSkip}
-              disabled={isSubmitting}
-            >
-              <SkipForward className="h-4 w-4 mr-1" />
-              无需修改，继续
-            </Button>
-          )}
-          {isEditing && (
-            <Button
-              onClick={handleSave}
-              disabled={isSubmitting}
-            >
-              {isSubmitting ? (
-                <Loader2 className="h-4 w-4 mr-1 animate-spin" />
-              ) : (
-                <Save className="h-4 w-4 mr-1" />
+          {/* 非编辑模式 */}
+          {!isEditing && (
+            <>
+              {canSkip && (
+                <Button
+                  variant="outline"
+                  onClick={handleSkip}
+                  disabled={isSubmitting}
+                >
+                  <SkipForward className="h-4 w-4 mr-1" />
+                  无需修改，继续
+                </Button>
               )}
-              保存修改
-            </Button>
+            </>
+          )}
+          {/* 编辑模式 */}
+          {isEditing && (
+            <>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setIsEditing(false);
+                  setActiveTab('preview');
+                }}
+                disabled={isSavingDraft || isSubmitting}
+              >
+                <X className="h-4 w-4 mr-1" />
+                取消编辑
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleSaveDraft}
+                disabled={isSavingDraft || isSubmitting}
+              >
+                {isSavingDraft ? (
+                  <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                ) : (
+                  <Save className="h-4 w-4 mr-1" />
+                )}
+                保存修改
+              </Button>
+              <Button
+                size="sm"
+                onClick={handleConfirm}
+                disabled={isSavingDraft || isSubmitting}
+              >
+                {isSubmitting ? (
+                  <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                ) : (
+                  <CheckCircle2 className="h-4 w-4 mr-1" />
+                )}
+                确认并继续
+              </Button>
+            </>
           )}
         </div>
       </div>
