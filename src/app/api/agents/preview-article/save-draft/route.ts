@@ -74,9 +74,13 @@ export async function POST(request: NextRequest) {
         const jsonMatch = content.match(/\{[\s\S]*"title"[\s\S]*"points"[\s\S]*\}/);
         if (jsonMatch) {
           const xhsData = JSON.parse(jsonMatch[0]);
+          // 🔴 P1-2 修复：同步更新 textContent（XhsPlatformRenderData 的正文存储字段）
+          const textContent = typeof xhsData.fullText === 'string' ? xhsData.fullText :
+                             (typeof xhsData.content === 'string' ? xhsData.content : undefined);
           updatedPlatformRenderData = {
             ...(originalPlatformRenderData || {}),
             ...xhsData,
+            ...(textContent ? { textContent } : {}),
           };
         }
       } catch {

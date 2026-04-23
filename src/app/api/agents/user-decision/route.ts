@@ -693,9 +693,15 @@ export async function POST(request: NextRequest) {
             const jsonMatch = finalContent.match(/\{[\s\S]*"title"[\s\S]*"points"[\s\S]*\}/);
             if (jsonMatch) {
               const xhsData = JSON.parse(jsonMatch[0]);
+              // 🔴 P1-2 修复：xhsData 有 fullText 但没有 textContent
+              // 而 XhsPlatformRenderData 的正文存储字段是 textContent
+              // 必须同步更新 textContent，确保下游 extractResultTextFromResultData 路径0 能正确提取
+              const textContent = typeof xhsData.fullText === 'string' ? xhsData.fullText :
+                                 (typeof xhsData.content === 'string' ? xhsData.content : undefined);
               updatedPlatformRenderData = {
                 ...(originalPlatformRenderData || {}),
                 ...xhsData,
+                ...(textContent ? { textContent } : {}),  // 🔴 关键：同步更新 textContent
               };
             }
           } catch {

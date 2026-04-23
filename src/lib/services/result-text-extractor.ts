@@ -16,7 +16,7 @@
  * 4. 最终兜底：序列化为可读文本
  */
 
-import { getPlatformContentField, PLATFORM_EXECUTOR_MAP } from '@/lib/agents/agent-registry';
+import { getPlatformContentField } from '@/lib/agents/agent-registry';
 
 /**
  * 检查文本是否有效
@@ -307,22 +307,52 @@ export function extractResultTextFromResultData(
   // ===== 路径 0：预览修改节点特殊处理 =====
   // 🔴 设计原则：预览修改节点的核心内容在 platformRenderData 中
   // 只有明确是预览修改节点时，才走这个特殊路径（避免影响其他类型任务）
+  // ⚠️ 注意：platformRenderData 的字段名与 PLATFORM_CONTENT_FIELDS 不同
+  //   - PLATFORM_CONTENT_FIELDS 是为 structuredResult.resultContent 设计的（如 articleHtml）
+  //   - platformRenderData 有自己的类型定义（如 htmlContent / textContent / content）
+  //   因此这里按 platformRenderData 的实际类型定义提取，不复用 extractFromResultContentObject
   if (data.interactionType === 'preview_edit_article') {
     log('检测到预览修改节点，优先从 platformRenderData 提取');
     const prd = data.platformRenderData;
     if (prd && typeof prd === 'object') {
-      // 🔥 关键：从 data.platform 推导出正确的写作 Agent executor
-      // 而非使用 task.fromParentsExecutor（= 'user_preview_edit'，不在 PLATFORM_CONTENT_FIELDS 中）
-      const platformExecutor = data.platform
-        ? PLATFORM_EXECUTOR_MAP[data.platform as keyof typeof PLATFORM_EXECUTOR_MAP]
-        : executor;
-      const extracted = extractFromResultContentObject(prd, platformExecutor);
-      if (extracted) {
-        log(`路径0 platformRenderData 提取成功（platform=${data.platform}, executor=${platformExecutor}），长度: ${extracted.length}`);
-        return extracted;
+      // 按 platformRenderData 的实际类型定义提取（对齐 platform-render/types.ts）
+      const platform = (prd as Record<string, unknown>).platform || data.platform;
+      let extracted: string | null = null;
+
+      if (platform === 'wechat_official') {
+        // WechatPlatformRenderData: htmlContent 字段
+        extracted = typeof (prd as Record<string, unknown>).htmlContent === 'string'
+          ? (prd as Record<string, unknown>).htmlContent as string
+          : null;
+      } else if (platform === 'xiaohongshu') {
+        // XhsPlatformRenderData: textContent 字段（正文），兜底 content
+        extracted = typeof (prd as Record<string, unknown>).textContent === 'string'
+          ? (prd as Record<string, unknown>).textContent as string
+          : typeof (prd as Record<string, unknown>).content === 'string'
+            ? (prd as Record<string, unknown>).content as string
+            : null;
+      } else if (platform === 'zhihu' || platform === 'douyin' || platform === 'weibo') {
+        // ZhihuPlatformRenderData / ToutiaoPlatformRenderData: textContent 字段
+        extracted = typeof (prd as Record<string, unknown>).textContent === 'string'
+          ? (prd as Record<string, unknown>).textContent as string
+          : typeof (prd as Record<string, unknown>).content === 'string'
+            ? (prd as Record<string, unknown>).content as string
+            : null;
+      }
+
+      if (isValidContentText(extracted, 10)) {
+        log(`路径0 platformRenderData 按 platform=${platform} 精确提取，长度: ${extracted!.length}`);
+        return extracted!;
+      }
+
+      // 通用兜底：交给 extractFromResultContentObject 的通用扫描 + 动态发现
+      const fallbackExtracted = extractFromResultContentObject(prd, undefined);
+      if (fallbackExtracted) {
+        log(`路径0 platformRenderData 通用扫描提取，长度: ${fallbackExtracted.length}`);
+        return fallbackExtracted;
       }
     }
-    // 兜底：使用顶层 articleContent
+    // 最终兜底：使用顶层 articleContent
     if (isValidContentText(data.articleContent, 10)) {
       log(`路径0 articleContent 兜底，长度: ${data.articleContent.length}`);
       return data.articleContent;
