@@ -25,7 +25,8 @@ import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { 
   Eye, Pencil, CheckCircle2, SkipForward, Save, X, 
-  AlertCircle, Loader2, FileText, Image, ChevronLeft, ChevronRight
+  AlertCircle, Loader2, FileText, Image, ChevronLeft, ChevronRight,
+  Check
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { getCurrentBeijingTime } from '@/lib/utils/date-time';
@@ -120,6 +121,12 @@ export function ArticlePreviewEditor({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isLoading, setIsLoading] = useState(!initialContent);
   const [activeTab, setActiveTab] = useState<'preview' | 'edit'>('preview');
+  
+  // ============ 新增状态管理 ============
+  const [savedContent, setSavedContent] = useState(initialContent || '');
+  const [savedTitle, setSavedTitle] = useState(initialTitle || '');
+  const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+  const [showCancelConfirm, setShowCancelConfirm] = useState(false);
 
   // 如果没有传入内容，从 API 加载
   // 🔴 P2-2 修复：增加 AbortController 处理竞态条件
@@ -197,6 +204,13 @@ export function ArticlePreviewEditor({
     };
   }, [taskId, initialContent]);
 
+  // ============ 新增：计算属性 ============
+  
+  // 是否有未保存的修改
+  const hasUnsavedChanges = (content !== savedContent) || (title !== savedTitle);
+  
+  // ============ 修改后的函数 ============
+
   // 处理跳过
   const handleSkip = useCallback(async () => {
     setIsSubmitting(true);
@@ -212,8 +226,35 @@ export function ArticlePreviewEditor({
     }
   }, [content, title, onComplete]);
 
-  // 处理保存修改
+  // ============ 新增：保存修改（不提交） ============
   const handleSave = useCallback(async () => {
+    setSaveStatus('saving');
+    try {
+      // 模拟保存延迟，让用户看到"保存中"状态
+      await new Promise(resolve => setTimeout(resolve, 300));
+      
+      // 更新已保存状态
+      setSavedContent(content);
+      setSavedTitle(title);
+      setSaveStatus('saved');
+      
+      // 3秒后重置为idle状态
+      setTimeout(() => setSaveStatus('idle'), 3000);
+      
+      toast.success('修改已保存');
+    } catch (err) {
+      setSaveStatus('error');
+      toast.error('保存失败');
+    }
+  }, [content, title]);
+
+  // ============ 新增：确认并继续（提交下一步） ============
+  const handleConfirmAndContinue = useCallback(async () => {
+    // 如果有未保存的修改，先自动保存
+    if (hasUnsavedChanges) {
+      await handleSave();
+    }
+    
     setIsSubmitting(true);
     try {
       onComplete({
@@ -225,7 +266,33 @@ export function ArticlePreviewEditor({
     } finally {
       setIsSubmitting(false);
     }
-  }, [content, title, onComplete]);
+  }, [content, title, hasUnsavedChanges, handleSave, onComplete]);
+
+  // ============ 新增：取消编辑 ============
+  const handleCancelEdit = useCallback(() => {
+    if (hasUnsavedChanges) {
+      setShowCancelConfirm(true);
+    } else {
+      // 没有未保存的修改，直接退出
+      setIsEditing(false);
+      setActiveTab('preview');
+    }
+  }, [hasUnsavedChanges]);
+
+  // ============ 新增：确认取消编辑 ============
+  const confirmCancelEdit = useCallback(() => {
+    // 恢复到已保存的内容
+    setContent(savedContent);
+    setTitle(savedTitle);
+    setIsEditing(false);
+    setActiveTab('preview');
+    setShowCancelConfirm(false);
+  }, [savedContent, savedTitle]);
+
+  // ============ 新增：继续编辑（取消取消） ============
+  const continueEditing = useCallback(() => {
+    setShowCancelConfirm(false);
+  }, []);
 
   // 加载中
   if (isLoading) {
@@ -248,32 +315,7 @@ export function ArticlePreviewEditor({
           <span className="text-sm text-muted-foreground">文章预览</span>
         </div>
         <div className="flex items-center gap-2">
-          {canEdit && !isEditing && (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => {
-                setIsEditing(true);
-                setActiveTab('edit');
-              }}
-            >
-              <Pencil className="h-4 w-4 mr-1" />
-              修改文章
-            </Button>
-          )}
-          {isEditing && (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => {
-                setIsEditing(false);
-                setActiveTab('preview');
-              }}
-            >
-              <X className="h-4 w-4 mr-1" />
-              取消编辑
-            </Button>
-          )}
+          {/* 非编辑模式只显示修改文章按钮（移到底部操作栏） */}
         </div>
       </div>
 
@@ -351,37 +393,121 @@ export function ArticlePreviewEditor({
 
       {/* 底部操作栏 */}
       <div className="flex items-center justify-between pt-4 border-t">
-        <div className="text-sm text-muted-foreground">
-          {content.length > 0 && (
-            <span>共 {content.length} 字</span>
+        <div className="flex items-center gap-3">
+          <div className="text-sm text-muted-foreground">
+            {content.length > 0 && (
+              <span>共 {content.length} 字</span>
+            )}
+          </div>
+          {isEditing && hasUnsavedChanges && (
+            <Badge variant="outline" className="text-amber-600 border-amber-200 bg-amber-50">
+              <AlertCircle className="h-3 w-3 mr-1" />
+              有未保存的修改
+            </Badge>
+          )}
+          {isEditing && saveStatus === 'saved' && (
+            <Badge variant="outline" className="text-green-600 border-green-200 bg-green-50">
+              <Check className="h-3 w-3 mr-1" />
+              已保存
+            </Badge>
           )}
         </div>
         <div className="flex items-center gap-2">
-          {canSkip && !isEditing && (
-            <Button
-              variant="outline"
-              onClick={handleSkip}
-              disabled={isSubmitting}
-            >
-              <SkipForward className="h-4 w-4 mr-1" />
-              无需修改，继续
-            </Button>
-          )}
-          {isEditing && (
-            <Button
-              onClick={handleSave}
-              disabled={isSubmitting}
-            >
-              {isSubmitting ? (
-                <Loader2 className="h-4 w-4 mr-1 animate-spin" />
-              ) : (
-                <Save className="h-4 w-4 mr-1" />
+          {/* 非编辑模式：无需修改，继续 + 修改文章 */}
+          {!isEditing && (
+            <>
+              {canSkip && (
+                <Button
+                  variant="outline"
+                  onClick={handleSkip}
+                  disabled={isSubmitting}
+                >
+                  <SkipForward className="h-4 w-4 mr-1" />
+                  无需修改，继续
+                </Button>
               )}
-              保存修改
-            </Button>
+              {canEdit && (
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setIsEditing(true);
+                    setActiveTab('edit');
+                  }}
+                >
+                  <Pencil className="h-4 w-4 mr-1" />
+                  修改文章
+                </Button>
+              )}
+            </>
+          )}
+          {/* 编辑模式：取消编辑 + 保存修改 + 确认并继续 */}
+          {isEditing && (
+            <>
+              <Button
+                variant="outline"
+                onClick={handleCancelEdit}
+                disabled={isSubmitting || saveStatus === 'saving'}
+              >
+                <X className="h-4 w-4 mr-1" />
+                取消编辑
+              </Button>
+              <Button
+                variant="outline"
+                onClick={handleSave}
+                disabled={isSubmitting || saveStatus === 'saving' || !hasUnsavedChanges}
+              >
+                {saveStatus === 'saving' ? (
+                  <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                ) : saveStatus === 'saved' ? (
+                  <Check className="h-4 w-4 mr-1" />
+                ) : (
+                  <Save className="h-4 w-4 mr-1" />
+                )}
+                {saveStatus === 'saving' ? '保存中...' : '保存修改'}
+              </Button>
+              <Button
+                onClick={handleConfirmAndContinue}
+                disabled={isSubmitting || saveStatus === 'saving'}
+              >
+                {isSubmitting ? (
+                  <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                ) : (
+                  <CheckCircle2 className="h-4 w-4 mr-1" />
+                )}
+                确认并继续
+              </Button>
+            </>
           )}
         </div>
       </div>
+      
+      {/* ============ 新增：取消编辑确认对话框 ============ */}
+      {showCancelConfirm && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <Card className="w-full max-w-md">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <AlertCircle className="h-5 w-5 text-amber-500" />
+                有未保存的修改
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-muted-foreground mb-4">
+                你有未保存的修改，确定要取消编辑吗？
+                未保存的修改将会丢失。
+              </p>
+              <div className="flex items-center justify-end gap-2">
+                <Button variant="outline" onClick={continueEditing}>
+                  继续编辑
+                </Button>
+                <Button variant="destructive" onClick={confirmCancelEdit}>
+                  确定取消
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
     </div>
   );
 }
