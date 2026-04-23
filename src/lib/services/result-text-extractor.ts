@@ -16,7 +16,7 @@
  * 4. 最终兜底：序列化为可读文本
  */
 
-import { getPlatformContentField } from '@/lib/agents/agent-registry';
+import { getPlatformContentField, PLATFORM_EXECUTOR_MAP } from '@/lib/agents/agent-registry';
 
 /**
  * 检查文本是否有效
@@ -311,11 +311,14 @@ export function extractResultTextFromResultData(
     log('检测到预览修改节点，优先从 platformRenderData 提取');
     const prd = data.platformRenderData;
     if (prd && typeof prd === 'object') {
-      // 🔥 复用已有的 extractFromResultContentObject 函数
-      // 该函数已实现：平台优先 → 通用扫描 → 动态发现
-      const extracted = extractFromResultContentObject(prd, executor);
+      // 🔥 关键：从 data.platform 推导出正确的写作 Agent executor
+      // 而非使用 task.fromParentsExecutor（= 'user_preview_edit'，不在 PLATFORM_CONTENT_FIELDS 中）
+      const platformExecutor = data.platform
+        ? PLATFORM_EXECUTOR_MAP[data.platform as keyof typeof PLATFORM_EXECUTOR_MAP]
+        : executor;
+      const extracted = extractFromResultContentObject(prd, platformExecutor);
       if (extracted) {
-        log(`路径0 platformRenderData 提取成功，长度: ${extracted.length}`);
+        log(`路径0 platformRenderData 提取成功（platform=${data.platform}, executor=${platformExecutor}），长度: ${extracted.length}`);
         return extracted;
       }
     }
