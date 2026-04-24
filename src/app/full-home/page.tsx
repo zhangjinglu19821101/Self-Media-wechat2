@@ -97,6 +97,8 @@ interface PlatformSubTaskGroup {
   accountId: string;         // 绑定的账号ID
   accountName: string;       // 账号名
   subTasks: SubTask[];       // 该平台的子任务列表
+  // P2-7 修复：添加 phase 字段，消除对数组索引的依赖
+  phase: 'base_article' | 'platform_adaptation';
 }
 
 interface AISplitResponse {
@@ -627,11 +629,23 @@ export default function HomePage() {
       return;
     }
 
+    // P2-7 修复：预先计算 phase，避免构建时无法知道"第一个公众号账号"
+    // 两阶段架构规则：第一个 wechat_official 账号 = base_article，其余 = platform_adaptation
+    const wechatAccountIds = selectedAccountIds.filter(accountId => {
+      const config = accountConfigs.find(c => c.account.id === accountId);
+      return config?.account?.platform === 'wechat_official';
+    });
+    const firstWechatAccountId = wechatAccountIds[0];
+
     // 为每个选中的账号创建对应的子任务组
     const groups: PlatformSubTaskGroup[] = selectedAccountIds.map(accountId => {
       const config = accountConfigs.find(c => c.account.id === accountId);
       const platform = config?.account?.platform || 'wechat_official';
       const accountName = config?.account?.accountName || '未知账号';
+
+      // P2-7 修复：基于账号确定 phase（第一个公众号为基础文章，其余为平台适配）
+      const isBaseArticle = platform === 'wechat_official' && accountId === firstWechatAccountId;
+      const phase: 'base_article' | 'platform_adaptation' = isBaseArticle ? 'base_article' : 'platform_adaptation';
       
       // 🔥 核心逻辑：使用对应平台的固定流程模板（与原来一致）
       const template = getFlowTemplate(platform);
@@ -639,7 +653,7 @@ export default function HomePage() {
       // 检查是否已有该平台的分组（保留用户编辑过的内容）
       const existingGroup = platformSubTaskGroupsRef.current.find(g => g.accountId === accountId);
       if (existingGroup) {
-        return existingGroup; // 保留用户编辑
+        return existingGroup; // 保留用户编辑（含 phase）
       }
 
       // 用流程模板初始化
@@ -658,6 +672,7 @@ export default function HomePage() {
         accountId,
         accountName,
         subTasks: templateSubTasks,
+        phase, // P2-7 修复：携带 phase 信息
       };
     });
 
@@ -2741,13 +2756,14 @@ export default function HomePage() {
                           
                           {/* 多平台提示 */}
                           {selectedAccountIds.length > 1 && (() => {
-                            // 🔥 两阶段架构：检测是否有公众号账号（基础文章平台）
+                            // P2-7 修复：适配组数量 = 总账号数 - 1
+                            // 两阶段架构始终有且仅有一个基础文章组，剩余的都是适配组
+                            const adaptationCount = selectedAccountIds.length - 1;
+                            
                             const hasWechatAccount = selectedAccountIds.some(aId => {
                               const config = accountConfigs.find(c => c.account.id === aId);
-                              return config?.account.platform === 'wechat_official';
+                              return config?.account?.platform === 'wechat_official';
                             });
-                            const adaptationCount = hasWechatAccount ? selectedAccountIds.length - 1 : selectedAccountIds.length;
-                            
                             return (
                               <div className="bg-amber-50 rounded-xl p-4 border border-amber-200">
                                 {hasWechatAccount ? (
@@ -2763,7 +2779,7 @@ export default function HomePage() {
                                 ) : (
                                   <p className="text-sm text-amber-800 flex items-center gap-2">
                                     <Rocket className="w-4 h-4" />
-                                    将为 <span className="font-semibold">{selectedAccountIds.length}</span> 个平台分别生成差异化文章
+                                    将为 <span className="font-semibold">{adaptationCount + 1}</span> 个平台分别生成差异化文章
                                   </p>
                                 )}
                               </div>
@@ -3475,8 +3491,9 @@ export default function HomePage() {
                   : -1;
                 const isCurrentGroup = selectedGroupAccountId === group.accountId;
 
-                // 🔥 两阶段架构：判断是否为基础文章组
-                const isBaseArticleGroup = group.platform === 'wechat_official' && groupIdx === 0;
+                // 🔥 两阶段架构：P2-7 修复：使用 phase 字段判断，不依赖数组索引
+                // group.phase 由账号配置决定，比 groupIdx 更可靠
+                const isBaseArticleGroup = group.phase === 'base_article';
                 const isAdaptationGroup = platformSubTaskGroups.length > 1 && !isBaseArticleGroup;
 
                 return (

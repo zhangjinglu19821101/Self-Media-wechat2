@@ -263,7 +263,8 @@ export function getAdaptationSteps(platform: string): Array<{
   executor: string;
   title: string;
   description: string;
-  styleKey: string;
+  // P2-6 修复：使用精确类型而非 string，防止无效值
+  styleKey: keyof typeof ADAPTATION_NODE_STYLES;
 }> {
   const executor = getExecutorForPlatform(platform);
   const platformLabel = {

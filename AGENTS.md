@@ -1575,3 +1575,21 @@
      - **问题**: `unlockAdaptationGroupsIfNeeded()` 中使用 `setTimeout(..., 1000)` 触发引擎执行，进程重启则丢失触发
      - **修复**: 改为立即执行 `this.execute().catch(...)`，引擎轮询是最终保障
    - **验证结果**: TypeScript 检查通过（无新增错误），服务健康检查通过
+
+77. **两阶段架构评审修复（P2级别）**: 修复技术评审发现的 4 个 P2 问题
+   - **P2-4 修复（定稿点动态计算）**:
+     - **问题**: `orderIndex >= 6` 硬编码，与流程模板紧耦合，模板增删节点时需同步修改
+     - **修复**: `unlockAdaptationGroupsIfNeeded()` 中动态查询基础文章组所有任务的 `orderIndex >= 2` 最大值作为定稿点，try-catch 降级保底
+   - **P2-5 修复（metadata 类型精确化）**:
+     - **问题**: `task.metadata as Record<string, any>` 类型宽松
+     - **修复**: 新增 `TwoPhaseTaskMetadata` 接口（包含 `phase`/`multiPlatformGroupId`/`sourceCommandResultId`/`adaptationPlatform`），使用精确联合类型
+   - **P2-6 修复（styleKey 类型精确化）**:
+     - **问题**: `getAdaptationSteps()` 返回类型中 `styleKey: string` 可能传入无效值
+     - **修复**: 改为 `keyof typeof ADAPTATION_NODE_STYLES`，TypeScript 编译期校验
+   - **P2-7 修复（前端判断可靠性增强）**:
+     - **问题**: `isBaseArticleGroup` 依赖 `groupIdx === 0`，排序逻辑变化时判断失效；`adaptationCount` 在无公众号时计算不准确
+     - **修复**:
+       - `PlatformSubTaskGroup` 接口新增 `phase` 字段
+       - 分组构建时预先计算 phase（第一个 wechat_official → base_article，其余 → platform_adaptation）
+       - `isBaseArticleGroup` 改用 `group.phase === 'base_article'`
+       - `adaptationCount` 简化为 `selectedAccountIds.length - 1`（两阶段架构始终有一个基础文章组）

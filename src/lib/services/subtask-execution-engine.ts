@@ -73,6 +73,14 @@ interface ReexecuteHistoryItem {
 }
 
 // 【P2修复】任务 metadata 类型定义，替代 as any
+// 两阶段架构 metadata 扩展
+interface TwoPhaseTaskMetadata extends TaskMetadata {
+  phase?: 'base_article' | 'platform_adaptation';
+  multiPlatformGroupId?: string;
+  sourceCommandResultId?: string;
+  adaptationPlatform?: string;
+}
+
 interface TaskMetadata {
   reexecuteHistory?: ReexecuteHistoryItem[];
   lastExecutedExecutor?: string;
@@ -86,6 +94,11 @@ interface TaskMetadata {
     changedAt: string;
     changedBy: string;
   };
+  // 两阶段架构字段（P2-5 修复：添加精确类型，而非 Record<string, any>）
+  phase?: 'base_article' | 'platform_adaptation';
+  multiPlatformGroupId?: string;
+  sourceCommandResultId?: string;
+  adaptationPlatform?: string;
   [key: string]: unknown; // 允许其他动态字段
 }
 
@@ -4866,7 +4879,8 @@ export class SubtaskExecutionEngine {
     // 如果当前任务是适配组（metadata.phase === 'platform_adaptation'），
     // 需要额外查询基础文章组（sourceCommandResultId）的内容
     try {
-      const taskMetadata = task.metadata as Record<string, any> | null;
+      // P2-5 修复：使用精确类型 TwoPhaseTaskMetadata
+      const taskMetadata = task.metadata as TwoPhaseTaskMetadata | null;
       const taskPhase = taskMetadata?.phase;
 
       if (taskPhase === 'platform_adaptation' && taskMetadata?.sourceCommandResultId) {
@@ -7199,15 +7213,43 @@ export class SubtaskExecutionEngine {
         return;
       }
 
-      // 条件3：必须是合规整改完成（orderIndex >= 6）或最终步骤完成
-      // 合规整改是公众号流程的 orderIndex=6，这是基础文章内容不再变化的最早时刻
-      const isFinalizationPoint = task.orderIndex >= 6;
-      if (!isFinalizationPoint) {
-        console.log('[SubtaskEngine] 🔥 基础文章组任务完成，但尚未到达定稿点', {
-          orderIndex: task.orderIndex,
-          taskId: task.id,
-        });
-        return;
+      // 条件3：必须是基础文章定稿点
+      // P2-4 修复：动态计算定稿点，而非硬编码 orderIndex >= 6
+      // 查询基础文章组的所有任务，取 orderIndex >= 2 的最大值作为定稿点
+      // orderIndex >= 2 作为写作任务阈值（orderIndex=1 是分析，写作相关任务从 2 开始）
+      // 即使包含 preview 等非写作节点，也不会高于实际最后写作任务
+      let isFinalizationPoint = false;
+      try {
+        const baseArticleTasks = await db
+          .select({ orderIndex: agentSubTasks.orderIndex })
+          .from(agentSubTasks)
+          .where(
+            and(
+              sql`${agentSubTasks.metadata}->>'multiPlatformGroupId' = ${multiPlatformGroupId}`,
+              sql`${agentSubTasks.metadata}->>'phase' = 'base_article'`
+            )
+          );
+        const writingOrderIndices = baseArticleTasks
+          .map(t => t.orderIndex)
+          .filter(idx => idx !== null && idx >= 2);
+        const maxWritingOrderIndex = writingOrderIndices.length > 0
+          ? Math.max(...writingOrderIndices)
+          : 6; // 兜底值（与原硬编码一致）
+        isFinalizationPoint = task.orderIndex >= maxWritingOrderIndex;
+
+        if (!isFinalizationPoint) {
+          console.log('[SubtaskEngine] 🔥 基础文章组任务完成，但尚未到达定稿点', {
+            orderIndex: task.orderIndex,
+            maxWritingOrderIndex,
+            taskId: task.id,
+          });
+          return;
+        }
+      } catch (err) {
+        // 查询失败时降级为 orderIndex >= 6 兜底
+        console.warn('[SubtaskEngine] ⚠️ 定稿点动态计算失败，降级为 orderIndex >= 6:', err);
+        isFinalizationPoint = task.orderIndex >= 6;
+        if (!isFinalizationPoint) return;
       }
 
       console.log('[SubtaskEngine] 🔥🔥🔥 基础文章定稿点已到达，开始解锁适配组', {
