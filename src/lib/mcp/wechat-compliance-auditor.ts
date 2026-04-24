@@ -139,6 +139,55 @@ const KEYWORD_DICTIONARIES = [
  * - 对完整文章进行精确关键词匹配
  * - 按词库维度输出命中的关键词
  */
+/**
+ * 关键词匹配：支持大小写不敏感 + 中文词边界检测
+ *
+ * 修复 P0-3：原 content.includes(term) 存在两个问题：
+ * 1. 大小写敏感：No.1 不匹配 no.1
+ * 2. 部分匹配："唯一"匹配"唯一性"，"第一"匹配"第一反应"
+ *
+ * 改进策略：
+ * - 英文/数字/符号类关键词：大小写不敏感的 includes
+ * - 纯中文关键词：检查词边界（前后不能是汉字），避免"唯一"匹配"唯一性"
+ */
+function isKeywordMatch(content: string, term: string): boolean {
+  const lowerContent = content.toLowerCase();
+  const lowerTerm = term.toLowerCase();
+
+  // 策略1：非纯中文关键词（含英文/数字/符号），仅做大小写不敏感匹配
+  if (/[a-zA-Z0-9%!%]/.test(term)) {
+    return lowerContent.includes(lowerTerm);
+  }
+
+  // 策略2：纯中文关键词，检查词边界
+  // 词边界定义：关键词前面不能是汉字，后面也不能是汉字
+  // 这样"唯一"不会匹配"唯一性"，"第一"不会匹配"第一反应"
+  const idx = lowerContent.indexOf(lowerTerm);
+  if (idx === -1) return false;
+
+  // 检查所有出现位置，只要有任意一处满足词边界即可
+  let searchFrom = 0;
+  while (searchFrom < lowerContent.length) {
+    const pos = lowerContent.indexOf(lowerTerm, searchFrom);
+    if (pos === -1) break;
+
+    const beforeChar = pos > 0 ? lowerContent[pos - 1] : '';
+    const afterIdx = pos + lowerTerm.length;
+    const afterChar = afterIdx < lowerContent.length ? lowerContent[afterIdx] : '';
+
+    const isChineseChar = (ch: string) => /[\u4e00-\u9fff]/.test(ch);
+
+    // 前后都不是汉字 → 满足词边界
+    if (!isChineseChar(beforeChar) && !isChineseChar(afterChar)) {
+      return true;
+    }
+
+    searchFrom = pos + 1;
+  }
+
+  return false;
+}
+
 function quickCheckInternal(content: string): {
   issues: string[];
   suggestions: string[];
@@ -151,7 +200,7 @@ function quickCheckInternal(content: string): {
   const details: Array<{ name: string; found: string[]; riskLevel: string }> = [];
 
   for (const dict of KEYWORD_DICTIONARIES) {
-    const found = dict.terms.filter(term => content.includes(term));
+    const found = dict.terms.filter(term => isKeywordMatch(content, term));
     if (found.length > 0) {
       issues.push(`使用了${dict.name}：${found.join('、')}`);
       suggestions.push(dict.suggestion);
@@ -382,19 +431,24 @@ async function llmJudgeViolations(
   ).join('\n\n');
 
   // 构建用户提示词
+  // 使用 XML 边界标记隔离文章内容，防止提示词注入攻击
   const userPrompt = `## 待审核文章
 
+<article>
 ${truncatedArticle}
+</article>
 
 ---
 
 ## 相关合规规则（来自向量检索）
 
+<rules>
 ${rulesText}
+</rules>
 
 ---
 
-请逐条判断文章是否违反了以上规则，严格输出 JSON 格式。`;
+请逐条判断 <article> 标签内的文章是否违反了 <rules> 标签内的规则，严格输出 JSON 格式。`;
 
   const systemPrompt = getComplianceJudgePrompt();
 
@@ -407,7 +461,7 @@ ${rulesText}
       systemPrompt,
       userPrompt,
       {
-        timeout: 30000,  // 30秒超时
+        timeout: 60000,  // 60秒超时（合规判定需逐条分析，30s易超时）
         workspaceId,     // BYOK 支持
         maxRetries: 1,   // 最多重试1次
       }
@@ -548,7 +602,7 @@ export class WeChatComplianceAuditExecutor extends BaseMCPCapabilityExecutor {
 
   constructor() {
     super();
-    this.retriever = createVectorRetriever('compliance_rules');
+    this.retriever = createVectorRetriever('wechat_compliance_rules');
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- 基类 BaseMCPCapabilityExecutor 的签名
@@ -892,7 +946,7 @@ export const WechatComplianceAuditor = {
       // 第2层：RAG 全量检索
       let retrievedRules: RetrievedRule[] = [];
       try {
-        const retriever = createVectorRetriever('compliance_rules');
+        const retriever = createVectorRetriever('wechat_compliance_rules');
         const ragResult = await retrieveRelevantRulesFullArticle(retriever, articleTitle, articleContent);
         retrievedRules = ragResult.rules;
         auditDetails.layer2RagRetrieval = { rulesCount: retrievedRules.length, topScores: ragResult.topScores };
