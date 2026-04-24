@@ -242,6 +242,9 @@ function splitArticleIntoSegments(
 ): string[] {
   const fullText = `${articleTitle}\n${articleContent}`;
 
+  // 参数安全校验：确保重叠不超过段长的一半，避免无限循环
+  const safeOverlap = Math.min(overlapChars, Math.floor(segmentMaxChars / 2));
+
   // 文章较短，无需分段
   if (fullText.length <= segmentMaxChars) {
     return [fullText];
@@ -257,12 +260,8 @@ function splitArticleIntoSegments(
     // 最后一段不需要继续
     if (end >= fullText.length) break;
 
-    start = end - overlapChars;
-
-    // 防止无限循环
-    if (start <= segments.length * (segmentMaxChars - overlapChars) - segmentMaxChars) {
-      break;
-    }
+    // 前进到下一段起点（减去安全重叠），确保至少前进1个字符
+    start = Math.max(end - safeOverlap, start + 1);
   }
 
   return segments;
@@ -329,18 +328,21 @@ async function retrieveRelevantRulesFullArticle(
 
   const allRules: RetrievedRule[] = [];
 
-  // 对每段进行 RAG 检索
-  for (let i = 0; i < segments.length; i++) {
-    try {
-      const context = await retriever.retrieveContext(segments[i], {
-        topK: topKPerSegment,
-        minScore,
-      });
+  // 对每段进行 RAG 检索（并发执行，提升性能）
+  const retrievalPromises = segments.map((segment, i) =>
+    retriever.retrieveContext(segment, { topK: topKPerSegment, minScore })
+      .then(context => ({ index: i, context, success: true as const }))
+      .catch(error => {
+        console.warn(`[RAG全量检索] 第${i + 1}段检索失败:`, error);
+        return { index: i, context: '', success: false as const };
+      })
+  );
 
-      const segmentRules = extractReferencedRulesEnhanced(context);
+  const results = await Promise.all(retrievalPromises);
+  for (const result of results) {
+    if (result.success) {
+      const segmentRules = extractReferencedRulesEnhanced(result.context);
       allRules.push(...segmentRules);
-    } catch (error) {
-      console.warn(`[RAG全量检索] 第${i + 1}段检索失败:`, error);
     }
   }
 
@@ -620,7 +622,7 @@ export class WeChatComplianceAuditExecutor extends BaseMCPCapabilityExecutor {
       if (auditMode === 'simple') {
         auditResult = await this.quickCheck(articleContent);
       } else {
-        auditResult = await this.auditContentThreeLayers(articleTitle, articleContent, workspaceId);
+        auditResult = await executeThreeLayerAudit(this.retriever, articleTitle, articleContent, workspaceId);
       }
 
       console.log(`[WeChatComplianceAudit] 审核完成`);
@@ -643,145 +645,6 @@ export class WeChatComplianceAuditExecutor extends BaseMCPCapabilityExecutor {
         executionTime: new Date().toISOString(),
       };
     }
-  }
-
-  /**
-   * 三层合规审核（核心方法）
-   *
-   * 第1层：关键词硬匹配 → 确定性违规
-   * 第2层：RAG 全量检索 → 召回相关规则
-   * 第3层：LLM 语义判定 → 判断"规则是否被违反"
-   */
-  private async auditContentThreeLayers(
-    articleTitle: string,
-    articleContent: string,
-    workspaceId?: string
-  ): Promise<ComplianceAuditResult> {
-    const auditTime = new Date().toISOString();
-    const allIssues: string[] = [];
-    const allSuggestions: string[] = [];
-    let maxRiskLevel: 'low' | 'medium' | 'high' | 'critical' = 'low';
-    const auditDetails: AuditDetails = {
-      layer1KeywordHit: { issues: [], hitCount: 0 },
-      layer2RagRetrieval: { rulesCount: 0, topScores: [] },
-      layer3LlmJudge: { called: false, violationCount: 0 },
-    };
-
-    // ==================== 第1层：关键词硬匹配 ====================
-    console.log('[合规审核] ===== 第1层：关键词硬匹配 =====');
-    const layer1Result = quickCheckInternal(articleContent);
-    auditDetails.layer1KeywordHit = {
-      issues: layer1Result.issues,
-      hitCount: layer1Result.details.reduce((sum, d) => sum + d.found.length, 0),
-    };
-
-    if (layer1Result.issues.length > 0) {
-      allIssues.push(...layer1Result.issues);
-      allSuggestions.push(...layer1Result.suggestions);
-      console.log(`[合规审核] 第1层命中 ${layer1Result.details.reduce((s, d) => s + d.found.length, 0)} 个关键词`);
-
-      // 更新风险等级
-      const riskOrder = ['low', 'medium', 'high', 'critical'] as const;
-      if (riskOrder.indexOf(layer1Result.riskLevel) > riskOrder.indexOf(maxRiskLevel)) {
-        maxRiskLevel = layer1Result.riskLevel;
-      }
-    } else {
-      console.log('[合规审核] 第1层未命中任何关键词');
-    }
-
-    // ==================== 第2层：RAG 全量检索 ====================
-    console.log('[合规审核] ===== 第2层：RAG 全量检索 =====');
-    let retrievedRules: RetrievedRule[] = [];
-
-    try {
-      const ragResult = await retrieveRelevantRulesFullArticle(
-        this.retriever,
-        articleTitle,
-        articleContent,
-        { topKPerSegment: 3, minScore: 0.55, maxTotalRules: 10 }
-      );
-      retrievedRules = ragResult.rules;
-      auditDetails.layer2RagRetrieval = {
-        rulesCount: retrievedRules.length,
-        topScores: ragResult.topScores,
-      };
-      console.log(`[合规审核] 第2层检索到 ${retrievedRules.length} 条相关规则`);
-    } catch (error) {
-      console.warn('[合规审核] 第2层 RAG 检索失败（降级跳过）:', error);
-      auditDetails.layer2RagRetrieval = { rulesCount: 0, topScores: [] };
-    }
-
-    // ==================== 第3层：LLM 语义判定 ====================
-    console.log('[合规审核] ===== 第3层：LLM 语义判定 =====');
-    let llmViolations: LlmViolation[] = [];
-
-    if (retrievedRules.length > 0) {
-      try {
-        const llmResult = await llmJudgeViolations(articleContent, retrievedRules, workspaceId);
-        auditDetails.layer3LlmJudge = {
-          called: true,
-          violationCount: 0,
-          latencyMs: llmResult.latencyMs,
-          error: llmResult.error,
-        };
-
-        if (llmResult.output) {
-          llmViolations = llmResult.output.violations.filter(v => v.violated);
-          auditDetails.layer3LlmJudge.violationCount = llmViolations.length;
-
-          // 将 LLM 判定的违规项合并到结果中
-          for (const v of llmViolations) {
-            const ruleText = v.ruleIndex < retrievedRules.length
-              ? retrievedRules[v.ruleIndex].text
-              : '未知规则';
-
-            allIssues.push(`[LLM判定-${v.category}] ${v.evidence}（违反规则：${ruleText.substring(0, 60)}...）`);
-            allSuggestions.push(v.suggestion);
-          }
-
-          // 更新风险等级
-          const riskOrder = ['low', 'medium', 'high', 'critical'] as const;
-          if (riskOrder.indexOf(llmResult.output.overallRiskLevel) > riskOrder.indexOf(maxRiskLevel)) {
-            maxRiskLevel = llmResult.output.overallRiskLevel;
-          }
-
-          console.log(`[合规审核] 第3层判定 ${llmViolations.length} 处违规，风险等级: ${llmResult.output.overallRiskLevel}`);
-        } else {
-          console.warn('[合规审核] 第3层 LLM 判定输出为空（降级：仅使用第1层+第2层结果）');
-        }
-      } catch (error) {
-        console.error('[合规审核] 第3层 LLM 判定异常（降级）:', error);
-        auditDetails.layer3LlmJudge = {
-          called: true,
-          violationCount: 0,
-          error: error instanceof Error ? error.message : String(error),
-        };
-      }
-    } else {
-      console.log('[合规审核] 第2层无相关规则，跳过第3层 LLM 判定');
-      auditDetails.layer3LlmJudge = { called: false, violationCount: 0 };
-    }
-
-    // ==================== 汇总三层结果 ====================
-    const approved = allIssues.length === 0;
-    const referencedRules = retrievedRules.map(r => r.text);
-
-    console.log(`[合规审核] ===== 三层审核汇总 =====`);
-    console.log(`[合规审核] 第1层关键词命中: ${auditDetails.layer1KeywordHit.hitCount} 个`);
-    console.log(`[合规审核] 第2层RAG检索: ${auditDetails.layer2RagRetrieval.rulesCount} 条规则`);
-    console.log(`[合规审核] 第3层LLM判定违规: ${auditDetails.layer3LlmJudge.violationCount} 处`);
-    console.log(`[合规审核] 最终结果: ${approved ? '通过' : '未通过'}，风险等级: ${maxRiskLevel}`);
-
-    return {
-      approved,
-      riskLevel: maxRiskLevel,
-      issues: allIssues,
-      suggestions: allSuggestions,
-      referencedRules,
-      llmViolations,
-      auditDetails,
-      auditTime,
-    };
   }
 
   /**
@@ -808,6 +671,165 @@ export class WeChatComplianceAuditExecutor extends BaseMCPCapabilityExecutor {
       };
     }
   }
+}
+
+// ============================================================================
+// 三层合规审核核心逻辑（独立函数，供 Executor 和工具函数共用）
+// ============================================================================
+
+/**
+ * 三层合规审核（核心逻辑，独立函数）
+ *
+ * 第1层：关键词硬匹配 → 确定性违规提示
+ * 第2层：RAG 全量检索 → 召回相关规则
+ * 第3层：LLM 语义判定 → 判断"规则是否被违反"
+ *
+ * approved 判定逻辑：
+ * - 第1层关键词命中仅作为"提示"（keywordHits），不影响 approved
+ * - approved 仅由第3层 LLM 判定结果决定
+ * - 第3层未调用或降级时：approved = true（宁纵毋枉）
+ * - 第3层调用且存在 violated=true 的违规项：approved = false
+ */
+async function executeThreeLayerAudit(
+  retriever: ReturnType<typeof createVectorRetriever>,
+  articleTitle: string,
+  articleContent: string,
+  workspaceId?: string
+): Promise<ComplianceAuditResult> {
+  const auditTime = new Date().toISOString();
+  const allIssues: string[] = [];
+  const allSuggestions: string[] = [];
+  let maxRiskLevel: 'low' | 'medium' | 'high' | 'critical' = 'low';
+  const auditDetails: AuditDetails = {
+    layer1KeywordHit: { issues: [], hitCount: 0 },
+    layer2RagRetrieval: { rulesCount: 0, topScores: [] },
+    layer3LlmJudge: { called: false, violationCount: 0 },
+  };
+
+  // ==================== 第1层：关键词硬匹配 ====================
+  console.log('[合规审核] ===== 第1层：关键词硬匹配 =====');
+  const layer1Result = quickCheckInternal(articleContent);
+  auditDetails.layer1KeywordHit = {
+    issues: layer1Result.issues,
+    hitCount: layer1Result.details.reduce((sum, d) => sum + d.found.length, 0),
+  };
+
+  if (layer1Result.issues.length > 0) {
+    // 第1层命中记入 issues 供参考，但仅作为提示性信息
+    for (const issue of layer1Result.issues) {
+      allIssues.push(`[关键词提示] ${issue}`);
+    }
+    allSuggestions.push(...layer1Result.suggestions);
+    console.log(`[合规审核] 第1层命中 ${layer1Result.details.reduce((s, d) => s + d.found.length, 0)} 个关键词`);
+
+    // 更新风险等级（关键词命中的风险等级仅作为基础参考）
+    const riskOrder = ['low', 'medium', 'high', 'critical'] as const;
+    if (riskOrder.indexOf(layer1Result.riskLevel) > riskOrder.indexOf(maxRiskLevel)) {
+      maxRiskLevel = layer1Result.riskLevel;
+    }
+  } else {
+    console.log('[合规审核] 第1层未命中任何关键词');
+  }
+
+  // ==================== 第2层：RAG 全量检索 ====================
+  console.log('[合规审核] ===== 第2层：RAG 全量检索 =====');
+  let retrievedRules: RetrievedRule[] = [];
+
+  try {
+    const ragResult = await retrieveRelevantRulesFullArticle(
+      retriever,
+      articleTitle,
+      articleContent,
+      { topKPerSegment: 3, minScore: 0.55, maxTotalRules: 10 }
+    );
+    retrievedRules = ragResult.rules;
+    auditDetails.layer2RagRetrieval = {
+      rulesCount: retrievedRules.length,
+      topScores: ragResult.topScores,
+    };
+    console.log(`[合规审核] 第2层检索到 ${retrievedRules.length} 条相关规则`);
+  } catch (error) {
+    console.warn('[合规审核] 第2层 RAG 检索失败（降级跳过）:', error);
+    auditDetails.layer2RagRetrieval = { rulesCount: 0, topScores: [] };
+  }
+
+  // ==================== 第3层：LLM 语义判定 ====================
+  // approved 最终由第3层决定；第3层未调用时 approved = true
+  let approved = true;
+  let llmViolations: LlmViolation[] = [];
+
+  if (retrievedRules.length > 0) {
+    console.log('[合规审核] ===== 第3层：LLM 语义判定 =====');
+    try {
+      const llmResult = await llmJudgeViolations(articleContent, retrievedRules, workspaceId);
+      auditDetails.layer3LlmJudge = {
+        called: true,
+        violationCount: 0,
+        latencyMs: llmResult.latencyMs,
+        error: llmResult.error,
+      };
+
+      if (llmResult.output) {
+        llmViolations = llmResult.output.violations.filter(v => v.violated);
+        auditDetails.layer3LlmJudge.violationCount = llmViolations.length;
+
+        // 第3层判定违规才影响 approved
+        if (llmViolations.length > 0) {
+          approved = false;
+        }
+
+        // 将 LLM 判定的违规项合并到结果中
+        for (const v of llmViolations) {
+          const ruleText = v.ruleIndex < retrievedRules.length
+            ? retrievedRules[v.ruleIndex].text
+            : '未知规则';
+
+          allIssues.push(`[LLM判定-${v.category}] ${v.evidence}（违反规则：${ruleText.substring(0, 60)}...）`);
+          allSuggestions.push(v.suggestion);
+        }
+
+        // 更新风险等级
+        const riskOrder = ['low', 'medium', 'high', 'critical'] as const;
+        if (riskOrder.indexOf(llmResult.output.overallRiskLevel) > riskOrder.indexOf(maxRiskLevel)) {
+          maxRiskLevel = llmResult.output.overallRiskLevel;
+        }
+
+        console.log(`[合规审核] 第3层判定 ${llmViolations.length} 处违规，风险等级: ${llmResult.output.overallRiskLevel}`);
+      } else {
+        console.warn('[合规审核] 第3层 LLM 判定输出为空（降级：仅使用第1层+第2层结果，approved=true）');
+      }
+    } catch (error) {
+      console.error('[合规审核] 第3层 LLM 判定异常（降级，approved=true）:', error);
+      auditDetails.layer3LlmJudge = {
+        called: true,
+        violationCount: 0,
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
+  } else {
+    console.log('[合规审核] 第2层无相关规则，跳过第3层 LLM 判定');
+    auditDetails.layer3LlmJudge = { called: false, violationCount: 0 };
+  }
+
+  // ==================== 汇总三层结果 ====================
+  const referencedRules = retrievedRules.map(r => r.text);
+
+  console.log(`[合规审核] ===== 三层审核汇总 =====`);
+  console.log(`[合规审核] 第1层关键词命中: ${auditDetails.layer1KeywordHit.hitCount} 个（仅提示，不影响approved）`);
+  console.log(`[合规审核] 第2层RAG检索: ${auditDetails.layer2RagRetrieval.rulesCount} 条规则`);
+  console.log(`[合规审核] 第3层LLM判定违规: ${auditDetails.layer3LlmJudge.violationCount} 处`);
+  console.log(`[合规审核] 最终结果: ${approved ? '通过' : '未通过'}，风险等级: ${maxRiskLevel}`);
+
+  return {
+    approved,
+    riskLevel: maxRiskLevel,
+    issues: allIssues,
+    suggestions: allSuggestions,
+    referencedRules,
+    llmViolations,
+    auditDetails,
+    auditTime,
+  };
 }
 
 // ============================================================================
@@ -899,7 +921,13 @@ export const WechatComplianceAuditor = {
    * 完整合规审核（三层架构：关键词 + RAG + LLM）
    */
   contentAudit: async (params: McpToolParams) => {
-    console.log('[WechatComplianceAuditor] contentAudit 被调用，参数:', params);
+    console.log('[WechatComplianceAuditor] contentAudit 被调用，参数:', {
+      articleTitle: params.articleTitle || params.title || '未命名文章',
+      contentLength: (params.articleContent || params.content || '').length,
+      articlesCount: params.articles?.length || 0,
+      workspaceId: params.workspaceId,
+      auditMode: params.auditMode,
+    });
 
     try {
       const articleTitle = params.articleTitle || params.title || '未命名文章';
@@ -917,77 +945,9 @@ export const WechatComplianceAuditor = {
         };
       }
 
-      // 直接调用三层审核逻辑（不通过 protected execute 方法）
-      const auditTime = new Date().toISOString();
-      const allIssues: string[] = [];
-      const allSuggestions: string[] = [];
-      let maxRiskLevel: 'low' | 'medium' | 'high' | 'critical' = 'low';
-      const auditDetails: AuditDetails = {
-        layer1KeywordHit: { issues: [], hitCount: 0 },
-        layer2RagRetrieval: { rulesCount: 0, topScores: [] },
-        layer3LlmJudge: { called: false, violationCount: 0 },
-      };
-
-      // 第1层：关键词硬匹配
-      const layer1Result = quickCheckInternal(articleContent);
-      auditDetails.layer1KeywordHit = {
-        issues: layer1Result.issues,
-        hitCount: layer1Result.details.reduce((sum, d) => sum + d.found.length, 0),
-      };
-      if (layer1Result.issues.length > 0) {
-        allIssues.push(...layer1Result.issues);
-        allSuggestions.push(...layer1Result.suggestions);
-        const riskOrder = ['low', 'medium', 'high', 'critical'] as const;
-        if (riskOrder.indexOf(layer1Result.riskLevel) > riskOrder.indexOf(maxRiskLevel)) {
-          maxRiskLevel = layer1Result.riskLevel;
-        }
-      }
-
-      // 第2层：RAG 全量检索
-      let retrievedRules: RetrievedRule[] = [];
-      try {
-        const retriever = createVectorRetriever('wechat_compliance_rules');
-        const ragResult = await retrieveRelevantRulesFullArticle(retriever, articleTitle, articleContent);
-        retrievedRules = ragResult.rules;
-        auditDetails.layer2RagRetrieval = { rulesCount: retrievedRules.length, topScores: ragResult.topScores };
-      } catch (error) {
-        console.warn('[WechatComplianceAuditor] RAG 检索失败:', error);
-      }
-
-      // 第3层：LLM 语义判定
-      let llmViolations: LlmViolation[] = [];
-      if (retrievedRules.length > 0) {
-        try {
-          const llmResult = await llmJudgeViolations(articleContent, retrievedRules, params.workspaceId);
-          auditDetails.layer3LlmJudge = { called: true, violationCount: 0, latencyMs: llmResult.latencyMs };
-          if (llmResult.output) {
-            llmViolations = llmResult.output.violations.filter(v => v.violated);
-            auditDetails.layer3LlmJudge.violationCount = llmViolations.length;
-            for (const v of llmViolations) {
-              allIssues.push(`[LLM判定-${v.category}] ${v.evidence}`);
-              allSuggestions.push(v.suggestion);
-            }
-            const riskOrder = ['low', 'medium', 'high', 'critical'] as const;
-            if (riskOrder.indexOf(llmResult.output.overallRiskLevel) > riskOrder.indexOf(maxRiskLevel)) {
-              maxRiskLevel = llmResult.output.overallRiskLevel;
-            }
-          }
-        } catch (error) {
-          console.error('[WechatComplianceAuditor] LLM 判定失败:', error);
-        }
-      }
-
-      const approved = allIssues.length === 0;
-      const auditResult = {
-        approved,
-        riskLevel: maxRiskLevel,
-        issues: allIssues,
-        suggestions: allSuggestions,
-        referencedRules: retrievedRules.map(r => r.text),
-        llmViolations,
-        auditDetails,
-        auditTime,
-      };
+      // 调用共享的三层审核逻辑
+      const retriever = createVectorRetriever('wechat_compliance_rules');
+      const auditResult = await executeThreeLayerAudit(retriever, articleTitle, articleContent, params.workspaceId);
 
       const formattedSummary = formatMcpAuditResultToSummary(auditResult);
 
@@ -1010,7 +970,10 @@ export const WechatComplianceAuditor = {
    * 快速合规检查（仅关键词匹配）
    */
   contentAuditSimple: async (params: McpToolParams) => {
-    console.log('[WechatComplianceAuditor] contentAuditSimple 被调用，参数:', params);
+    console.log('[WechatComplianceAuditor] contentAuditSimple 被调用，参数:', {
+      contentLength: (params.articleContent || params.content || '').length,
+      articlesCount: params.articles?.length || 0,
+    });
 
     try {
       let articleContent = params.articleContent || params.content;
