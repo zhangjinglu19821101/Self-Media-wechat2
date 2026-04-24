@@ -5843,13 +5843,22 @@ export class SubtaskExecutionEngine {
         console.log('[SubtaskEngine] 🔴 [补充文章内容] ✅ 已补充公众号格式化参数（accountId, title, content）');
       }
 
-      // 合规审核任务：补充 articleContent 参数
+      // 合规审核任务：补充 articleTitle + articleContent + workspaceId 参数
       if (mcpParams.toolName?.toLowerCase().includes('compliance') || 
           mcpParams.actionName?.toLowerCase().includes('compliance') ||
           mcpParams.actionName?.toLowerCase().includes('audit')) {
+        if (!supplementedParams.articleTitle && articleContentData.title) {
+          supplementedParams.articleTitle = articleContentData.title;
+          console.log('[SubtaskEngine] 🔴 [补充文章内容] ✅ 已补充 articleTitle 参数（合规审核）');
+        }
         if (!supplementedParams.articleContent) {
           supplementedParams.articleContent = articleContentData.content;
           console.log('[SubtaskEngine] 🔴 [补充文章内容] ✅ 已补充 articleContent 参数（合规审核）');
+        }
+        // 补充 workspaceId 供 LLM 合规判定使用（BYOK 支持）
+        if (!supplementedParams.workspaceId && task.workspaceId) {
+          supplementedParams.workspaceId = task.workspaceId;
+          console.log('[SubtaskEngine] 🔴 [补充文章内容] ✅ 已补充 workspaceId 参数（合规审核 LLM BYOK）');
         }
       }
 
