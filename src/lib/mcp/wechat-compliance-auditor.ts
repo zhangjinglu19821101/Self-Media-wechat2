@@ -461,7 +461,7 @@ ${rulesText}
       systemPrompt,
       userPrompt,
       {
-        timeout: 60000,  // 60秒超时（合规判定需逐条分析，30s易超时）
+        timeout: 120000,  // 120秒超时（合规判定需逐条分析规则，60s易超时）
         workspaceId,     // BYOK 支持
         maxRetries: 1,   // 最多重试1次
       }
