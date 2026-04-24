@@ -104,6 +104,18 @@ export function useReminderNotification() {
       const res = await fetch('/api/reminders/triggered', {
         headers: { 'x-workspace-id': workspaceId },
       });
+
+      // 未登录时跳过轮询，避免跟随重定向导致 JSON 解析失败
+      if (res.status === 307 || res.url?.includes('/login')) {
+        return;
+      }
+
+      // 非 JSON 响应时跳过
+      const contentType = res.headers.get('content-type') || '';
+      if (!contentType.includes('application/json')) {
+        return;
+      }
+
       const data = await res.json();
 
       if (data.success && data.data.length > 0) {
@@ -126,7 +138,7 @@ export function useReminderNotification() {
         }
       }
     } catch (error) {
-      console.error('[Reminder] 轮询失败:', error);
+      // 忽略轮询错误，避免刷屏
     }
   }, [permission, showNotification]);
 
