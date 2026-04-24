@@ -310,44 +310,54 @@ export function isBaseArticlePlatform(platform: string): boolean {
 }
 
 /**
+ * 预查询的账号信息结构
+ * 调用方应先批量查询账号信息，再传入此函数，避免 N+1 查询
+ */
+export interface AccountInfo {
+  id: string;
+  platform: string;
+  platformLabel: string;
+  accountName: string;
+}
+
+/**
  * 从账号列表中分离基础组和适配组
  *
- * @param accountIds 选中的账号ID列表
- * @param getAccountInfoFn 获取账号信息的函数
+ * 设计原则：调用方负责批量查询账号信息（1 次 DB 查询），
+ * 本函数仅做内存分组，不再内部查询 DB，消除 N+1 问题。
+ *
+ * @param accounts 预查询的账号信息列表
  * @returns baseAccountId 和 adaptationAccountIds
  */
-export async function splitBaseAndAdaptationGroups(
-  accountIds: string[],
-  getAccountInfoFn: (id: string) => Promise<{ platform: string; platformLabel: string; accountName: string }>
-): Promise<{
+export function splitBaseAndAdaptationGroups(
+  accounts: AccountInfo[]
+): {
   baseAccountId: string | null;
   baseAccountInfo: { platform: string; platformLabel: string; accountName: string } | null;
   adaptationAccounts: Array<{ accountId: string; platform: string; platformLabel: string; accountName: string }>;
-}> {
+} {
   let baseAccountId: string | null = null;
   let baseAccountInfo: { platform: string; platformLabel: string; accountName: string } | null = null;
   const adaptationAccounts: Array<{ accountId: string; platform: string; platformLabel: string; accountName: string }> = [];
 
-  for (const accId of accountIds) {
-    const info = await getAccountInfoFn(accId);
-    if (isBaseArticlePlatform(info.platform) && !baseAccountId) {
+  for (const acc of accounts) {
+    if (isBaseArticlePlatform(acc.platform) && !baseAccountId) {
       // 第一个公众号账号作为基础文章组
-      baseAccountId = accId;
-      baseAccountInfo = info;
+      baseAccountId = acc.id;
+      baseAccountInfo = { platform: acc.platform, platformLabel: acc.platformLabel, accountName: acc.accountName };
     } else {
       // 其他账号作为适配组
-      adaptationAccounts.push({ accountId: accId, ...info });
+      adaptationAccounts.push({ accountId: acc.id, platform: acc.platform, platformLabel: acc.platformLabel, accountName: acc.accountName });
     }
   }
 
   // 如果没有公众号账号，第一个账号作为基础文章组
-  if (!baseAccountId && accountIds.length > 0) {
-    const firstId = accountIds[0];
-    const info = await getAccountInfoFn(firstId);
-    baseAccountId = firstId;
-    baseAccountInfo = info;
+  if (!baseAccountId && accounts.length > 0) {
+    const first = accounts[0];
+    baseAccountId = first.id;
+    baseAccountInfo = { platform: first.platform, platformLabel: first.platformLabel, accountName: first.accountName };
     // 从适配组中移除
-    const idx = adaptationAccounts.findIndex(a => a.accountId === firstId);
+    const idx = adaptationAccounts.findIndex(a => a.accountId === first.id);
     if (idx >= 0) adaptationAccounts.splice(idx, 1);
   }
 

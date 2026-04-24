@@ -173,15 +173,20 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // 🔥🔥🔥 批量查询账号平台信息（一次性查询，供 imageCountMode 检测 + splitBaseAndAdaptationGroups 复用）
+    // P1-2 修复：消除 N+1 查询，所有账号信息在此处一次性获取
+    const allAccountInfos: Array<{ id: string; platform: string; platformLabel: string; accountName: string }> =
+      effectiveAccountIds.length > 0
+        ? await Promise.all(effectiveAccountIds.map(async accId => {
+            const info = await getAccountInfo(accId);
+            return { id: accId, ...info };
+          }))
+        : [];
+
     // 🔥🔥🔥 【P0修复】为小红书平台设置默认卡片数量模式（5卡详尽）
     // 如果用户没有选择内容模板，且没有手动指定 imageCountMode，默认使用 5 卡详尽模式
-    // 异步检查选中的账号中是否有小红书账号
-    if (!derivedImageCountMode && effectiveAccountIds.length > 0) {
-      // 批量查询账号平台信息
-      const accountPlatforms = await Promise.all(
-        effectiveAccountIds.map(accId => getAccountInfo(accId))
-      );
-      const hasXiaohongshuAccount = accountPlatforms.some(acc => acc.platform === 'xiaohongshu');
+    if (!derivedImageCountMode && allAccountInfos.length > 0) {
+      const hasXiaohongshuAccount = allAccountInfos.some(acc => acc.platform === 'xiaohongshu');
       if (hasXiaohongshuAccount) {
         derivedImageCountMode = '5-card';
         console.log('🔵 [Agent B 简化拆解] 🔥 小红书平台默认使用 5-card 详尽模式');
@@ -215,10 +220,9 @@ export async function POST(request: NextRequest) {
       const multiPlatformGroupId = `mpg-${newTempSessionId}`;
       console.log(`🔵 [Agent B 简化拆解] 多平台协同模式：${effectiveAccountIds.length} 个账号，multiPlatformGroupId=${multiPlatformGroupId}`);
 
-      // 分离基础组和适配组
-      const { baseAccountId, baseAccountInfo, adaptationAccounts } = await splitBaseAndAdaptationGroups(
-        effectiveAccountIds,
-        getAccountInfo
+      // 分离基础组和适配组（P1-2 修复：使用预查询的账号信息，消除 N+1）
+      const { baseAccountId, baseAccountInfo, adaptationAccounts } = splitBaseAndAdaptationGroups(
+        allAccountInfos
       );
 
       if (!baseAccountId || !baseAccountInfo) {

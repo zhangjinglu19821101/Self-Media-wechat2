@@ -1561,3 +1561,17 @@
      - 原子性解锁：二次校验 status=blocked 防并发
      - 前端零侵入：后端改造，前端通过 metadata 字段自动感知两阶段结构
    - **未改动部分**: 输出格式/信封格式/分平台文风校准/格式保持规则（系统版原样保留）
+
+76. **两阶段架构评审修复（P1级别）**: 修复技术评审发现的 3 个 P1 问题
+   - **P1-1 修复（跨组查询缺 workspaceId 隔离）**:
+     - **问题**: `subtask-execution-engine.ts` 中 `buildExecutionContext()` 查询基础文章组任务时未加 `workspaceId` 过滤
+     - **修复**: 在查询条件中补充 `eq(agentSubTasks.workspaceId, task.workspaceId)`
+   - **P1-2 修复（N+1 查询问题）**:
+     - **问题**: `splitBaseAndAdaptationGroups()` 内部循环调用 `getAccountInfoFn` 产生 N+1 查询；且 `simple-split/route.ts` 在 imageCountMode 检测时已批量查询过一次，造成重复
+     - **修复**:
+       - `flow-templates.ts`: 函数签名从 `async(accountIds, getAccountInfoFn)` 改为 `sync(accounts: AccountInfo[])`，新增 `AccountInfo` 接口导出
+       - `simple-split/route.ts`: 统一使用 `allAccountInfos` 批量查询结果（一次性获取所有账号信息），传递给 `splitBaseAndAdaptationGroups()` 和 imageCountMode 检测
+   - **P1-3 修复（setTimeout 可靠性风险）**:
+     - **问题**: `unlockAdaptationGroupsIfNeeded()` 中使用 `setTimeout(..., 1000)` 触发引擎执行，进程重启则丢失触发
+     - **修复**: 改为立即执行 `this.execute().catch(...)`，引擎轮询是最终保障
+   - **验证结果**: TypeScript 检查通过（无新增错误），服务健康检查通过

@@ -4876,14 +4876,15 @@ export class SubtaskExecutionEngine {
           adaptationPlatform: taskMetadata.adaptationPlatform,
         });
 
-        // 查询基础文章组的所有已完成任务
+        // 查询基础文章组的所有已完成任务（必须加 workspaceId 隔离，符合多租户规范）
         const baseArticleTasks = await db
           .select()
           .from(agentSubTasks)
           .where(
             and(
               eq(agentSubTasks.commandResultId, sourceCommandResultId),
-              eq(agentSubTasks.status, 'completed')
+              eq(agentSubTasks.status, 'completed'),
+              eq(agentSubTasks.workspaceId, task.workspaceId)
             )
           )
           .orderBy(agentSubTasks.orderIndex);
@@ -7281,12 +7282,12 @@ export class SubtaskExecutionEngine {
       if (unlockedGroups.length > 0) {
         console.log('[SubtaskEngine] 🔥🔥🔥 成功解锁', unlockedGroups.length, '个适配组，触发引擎执行');
 
-        // 主动触发引擎执行（延迟 1 秒，确保数据库状态已持久化）
-        setTimeout(() => {
-          this.execute().catch(err => {
-            console.error('[SubtaskEngine] 🔥 适配组解锁后引擎执行失败:', err);
-          });
-        }, 1000);
+        // P1-3 修复：立即触发引擎执行，移除无意义的 1 秒延迟
+        // 延迟原意是等 DB 持久化，但 UPDATE ... RETURNING 已同步完成，
+        // 且引擎轮询是最终保障，即使本次触发丢失，下个周期也会执行 pending 任务
+        this.execute().catch(err => {
+          console.error('[SubtaskEngine] 🔥 适配组解锁后引擎执行失败:', err);
+        });
       }
     } catch (error) {
       console.error('[SubtaskEngine] 🔥 解锁适配组失败（不影响基础文章流程）:', error);
