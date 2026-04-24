@@ -12,13 +12,17 @@ import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Textarea } from '@/components/ui/textarea';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { CheckCircle2, Clock, AlertTriangle, ChevronRight, ChevronDown, ChevronUp, Calendar, ListTodo, UserCheck, MessageSquare, Terminal, Send, Loader2, RefreshCw, Filter, XCircle, Users, Eye, Rocket, Folder, FileText, PenTool, ShieldCheck, Cpu, Sparkles, ChevronDownIcon, Bot, BookOpen } from 'lucide-react';
+import { CheckCircle2, Clock, AlertTriangle, ChevronRight, ChevronDown, ChevronUp, Calendar, ListTodo, UserCheck, MessageSquare, Terminal, Send, Loader2, RefreshCw, Filter, XCircle, Users, Eye, Rocket, Folder, FileText, PenTool, ShieldCheck, Cpu, Sparkles, ChevronDownIcon, Bot, BookOpen, Lock, Layers } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toast } from 'sonner';
 import Link from 'next/link';
 import { XiaohongshuPreview } from '@/components/xiaohongshu-preview';
 import { ArticlePreviewEditor, PreviewPlatform } from '@/components/article-preview-editor';
 import { WRITING_AGENT_IDS, isWritingAgent } from '@/lib/agents/agent-registry';
+import { PLATFORM_LABELS } from '@/lib/db/schema/style-template';
+
+/** 平台标签映射（从 style-template 复用） */
+const PLATFORM_LABELS_MAP: Record<string, string> = PLATFORM_LABELS;
 
 // 🔥 Agent B 决策类型定义（与 agent-b-response.ts 保持一致）
 type AgentBDecisionType = 'EXECUTE_MCP' | 'COMPLETE' | 'NEED_USER' | 'FAILED' | 'REEXECUTE_EXECUTOR' | '';
@@ -27,7 +31,7 @@ interface Task {
   id: string;
   taskTitle: string;
   taskDescription: string;
-  status: 'pending' | 'in_progress' | 'completed' | 'failed' | 'waiting_user';
+  status: 'pending' | 'in_progress' | 'completed' | 'failed' | 'waiting_user' | 'blocked';
   priority: 'high' | 'normal' | 'low';
   orderIndex: number;
   isCritical: boolean;
@@ -943,6 +947,10 @@ export function AgentTaskListNormal({ agentId, showPanel, onTogglePanel }: Agent
       mainTaskTitle?: string;
       createdAt: string;
       subTasks: Task[];
+      phase?: 'base_article' | 'platform_adaptation';  // 两阶段架构
+      multiPlatformGroupId?: string;                     // 跨组关联ID
+      adaptationPlatform?: string;                       // 适配目标平台
+      sourceCommandResultId?: string;                    // 适配组的来源组
     } } = {};
 
     // 过滤掉 orderIndex 异常大的任务（>100），避免误导
@@ -1021,6 +1029,11 @@ export function AgentTaskListNormal({ agentId, showPanel, onTogglePanel }: Agent
           mainTaskTitle: title,
           createdAt: task.createdAt,
           subTasks: [],
+          // 🔥 两阶段架构：从任务 metadata 提取阶段信息
+          phase: (task.metadata as Record<string, any>)?.phase,
+          multiPlatformGroupId: (task.metadata as Record<string, any>)?.multiPlatformGroupId,
+          adaptationPlatform: (task.metadata as Record<string, any>)?.adaptationPlatform,
+          sourceCommandResultId: (task.metadata as Record<string, any>)?.sourceCommandResultId,
         };
       }
       groups[key].subTasks.push(task);
@@ -1342,6 +1355,8 @@ export function AgentTaskListNormal({ agentId, showPanel, onTogglePanel }: Agent
         return { icon: UserCheck, color: 'text-purple-600', bgColor: 'bg-purple-100', label: '待处理' };
       case 'failed':
         return { icon: XCircle, color: 'text-red-600', bgColor: 'bg-red-100', label: '失败' };
+      case 'blocked':
+        return { icon: Lock, color: 'text-amber-600', bgColor: 'bg-amber-100', label: '等待定稿' };
       default:
         return { icon: Clock, color: 'text-gray-600', bgColor: 'bg-gray-100', label: '待执行' };
     }
@@ -1632,19 +1647,31 @@ export function AgentTaskListNormal({ agentId, showPanel, onTogglePanel }: Agent
                       {section.groups.map((group) => {
                         const completedCount = group.subTasks.filter(t => t.status === 'completed').length;
                         const totalCount = group.subTasks.length;
+                        const blockedCount = group.subTasks.filter(t => t.status === 'blocked').length;
                         const taskDate = getLocalDate(group.createdAt);
                         const timeStr = taskDate.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false });
                         const isAllDone = completedCount === totalCount;
 
-                        // 状态配色
+                        // 🔥 两阶段架构：检测组阶段
+                        const isBaseArticle = group.phase === 'base_article';
+                        const isAdaptation = group.phase === 'platform_adaptation';
+                        const hasBlocked = blockedCount > 0;
+
+                        // 状态配色（适配组有独特风格）
                         const cardBg = isAllDone
                           ? 'bg-gradient-to-br from-emerald-50 to-green-50'
+                          : isAdaptation && hasBlocked
+                          ? 'bg-gradient-to-br from-amber-50 to-orange-50/50'
                           : 'bg-white';
                         const cardBorder = isAllDone
                           ? 'border-emerald-200/70'
+                          : isAdaptation && hasBlocked
+                          ? 'border-amber-200/70'
                           : 'border-slate-200/80';
                         const cardShadow = isAllDone
                           ? 'shadow-sm shadow-emerald-100'
+                          : isAdaptation && hasBlocked
+                          ? 'shadow-sm shadow-amber-100'
                           : 'shadow-sm shadow-slate-100';
 
                         return (
@@ -1689,10 +1716,27 @@ export function AgentTaskListNormal({ agentId, showPanel, onTogglePanel }: Agent
                               {/* 标题和进度 */}
                               <div className="flex-1 min-w-0 space-y-1.5">
                                 <div className="flex items-center gap-2">
-                                  <FileText className={`w-4 h-4 flex-shrink-0 ${isAllDone ? 'text-emerald-400' : 'text-slate-400'}`} />
-                                  <span className={`font-semibold text-sm truncate ${isAllDone ? 'text-emerald-800' : 'text-slate-700'}`}>
+                                  {isAdaptation && hasBlocked ? (
+                                    <Lock className="w-4 h-4 flex-shrink-0 text-amber-500" />
+                                  ) : isBaseArticle ? (
+                                    <Layers className="w-4 h-4 flex-shrink-0 text-indigo-400" />
+                                  ) : (
+                                    <FileText className={`w-4 h-4 flex-shrink-0 ${isAllDone ? 'text-emerald-400' : 'text-slate-400'}`} />
+                                  )}
+                                  <span className={`font-semibold text-sm truncate ${isAllDone ? 'text-emerald-800' : isAdaptation && hasBlocked ? 'text-amber-800' : 'text-slate-700'}`}>
                                     {group.mainTaskTitle || `主任务 ${group.commandResultId.slice(0, 8)}`}
                                   </span>
+                                  {/* 🔥 两阶段架构：阶段标签 */}
+                                  {isBaseArticle && (
+                                    <span className="flex-shrink-0 text-[10px] font-bold px-1.5 py-0.5 rounded bg-indigo-100 text-indigo-700">
+                                      基础文章
+                                    </span>
+                                  )}
+                                  {isAdaptation && (
+                                    <span className={`flex-shrink-0 text-[10px] font-bold px-1.5 py-0.5 rounded ${hasBlocked ? 'bg-amber-100 text-amber-700' : 'bg-sky-100 text-sky-700'}`}>
+                                      {group.adaptationPlatform ? `${PLATFORM_LABELS_MAP[group.adaptationPlatform] || group.adaptationPlatform}适配` : '平台适配'}
+                                    </span>
+                                  )}
                                 </div>
                                 {/* 进度条 */}
                                 <div className="flex items-center gap-2">
@@ -1701,6 +1745,8 @@ export function AgentTaskListNormal({ agentId, showPanel, onTogglePanel }: Agent
                                       className={`h-full rounded-full transition-all duration-500 ${
                                         isAllDone
                                           ? 'bg-gradient-to-r from-emerald-400 to-green-500'
+                                          : isAdaptation && hasBlocked
+                                          ? 'bg-gradient-to-r from-amber-400 to-amber-500'
                                           : completedCount > 0
                                           ? 'bg-gradient-to-r from-blue-400 to-indigo-500'
                                           : 'bg-slate-200'
@@ -1709,9 +1755,10 @@ export function AgentTaskListNormal({ agentId, showPanel, onTogglePanel }: Agent
                                     />
                                   </div>
                                   <span className={`text-xs font-mono font-semibold ${
-                                    isAllDone ? 'text-emerald-600' : 'text-slate-500'
+                                    isAllDone ? 'text-emerald-600' : isAdaptation && hasBlocked ? 'text-amber-600' : 'text-slate-500'
                                   }`}>
                                     {completedCount}/{totalCount}
+                                    {hasBlocked && <span className="text-amber-500 ml-1">({blockedCount}等待)</span>}
                                   </span>
                                 </div>
                               </div>
@@ -1721,6 +1768,11 @@ export function AgentTaskListNormal({ agentId, showPanel, onTogglePanel }: Agent
                                 <div className="flex items-center gap-1.5 bg-gradient-to-r from-emerald-500 to-green-600 text-white px-3 py-1 rounded-full">
                                   <CheckCircle2 className="w-3.5 h-3.5" />
                                   <span className="text-xs font-bold">全部完成</span>
+                                </div>
+                              ) : isAdaptation && hasBlocked ? (
+                                <div className="flex items-center gap-1.5 bg-gradient-to-r from-amber-500 to-orange-500 text-white px-3 py-1 rounded-full">
+                                  <Lock className="w-3.5 h-3.5" />
+                                  <span className="text-xs font-bold">等待定稿</span>
                                 </div>
                               ) : (
                                 <div className="flex items-center gap-1.5 bg-slate-100 text-slate-600 px-3 py-1 rounded-full">
@@ -1738,6 +1790,7 @@ export function AgentTaskListNormal({ agentId, showPanel, onTogglePanel }: Agent
                                     const statusInfo = getStatusInfo(task.status);
                                     const StatusIcon = statusInfo.icon;
                                     const isCompleted = task.status === 'completed';
+                                    const isBlocked = task.status === 'blocked';
 
                                     return (
                                       <div
@@ -1745,6 +1798,8 @@ export function AgentTaskListNormal({ agentId, showPanel, onTogglePanel }: Agent
                                         className={`flex items-center gap-2.5 p-2.5 rounded-xl border transition-all duration-200 cursor-pointer ${
                                           isCompleted
                                             ? 'bg-emerald-50/60 border-emerald-100 hover:bg-emerald-50'
+                                            : isBlocked
+                                            ? 'bg-amber-50/60 border-amber-100 hover:bg-amber-50'
                                             : 'bg-white border-slate-100 hover:bg-slate-50 hover:border-slate-200'
                                         }`}
                                         onClick={(e) => {
@@ -1760,6 +1815,8 @@ export function AgentTaskListNormal({ agentId, showPanel, onTogglePanel }: Agent
                                         <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-black font-mono flex-shrink-0 ${
                                           isCompleted
                                             ? 'bg-gradient-to-br from-emerald-400 to-emerald-500 text-white shadow-sm shadow-emerald-200'
+                                            : isBlocked
+                                            ? 'bg-gradient-to-br from-amber-300 to-amber-400 text-white'
                                             : 'bg-slate-100 text-slate-600'
                                         }`}>
                                           {task.orderIndex}
@@ -1767,7 +1824,7 @@ export function AgentTaskListNormal({ agentId, showPanel, onTogglePanel }: Agent
 
                                         {/* 状态图标 */}
                                         <div className={`w-7 h-7 rounded-xl flex items-center justify-center flex-shrink-0 ${
-                                          isCompleted ? 'bg-emerald-100' : 'bg-slate-100'
+                                          isCompleted ? 'bg-emerald-100' : isBlocked ? 'bg-amber-100' : 'bg-slate-100'
                                         }`}>
                                           <StatusIcon className={`w-4 h-4 ${
                                             isCompleted ? 'text-emerald-500' : statusInfo.color
@@ -1776,7 +1833,7 @@ export function AgentTaskListNormal({ agentId, showPanel, onTogglePanel }: Agent
 
                                         {/* 标题 */}
                                         <span className={`flex-1 text-sm font-medium truncate ${
-                                          isCompleted ? 'text-emerald-700' : 'text-slate-700'
+                                          isCompleted ? 'text-emerald-700' : isBlocked ? 'text-amber-700' : 'text-slate-700'
                                         }`}>
                                           {task.taskTitle || `子任务 #${task.orderIndex}`}
                                         </span>

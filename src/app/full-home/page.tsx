@@ -22,7 +22,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { Loader2, Plus, Trash2, Send, Sparkles, ListTodo, CheckCircle2, XCircle, GripVertical, MoveUp, MoveDown, Maximize2, Minimize2, AlertTriangle, GitCompare, RefreshCw, FileText, Save, Eye, Home, BookmarkPlus, ExternalLink, BookOpen, Clock, Building2, X, HelpCircle, Settings, Rocket, Layers, ChevronDown, ChevronUp, Cpu, Brain, Bell, Workflow, Palette, PenTool, ArrowRight, ArrowLeft, Briefcase, Shield, Users, Download, Copy, ImageIcon, Check, AlertCircle, Calendar } from 'lucide-react';
+import { Loader2, Plus, Trash2, Send, Sparkles, ListTodo, CheckCircle2, XCircle, GripVertical, MoveUp, MoveDown, Maximize2, Minimize2, AlertTriangle, GitCompare, RefreshCw, FileText, Save, Eye, Home, BookmarkPlus, ExternalLink, BookOpen, Clock, Building2, X, HelpCircle, Settings, Rocket, Layers, ChevronDown, ChevronUp, Cpu, Brain, Bell, Workflow, Palette, PenTool, ArrowRight, ArrowLeft, Briefcase, Shield, Users, Download, Copy, ImageIcon, Check, AlertCircle, Calendar, Lock } from 'lucide-react';
 import { toast } from 'sonner';
 import { AgentTaskListNormal } from '@/components/agent-task-list-normal';
 import { XiaohongshuPreview } from '@/components/xiaohongshu-preview';
@@ -2740,14 +2740,35 @@ export default function HomePage() {
                           })}
                           
                           {/* 多平台提示 */}
-                          {selectedAccountIds.length > 1 && (
-                            <div className="bg-amber-50 rounded-xl p-4 border border-amber-200">
-                              <p className="text-sm text-amber-800 flex items-center gap-2">
-                                <Rocket className="w-4 h-4" />
-                                将为 <span className="font-semibold">{selectedAccountIds.length}</span> 个平台分别生成差异化文章
-                              </p>
-                            </div>
-                          )}
+                          {selectedAccountIds.length > 1 && (() => {
+                            // 🔥 两阶段架构：检测是否有公众号账号（基础文章平台）
+                            const hasWechatAccount = selectedAccountIds.some(aId => {
+                              const config = accountConfigs.find(c => c.account.id === aId);
+                              return config?.account.platform === 'wechat_official';
+                            });
+                            const adaptationCount = hasWechatAccount ? selectedAccountIds.length - 1 : selectedAccountIds.length;
+                            
+                            return (
+                              <div className="bg-amber-50 rounded-xl p-4 border border-amber-200">
+                                {hasWechatAccount ? (
+                                  <div className="space-y-1.5">
+                                    <p className="text-sm text-amber-800 flex items-center gap-2">
+                                      <Layers className="w-4 h-4" />
+                                      <span className="font-semibold">基础文章+平台适配</span>协同模式
+                                    </p>
+                                    <p className="text-xs text-amber-700">
+                                      先打磨公众号基础文章 → 定稿后自动适配到其他 {adaptationCount} 个平台
+                                    </p>
+                                  </div>
+                                ) : (
+                                  <p className="text-sm text-amber-800 flex items-center gap-2">
+                                    <Rocket className="w-4 h-4" />
+                                    将为 <span className="font-semibold">{selectedAccountIds.length}</span> 个平台分别生成差异化文章
+                                  </p>
+                                )}
+                              </div>
+                            );
+                          })()}
                         </div>
                       )}
 
@@ -3444,7 +3465,7 @@ export default function HomePage() {
           {/* 子任务列表 - 仅选了账号后按平台分组展示（横向流程图模式） */}
           {platformSubTaskGroups.length > 0 && (
             <div className="space-y-6">
-              {platformSubTaskGroups.map((group) => {
+              {platformSubTaskGroups.map((group, groupIdx) => {
                 const validTasks = group.subTasks.filter(t => t.title.trim());
                 const selectedTask = selectedNodeId
                   ? group.subTasks.find(t => t.id === selectedNodeId)
@@ -3454,8 +3475,32 @@ export default function HomePage() {
                   : -1;
                 const isCurrentGroup = selectedGroupAccountId === group.accountId;
 
+                // 🔥 两阶段架构：判断是否为基础文章组
+                const isBaseArticleGroup = group.platform === 'wechat_official' && groupIdx === 0;
+                const isAdaptationGroup = platformSubTaskGroups.length > 1 && !isBaseArticleGroup;
+
                 return (
                   <div key={group.accountId} className="space-y-4 animate-in fade-in slide-in-from-bottom-2 duration-300">
+                    {/* 🔥 两阶段架构：阶段标识 */}
+                    {isBaseArticleGroup && platformSubTaskGroups.length > 1 && (
+                      <div className="flex items-center gap-2 px-1">
+                        <div className="w-6 h-6 rounded-lg bg-gradient-to-br from-indigo-500 to-indigo-600 flex items-center justify-center shadow-sm">
+                          <Layers className="w-3.5 h-3.5 text-white" />
+                        </div>
+                        <span className="text-sm font-semibold text-indigo-700">阶段1：基础文章</span>
+                        <span className="text-xs text-indigo-500">定稿后自动适配到其他平台</span>
+                      </div>
+                    )}
+                    {isAdaptationGroup && groupIdx === (platformSubTaskGroups[0]?.platform === 'wechat_official' ? 1 : 0) && (
+                      <div className="flex items-center gap-2 px-1">
+                        <div className="w-6 h-6 rounded-lg bg-gradient-to-br from-amber-500 to-amber-600 flex items-center justify-center shadow-sm">
+                          <Lock className="w-3.5 h-3.5 text-white" />
+                        </div>
+                        <span className="text-sm font-semibold text-amber-700">阶段2：平台适配</span>
+                        <span className="text-xs text-amber-500">基于基础文章改写，等待定稿后执行</span>
+                      </div>
+                    )}
+
                     {/* 横向流程图 */}
                     <HorizontalFlowDiagram
                       subTasks={group.subTasks}

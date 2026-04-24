@@ -11,6 +11,7 @@
 
 import type { FlowNode, FlowTemplate, FlowStep, NodeStyleConfig } from '@/components/creation-guide/types';
 import { extractSteps } from '@/components/creation-guide/types';
+import { getExecutorForPlatform } from '@/lib/agents/agent-registry';
 
 // ============ 类型重导出（兼容旧代码） ============
 
@@ -221,6 +222,136 @@ export const USER_PREVIEW_EDIT_EXECUTOR = 'user_preview_edit';
 export function isVirtualExecutor(executor: string | undefined | null): boolean {
   if (!executor) return false;
   return executor === USER_PREVIEW_EDIT_EXECUTOR;
+}
+
+// ============ 多平台协同流程模板（两阶段架构） ============
+
+/**
+ * 多平台协同流程 - 阶段定义
+ *
+ * 阶段1（base_article）：先在公众号平台打磨一篇基础文章
+ * 阶段2（platform_adaptation）：基于基础文章适配到其他平台
+ *
+ * 核心设计：
+ * - 基础文章组：使用公众号流程模板（7步），全部 pending
+ * - 适配组：每个非公众号平台一组（4步），初始状态 blocked
+ * - 定稿触发点：基础文章组 order_index=6（合规整改完成）
+ * - 解锁后适配组 blocked → pending，引擎自动执行
+ */
+
+/**
+ * 适配阶段节点的额外样式
+ */
+const ADAPTATION_NODE_STYLES = {
+  adapt_write: { icon: '🔄', color: 'from-indigo-500 to-purple-600' },
+  adapt_deai: { icon: '✨', color: 'from-cyan-500 to-teal-600' },
+  adapt_preview: { icon: '👁️', color: 'from-purple-500 to-violet-600' },
+  adapt_check: { icon: '✅', color: 'from-amber-500 to-orange-600' },
+} as const;
+
+/**
+ * 获取平台的适配流程步骤（4步精简版）
+ *
+ * 适配流程不包含"分析任务需求"和"合规整改"节点：
+ * - 分析需求已在基础文章阶段完成
+ * - 合规整改由各平台写作Agent自行处理（适配即整改）
+ *
+ * @param platform 目标平台
+ * @returns 适配流程的步骤配置
+ */
+export function getAdaptationSteps(platform: string): Array<{
+  executor: string;
+  title: string;
+  description: string;
+  styleKey: string;
+}> {
+  const executor = getExecutorForPlatform(platform);
+  const platformLabel = {
+    xiaohongshu: '小红书',
+    zhihu: '知乎',
+    douyin: '头条/抖音',
+    weibo: '微博',
+  }[platform] || platform;
+
+  return [
+    {
+      executor,
+      title: `适配${platformLabel}版本`,
+      description: `基于基础文章内容，适配改写为${platformLabel}平台风格和格式。必须基于基础文章改写，不得自行创作新内容`,
+      styleKey: 'adapt_write',
+    },
+    {
+      executor: 'deai-optimizer',
+      title: '去AI化优化',
+      description: `对${platformLabel}适配版本进行去AI化优化，确保内容自然流畅`,
+      styleKey: 'adapt_deai',
+    },
+    {
+      executor: 'user_preview_edit',
+      title: `用户预览${platformLabel}版本`,
+      description: `用户预览${platformLabel}适配版本，可修改或直接确认`,
+      styleKey: 'adapt_preview',
+    },
+    {
+      executor: 'T',
+      title: '合规校验',
+      description: `对${platformLabel}适配版本进行合规性校验`,
+      styleKey: 'adapt_check',
+    },
+  ];
+}
+
+/**
+ * 判断平台是否为基础文章平台（公众号）
+ * 在多平台协同模式中，公众号是唯一的基础文章平台
+ */
+export function isBaseArticlePlatform(platform: string): boolean {
+  return platform === 'wechat_official';
+}
+
+/**
+ * 从账号列表中分离基础组和适配组
+ *
+ * @param accountIds 选中的账号ID列表
+ * @param getAccountInfoFn 获取账号信息的函数
+ * @returns baseAccountId 和 adaptationAccountIds
+ */
+export async function splitBaseAndAdaptationGroups(
+  accountIds: string[],
+  getAccountInfoFn: (id: string) => Promise<{ platform: string; platformLabel: string; accountName: string }>
+): Promise<{
+  baseAccountId: string | null;
+  baseAccountInfo: { platform: string; platformLabel: string; accountName: string } | null;
+  adaptationAccounts: Array<{ accountId: string; platform: string; platformLabel: string; accountName: string }>;
+}> {
+  let baseAccountId: string | null = null;
+  let baseAccountInfo: { platform: string; platformLabel: string; accountName: string } | null = null;
+  const adaptationAccounts: Array<{ accountId: string; platform: string; platformLabel: string; accountName: string }> = [];
+
+  for (const accId of accountIds) {
+    const info = await getAccountInfoFn(accId);
+    if (isBaseArticlePlatform(info.platform) && !baseAccountId) {
+      // 第一个公众号账号作为基础文章组
+      baseAccountId = accId;
+      baseAccountInfo = info;
+    } else {
+      // 其他账号作为适配组
+      adaptationAccounts.push({ accountId: accId, ...info });
+    }
+  }
+
+  // 如果没有公众号账号，第一个账号作为基础文章组
+  if (!baseAccountId && accountIds.length > 0) {
+    const firstId = accountIds[0];
+    const info = await getAccountInfoFn(firstId);
+    baseAccountId = firstId;
+    baseAccountInfo = info;
+    // 从适配组中移除
+    const idx = adaptationAccounts.findIndex(a => a.accountId === firstId);
+    if (idx >= 0) adaptationAccounts.splice(idx, 1);
+  }
+
+  return { baseAccountId, baseAccountInfo, adaptationAccounts };
 }
 
 // ============ 平台流程映射 ============

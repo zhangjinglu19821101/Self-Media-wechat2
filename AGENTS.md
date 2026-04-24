@@ -1532,4 +1532,32 @@
      - **公众号段落规则修正**: 从"去掉碎片化短句"改为"允许段落长短不一"，解决与用户版的矛盾
      - **执行原则**: 新增第5条"可溯源"
      - **绝对禁止项**: 新增独立章节（4条总结性禁令）
+
+75. **两阶段架构（基础文章+平台适配）**: 从"每个平台独立创作"改造为"先打磨基础文章，再适配各平台"
+   - **架构设计**:
+     - **阶段1（基础文章组）**: 公众号账号走完整的7步创作流程（分析→大纲→写作→预览→合规校验→合规整改→上传）
+     - **阶段2（适配组）**: 其他平台走精简的4步适配流程（适配改写→去AI化→预览确认→合规校验），不重新创作
+     - **blocked 状态机制**: 适配组首个任务初始状态为 `blocked`，基础文章定稿（orderIndex≥6）后自动解锁
+     - **独立 commandResultId**: 每个平台组使用独立的 commandResultId，天然隔离文章保存和流程
+     - **跨组内容注入**: 适配组通过 `sourceCommandResultId` 跨组获取基础文章内容
+   - **数据库字段**:
+     - `metadata.phase`: `'base_article'` | `'platform_adaptation'`
+     - `metadata.multiPlatformGroupId`: 多平台组关联ID
+     - `metadata.sourceCommandResultId`: 适配组指向基础文章组的 commandResultId
+     - `metadata.adaptationPlatform`: 适配目标平台
+   - **核心文件变更**:
+     - `flow-templates.ts`: 新增 `getAdaptationSteps(platform)` 返回4步精简流程；新增 `splitBaseAndAdaptationGroups()` 分离基础组和适配组
+     - `simple-split/route.ts`: 重写多平台模式，基础组使用完整模板，适配组使用 blocked 状态
+     - `subtask-execution-engine.ts`:
+       - `unlockAdaptationGroupsIfNeeded()`: 定稿点（orderIndex≥6）触发，查询 blocked 任务并解锁为 pending
+       - `buildExecutionContext()`: 适配任务查询 `sourceCommandResultId` 基础文章，注入到 `priorTaskResults[0]`（orderIndex=0）
+       - `callExecutorAgentDirectly()`: 适配任务追加"平台适配模式"指令前缀
+     - `insurance-xiaohongshu.md/zhihu.md/toutiao.md`: 新增"平台适配模式"章节，明确基于基础文章改写的5条核心规则
+     - `agent-task-list-normal.tsx`: 新增 `blocked` 状态显示；分组增加阶段标签（"基础文章"/"XX适配"）；适配组 blocked 状态使用琥珀色主题
+     - `full-home/page.tsx`: 账号选择区域显示"基础文章+平台适配"协同模式提示；平台组预览区域显示阶段分隔标签
+   - **设计原则**:
+     - 只阻塞适配组首个任务，后续任务为 pending，引擎按 orderIndex 自然顺序执行
+     - 定稿触发点为 orderIndex≥6（合规整改完成），基础文章内容不再变化
+     - 原子性解锁：二次校验 status=blocked 防并发
+     - 前端零侵入：后端改造，前端通过 metadata 字段自动感知两阶段结构
    - **未改动部分**: 输出格式/信封格式/分平台文风校准/格式保持规则（系统版原样保留）

@@ -4862,6 +4862,73 @@ export class SubtaskExecutionEngine {
       });
     }
 
+    // 🔥🔥🔥 两阶段架构：适配任务跨组注入基础文章
+    // 如果当前任务是适配组（metadata.phase === 'platform_adaptation'），
+    // 需要额外查询基础文章组（sourceCommandResultId）的内容
+    try {
+      const taskMetadata = task.metadata as Record<string, any> | null;
+      const taskPhase = taskMetadata?.phase;
+
+      if (taskPhase === 'platform_adaptation' && taskMetadata?.sourceCommandResultId) {
+        const sourceCommandResultId = taskMetadata.sourceCommandResultId;
+        console.log('[SubtaskEngine] 🔥 适配任务检测到，开始跨组注入基础文章', {
+          sourceCommandResultId,
+          adaptationPlatform: taskMetadata.adaptationPlatform,
+        });
+
+        // 查询基础文章组的所有已完成任务
+        const baseArticleTasks = await db
+          .select()
+          .from(agentSubTasks)
+          .where(
+            and(
+              eq(agentSubTasks.commandResultId, sourceCommandResultId),
+              eq(agentSubTasks.status, 'completed')
+            )
+          )
+          .orderBy(agentSubTasks.orderIndex);
+
+        // 提取基础文章内容：优先找写作 Agent 的 result_text
+        let baseArticleContent = '';
+        let baseArticleTitle = '';
+        for (const baseTask of baseArticleTasks) {
+          if (isWritingAgent(baseTask.fromParentsExecutor)) {
+            let content = baseTask.resultText || '';
+            if (!content && baseTask.resultData) {
+              content = this.extractResultTextFromResultData(baseTask.resultData, baseTask.fromParentsExecutor);
+            }
+            if (content) {
+              baseArticleContent = content;
+              baseArticleTitle = baseTask.taskTitle || '基础文章';
+              console.log('[SubtaskEngine] 🔥 找到基础文章内容，长度:', content.length, {
+                baseTaskId: baseTask.id,
+                orderIndex: baseTask.orderIndex,
+                executor: baseTask.fromParentsExecutor,
+              });
+              break;
+            }
+          }
+        }
+
+        // 将基础文章作为"特殊前序"（orderIndex=0）注入 priorTaskResults 最前面
+        if (baseArticleContent) {
+          priorTaskResults.unshift({
+            orderIndex: 0, // 特殊序号，表示基础文章
+            taskTitle: `[基础文章] ${baseArticleTitle}`,
+            executor: 'base_article',
+            resultText: baseArticleContent,
+          });
+          console.log('[SubtaskEngine] 🔥 已将基础文章注入 priorTaskResults（orderIndex=0），长度:', baseArticleContent.length);
+        } else {
+          console.warn('[SubtaskEngine] 🔥 ⚠️ 适配任务未找到基础文章内容，sourceCommandResultId:', sourceCommandResultId);
+        }
+      }
+    } catch (baseArticleError) {
+      console.warn('[SubtaskEngine] 🔥 跨组注入基础文章失败（不影响主流程）:', {
+        message: baseArticleError instanceof Error ? baseArticleError.message : String(baseArticleError)
+      });
+    }
+
     // 🔴🔴🔴 【重构】使用 priorTaskResults 构建前序信息，每个任务按 order_index 分组
     // 获取所有前序任务的 result_text，让 LLM 自己判断需要哪些内容
     let finalPriorStepOutput = '';
@@ -7096,6 +7163,135 @@ export class SubtaskExecutionEngine {
 
     // Phase 3: 核心锚点自动归档（insurance-d 完成后）
     await this.archiveCoreAnchorsIfNeeded(latestTaskForCompleted);
+
+    // 🔥🔥🔥 两阶段架构：基础文章定稿后解锁适配组
+    await this.unlockAdaptationGroupsIfNeeded(latestTaskForCompleted);
+  }
+
+  /**
+   * 🔥🔥🔥 两阶段架构：基础文章定稿后解锁适配组
+   *
+   * 触发条件：
+   * 1. 任务属于基础文章组（metadata.phase === 'base_article'）
+   * 2. 任务是写作 Agent（insurance-d）完成合规整改（orderIndex >= 6）
+   *
+   * 解锁逻辑：
+   * 1. 按 multiPlatformGroupId 查找所有 blocked 的适配组任务
+   * 2. 按适配组（commandResultId）分组
+   * 3. 每组只解锁第一个任务（blocked → pending）
+   * 4. 原子性更新（二次校验 status=blocked 防并发）
+   * 5. 主动触发引擎执行
+   */
+  private async unlockAdaptationGroupsIfNeeded(task: typeof agentSubTasks.$inferSelect): Promise<void> {
+    try {
+      const taskMetadata = task.metadata as Record<string, any> | null;
+      if (!taskMetadata) return;
+
+      // 条件1：必须是基础文章组的任务
+      if (taskMetadata.phase !== 'base_article') {
+        return;
+      }
+
+      // 条件2：必须是多平台模式
+      const multiPlatformGroupId = taskMetadata.multiPlatformGroupId;
+      if (!multiPlatformGroupId) {
+        return;
+      }
+
+      // 条件3：必须是合规整改完成（orderIndex >= 6）或最终步骤完成
+      // 合规整改是公众号流程的 orderIndex=6，这是基础文章内容不再变化的最早时刻
+      const isFinalizationPoint = task.orderIndex >= 6;
+      if (!isFinalizationPoint) {
+        console.log('[SubtaskEngine] 🔥 基础文章组任务完成，但尚未到达定稿点', {
+          orderIndex: task.orderIndex,
+          taskId: task.id,
+        });
+        return;
+      }
+
+      console.log('[SubtaskEngine] 🔥🔥🔥 基础文章定稿点已到达，开始解锁适配组', {
+        taskId: task.id,
+        orderIndex: task.orderIndex,
+        multiPlatformGroupId,
+      });
+
+      // 查找所有 blocked 的适配组任务
+      const blockedTasks = await db
+        .select()
+        .from(agentSubTasks)
+        .where(
+          and(
+            sql`${agentSubTasks.metadata}->>'multiPlatformGroupId' = ${multiPlatformGroupId}`,
+            eq(agentSubTasks.status, 'blocked')
+          )
+        );
+
+      if (blockedTasks.length === 0) {
+        console.log('[SubtaskEngine] 🔥 没有找到 blocked 的适配组任务，无需解锁');
+        return;
+      }
+
+      console.log('[SubtaskEngine] 🔥 找到 blocked 适配组任务:', blockedTasks.length, '个');
+
+      // 按 commandResultId 分组
+      const groups: Record<string, typeof agentSubTasks.$inferSelect[]> = {};
+      for (const t of blockedTasks) {
+        const gid = t.commandResultId;
+        if (!groups[gid]) groups[gid] = [];
+        groups[gid].push(t);
+      }
+
+      // 每组只解锁第一个任务（按 orderIndex 排序）
+      const unlockedGroups: string[] = [];
+      for (const [groupId, tasks] of Object.entries(groups)) {
+        const sortedTasks = tasks.sort((a, b) => a.orderIndex - b.orderIndex);
+        const firstTask = sortedTasks[0];
+
+        // 原子性更新：二次校验 status=blocked 防并发
+        const updateResult = await db
+          .update(agentSubTasks)
+          .set({
+            status: 'pending',
+            updatedAt: getCurrentBeijingTime(),
+          })
+          .where(
+            and(
+              eq(agentSubTasks.id, firstTask.id),
+              eq(agentSubTasks.status, 'blocked') // 二次校验
+            )
+          )
+          .returning();
+
+        if (updateResult.length > 0) {
+          unlockedGroups.push(groupId);
+          console.log('[SubtaskEngine] 🔥 已解锁适配组首个任务:', {
+            groupId,
+            taskId: firstTask.id,
+            orderIndex: firstTask.orderIndex,
+            taskTitle: firstTask.taskTitle,
+          });
+        } else {
+          console.warn('[SubtaskEngine] ⚠️ 适配组任务解锁失败（可能已被其他进程解锁）:', {
+            groupId,
+            taskId: firstTask.id,
+          });
+        }
+      }
+
+      if (unlockedGroups.length > 0) {
+        console.log('[SubtaskEngine] 🔥🔥🔥 成功解锁', unlockedGroups.length, '个适配组，触发引擎执行');
+
+        // 主动触发引擎执行（延迟 1 秒，确保数据库状态已持久化）
+        setTimeout(() => {
+          this.execute().catch(err => {
+            console.error('[SubtaskEngine] 🔥 适配组解锁后引擎执行失败:', err);
+          });
+        }, 1000);
+      }
+    } catch (error) {
+      console.error('[SubtaskEngine] 🔥 解锁适配组失败（不影响基础文章流程）:', error);
+      // 不影响基础文章的主流程
+    }
   }
 
   /**
@@ -7368,6 +7564,17 @@ export class SubtaskExecutionEngine {
           { hasImageStructureRules: _hasImageStructureRules }
         );
 
+        // 🔥🔥🔥 两阶段架构：适配模式前缀
+        // 如果当前任务是适配组（metadata.phase === 'platform_adaptation'），
+        // 追加"平台适配模式"指令，要求基于基础文章改写
+        let adaptationModePrefix = '';
+        if (taskMetadata?.phase === 'platform_adaptation') {
+          const adaptationPlatform = taskMetadata.adaptationPlatform || taskMetadata.platform || '';
+          const platformLabel = taskMetadata.platformLabel || adaptationPlatform;
+          adaptationModePrefix = `\n【平台适配模式 - 最高优先级指令】\n你正在执行"平台适配"任务。基础文章已完成定稿，你需要基于基础文章的内容进行平台适配改写。\n核心规则：\n1. 必须基于基础文章内容改写，不得自行创作新的核心论点、数据或案例\n2. 保留基础文章的核心观点和逻辑结构\n3. 按照${platformLabel}平台风格和格式进行改写\n4. 可以调整表达方式、段落结构、用词风格以适应平台特点\n5. 基础文章内容已在"前序任务执行结果"中提供（order_index=0 的"基础文章"条目）\n\n`;
+          console.log('[SubtaskEngine] 🔥 适配模式前缀已注入，平台:', platformLabel);
+        }
+
         // 🔥🔥🔥 【P0修复】提前读取内容模板，获取 cardCountMode 和 promptInstruction
         // cardCountMode 优先级：1. 内容模板的 cardCountMode  2. metadata 中的 imageCountMode（兼容旧数据）3. 小红书默认 5-card
         const VALID_CARD_COUNT_MODES = ['3-card', '5-card', '7-card'] as const;
@@ -7445,8 +7652,8 @@ export class SubtaskExecutionEngine {
           executorType, // 🔥 传递 executorType 决定加载哪个提示词文件
           subTaskRole: taskSubTaskRole, // 🔥 Phase 3.5: 传递子任务角色（outline_generation / full_article）
           taskInstruction: isFullArticleTask && _confirmedOutline
-            ? `${platformPrefix}【已确认的创作大纲（必须严格按照此大纲展开写作）】\n\n${_confirmedOutline}\n\n原始创作指令：${task.taskDescription}`
-            : `${platformPrefix}${task.taskDescription || ''}`,
+            ? `${adaptationModePrefix}${platformPrefix}【已确认的创作大纲（必须严格按照此大纲展开写作）】\n\n${_confirmedOutline}\n\n原始创作指令：${task.taskDescription}`
+            : `${adaptationModePrefix}${platformPrefix}${task.taskDescription || ''}`,
           userOpinion: _userOpinionAndMaterials?.userOpinion ?? task.userOpinion,
           materials: _materialsContent ? [_materialsContent] : undefined,
           targetWordCount: taskExtension.targetWordCount,

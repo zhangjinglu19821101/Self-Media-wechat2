@@ -14,7 +14,7 @@ import { platformAccounts, PLATFORM_LABELS } from '@/lib/db/schema/style-templat
 import { v4 as uuidv4 } from 'uuid';
 import { sql, eq } from 'drizzle-orm';
 import { getWorkspaceId } from '@/lib/auth/context';
-import { getFlowTemplate, SubTaskTemplate } from '@/lib/agents/flow-templates';
+import { getFlowTemplate, SubTaskTemplate, splitBaseAndAdaptationGroups, getAdaptationSteps, isBaseArticlePlatform } from '@/lib/agents/flow-templates';
 import { getExecutorForPlatform, isWritingAgent } from '@/lib/agents/agent-registry';
 
 /**
@@ -209,137 +209,204 @@ export async function POST(request: NextRequest) {
     const isMultiPlatform = effectiveAccountIds.length > 1;
 
     if (isMultiPlatform) {
-      // ========== 多平台模式：每个账号创建独立的一组子任务（独立 commandResultId） ==========
+      // ========== 多平台协同模式（两阶段架构） ==========
+      // 阶段1：基础文章组（公众号）→ 全部 pending
+      // 阶段2：适配组（小红书/知乎/头条等）→ 全部 blocked，基础文章定稿后解锁
       const multiPlatformGroupId = `mpg-${newTempSessionId}`;
-      console.log(`🔵 [Agent B 简化拆解] 多平台模式：${effectiveAccountIds.length} 个账号，multiPlatformGroupId=${multiPlatformGroupId}`);
+      console.log(`🔵 [Agent B 简化拆解] 多平台协同模式：${effectiveAccountIds.length} 个账号，multiPlatformGroupId=${multiPlatformGroupId}`);
+
+      // 分离基础组和适配组
+      const { baseAccountId, baseAccountInfo, adaptationAccounts } = await splitBaseAndAdaptationGroups(
+        effectiveAccountIds,
+        getAccountInfo
+      );
+
+      if (!baseAccountId || !baseAccountInfo) {
+        return NextResponse.json(
+          { success: false, error: '多平台模式必须至少选择一个账号作为基础文章组' },
+          { status: 400 }
+        );
+      }
+
+      console.log(`🔵 [Agent B 简化拆解] 基础文章组: ${baseAccountInfo.platformLabel}(${baseAccountInfo.accountName}), accountId=${baseAccountId}`);
+      console.log(`🔵 [Agent B 简化拆解] 适配组: ${adaptationAccounts.map(a => `${a.platformLabel}(${a.accountName})`).join(', ')}`);
 
       // P1-1 修复：使用事务保证多组子任务的原子性
       await db.transaction(async (tx) => {
-        for (let groupIdx = 0; groupIdx < effectiveAccountIds.length; groupIdx++) {
-          const accId = effectiveAccountIds[groupIdx];
-          const accountInfo = await getAccountInfo(accId);
-          // 🔥 每个平台组使用独立的 commandResultId（标准 UUID，分组信息存储在 metadata 中）
-          const groupCommandResultId = uuidv4();
+        // ========== 阶段1：创建基础文章组（pending） ==========
+        const baseCommandResultId = uuidv4();
+        platformGroupsInfo.push({
+          accountId: baseAccountId,
+          platform: baseAccountInfo.platform,
+          platformLabel: baseAccountInfo.platformLabel,
+          accountName: baseAccountInfo.accountName,
+          commandResultId: baseCommandResultId,
+        });
 
-          platformGroupsInfo.push({
-            accountId: accId,
-            platform: accountInfo.platform,
-            platformLabel: accountInfo.platformLabel,
-            accountName: accountInfo.accountName,
-            commandResultId: groupCommandResultId,
-          });
-
-          console.log(`🔵 [Agent B 简化拆解] 创建第 ${groupIdx + 1}/${effectiveAccountIds.length} 组子任务: ${accountInfo.platformLabel}(${accountInfo.accountName})`);
-
-          // 🔥 多平台步骤来源：优先使用前端用户编辑的步骤，否则使用流程模板兜底
-          let platformSubTasks;
-          if (hasFrontendSteps) {
-            // 🔥 使用前端用户编辑的步骤（按 accountId 筛选该平台的子任务）
-            platformSubTasks = effectiveSubTasks.filter((st: any) => st.accountId === accId);
-            // P2: 空状态回退到流程模板
-            if (platformSubTasks.length === 0) {
-              const fallbackTemplate = getFlowTemplate(accountInfo.platform);
-              platformSubTasks = fallbackTemplate.steps.map(step => ({
-                title: step.title,
-                description: step.description,
-                executor: step.executor,
-                orderIndex: step.orderIndex,
-              }));
-              console.log(`🔵 [Agent B 简化拆解] ⚠️ ${accountInfo.platformLabel} 前端步骤为空，回退到流程模板: ${fallbackTemplate.name}（${platformSubTasks.length} 步）`);
-            } else {
-              console.log(`🔵 [Agent B 简化拆解] 🔥 ${accountInfo.platformLabel} 使用前端编辑步骤（${platformSubTasks.length} 步）`);
-            }
-          } else {
-            // 无前端步骤 → 使用流程模板
-            const flowTemplate = getFlowTemplate(accountInfo.platform);
-            platformSubTasks = flowTemplate.steps.map(step => ({
+        // 获取基础文章组的步骤
+        let baseSubTasks;
+        if (hasFrontendSteps) {
+          baseSubTasks = effectiveSubTasks.filter((st: any) => st.accountId === baseAccountId);
+          if (baseSubTasks.length === 0) {
+            const fallbackTemplate = getFlowTemplate(baseAccountInfo.platform);
+            baseSubTasks = fallbackTemplate.steps.map(step => ({
               title: step.title,
               description: step.description,
               executor: step.executor,
               orderIndex: step.orderIndex,
             }));
-            console.log(`🔵 [Agent B 简化拆解] 🔥 ${accountInfo.platformLabel} 使用流程模板: ${flowTemplate.name}（${platformSubTasks.length} 步）`);
+            console.log(`🔵 [Agent B 简化拆解] ⚠️ 基础组前端步骤为空，回退到流程模板: ${fallbackTemplate.name}`);
+          }
+        } else {
+          const flowTemplate = getFlowTemplate(baseAccountInfo.platform);
+          baseSubTasks = flowTemplate.steps.map(step => ({
+            title: step.title,
+            description: step.description,
+            executor: step.executor,
+            orderIndex: step.orderIndex,
+          }));
+          console.log(`🔵 [Agent B 简化拆解] 基础组使用流程模板: ${flowTemplate.name}（${baseSubTasks.length} 步）`);
+        }
+
+        for (let i = 0; i < baseSubTasks.length; i++) {
+          const subTask = baseSubTasks[i];
+          const newSubTaskId = uuidv4();
+
+          const taskUserOpinion = subTask.userOpinion !== undefined
+            ? subTask.userOpinion
+            : (userOpinion || null);
+          const taskMaterialIds = subTask.materialIds !== undefined
+            ? subTask.materialIds
+            : (materialIds || []);
+          const taskCaseIds = subTask.caseIds !== undefined
+            ? subTask.caseIds
+            : (caseIds || []);
+
+          const resolvedExecutor = resolveExecutorForPlatform(baseAccountInfo.platform, subTask.executor);
+          let taskTitleForDb = subTask.title;
+          if (isWritingAgent(subTask.executor)) {
+            let cleanedTitle = subTask.title
+              .replace(/\[微信公众号\]\s*/g, '')
+              .replace(/\[小红书\]\s*/g, '')
+              .replace(/\[知乎\]\s*/g, '')
+              .replace(/\[抖音\]\s*/g, '')
+              .replace(/\[微博\]\s*/g, '');
+            taskTitleForDb = `[${baseAccountInfo.platformLabel}] ${cleanedTitle}`;
           }
 
-          for (let i = 0; i < platformSubTasks.length; i++) {
-            const subTask = platformSubTasks[i];
+          const inserted = await tx.insert(agentSubTasks).values({
+            id: newSubTaskId,
+            commandResultId: baseCommandResultId,
+            fromParentsExecutor: resolvedExecutor,
+            taskTitle: taskTitleForDb,
+            taskDescription: subTask.description || '',
+            status: 'pending', // 🔥 基础文章组全部 pending
+            orderIndex: subTask.orderIndex || i + 1,
+            workspaceId,
+            executionDate: executionDate || new Date().toISOString().split('T')[0],
+            userOpinion: taskUserOpinion,
+            materialIds: taskMaterialIds,
+            relatedMaterials: relatedMaterials || null,
+            structureName: subTask.structureName !== undefined ? subTask.structureName : (structureName || null),
+            structureDetail: subTask.structureDetail !== undefined ? subTask.structureDetail : (structureDetail || null),
+            metadata: {
+              source: 'agent-b-simple-split',
+              phase: 'base_article', // 🔥 阶段标识：基础文章
+              tempSessionId: newTempSessionId,
+              originalTaskTitle: taskTitle,
+              originalTaskDescription: taskDescription,
+              guideSource: (subTask.userOpinion !== undefined || subTask.materialIds !== undefined)
+                ? 'task-level' : 'global',
+              accountId: baseAccountId,
+              accountIds: effectiveAccountIds,
+              multiPlatformGroupId,
+              platformGroupIndex: 0, // 基础组索引为 0
+              platformGroupTotal: effectiveAccountIds.length,
+              platformLabel: baseAccountInfo.platformLabel,
+              platform: baseAccountInfo.platform,
+              baseCommandResultId, // 🔥 基础组记录自己的 commandResultId
+              ...(derivedImageCountMode ? { imageCountMode: derivedImageCountMode } : {}),
+              ...(contentTemplateId ? { contentTemplateId } : {}),
+              ...(taskCaseIds.length > 0 ? { caseIds: taskCaseIds } : {}),
+            },
+            createdAt: new Date(),
+            updatedAt: new Date(),
+          }).returning();
+
+          insertedSubTasks.push(inserted[0]);
+          console.log(`🔵 [Agent B 简化拆解] [基础组] 已插入子任务 ${i + 1}/${baseSubTasks.length}: ${taskTitleForDb}`);
+        }
+
+        // ========== 阶段2：创建适配组（blocked） ==========
+        for (let adaptIdx = 0; adaptIdx < adaptationAccounts.length; adaptIdx++) {
+          const adaptAcc = adaptationAccounts[adaptIdx];
+          const adaptCommandResultId = uuidv4();
+
+          platformGroupsInfo.push({
+            accountId: adaptAcc.accountId,
+            platform: adaptAcc.platform,
+            platformLabel: adaptAcc.platformLabel,
+            accountName: adaptAcc.accountName,
+            commandResultId: adaptCommandResultId,
+          });
+
+          console.log(`🔵 [Agent B 简化拆解] 创建适配组 ${adaptIdx + 1}/${adaptationAccounts.length}: ${adaptAcc.platformLabel}(${adaptAcc.accountName})`);
+
+          // 获取适配步骤（4步精简版）
+          const adaptationSteps = getAdaptationSteps(adaptAcc.platform);
+
+          for (let i = 0; i < adaptationSteps.length; i++) {
+            const step = adaptationSteps[i];
             const newSubTaskId = uuidv4();
 
-            // 优先使用子任务级别的创作引导配置，否则使用全局配置
-            const taskUserOpinion = subTask.userOpinion !== undefined
-              ? subTask.userOpinion
-              : (userOpinion || null);
-            const taskMaterialIds = subTask.materialIds !== undefined
-              ? subTask.materialIds
-              : (materialIds || []);
-            const taskCaseIds = subTask.caseIds !== undefined
-              ? subTask.caseIds
-              : (caseIds || []);
+            const resolvedExecutor = resolveExecutorForPlatform(adaptAcc.platform, step.executor);
+            const taskTitleForDb = `[${adaptAcc.platformLabel}] ${step.title}`;
 
-            // 🔥 为写作类子任务按平台路由到对应 Agent + 添加平台前缀
-            const resolvedExecutor = resolveExecutorForPlatform(accountInfo.platform, subTask.executor);
-            let taskTitleForDb = subTask.title;
-            if (isWritingAgent(subTask.executor)) {
-              // 清理原始标题中的平台描述，避免歧义
-              let cleanedTitle = subTask.title
-                .replace(/\[微信公众号\]\s*/g, '')
-                .replace(/\[小红书\]\s*/g, '')
-                .replace(/\[知乎\]\s*/g, '')
-                .replace(/\[抖音\]\s*/g, '')
-                .replace(/\[微博\]\s*/g, '')
-                .replace(/公众号文章/g, '文章')
-                .replace(/公众号初稿/g, '初稿')
-                .replace(/公众号/g, '');
-              
-              taskTitleForDb = `[${accountInfo.platformLabel}] ${cleanedTitle}`;
-            }
+            // 🔥 只有第一个适配任务为 blocked，后续任务为 pending
+            // 引擎按 orderIndex 顺序执行，后续任务不会在第一个之前运行
+            const taskStatus = i === 0 ? 'blocked' : 'pending';
 
             const inserted = await tx.insert(agentSubTasks).values({
               id: newSubTaskId,
-              commandResultId: groupCommandResultId, // 🔥 独立的 commandResultId
+              commandResultId: adaptCommandResultId,
               fromParentsExecutor: resolvedExecutor,
               taskTitle: taskTitleForDb,
-              taskDescription: subTask.description || '',
-              status: 'pending',
-              orderIndex: subTask.orderIndex || i + 1, // 🔥 每组独立从 1 开始
+              taskDescription: step.description || '',
+              status: taskStatus,
+              orderIndex: i + 1,
               workspaceId,
               executionDate: executionDate || new Date().toISOString().split('T')[0],
-              userOpinion: taskUserOpinion,
-              materialIds: taskMaterialIds,
+              userOpinion: userOpinion || null,
+              materialIds: materialIds || [],
               relatedMaterials: relatedMaterials || null,
-              structureName: subTask.structureName !== undefined ? subTask.structureName : (structureName || null),
-              structureDetail: subTask.structureDetail !== undefined ? subTask.structureDetail : (structureDetail || null),
               metadata: {
                 source: 'agent-b-simple-split',
-                phase: 'creation',
+                phase: 'platform_adaptation', // 🔥 阶段标识：平台适配
                 tempSessionId: newTempSessionId,
                 originalTaskTitle: taskTitle,
                 originalTaskDescription: taskDescription,
-                guideSource: (subTask.userOpinion !== undefined ||
-                              subTask.materialIds !== undefined)
-                  ? 'task-level'
-                  : 'global',
-                // 🔥 多平台发布字段
-                accountId: accId, // 当前子任务归属的账号ID
-                accountIds: effectiveAccountIds, // 所有选中的账号ID列表
-                multiPlatformGroupId, // 多平台组 ID
-                platformGroupIndex: groupIdx, // 平台组索引
-                platformGroupTotal: effectiveAccountIds.length, // 总共几组
-                platformLabel: accountInfo.platformLabel, // 平台显示名称
-                platform: accountInfo.platform, // 🔴 平台标识（供 user_preview_edit 等虚拟执行器使用）
-                ...(derivedImageCountMode ? { imageCountMode: derivedImageCountMode } : {}), // 🔥 小红书图片模式（从内容模板推导或前端传入）
-                ...(contentTemplateId ? { contentTemplateId } : {}), // 🔥🔥 内容模板ID
-                ...(taskCaseIds.length > 0 ? { caseIds: taskCaseIds } : {}), // 🔥 行业案例ID列表
+                guideSource: 'global',
+                accountId: adaptAcc.accountId,
+                accountIds: effectiveAccountIds,
+                multiPlatformGroupId,
+                platformGroupIndex: adaptIdx + 1, // 适配组索引从 1 开始
+                platformGroupTotal: effectiveAccountIds.length,
+                platformLabel: adaptAcc.platformLabel,
+                platform: adaptAcc.platform,
+                sourceCommandResultId: baseCommandResultId, // 🔥 指向基础文章组
+                adaptationPlatform: adaptAcc.platform, // 🔥 适配目标平台
+                ...(derivedImageCountMode ? { imageCountMode: derivedImageCountMode } : {}),
+                ...(contentTemplateId ? { contentTemplateId } : {}),
               },
               createdAt: new Date(),
               updatedAt: new Date(),
             }).returning();
 
             insertedSubTasks.push(inserted[0]);
-            console.log(`🔵 [Agent B 简化拆解] 已插入子任务 [${accountInfo.platformLabel}] ${i + 1}/${platformSubTasks.length}: ${taskTitleForDb}`);
+            console.log(`🔵 [Agent B 简化拆解] [适配组-${adaptAcc.platformLabel}] 已插入子任务 ${i + 1}/${adaptationSteps.length}: ${taskTitleForDb} (blocked)`);
           }
         }
-      }); // 事务结束：任一 insert 失败则全部回滚
+      }); // 事务结束
     } else {
       // ========== 单平台模式：与改造前完全一致 ==========
       const singleAccountId = effectiveAccountIds[0] || accountId || null;
@@ -421,7 +488,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      message: `成功创建 ${insertedSubTasks.length} 个子任务${isMultiPlatform ? `（${effectiveAccountIds.length} 个平台 × ${effectiveSubTasks.length} 个步骤）` : ''}`,
+      message: `成功创建 ${insertedSubTasks.length} 个子任务${isMultiPlatform ? `（基础文章+平台适配协同模式）` : ''}`,
       data: {
         insertedCount: insertedSubTasks.length,
         subTasks: insertedSubTasks,
