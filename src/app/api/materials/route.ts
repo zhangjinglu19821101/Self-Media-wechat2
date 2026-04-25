@@ -9,6 +9,7 @@ import { db } from '@/lib/db';
 import { materialLibrary } from '@/lib/db/schema/material-library';
 import { desc, eq, ilike, or, sql, and } from 'drizzle-orm';
 import { getWorkspaceId } from '@/lib/auth/context';
+import { expandKeywordsWithSynonyms } from '@/lib/utils/synonym-dictionary';
 
 /**
  * GET /api/materials
@@ -62,14 +63,22 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // 关键词搜索
+    // 关键词搜索（v2: 支持同义词扩展）
     if (search) {
-      conditions.push(
-        or(
-          ilike(materialLibrary.title, `%${search}%`),
-          ilike(materialLibrary.content, `%${search}%`)
-        )!
-      );
+      // 将搜索词拆分并扩展同义词
+      const searchWords = search.split(/[\s,，、]+/).filter(s => s.length >= 2);
+      const expandedWords = expandKeywordsWithSynonyms(searchWords);
+      // 保留原始搜索词（兜底精确匹配）
+      if (!expandedWords.includes(search)) {
+        expandedWords.push(search);
+      }
+
+      const searchConditions = expandedWords.flatMap((word) => [
+        ilike(materialLibrary.title, `%${word}%`),
+        ilike(materialLibrary.content, `%${word}%`),
+      ]);
+
+      conditions.push(or(...searchConditions)!);
     }
 
     // 执行查询

@@ -4,11 +4,13 @@ import { materialLibrary } from '@/lib/db/schema/material-library';
 import { infoSnippets } from '@/lib/db/schema/info-snippets';
 import { or, like, desc, and, eq, sql, notInArray } from 'drizzle-orm';
 import { getWorkspaceId } from '@/lib/auth/context';
+import { expandKeywordsWithSynonyms } from '@/lib/utils/synonym-dictionary';
+import { expandWithLLM } from '@/lib/services/semantic-expand-service';
 
 /**
  * GET /api/materials/recommend?instruction=xxx&limit=5
  *
- * 多路召回 + 综合分排序（关键词×3 + 标签×2 + 热度×1）
+ * 多路召回 + 同义词扩展 + 综合分排序（关键词×3 + 标签×2 + 热度×1）
  * 同时召回信息速记中未入库的相关内容
  */
 export async function GET(request: NextRequest) {
@@ -23,7 +25,11 @@ export async function GET(request: NextRequest) {
     }
 
     // 从指令中提取关键词和标签候选
-    const { keywords, tagCandidates } = extractKeywordsAndTags(instruction);
+    const { keywords: rawKeywords, tagCandidates } = extractKeywordsAndTags(instruction);
+
+    // ─── 同义词扩展 ───
+    // 将"继承"扩展为["继承", "遗产", "传承", "遗嘱", ...]
+    const keywords = expandKeywordsWithSynonyms(rawKeywords);
 
     if (keywords.length === 0 && tagCandidates.length === 0) {
       return NextResponse.json({ success: true, data: [], snippets: [] });
@@ -79,6 +85,22 @@ export async function GET(request: NextRequest) {
     keywordResults.forEach(addCandidate);
     tagResults.forEach(addCandidate);
     hotResults.forEach(addCandidate);
+
+    // ─── LLM 语义扩展兜底 ───
+    // 当关键词+同义词+标签都搜不到任何素材时，用 LLM 提取语义相关词再搜一轮
+    if (candidates.length === 0 && instruction.length >= 4) {
+      try {
+        const llmKeywords = await expandWithLLM(instruction, keywords);
+        if (llmKeywords.length > 0) {
+          const expandedWithLLM = expandKeywordsWithSynonyms(llmKeywords);
+          const llmResults = await recallByKeywords(workspaceId, expandedWithLLM);
+          llmResults.forEach(addCandidate);
+        }
+      } catch (e) {
+        // LLM 兜底失败不影响主流程
+        console.warn('[materials/recommend] LLM 语义扩展兜底失败:', e instanceof Error ? e.message : String(e));
+      }
+    }
 
     // ─── 统一计算所有候选的命中数（P1-4: 消除冗余计算） ───
     candidates.forEach((c) => {
@@ -273,20 +295,34 @@ async function recallSnippets(workspaceId: string, keywords: string[]) {
 
 // ─── 关键词 + 标签提取 ───
 function extractKeywordsAndTags(instruction: string): { keywords: string[]; tagCandidates: string[] } {
-  // 保险领域关键词
+  // 保险领域关键词（v2: 扩展覆盖更多场景）
   const domainKeywords = [
+    // 险种
     '增额寿', '增额终身寿', '年金', '年金险', '保险', '重疾', '重疾险', '医疗险',
     '意外险', '寿险', '终身寿', '定期寿', '万能险', '分红险', '投连险',
+    '港险', '香港保险', '年金保险', '医疗保险', '意外保险', '人寿保险',
+    // 金融行为
     '存款', '定期', '理财', '利率', '收益', '领取', '退保', '投保', '理赔',
     '保费', '保额', '现金价值', '保障', '免赔', '续保', '趸交', '期交',
     '银行', '保险年金', '储蓄', '到期', '加息', '降息',
+    // 传承/财富
+    '继承', '遗产', '传承', '遗嘱', '财富传承', '资产传承', '家族信托', '信托',
+    // 人群
+    '高净值', '老年人', '养老', '孩子', '子女', '家庭',
+    // 场景
+    '避坑', '踩坑', '省钱', '警惕', '拒赔', '理赔纠纷',
+    // 健康
+    '癌症', '住院', '手术', '体检', '大病', '肿瘤',
   ];
 
-  // 保险领域标签词（用于匹配素材库的 topicTags / sceneTags）
+  // 保险领域标签词（v2: 扩展覆盖更多场景）
   const tagWords = [
     '港险', '重疾', '医疗险', '意外险', '增额寿', '年金', '终身寿', '定期寿',
     '避坑', '踩坑', '省钱', '警惕', '收益对比', '理赔纠纷', '投保攻略',
     '开头案例', '结尾金句', '数据支撑', '对比分析',
+    // 新增标签
+    '继承', '遗产', '传承', '遗嘱', '信托', '真实案例', '保险',
+    '高净值', '养老', '少儿', '家庭', '智能化',
   ];
 
   // P2: 停用词过滤，去除无意义的通用分词
@@ -323,12 +359,12 @@ function extractKeywordsAndTags(instruction: string): { keywords: string[]; tagC
     .filter((s) => s.length >= 2 && s.length <= 10 && !stopWords.has(s));
 
   for (const part of parts) {
-    if (!keywords.includes(part) && keywords.length < 8) {
+    if (!keywords.includes(part) && keywords.length < 12) {
       keywords.push(part);
     }
   }
 
-  return { keywords: keywords.slice(0, 8), tagCandidates };
+  return { keywords: keywords.slice(0, 12), tagCandidates };
 }
 
 // ─── 命中计数 ───
