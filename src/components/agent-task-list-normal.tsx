@@ -1019,10 +1019,13 @@ export function AgentTaskListNormal({ agentId, showPanel, onTogglePanel }: Agent
           title = task.relatedDailyTask.taskId;
         }
 
-        // 优先级4：从 userOpinion 获取（用户原始指令，最接近真实主题）
-        if (title === '主任务' && task.userOpinion && task.userOpinion.trim().length > 0) {
-          // 截取前30个字作为标题
-          title = task.userOpinion.trim().substring(0, 30) + (task.userOpinion.trim().length > 30 ? '...' : '');
+        // 优先级4：从 originalInstruction（用户原始指令）获取，兜底使用 userOpinion（创作引导）
+        // 🔥 分离后 originalInstruction 是用户真实输入，更接近文章主题
+        if (title === '主任务') {
+          const titleSource = task.originalInstruction || task.userOpinion;
+          if (titleSource && titleSource.trim().length > 0) {
+            title = titleSource.trim().substring(0, 30) + (titleSource.trim().length > 30 ? '...' : '');
+          }
         }
         
         groups[key] = {
