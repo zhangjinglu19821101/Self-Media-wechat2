@@ -255,6 +255,9 @@ export async function GET(
       } : null,
       progress,
       commandResultId: subTask.commandResultId,
+      // 🔥 【Step4 新增】用户原始指令和创作引导（前端分离展示）
+      userOpinion: (subTask as any).userOpinion || null,
+      originalInstruction: (subTask as any).originalInstruction || null,
       // 🔴 Phase 4/5: 返回 resultData（含 validationResult / emotionClassification / styleConsistency）
       resultData: subTask.resultData ? (
         typeof subTask.resultData === 'string' ? JSON.parse(subTask.resultData) : subTask.resultData

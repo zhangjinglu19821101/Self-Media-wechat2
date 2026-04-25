@@ -10,7 +10,8 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Search, RefreshCw, Download, Eye, Clock, CheckCircle2, XCircle, AlertTriangle, Brain, BarChart3, ChevronDown, ChevronUp } from 'lucide-react';
+import { Search, RefreshCw, Download, Eye, Clock, CheckCircle2, XCircle, AlertTriangle, Brain, BarChart3, ChevronDown, ChevronUp, Bot, FileText, Settings, User } from 'lucide-react';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 
 interface Task {
   id: number;
@@ -35,6 +36,189 @@ interface StepHistory {
   interactUser: string;
   interactTime: string;
   interactNum: number;
+}
+
+interface StepHistoryItem extends StepHistory {
+  ext_info?: Record<string, any>;
+}
+
+// 步骤卡片组件 - 使用 Slate + Sky 配色（与主页一致）
+function StepHistoryCard({ step, isLast }: { step: StepHistoryItem; isLast: boolean }) {
+  const [isExpanded, setIsExpanded] = useState(step.interactUser === 'agent B');
+
+  // 判断是否为 Agent B 评审
+  const isAgentBReview = step.interactUser === 'agent B';
+  
+  // 提取决策信息
+  const response = typeof step.interactContent.response === 'object' 
+    ? step.interactContent.response 
+    : {};
+  const decisionType = response?.type || '';
+  const reasoning = response?.reasoning || '';
+  
+  // 格式化时间
+  const formatTime = (time: string) => {
+    return new Date(time).toLocaleString('zh-CN', {
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+  };
+
+  // 获取决策者图标和样式
+  const getAgentIcon = (user: string) => {
+    switch (user) {
+      case 'agent B': return <Bot className="w-5 h-5" />;
+      case 'insurance-d': return <FileText className="w-5 h-5" />;
+      case 'system': return <Settings className="w-5 h-5" />;
+      case 'human': return <User className="w-5 h-5" />;
+      default: return <Bot className="w-5 h-5" />;
+    }
+  };
+
+  // 获取决策类型徽章样式
+  const getDecisionBadge = (type: string) => {
+    switch (type) {
+      case 'COMPLETE':
+        return 'bg-slate-100 text-slate-700 border-slate-200';
+      case 'NEED_USER':
+        return isAgentBReview ? 'bg-sky-50 text-sky-700 border-sky-200' : 'bg-slate-100 text-slate-700 border-slate-200';
+      case 'FAILED':
+        return 'bg-slate-100 text-slate-700 border-slate-200';
+      default:
+        return 'bg-slate-100 text-slate-700 border-slate-200';
+    }
+  };
+
+  return (
+    <div className="relative">
+      {/* 时间线连接 */}
+      {!isLast && (
+        <div className="absolute left-5 top-12 bottom-0 w-px bg-slate-200" />
+      )}
+      
+      <Card className={`
+        group relative overflow-hidden transition-all duration-300
+        ${isAgentBReview ? 'border-l-4 border-l-sky-500' : 'border border-slate-200'}
+        hover:shadow-md hover:shadow-slate-100/50
+      `}>
+        <Collapsible open={isExpanded} onOpenChange={setIsExpanded}>
+          <CollapsibleTrigger asChild>
+            <CardHeader className="pb-3 cursor-pointer hover:bg-slate-50/50 transition-colors">
+              <div className="flex items-start justify-between gap-4">
+                {/* 左侧：图标 + 标题 */}
+                <div className="flex items-start gap-3">
+                  <div className={`
+                    w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0
+                    ${isAgentBReview ? 'bg-sky-100 text-sky-600' : 'bg-slate-100 text-slate-600'}
+                  `}>
+                    {getAgentIcon(step.interactUser)}
+                  </div>
+                  
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <h4 className="font-semibold text-slate-900">
+                        {step.interactUser === 'agent B' ? 'Agent B 评审' : `${step.interactUser} 执行`}
+                      </h4>
+                      {decisionType && (
+                        <Badge variant="outline" className={`text-xs ${getDecisionBadge(decisionType)}`}>
+                          {decisionType}
+                        </Badge>
+                      )}
+                    </div>
+                    
+                    {reasoning && (
+                      <p className="text-sm text-slate-600 mt-1 line-clamp-1">
+                        {reasoning}
+                      </p>
+                    )}
+                    
+                    {!reasoning && typeof step.interactContent.question === 'string' && (
+                      <p className="text-sm text-slate-600 mt-1 line-clamp-1">
+                        {step.interactContent.question.substring(0, 80)}...
+                      </p>
+                    )}
+                  </div>
+                </div>
+
+                {/* 右侧：时间 + 展开按钮 */}
+                <div className="flex items-center gap-3">
+                  <span className="text-xs text-slate-400 font-mono">
+                    {formatTime(step.interactTime)}
+                  </span>
+                  
+                  <Button 
+                    variant="ghost" 
+                    size="sm"
+                    className="h-8 w-8 p-0"
+                  >
+                    {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                  </Button>
+                </div>
+              </div>
+            </CardHeader>
+          </CollapsibleTrigger>
+          
+          <CollapsibleContent>
+            <CardContent className="pt-0">
+              {/* briefResponse */}
+              {response?.briefResponse && (
+                <div className="mb-3">
+                  <span className="text-xs font-medium text-slate-500">执行结论：</span>
+                  <p className="text-sm text-slate-700 mt-1">{response.briefResponse}</p>
+                </div>
+              )}
+              
+              {/* selfEvaluation */}
+              {response?.selfEvaluation && (
+                <div className="mb-3">
+                  <span className="text-xs font-medium text-slate-500">自我评价：</span>
+                  <p className="text-sm text-slate-700 mt-1">{response.selfEvaluation}</p>
+                </div>
+              )}
+              
+              {/* question */}
+              {step.interactContent?.question && (
+                <div className="mb-3">
+                  <span className="text-xs font-medium text-sky-600">请求：</span>
+                  <p className="text-sm text-slate-700 mt-1 bg-sky-50 p-2 rounded">
+                    {typeof step.interactContent.question === 'string' 
+                      ? step.interactContent.question 
+                      : JSON.stringify(step.interactContent.question, null, 2)}
+                  </p>
+                </div>
+              )}
+              
+              {/* reasoning */}
+              {reasoning && (
+                <div className="mb-3">
+                  <span className="text-xs font-medium text-slate-500">推理过程：</span>
+                  <p className="text-sm text-slate-600 mt-1 bg-slate-50 p-2 rounded">
+                    {reasoning}
+                  </p>
+                </div>
+              )}
+              
+              {/* actionsTaken */}
+              {Array.isArray(response?.actionsTaken) && response.actionsTaken.length > 0 && (
+                <div className="mb-3">
+                  <span className="text-xs font-medium text-slate-500">执行动作：</span>
+                  <ul className="mt-1 space-y-1">
+                    {response.actionsTaken.map((action: any, idx: number) => (
+                      <li key={idx} className="text-sm text-slate-600 bg-slate-50 p-2 rounded">
+                        {typeof action === 'string' ? action : JSON.stringify(action)}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </CardContent>
+          </CollapsibleContent>
+        </Collapsible>
+      </Card>
+    </div>
+  );
 }
 
 // ═══════════════════════════════════════════════════
@@ -561,8 +745,8 @@ export default function AgentSubTasksQueryPage() {
                   </div>
                 ) : stepHistory.length > 0 ? (
                   <div className="space-y-4">
-                    {stepHistory.map((step, index) => (
-                      <StepHistoryCard key={step.id} step={step} />
+                    {(stepHistory as StepHistoryItem[]).map((step, index, arr) => (
+                      <StepHistoryCard key={step.id} step={step} isLast={index === arr.length - 1} />
                     ))}
                   </div>
                 ) : (

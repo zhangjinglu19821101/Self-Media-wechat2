@@ -45,6 +45,7 @@ interface Task {
   statusProof?: string;
   articleMetadata?: any;
   userOpinion?: string;
+  originalInstruction?: string;  // 🔥 【Step4 新增】用户原始指令
   metadata: {
     acceptanceCriteria?: string;
     [key: string]: any;
@@ -1918,6 +1919,42 @@ export function AgentTaskListNormal({ agentId, showPanel, onTogglePanel }: Agent
                         <label className="text-sm font-medium text-gray-700">任务描述</label>
                         <p className="mt-1 text-gray-900 whitespace-pre-wrap">{displayTask.taskDescription}</p>
                       </div>
+
+                      {/* 🔥 【Step4 新增】创作引导设置 - 高亮主要样式 */}
+                      {displayTask.userOpinion && (
+                        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                          <div className="flex items-center gap-2 mb-2">
+                            <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800">
+                              创作引导
+                            </span>
+                            <label className="text-sm font-semibold text-blue-900">用户明确约束（最高优先级）</label>
+                          </div>
+                          <p className="text-sm text-blue-800 whitespace-pre-wrap">
+                            {displayTask.userOpinion}
+                          </p>
+                          <p className="text-xs text-blue-600 mt-2">
+                            写作 Agent 必须严格遵守以上创作引导
+                          </p>
+                        </div>
+                      )}
+
+                      {/* 🔥 【Step4 新增】用户原始需求 - 灰色次要样式 */}
+                      {displayTask.originalInstruction && (
+                        <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
+                          <div className="flex items-center gap-2 mb-2">
+                            <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-200 text-gray-600">
+                              原始指令
+                            </span>
+                            <label className="text-sm font-medium text-gray-500">用户原始需求（仅供参考）</label>
+                          </div>
+                          <p className="text-sm text-gray-500 whitespace-pre-wrap">
+                            {displayTask.originalInstruction}
+                          </p>
+                          <p className="text-xs text-gray-400 mt-2">
+                            仅供参考，不作为执行指令；创作引导中的结构化约束为实际执行依据
+                          </p>
+                        </div>
+                      )}
 
                       {displayTask.metadata?.acceptanceCriteria && (
                         <div>

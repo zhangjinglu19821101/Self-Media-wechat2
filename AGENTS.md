@@ -1617,6 +1617,19 @@
      - `buildAgentBBusinessControllerUserPrompt()`: 新增 `originalInstruction` 参数，注入到 Agent B 提示词（标注为"仅供参考"）
      - `agent-b-business-controller.ts`: 提示词模板新增"用户原始需求（仅供参考，非执行指令）"注入点
      - insurance-d 的 `userOpinionAndMaterialsText` 不包含原始指令（仅消费 `task.userOpinion`）
+   - **Step 3 P0 修复**:
+     - `splitForOutlineConfirmationIfNeeded` 双子任务（大纲生成 + 全文生成）INSERT 语句继承 `originalInstruction`
+   - **Step 4（前端显示分离）**:
+     - 任务详情 API (`src/app/api/agents/tasks/[taskId]/detail/route.ts`): `taskDetail` 对象新增 `userOpinion` 和 `originalInstruction` 返回
+     - 前端 `TaskInfo` 接口新增 `originalInstruction?: string` 字段
+     - 任务详情弹框独立展示两个字段：
+       - "创作引导设置"：蓝色高亮样式（`bg-blue-50 border-blue-200`），标注"用户明确约束（最高优先级）"
+       - "用户原始需求"：灰色次要样式（`bg-gray-50 border-gray-200`），标注"仅供参考，非执行指令"
+     - 两者均在任务描述之后、验收标准之前展示
+   - **Step 5（验证 + 修复）**:
+     - `StepHistoryCard` 组件缺失问题修复：在 `agent-sub-tasks/page.tsx` 中添加 `StepHistoryCard` 组件定义及相关接口
+     - 接口冒烟测试通过
+     - 日志健康检查通过（无错误/异常/警告）
    - **数据流**:
      ```
      用户输入指令 + 创作引导
