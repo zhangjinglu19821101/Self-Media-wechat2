@@ -2404,18 +2404,34 @@ export default function HomePage() {
                       <div className="bg-white rounded-3xl border border-slate-200 shadow-lg overflow-hidden">
                         {/* 标题区域 */}
                         <div className="px-6 py-5 border-b border-slate-100 flex items-center justify-between">
-                          <div>
-                            <div className="flex items-center gap-3">
-                              <h2 className="text-2xl font-bold text-slate-900">内容模版</h2>
-                              <Badge className="text-xs text-sky-700 bg-sky-100 border border-sky-200">小红书专属</Badge>
-                              {selectedContentTemplate && (
-                                <Badge className="text-xs text-sky-700 bg-sky-100 border border-sky-200">已选择</Badge>
-                              )}
+                          <div className="flex items-start gap-3">
+                            <div className="w-11 h-11 bg-gradient-to-br from-rose-500 to-pink-500 rounded-xl flex items-center justify-center">
+                              <Palette className="w-5.5 h-5.5 text-white" />
                             </div>
-                            <p className="text-sm text-slate-500 mt-1">选择内容模版，快速匹配你的创作风格</p>
+                            <div>
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <h2 className="text-xl font-bold text-slate-900">内容模版</h2>
+                                <Badge className="text-xs text-rose-700 bg-rose-100 border border-rose-200">小红书专属</Badge>
+                                {selectedContentTemplate && (
+                                  <Badge className="text-xs text-emerald-700 bg-emerald-100 border border-emerald-200">已选择</Badge>
+                                )}
+                              </div>
+                              <p className="text-sm text-slate-500 mt-1">选择图文分工模板，一键匹配你的创作风格</p>
+                            </div>
                           </div>
-                          {/* 内容区域 - 直接展示模板选择器 */}
-                          <div className="p-6 bg-slate-50/50">
+                          <div className="flex items-center gap-2">
+                            <Link
+                              href="/style-init"
+                              className="flex items-center gap-1.5 px-3 py-2 bg-white border border-rose-200 rounded-xl text-xs font-medium text-rose-700 hover:bg-rose-50 hover:border-rose-300 transition-all duration-200"
+                            >
+                              <Sparkles className="w-3.5 h-3.5" />
+                              上传笔记创建
+                            </Link>
+                          </div>
+                        </div>
+                        
+                        {/* 内容区域 - 优化层次 */}
+                        <div className="p-6 bg-gradient-to-b from-slate-50 to-white">
                             <ContentTemplateSelector
                               onSelect={(template) => {
                                 setSelectedContentTemplate(template);
@@ -2434,14 +2450,16 @@ export default function HomePage() {
 
                             {/* 已选择模板展示 */}
                             {selectedContentTemplate && (
-                              <div className="bg-white rounded-xl p-4 border border-slate-200 shadow-sm">
-                                <p className="text-sm font-semibold text-slate-800 mb-2">已选择模板：{selectedContentTemplate.name}</p>
+                              <div className="bg-gradient-to-br from-rose-50 to-pink-50 rounded-xl p-4 border border-rose-200 shadow-sm mt-4">
+                                <div className="flex items-center gap-2 mb-2">
+                                  <CheckCircle2 className="w-4 h-4 text-rose-500" />
+                                  <p className="text-sm font-semibold text-slate-800">已选择模板：{selectedContentTemplate.name}</p>
+                                </div>
                                 {selectedContentTemplate.promptInstruction && (
-                                  <p className="text-sm text-slate-500 leading-relaxed">{selectedContentTemplate.promptInstruction}</p>
+                                  <p className="text-sm text-slate-600 leading-relaxed ml-6">{selectedContentTemplate.promptInstruction}</p>
                                 )}
                               </div>
                             )}
-                          </div>
                         </div>
                       </div>
                     );
@@ -5660,10 +5678,10 @@ function ContentTemplateSelector({
         <button
           type="button"
           onClick={() => onSelect(null)}
-          className={`text-left p-3 rounded-lg border-2 transition-all ${
+          className={`text-left p-3 rounded-lg border-2 transition-all duration-200 transform hover:scale-[1.02] active:scale-[0.98] ${
             !selectedId || selectedId === 'new'
-              ? 'border-gray-300 bg-gray-50 shadow-sm'
-              : 'border-transparent bg-white hover:border-gray-200 hover:bg-gray-50/50'
+              ? 'border-slate-300 bg-gradient-to-br from-slate-100 to-gray-100 shadow-sm'
+              : 'border-transparent bg-white hover:border-gray-200 hover:bg-gray-50/50 hover:shadow-sm'
           }`}
         >
           <p className="text-xs font-medium text-slate-500">默认模式</p>
@@ -5675,16 +5693,16 @@ function ContentTemplateSelector({
             key={tpl.id}
             type="button"
             onClick={() => onSelect(tpl)}
-            className={`text-left p-3 rounded-lg border-2 transition-all ${
+            className={`text-left p-3 rounded-lg border-2 transition-all duration-200 transform hover:scale-[1.02] active:scale-[0.98] ${
               selectedId === tpl.id
-                ? 'border-amber-400 bg-amber-50/60 shadow-sm'
-                : 'border-gray-200 bg-white hover:border-amber-300 hover:bg-amber-50/30'
+                ? 'border-rose-400 bg-gradient-to-br from-rose-50 to-pink-50 shadow-md shadow-rose-200/50'
+                : 'border-gray-200 bg-white hover:border-rose-300 hover:bg-gradient-to-br hover:from-rose-50/50 hover:to-pink-50/30 hover:shadow-md hover:shadow-rose-100/50'
             }`}
           >
             <div className="flex items-start justify-between mb-1">
               <p className="text-xs font-medium text-slate-800 truncate flex-1">{tpl.name}</p>
               {selectedId === tpl.id && (
-                <CheckCircle2 className="w-3.5 h-3.5 text-amber-500 shrink-0 ml-1" />
+                <CheckCircle2 className="w-3.5 h-3.5 text-rose-500 shrink-0 ml-1" />
               )}
             </div>
             <div className="flex items-center gap-1.5 mb-1.5">
@@ -5709,7 +5727,7 @@ function ContentTemplateSelector({
       <div className="flex justify-end pt-1">
         <Link
           href="/style-init"
-          className="text-[10px] text-amber-600 hover:text-amber-700 flex items-center gap-1"
+          className="text-[10px] text-rose-600 hover:text-rose-700 flex items-center gap-1 transition-colors duration-200"
         >
           <Sparkles className="w-3 h-3" />
           从参考笔记创建新模板
