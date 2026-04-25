@@ -8782,6 +8782,10 @@ ${agentBDecision ?
         // 审核失败不影响主流程
       }
     }
+
+    // 🔥🔥🔥 两阶段架构：基础文章定稿后解锁适配组
+    // 修复：markTaskCompleted 也需要触发解锁逻辑（用户通过"指令已完成"按钮完成任务时走此路径）
+    await this.unlockAdaptationGroupsIfNeeded(updatedTask || task);
   }
 
   /**
