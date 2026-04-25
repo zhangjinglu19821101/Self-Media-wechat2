@@ -2258,12 +2258,26 @@ export function AgentTaskListNormal({ agentId, showPanel, onTogglePanel }: Agent
                         </div>
                       )}
 
-                      {/* 🔥 手动解锁 blocked 任务：输入文章内容触发执行 */}
-                      {displayTask.status === 'blocked' && (
+                      {/* 🔥 手动解锁 blocked/failed 任务：输入文章内容触发执行 */}
+                      {(() => {
+                        const taskMetadata = (displayTask as any)?.metadata;
+                        const existingArticle = taskMetadata?.manualSourceArticle;
+                        const isBlocked = displayTask.status === 'blocked';
+                        const isFailedWithArticle = displayTask.status === 'failed' && !!existingArticle?.content;
+                        const showManualInput = isBlocked || isFailedWithArticle;
+                        if (!showManualInput) return null;
+
+                        const existingContent = isFailedWithArticle ? (existingArticle.content || '') : '';
+                        const existingTitle = isFailedWithArticle ? (existingArticle.title || '') : '';
+
+                        return (
                         <div className="border-t border-gray-200 pt-6 mt-6">
                           <h4 className="font-semibold mb-4 flex items-center gap-2 text-amber-900">
-                            <Lock className="w-5 h-5" />
-                            手动输入文章触发执行
+                            {isFailedWithArticle ? (
+                              <><AlertTriangle className="w-5 h-5 text-red-500" /> 重新输入文章触发执行</>
+                            ) : (
+                              <><Lock className="w-5 h-5" /> 手动输入文章触发执行</>
+                            )}
                           </h4>
 
                           {/* 提示说明 */}
@@ -2271,9 +2285,18 @@ export function AgentTaskListNormal({ agentId, showPanel, onTogglePanel }: Agent
                             <div className="flex items-start gap-3">
                               <AlertTriangle className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
                               <div className="text-sm text-amber-800 space-y-1">
-                                <p className="font-medium">此任务正在等待基础文章定稿后执行</p>
-                                <p>如果您已有文章内容，可以直接输入触发执行，无需等待基础文章完成。</p>
-                                <p className="text-amber-600">输入的文章将作为适配改写的原始素材，写作 Agent 会基于此内容进行平台适配。</p>
+                                {isFailedWithArticle ? (
+                                  <>
+                                    <p className="font-medium text-red-700">执行失败，上次输入的文章内容未成功处理</p>
+                                    <p>请检查内容后重新提交，或修改后再次触发执行。</p>
+                                  </>
+                                ) : (
+                                  <>
+                                    <p className="font-medium">此任务正在等待基础文章定稿后执行</p>
+                                    <p>如果您已有文章内容，可以直接输入触发执行，无需等待基础文章完成。</p>
+                                    <p className="text-amber-600">输入的文章将作为适配改写的原始素材，写作 Agent 会基于此内容进行平台适配。</p>
+                                  </>
+                                )}
                               </div>
                             </div>
                           </div>
@@ -2285,7 +2308,7 @@ export function AgentTaskListNormal({ agentId, showPanel, onTogglePanel }: Agent
                             </label>
                             <input
                               type="text"
-                              value={manualArticleTitle}
+                              value={isFailedWithArticle ? existingTitle : manualArticleTitle}
                               onChange={(e) => setManualArticleTitle(e.target.value)}
                               placeholder="输入文章标题..."
                               className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-amber-500"
@@ -2296,9 +2319,10 @@ export function AgentTaskListNormal({ agentId, showPanel, onTogglePanel }: Agent
                           <div className="mb-4">
                             <label className="text-sm font-medium text-gray-700 mb-1.5 block">
                               文章内容 <span className="text-red-500">*</span>
+                              {isFailedWithArticle && <span className="text-xs text-gray-400 ml-2">（已预填上次内容，请检查或修改后重新提交）</span>}
                             </label>
                             <Textarea
-                              value={manualArticleContent}
+                              value={isFailedWithArticle ? existingContent : manualArticleContent}
                               onChange={(e) => setManualArticleContent(e.target.value)}
                               placeholder="粘贴或输入文章内容（至少50字）..."
                               className="min-h-[200px] resize-y"
@@ -2309,6 +2333,11 @@ export function AgentTaskListNormal({ agentId, showPanel, onTogglePanel }: Agent
                                   ? `还需输入 ${50 - manualArticleContent.length} 字`
                                   : `已输入 ${manualArticleContent.length} 字`}
                               </span>
+                              {isFailedWithArticle && (
+                                <span className="text-xs text-amber-600">
+                                  已预填 {existingContent.length} 字
+                                </span>
+                              )}
                             </div>
                           </div>
 
@@ -2317,7 +2346,10 @@ export function AgentTaskListNormal({ agentId, showPanel, onTogglePanel }: Agent
                             <Button
                               onClick={handleManualUnblock}
                               disabled={manualUnblockSubmitting || manualArticleContent.trim().length < 50}
-                              className="bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white"
+                              className={isFailedWithArticle
+                                ? 'bg-gradient-to-r from-red-500 to-orange-500 hover:from-red-600 hover:to-orange-600 text-white'
+                                : 'bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white'
+                              }
                             >
                               {manualUnblockSubmitting ? (
                                 <>
@@ -2327,7 +2359,7 @@ export function AgentTaskListNormal({ agentId, showPanel, onTogglePanel }: Agent
                               ) : (
                                 <>
                                   <Rocket className="w-4 h-4 mr-2" />
-                                  立即执行
+                                  {isFailedWithArticle ? '重新执行' : '立即执行'}
                                 </>
                               )}
                             </Button>
@@ -2336,7 +2368,8 @@ export function AgentTaskListNormal({ agentId, showPanel, onTogglePanel }: Agent
                             </span>
                           </div>
                         </div>
-                      )}
+                        );
+                      })()}
 
                       {/* 用户处理输入框 - waiting_user 和 failed 状态都显示 */}
                       {(displayTask.status === 'waiting_user' || displayTask.status === 'failed') && (

@@ -99,6 +99,12 @@ interface TaskMetadata {
   multiPlatformGroupId?: string;
   sourceCommandResultId?: string;
   adaptationPlatform?: string;
+  // 【P1-2修复】手动解锁文章字段（用于两阶段架构 blocked 任务手动输入）
+  manualSourceArticle?: {
+    content?: string;
+    title?: string;
+    providedAt?: string;
+  };
   [key: string]: unknown; // 允许其他动态字段
 }
 
@@ -4880,13 +4886,15 @@ export class SubtaskExecutionEngine {
       });
     }
 
+    // 【P1-2修复】提取 taskMetadata 和 manualSourceArticle 到外层函数作用域
+    // 两个 try 块（手动文章注入 + 跨组查询）需要共用，避免块级作用域隔离
+    const taskMetadata = task.metadata as TwoPhaseTaskMetadata | null;
+    const manualSourceArticle = taskMetadata?.manualSourceArticle;
+
     // 🔥🔥🔥 手动输入文章优先注入（优先级最高）
     // 如果用户通过 manual-unblock API 手动输入了文章内容，
     // 优先使用该文章，不再跨组查询基础文章
     try {
-      const taskMetadata = task.metadata as Record<string, any> | null;
-      const manualSourceArticle = taskMetadata?.manualSourceArticle;
-
       if (manualSourceArticle && manualSourceArticle.content) {
         const manualContent = manualSourceArticle.content as string;
         const manualTitle = (manualSourceArticle.title as string) || '用户提供的文章';
@@ -4917,13 +4925,12 @@ export class SubtaskExecutionEngine {
     // 需要额外查询基础文章组（sourceCommandResultId）的内容
     // ⚠️ 仅当没有手动输入文章时才跨组查询
     try {
-      // P2-5 修复：使用精确类型 TwoPhaseTaskMetadata
-      const taskMetadata = task.metadata as TwoPhaseTaskMetadata | null;
+      // 【P1-2修复】复用第一个 try 块中已提取的 taskMetadata（类型已统一为 TwoPhaseTaskMetadata）
       const taskPhase = taskMetadata?.phase;
 
       // 🔥 仅当没有手动输入文章且是平台适配任务时，才跨组查询
-      const hasManualArticle = (task.metadata as Record<string, any>)?.manualSourceArticle?.content;
-      if (!hasManualArticle && taskPhase === 'platform_adaptation' && taskMetadata?.sourceCommandResultId) {
+      // 【P1-2修复】复用已有 manualSourceArticle，避免重复计算 hasManualArticle
+      if (!manualSourceArticle && taskPhase === 'platform_adaptation' && taskMetadata?.sourceCommandResultId) {
         const sourceCommandResultId = taskMetadata.sourceCommandResultId;
         console.log('[SubtaskEngine] 🔥 适配任务检测到，开始跨组注入基础文章', {
           sourceCommandResultId,
@@ -4977,7 +4984,7 @@ export class SubtaskExecutionEngine {
         } else {
           console.warn('[SubtaskEngine] 🔥 ⚠️ 适配任务未找到基础文章内容，sourceCommandResultId:', sourceCommandResultId);
         }
-      } else if (hasManualArticle) {
+      } else if (manualSourceArticle) {
         console.log('[SubtaskEngine] 🔥 已有手动输入文章，跳过跨组查询');
       }
     } catch (baseArticleError) {
@@ -5131,7 +5138,7 @@ export class SubtaskExecutionEngine {
     let extractedOutline: string | undefined;
     
     // 1. 先检查用户是否明确确认过大纲
-    const taskMetadata = task.metadata as Record<string, any> | null;
+    // 【P1-2修复】复用已提取的 taskMetadata（line 4891），避免重复声明
     if (taskMetadata?.confirmedOutline) {
       extractedOutline = taskMetadata.confirmedOutline;
       console.log('[SubtaskEngine] 📋 使用用户确认的大纲，长度:', extractedOutline.length);
@@ -7669,8 +7676,8 @@ export class SubtaskExecutionEngine {
           const adaptationPlatform = taskMetadata.adaptationPlatform || taskMetadata.platform || '';
           const platformLabel = taskMetadata.platformLabel || adaptationPlatform;
           // 🔥 如果用户手动输入了文章，前缀措辞调整
-          const hasManualArticle = (task.metadata as Record<string, any>)?.manualSourceArticle?.content;
-          const articleSourceDesc = hasManualArticle ? '用户提供的文章' : '基础文章';
+          // 【P1-2修复】复用已有 taskMetadata，避免重复计算 hasManualArticle
+          const articleSourceDesc = taskMetadata?.manualSourceArticle?.content ? '用户提供的文章' : '基础文章';
           adaptationModePrefix = `\n【平台适配模式 - 最高优先级指令】\n你正在执行"平台适配"任务。${articleSourceDesc}已完成，你需要基于${articleSourceDesc}的内容进行平台适配改写。\n核心规则：\n1. 必须基于${articleSourceDesc}内容改写，不得自行创作新的核心论点、数据或案例\n2. 保留${articleSourceDesc}的核心观点和逻辑结构\n3. 按照${platformLabel}平台风格和格式进行改写\n4. 可以调整表达方式、段落结构、用词风格以适应平台特点\n5. ${articleSourceDesc}内容已在"前序任务执行结果"中提供（order_index=0 的"${articleSourceDesc}"条目）\n\n`;
           console.log('[SubtaskEngine] 🔥 适配模式前缀已注入，平台:', platformLabel, '文章来源:', articleSourceDesc);
         }
