@@ -7200,24 +7200,34 @@ export class SubtaskExecutionEngine {
   private async unlockAdaptationGroupsIfNeeded(task: typeof agentSubTasks.$inferSelect): Promise<void> {
     try {
       const taskMetadata = task.metadata as Record<string, any> | null;
-      if (!taskMetadata) return;
 
-      // 条件1：必须是基础文章组的任务
-      if (taskMetadata.phase !== 'base_article') {
-        return;
+      // 获取 multiPlatformGroupId（支持两种路径）
+      // 路径1：直接从触发任务的 metadata 获取
+      // 路径2：从同组已完成 base_article 任务获取（兜底：orders 4-8 等旧任务没有 metadata）
+      let multiPlatformGroupId: string | null = null;
+      if (taskMetadata) {
+        multiPlatformGroupId = taskMetadata.multiPlatformGroupId || null;
       }
-
-      // 条件2：必须是多平台模式
-      const multiPlatformGroupId = taskMetadata.multiPlatformGroupId;
       if (!multiPlatformGroupId) {
-        return;
+        // 兜底查询：同 command_result_id 中找已完成 base_article 任务的 multiPlatformGroupId
+        const [groupMeta] = await db
+          .select({ metadata: agentSubTasks.metadata })
+          .from(agentSubTasks)
+          .where(
+            and(
+              eq(agentSubTasks.commandResultId, task.commandResultId as any),
+              eq(agentSubTasks.status, 'completed'),
+              sql`${agentSubTasks.metadata}->>'phase' = 'base_article'`
+            )
+          )
+          .limit(1);
+        if (groupMeta?.metadata) {
+          multiPlatformGroupId = (groupMeta.metadata as Record<string, any>).multiPlatformGroupId || null;
+        }
       }
+      if (!multiPlatformGroupId) return;
 
-      // 条件3：必须是基础文章定稿点
-      // P2-4 修复：动态计算定稿点，而非硬编码 orderIndex >= 6
-      // 查询基础文章组的所有任务，取 orderIndex >= 2 的最大值作为定稿点
-      // orderIndex >= 2 作为写作任务阈值（orderIndex=1 是分析，写作相关任务从 2 开始）
-      // 即使包含 preview 等非写作节点，也不会高于实际最后写作任务
+      // 定稿点判断：取 base_article 组中 max order_index 作为定稿点
       let isFinalizationPoint = false;
       try {
         const baseArticleTasks = await db
@@ -7234,7 +7244,8 @@ export class SubtaskExecutionEngine {
           .filter(idx => idx !== null && idx >= 2);
         const maxWritingOrderIndex = writingOrderIndices.length > 0
           ? Math.max(...writingOrderIndices)
-          : 6; // 兜底值（与原硬编码一致）
+          : 6;
+        // 定稿点：触发任务的 order_index >= 组内最大 order_index
         isFinalizationPoint = task.orderIndex >= maxWritingOrderIndex;
 
         if (!isFinalizationPoint) {
@@ -7246,7 +7257,6 @@ export class SubtaskExecutionEngine {
           return;
         }
       } catch (err) {
-        // 查询失败时降级为 orderIndex >= 6 兜底
         console.warn('[SubtaskEngine] ⚠️ 定稿点动态计算失败，降级为 orderIndex >= 6:', err);
         isFinalizationPoint = task.orderIndex >= 6;
         if (!isFinalizationPoint) return;
