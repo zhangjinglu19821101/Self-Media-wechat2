@@ -890,6 +890,11 @@ export function AgentTaskListNormal({ agentId, showPanel, onTogglePanel }: Agent
   const [executorOptions, setExecutorOptions] = useState<any[]>([]);
   const [loadingExecutorOptions, setLoadingExecutorOptions] = useState(false);
 
+  // 🔥 手动解锁 blocked 任务相关状态
+  const [manualArticleContent, setManualArticleContent] = useState('');
+  const [manualArticleTitle, setManualArticleTitle] = useState('');
+  const [manualUnblockSubmitting, setManualUnblockSubmitting] = useState(false);
+
   // 🔥🔥🔥 双层折叠状态
   const [expandedDates, setExpandedDates] = useState<Set<string>>(new Set(['today', 'yesterday', 'dayBeforeYesterday', 'earlier'])); // 默认展开所有日期分组
   const [expandedTasks, setExpandedTasks] = useState<Set<string>>(new Set()); // 展开的任务
@@ -1267,6 +1272,55 @@ export function AgentTaskListNormal({ agentId, showPanel, onTogglePanel }: Agent
       alert('❌ 提交出错，请查看控制台');
     } finally {
       setSubmittingDecision(false);
+    }
+  };
+
+  /**
+   * 手动解锁 blocked 任务
+   * 用户直接输入文章内容，触发适配任务执行
+   */
+  const handleManualUnblock = async () => {
+    if (!displayTask) return;
+
+    if (!manualArticleContent.trim()) {
+      toast.error('请输入文章内容');
+      return;
+    }
+
+    if (manualArticleContent.trim().length < 50) {
+      toast.error('文章内容过短，请输入至少50字');
+      return;
+    }
+
+    setManualUnblockSubmitting(true);
+    try {
+      const response = await fetch(`/api/subtasks/${displayTask.id}/manual-unblock`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          articleContent: manualArticleContent.trim(),
+          articleTitle: manualArticleTitle.trim() || undefined,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (data.success) {
+        toast.success('任务已解锁，开始执行');
+        setShowTaskDetail(false);
+        setSelectedTask(null);
+        setTaskDetail(null);
+        setManualArticleContent('');
+        setManualArticleTitle('');
+        loadTasks();
+      } else {
+        toast.error('解锁失败: ' + (data.error || '未知错误'));
+      }
+    } catch (error) {
+      console.error('[Manual Unblock] 提交失败:', error);
+      toast.error('提交失败，请重试');
+    } finally {
+      setManualUnblockSubmitting(false);
     }
   };
 
@@ -1812,6 +1866,8 @@ export function AgentTaskListNormal({ agentId, showPanel, onTogglePanel }: Agent
                                           setShowTaskDetail(true);
                                           setTaskDetail(null);
                                           setUserDecision('');
+                                          setManualArticleContent('');
+                                          setManualArticleTitle('');
                                           loadTaskDetail(task.id);
                                         }}
                                       >
@@ -2198,6 +2254,86 @@ export function AgentTaskListNormal({ agentId, showPanel, onTogglePanel }: Agent
                             <div>
                               <span className="font-medium">执行日期:</span> {displayTask.relatedDailyTask.executionDate}
                             </div>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* 🔥 手动解锁 blocked 任务：输入文章内容触发执行 */}
+                      {displayTask.status === 'blocked' && (
+                        <div className="border-t border-gray-200 pt-6 mt-6">
+                          <h4 className="font-semibold mb-4 flex items-center gap-2 text-amber-900">
+                            <Lock className="w-5 h-5" />
+                            手动输入文章触发执行
+                          </h4>
+
+                          {/* 提示说明 */}
+                          <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 mb-4">
+                            <div className="flex items-start gap-3">
+                              <AlertTriangle className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
+                              <div className="text-sm text-amber-800 space-y-1">
+                                <p className="font-medium">此任务正在等待基础文章定稿后执行</p>
+                                <p>如果您已有文章内容，可以直接输入触发执行，无需等待基础文章完成。</p>
+                                <p className="text-amber-600">输入的文章将作为适配改写的原始素材，写作 Agent 会基于此内容进行平台适配。</p>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* 文章标题 */}
+                          <div className="mb-3">
+                            <label className="text-sm font-medium text-gray-700 mb-1.5 block">
+                              文章标题 <span className="text-gray-400 font-normal">（可选）</span>
+                            </label>
+                            <input
+                              type="text"
+                              value={manualArticleTitle}
+                              onChange={(e) => setManualArticleTitle(e.target.value)}
+                              placeholder="输入文章标题..."
+                              className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-amber-500"
+                            />
+                          </div>
+
+                          {/* 文章内容 */}
+                          <div className="mb-4">
+                            <label className="text-sm font-medium text-gray-700 mb-1.5 block">
+                              文章内容 <span className="text-red-500">*</span>
+                            </label>
+                            <Textarea
+                              value={manualArticleContent}
+                              onChange={(e) => setManualArticleContent(e.target.value)}
+                              placeholder="粘贴或输入文章内容（至少50字）..."
+                              className="min-h-[200px] resize-y"
+                            />
+                            <div className="flex justify-between mt-1">
+                              <span className="text-xs text-gray-400">
+                                {manualArticleContent.length < 50
+                                  ? `还需输入 ${50 - manualArticleContent.length} 字`
+                                  : `已输入 ${manualArticleContent.length} 字`}
+                              </span>
+                            </div>
+                          </div>
+
+                          {/* 提交按钮 */}
+                          <div className="flex items-center gap-3">
+                            <Button
+                              onClick={handleManualUnblock}
+                              disabled={manualUnblockSubmitting || manualArticleContent.trim().length < 50}
+                              className="bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white"
+                            >
+                              {manualUnblockSubmitting ? (
+                                <>
+                                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                                  提交中...
+                                </>
+                              ) : (
+                                <>
+                                  <Rocket className="w-4 h-4 mr-2" />
+                                  立即执行
+                                </>
+                              )}
+                            </Button>
+                            <span className="text-xs text-gray-400">
+                              提交后任务将解锁并自动开始执行
+                            </span>
                           </div>
                         </div>
                       )}

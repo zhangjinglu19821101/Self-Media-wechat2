@@ -4880,15 +4880,50 @@ export class SubtaskExecutionEngine {
       });
     }
 
+    // 🔥🔥🔥 手动输入文章优先注入（优先级最高）
+    // 如果用户通过 manual-unblock API 手动输入了文章内容，
+    // 优先使用该文章，不再跨组查询基础文章
+    try {
+      const taskMetadata = task.metadata as Record<string, any> | null;
+      const manualSourceArticle = taskMetadata?.manualSourceArticle;
+
+      if (manualSourceArticle && manualSourceArticle.content) {
+        const manualContent = manualSourceArticle.content as string;
+        const manualTitle = (manualSourceArticle.title as string) || '用户提供的文章';
+
+        console.log('[SubtaskEngine] 🔥 检测到手动输入的文章，优先注入', {
+          contentLength: manualContent.length,
+          title: manualTitle,
+          providedAt: manualSourceArticle.providedAt,
+        });
+
+        priorTaskResults.unshift({
+          orderIndex: 0, // 特殊序号，表示基础文章
+          taskTitle: `[用户提供的文章] ${manualTitle}`,
+          executor: 'base_article',
+          resultText: manualContent,
+        });
+
+        console.log('[SubtaskEngine] 🔥 已将手动输入的文章注入 priorTaskResults（orderIndex=0），长度:', manualContent.length);
+      }
+    } catch (manualArticleError) {
+      console.warn('[SubtaskEngine] 🔥 手动文章注入失败（不影响主流程）:', {
+        message: manualArticleError instanceof Error ? manualArticleError.message : String(manualArticleError)
+      });
+    }
+
     // 🔥🔥🔥 两阶段架构：适配任务跨组注入基础文章
     // 如果当前任务是适配组（metadata.phase === 'platform_adaptation'），
     // 需要额外查询基础文章组（sourceCommandResultId）的内容
+    // ⚠️ 仅当没有手动输入文章时才跨组查询
     try {
       // P2-5 修复：使用精确类型 TwoPhaseTaskMetadata
       const taskMetadata = task.metadata as TwoPhaseTaskMetadata | null;
       const taskPhase = taskMetadata?.phase;
 
-      if (taskPhase === 'platform_adaptation' && taskMetadata?.sourceCommandResultId) {
+      // 🔥 仅当没有手动输入文章且是平台适配任务时，才跨组查询
+      const hasManualArticle = (task.metadata as Record<string, any>)?.manualSourceArticle?.content;
+      if (!hasManualArticle && taskPhase === 'platform_adaptation' && taskMetadata?.sourceCommandResultId) {
         const sourceCommandResultId = taskMetadata.sourceCommandResultId;
         console.log('[SubtaskEngine] 🔥 适配任务检测到，开始跨组注入基础文章', {
           sourceCommandResultId,
@@ -4942,6 +4977,8 @@ export class SubtaskExecutionEngine {
         } else {
           console.warn('[SubtaskEngine] 🔥 ⚠️ 适配任务未找到基础文章内容，sourceCommandResultId:', sourceCommandResultId);
         }
+      } else if (hasManualArticle) {
+        console.log('[SubtaskEngine] 🔥 已有手动输入文章，跳过跨组查询');
       }
     } catch (baseArticleError) {
       console.warn('[SubtaskEngine] 🔥 跨组注入基础文章失败（不影响主流程）:', {
@@ -7631,8 +7668,11 @@ export class SubtaskExecutionEngine {
         if (taskMetadata?.phase === 'platform_adaptation') {
           const adaptationPlatform = taskMetadata.adaptationPlatform || taskMetadata.platform || '';
           const platformLabel = taskMetadata.platformLabel || adaptationPlatform;
-          adaptationModePrefix = `\n【平台适配模式 - 最高优先级指令】\n你正在执行"平台适配"任务。基础文章已完成定稿，你需要基于基础文章的内容进行平台适配改写。\n核心规则：\n1. 必须基于基础文章内容改写，不得自行创作新的核心论点、数据或案例\n2. 保留基础文章的核心观点和逻辑结构\n3. 按照${platformLabel}平台风格和格式进行改写\n4. 可以调整表达方式、段落结构、用词风格以适应平台特点\n5. 基础文章内容已在"前序任务执行结果"中提供（order_index=0 的"基础文章"条目）\n\n`;
-          console.log('[SubtaskEngine] 🔥 适配模式前缀已注入，平台:', platformLabel);
+          // 🔥 如果用户手动输入了文章，前缀措辞调整
+          const hasManualArticle = (task.metadata as Record<string, any>)?.manualSourceArticle?.content;
+          const articleSourceDesc = hasManualArticle ? '用户提供的文章' : '基础文章';
+          adaptationModePrefix = `\n【平台适配模式 - 最高优先级指令】\n你正在执行"平台适配"任务。${articleSourceDesc}已完成，你需要基于${articleSourceDesc}的内容进行平台适配改写。\n核心规则：\n1. 必须基于${articleSourceDesc}内容改写，不得自行创作新的核心论点、数据或案例\n2. 保留${articleSourceDesc}的核心观点和逻辑结构\n3. 按照${platformLabel}平台风格和格式进行改写\n4. 可以调整表达方式、段落结构、用词风格以适应平台特点\n5. ${articleSourceDesc}内容已在"前序任务执行结果"中提供（order_index=0 的"${articleSourceDesc}"条目）\n\n`;
+          console.log('[SubtaskEngine] 🔥 适配模式前缀已注入，平台:', platformLabel, '文章来源:', articleSourceDesc);
         }
 
         // 🔥🔥🔥 【P0修复】提前读取内容模板，获取 cardCountMode 和 promptInstruction

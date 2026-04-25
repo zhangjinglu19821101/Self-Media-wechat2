@@ -1637,4 +1637,33 @@
        → userOpinion: 仅创作引导结构化内容（核心观点+情感基调+文章结构）
          → insurance-d: 只消费 userOpinion（硬约束）
          → Agent B: 同时参考 userOpinion + originalInstruction（仅供参考）
+79. **blocked 任务手动输入文章触发执行**: 支持用户在两阶段架构中手动输入文章，解锁 blocked 状态的适配任务
+   - **设计原则**: 手动输入文章优先级最高，优于跨组查询基础文章；手动解锁与自动解锁互不干扰
+   - **新增 API**: `POST /api/subtasks/[id]/manual-unblock`
+     - 接收 `articleContent`（必填，>=50字）和 `articleTitle`（可选）
+     - 校验任务状态为 blocked，workspaceId 隔离
+     - 将文章存入 `task.metadata.manualSourceArticle`
+     - 原子性更新：blocked → pending + 二次校验防并发
+     - 记录操作日志到 step_history
+     - 异步触发引擎执行
+   - **执行引擎改造** (`subtask-execution-engine.ts`):
+     - `buildExecutionContext()`: 新增手动文章优先注入逻辑（在跨组查询之前）
+     - 手动文章注入到 `priorTaskResults[0]`（orderIndex=0），executor 标记为 `base_article`
+     - 跨组查询前增加 `hasManualArticle` 检查，已有手动文章则跳过跨组查询
+     - `callExecutorAgentDirectly()`: 适配模式前缀动态调整措辞（"用户提供的文章" vs "基础文章"）
+   - **前端改造** (`agent-task-list-normal.tsx`):
+     - blocked 任务详情弹框中新增琥珀色文章输入区域
+     - 文章标题输入框（可选）+ 文章内容 Textarea（必填，>=50字）
+     - 字数统计提示 + "立即执行"按钮
+     - 打开新任务详情时自动重置手动解锁状态
+   - **数据流**:
+     ```
+     用户在 blocked 任务详情输入文章
+       → POST /api/subtasks/[id]/manual-unblock
+         → metadata.manualSourceArticle = { content, title }
+           → status: blocked → pending
+             → 引擎执行时优先注入手动文章
+               → priorTaskResults[0] = 用户提供的文章
+                 → 适配 Agent 基于该文章进行平台适配
+     ```
      ```
