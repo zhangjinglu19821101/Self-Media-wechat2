@@ -2921,9 +2921,9 @@ export default function HomePage() {
                         </div>
                       )}
                       
-                      {/* 素材选择 Tab（素材库 + 信息速记 合并入口） */}
+                      {/* 素材选择 Tab（简化版：搜索+推荐+速记 三合一） */}
                       {activeGuideTab === 'material' && (
-                        <div className="space-y-5">
+                        <div className="space-y-4">
                           {/* 已选素材 Badge（统一展示） */}
                           {selectedMaterials.length > 0 && (
                             <div className="flex flex-wrap gap-2 p-3 bg-indigo-50/60 rounded-lg border border-indigo-100">
@@ -2941,317 +2941,244 @@ export default function HomePage() {
                             </div>
                           )}
 
-                          {/* ─── 智能推荐区域（常驻，自动触发） ─── */}
-                          {mainInstruction.trim().length >= 4 && (
-                            <div className="space-y-3">
-                              <div className="flex items-center justify-between">
-                                <div className="flex items-center gap-2">
-                                  <Sparkles className="w-4 h-4 text-amber-500" />
-                                  <span className="text-sm font-semibold text-slate-800">相关素材</span>
-                                  <span className="text-xs text-slate-400">根据你的指令自动匹配</span>
-                                </div>
-                                <Button variant="ghost" size="sm" onClick={() => handleRecommendMaterials(false)} disabled={loadingRecommendedMaterials} className="h-7 px-2 text-xs text-slate-400 hover:text-amber-600">
-                                  <RefreshCw className={`w-3 h-3 mr-1 ${loadingRecommendedMaterials ? 'animate-spin' : ''}`} />
-                                  刷新
-                                </Button>
-                              </div>
-
-                              {/* 加载中 */}
-                              {loadingRecommendedMaterials && recommendedMaterials.length === 0 && (
-                                <div className="flex items-center gap-2 py-4 justify-center text-sm text-slate-400">
-                                  <Loader2 className="w-4 h-4 animate-spin" />
-                                  正在匹配相关素材...
-                                </div>
-                              )}
-
-                              {/* 推荐素材卡片列表 */}
-                              {!loadingRecommendedMaterials && recommendedMaterials.length > 0 && (
-                                <div className="space-y-2">
-                                  {recommendedMaterials.map((mat) => {
-                                    const isSelected = selectedMaterialIds.includes(mat.id);
-                                    const matchLevel = mat.matchLevel || 'medium';
-                                    const matchLabel = matchLevel === 'high' ? '高度相关' : matchLevel === 'medium' ? '相关' : '可能相关';
-                                    const matchDots = matchLevel === 'high' ? 3 : matchLevel === 'medium' ? 2 : 1;
-                                    // P2: 颜色与级别强绑定，消除二义性
-                                    const matchDotColor = matchLevel === 'high'
-                                      ? 'bg-emerald-400'
-                                      : matchLevel === 'medium'
-                                        ? 'bg-blue-400'
-                                        : 'bg-slate-300';
-                                    const typeLabel = MATERIAL_TYPE_LABELS[mat.type] ?? '素材';
-
-                                    return (
-                                      <div
-                                        key={mat.id}
-                                        className={`flex items-center gap-3 px-3 py-2.5 rounded-lg border transition-all ${
-                                          isSelected
-                                            ? 'border-indigo-300 bg-indigo-50'
-                                            : 'border-slate-200 bg-white hover:border-amber-300 hover:bg-amber-50/30'
-                                        }`}
-                                      >
-                                        {/* 类型标签 */}
-                                        <Badge variant="outline" className="text-xs px-2 py-0.5 shrink-0 border-slate-300 text-slate-600">
-                                          {typeLabel}
-                                        </Badge>
-
-                                        {/* 标题 + 描述 */}
-                                        <div className="flex-1 min-w-0">
-                                          <p className="text-sm font-medium text-slate-800 truncate">{mat.title}</p>
-                                        </div>
-
-                                        {/* 匹配度：颜色语义化 + Tooltip 详情 */}
-                                        <Tooltip>
-                                          <TooltipTrigger asChild>
-                                            <div className="flex items-center gap-1 shrink-0 cursor-help">
-                                              <div className="flex gap-0.5">
-                                                {[1, 2, 3].map((i) => (
-                                                  <div
-                                                    key={i}
-                                                    className={`w-1.5 h-1.5 rounded-full ${
-                                                      i <= matchDots ? matchDotColor : 'bg-slate-200'
-                                                    }`}
-                                                  />
-                                                ))}
-                                              </div>
-                                              <span className="text-xs text-slate-400">{matchLabel}</span>
-                                            </div>
-                                          </TooltipTrigger>
-                                          <TooltipContent side="top" className="text-xs">
-                                            <div className="space-y-0.5">
-                                              <p>关键词命中: {mat.keywordHitCount ?? 0} 次</p>
-                                              <p>标签命中: {mat.tagHitCount ?? 0} 次</p>
-                                              <p>使用次数: {mat.useCount ?? 0}</p>
-                                            </div>
-                                          </TooltipContent>
-                                        </Tooltip>
-
-                                        {/* 添加按钮 */}
-                                        <button
-                                          type="button"
-                                          onClick={() => toggleMaterialSelection(mat)}
-                                          className={`shrink-0 text-xs px-3 py-1.5 rounded-md font-medium transition-all ${
-                                            isSelected
-                                              ? 'bg-indigo-100 text-indigo-600 border border-indigo-200'
-                                              : 'bg-amber-500 text-white hover:bg-amber-600 shadow-sm'
-                                          }`}
-                                        >
-                                          {isSelected ? '✓ 已添加' : '+ 添加'}
-                                        </button>
-                                      </div>
-                                    );
-                                  })}
-                                </div>
-                              )}
-
-                              {/* 推荐速记（如果有） */}
-                              {recommendedSnippets.length > 0 && (
-                                <div className="space-y-2">
-                                  <div className="flex items-center gap-2 pt-1">
-                                    <BookOpen className="w-3.5 h-3.5 text-sky-500" />
-                                    <span className="text-xs font-medium text-slate-600">相关速记</span>
-                                  </div>
-                                  {recommendedSnippets.map((snippet) => {
-                                    const isSnippetSelected = snippet.materialId ? selectedMaterialIds.includes(snippet.materialId) : false;
-                                    return (
-                                      <div
-                                        key={snippet.id}
-                                        className={`flex items-center gap-3 px-3 py-2 rounded-lg border transition-all ${
-                                          isSnippetSelected
-                                            ? 'border-indigo-300 bg-indigo-50'
-                                            : 'border-slate-200 bg-sky-50/30 hover:border-sky-300'
-                                        }`}
-                                      >
-                                        <div className="flex-1 min-w-0">
-                                          <p className="text-sm font-medium text-slate-700 truncate">{snippet.title}</p>
-                                          {snippet.summary && (
-                                            <p className="text-xs text-slate-500 mt-0.5 line-clamp-1">{snippet.summary}</p>
-                                          )}
-                                        </div>
-                                        <button
-                                          type="button"
-                                          onClick={() => {
-                                            const snippetObj = snippetList.find((s: InfoSnippet) => s.id === snippet.id);
-                                            if (snippetObj) handleSelectSnippetInMaterialTab(snippetObj);
-                                          }}
-                                          className={`shrink-0 text-xs px-3 py-1.5 rounded-md font-medium transition-all ${
-                                            isSnippetSelected
-                                              ? 'bg-indigo-100 text-indigo-600 border border-indigo-200'
-                                              : 'bg-sky-500 text-white hover:bg-sky-600 shadow-sm'
-                                          }`}
-                                        >
-                                          {isSnippetSelected ? '✓ 已添加' : (snippet.materialId ? '+ 选择' : '入库并选择')}
-                                        </button>
-                                      </div>
-                                    );
-                                  })}
-                                </div>
-                              )}
-
-                              {/* 无结果 */}
-                              {!loadingRecommendedMaterials && autoRecommendFetched && recommendedMaterials.length === 0 && recommendedSnippets.length === 0 && (
-                                <div className="text-center py-4 text-sm text-slate-400">
-                                  暂无匹配素材，可搜索素材库或先创建
-                                </div>
-                              )}
+                          {/* ─── 紧凑搜索条（常驻） ─── */}
+                          <div className="flex items-center gap-2">
+                            <div className="relative flex-1">
+                              <FileText className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                              <Input
+                                placeholder={mainInstruction.trim().length >= 4 ? '搜索素材库，或按回车查看全部...' : '输入创作指令后自动推荐素材'}
+                                value={materialSearchQuery}
+                                onChange={(e) => setMaterialSearchQuery(e.target.value)}
+                                onKeyDown={(e) => { if (e.key === 'Enter') handleSearchMaterials(materialSearchQuery); }}
+                                className="pl-9 text-sm h-9"
+                              />
                             </div>
-                          )}
-
-                          {/* 未输入指令时的提示 */}
-                          {mainInstruction.trim().length < 4 && (
-                            <div className="text-center py-6 text-sm text-slate-400 bg-slate-50/50 rounded-lg border border-dashed border-slate-200">
-                              输入创作指令后，将自动推荐相关素材
-                            </div>
-                          )}
-
-                          {/* 分隔线 */}
-                          <div className="flex items-center gap-3">
-                            <div className="flex-1 h-px bg-slate-200" />
-                            <span className="text-xs text-slate-400 shrink-0">手动搜索</span>
-                            <div className="flex-1 h-px bg-slate-200" />
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => {
+                                if (materialSearchQuery.trim()) {
+                                  handleSearchMaterials(materialSearchQuery);
+                                } else if (mainInstruction.trim().length >= 4) {
+                                  handleRecommendMaterials(false);
+                                }
+                              }}
+                              disabled={materialSearchLoading || loadingRecommendedMaterials}
+                              className="h-9 px-2.5 text-slate-500 hover:text-amber-600"
+                            >
+                              {materialSearchLoading || loadingRecommendedMaterials ? (
+                                <Loader2 className="w-4 h-4 animate-spin" />
+                              ) : (
+                                <Sparkles className="w-4 h-4" />
+                              )}
+                            </Button>
                           </div>
 
-                          {/* 搜索区域 */}
-                          <div className="space-y-3">
-                            <div className="flex items-center justify-between">
-                              <div className="flex items-center gap-2">
-                                <FileText className="w-3.5 h-3.5 text-slate-400" />
-                                <span className="text-sm font-medium text-slate-700">素材库搜索</span>
-                              </div>
-                              <Button variant="ghost" size="sm" onClick={() => setMaterialSearchOpen(!materialSearchOpen)} className="h-7 px-2 text-xs text-slate-500">
-                                {materialSearchOpen ? '收起' : '展开'}
-                              </Button>
-                            </div>
-
-                            {/* 素材搜索弹窗（内联） */}
-                            {materialSearchOpen && (
-                              <div className="border border-slate-200 rounded-xl p-4 bg-slate-50/50 space-y-3">
-                                <div className="flex gap-2">
-                                  <Input
-                                    placeholder="搜索素材..."
-                                    value={materialSearchQuery}
-                                    onChange={(e) => setMaterialSearchQuery(e.target.value)}
-                                    className="text-sm h-9"
-                                  />
-                                  <Button size="sm" onClick={() => handleSearchMaterials(materialSearchQuery)} disabled={materialSearchLoading || !materialSearchQuery.trim()} className="text-sm h-9 px-4">
-                                    {materialSearchLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : '搜索'}
-                                  </Button>
-                                </div>
-                                {filteredSearchMaterials.length > 0 && (
-                                  <div className="space-y-1.5">
-                                    <div className="text-xs font-medium text-slate-500">搜索结果</div>
-                                    {filteredSearchMaterials.map((mat) => (
-                                      <button
-                                        key={mat.id}
-                                        type="button"
-                                        onClick={() => toggleMaterialSelection(mat)}
-                                        className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-all ${
-                                          selectedMaterialIds.includes(mat.id)
-                                            ? 'bg-indigo-100 text-indigo-700'
-                                            : 'hover:bg-slate-100 text-slate-600'
-                                        }`}
-                                      >
-                                        <span className="font-medium">{mat.title}</span>
-                                        {selectedMaterialIds.includes(mat.id) && <CheckCircle2 className="w-3.5 h-3.5 ml-1.5 inline text-indigo-500" />}
-                                      </button>
-                                    ))}
-                                  </div>
-                                )}
+                          {/* ─── 统一结果列表 ─── */}
+                          <div className="space-y-2">
+                            {/* 状态A：正在搜索/推荐 */}
+                            {(materialSearchLoading || (loadingRecommendedMaterials && recommendedMaterials.length === 0 && recommendedSnippets.length === 0)) && (
+                              <div className="flex items-center gap-2 py-6 justify-center text-sm text-slate-400">
+                                <Loader2 className="w-4 h-4 animate-spin" />
+                                {materialSearchLoading ? '正在搜索素材库...' : '正在匹配相关素材...'}
                               </div>
                             )}
-                          </div>
 
-                          {/* 分隔线 */}
-                          <div className="flex items-center gap-3">
-                            <div className="flex-1 h-px bg-slate-200" />
-                            <span className="text-xs text-slate-400 shrink-0">信息速记</span>
-                            <div className="flex-1 h-px bg-slate-200" />
-                          </div>
-
-                          {/* 信息速记区域 */}
-                          <div className="space-y-3">
-                            <div className="flex items-center justify-between">
-                              <div className="flex items-center gap-2">
-                                <BookOpen className="w-3.5 h-3.5 text-sky-500" />
-                                <span className="text-sm font-medium text-slate-700">全部速记</span>
-                              </div>
-                              <Button variant="ghost" size="sm" onClick={() => loadSnippetList()} disabled={snippetLoading} className="h-7 px-2 text-xs text-sky-500">
-                                <RefreshCw className={`w-3 h-3 mr-1 ${snippetLoading ? 'animate-spin' : ''}`} />
-                                刷新
-                              </Button>
-                            </div>
-
-                            {/* 速记列表 */}
-                            {snippetLoading ? (
-                              <div className="flex items-center justify-center py-6">
-                                <Loader2 className="h-5 w-5 animate-spin text-sky-500" />
-                              </div>
-                            ) : snippetList.length === 0 ? (
-                              <div className="text-center py-6">
-                                <BookOpen className="mx-auto h-8 w-8 text-slate-200 mb-2" />
-                                <p className="text-sm text-slate-400">暂无速记记录</p>
-                                <p className="text-xs text-slate-300 mt-1">可通过右侧「信息速记」入口记录</p>
-                              </div>
-                            ) : (
-                              <div className="space-y-2 max-h-[280px] overflow-y-auto">
-                                {snippetList.map((snippet) => {
-                                  const snippetCategories = (snippet.categories as string[] || ['quick_note']);
-                                  const isSelected = snippet.materialId ? selectedMaterialIds.includes(snippet.materialId) : false;
-
+                            {/* 状态B：有搜索结果 → 优先展示搜索 */}
+                            {!materialSearchLoading && filteredSearchMaterials.length > 0 && (
+                              <>
+                                <div className="text-xs font-medium text-slate-500 px-1">
+                                  搜索结果 <span className="text-slate-400 font-normal">({filteredSearchMaterials.length})</span>
+                                </div>
+                                {filteredSearchMaterials.map((mat) => {
+                                  const isSelected = selectedMaterialIds.includes(mat.id);
+                                  const typeLabel = MATERIAL_TYPE_LABELS[mat.type] ?? '素材';
                                   return (
                                     <div
-                                      key={snippet.id}
-                                      className={`px-3 py-2.5 rounded-lg border transition-all ${
+                                      key={mat.id}
+                                      className={`flex items-center gap-3 px-3 py-2.5 rounded-lg border transition-all ${
                                         isSelected
                                           ? 'border-indigo-300 bg-indigo-50'
-                                          : 'border-slate-200 bg-white hover:border-slate-300'
+                                          : 'border-slate-200 bg-white hover:border-amber-300 hover:bg-amber-50/30'
                                       }`}
                                     >
-                                      <div className="flex items-start justify-between gap-2">
-                                        <div className="flex-1 min-w-0">
-                                          <div className="flex items-center gap-1.5 mb-1">
-                                            {snippetCategories.map((cat) => {
-                                              const style = SNIPPET_CATEGORY_COLORS[cat] || SNIPPET_CATEGORY_COLORS.quick_note;
-                                              const label = SNIPPET_CATEGORY_LABELS[cat] || cat;
-                                              return (
-                                                <span key={cat} className={`text-[10px] px-1.5 py-0.5 rounded ${style.bg} ${style.text}`}>
-                                                  {label}
-                                                </span>
-                                              );
-                                            })}
-                                            {snippet.complianceLevel && (
-                                              <span className={`text-[10px] px-1.5 py-0.5 rounded ${
-                                                snippet.complianceLevel === 'A' ? 'bg-green-50 text-green-700' :
-                                                snippet.complianceLevel === 'B' ? 'bg-amber-50 text-amber-700' :
-                                                'bg-red-50 text-red-700'
-                                              }`}>
-                                                {snippet.complianceLevel === 'A' ? '合规' : snippet.complianceLevel === 'B' ? '预警' : '违规'}
-                                              </span>
-                                            )}
-                                          </div>
-                                          <p className="text-sm font-medium text-slate-700 truncate">
-                                            {snippet.title || '无标题'}
-                                          </p>
-                                          {snippet.summary && (
-                                            <p className="text-xs text-slate-500 mt-0.5 line-clamp-1">{snippet.summary}</p>
-                                          )}
-                                        </div>
-                                        <button
-                                          type="button"
-                                          onClick={() => handleSelectSnippetInMaterialTab(snippet)}
-                                          className={`shrink-0 text-[11px] px-2.5 py-1 rounded-md transition-colors font-medium ${
-                                            isSelected
-                                              ? 'bg-indigo-100 text-indigo-700 border border-indigo-300'
-                                              : 'bg-sky-500 text-white hover:bg-sky-600'
-                                          }`}
-                                        >
-                                          {isSelected ? '已选' : (snippet.materialId ? '选择' : '入库并选择')}
-                                        </button>
+                                      <Badge variant="outline" className="text-xs px-2 py-0.5 shrink-0 border-slate-300 text-slate-600">
+                                        {typeLabel}
+                                      </Badge>
+                                      <div className="flex-1 min-w-0">
+                                        <p className="text-sm font-medium text-slate-800 truncate">{mat.title}</p>
                                       </div>
+                                      <button
+                                        type="button"
+                                        onClick={() => toggleMaterialSelection(mat)}
+                                        className={`shrink-0 text-xs px-3 py-1.5 rounded-md font-medium transition-all ${
+                                          isSelected
+                                            ? 'bg-indigo-100 text-indigo-600 border border-indigo-200'
+                                            : 'bg-amber-500 text-white hover:bg-amber-600 shadow-sm'
+                                        }`}
+                                      >
+                                        {isSelected ? '✓ 已添加' : '+ 添加'}
+                                      </button>
                                     </div>
                                   );
                                 })}
+                              </>
+                            )}
+
+                            {/* 状态C：无搜索但有推荐 → 展示智能推荐（素材+速记合并） */}
+                            {!materialSearchLoading && filteredSearchMaterials.length === 0 && mainInstruction.trim().length >= 4 && (
+                              <>
+                                {/* 推荐素材 */}
+                                {recommendedMaterials.length > 0 && (
+                                  <>
+                                    <div className="flex items-center justify-between px-1">
+                                      <div className="flex items-center gap-2">
+                                        <Sparkles className="w-3.5 h-3.5 text-amber-500" />
+                                        <span className="text-xs font-medium text-slate-600">智能推荐</span>
+                                      </div>
+                                      <Button variant="ghost" size="sm" onClick={() => handleRecommendMaterials(false)} disabled={loadingRecommendedMaterials} className="h-6 px-1.5 text-[11px] text-slate-400 hover:text-amber-600">
+                                        <RefreshCw className={`w-3 h-3 mr-1 ${loadingRecommendedMaterials ? 'animate-spin' : ''}`} />
+                                        刷新
+                                      </Button>
+                                    </div>
+                                    {recommendedMaterials.map((mat) => {
+                                      const isSelected = selectedMaterialIds.includes(mat.id);
+                                      const matchLevel = mat.matchLevel || 'medium';
+                                      const matchLabel = matchLevel === 'high' ? '高度相关' : matchLevel === 'medium' ? '相关' : '可能相关';
+                                      const matchDots = matchLevel === 'high' ? 3 : matchLevel === 'medium' ? 2 : 1;
+                                      const matchDotColor = matchLevel === 'high'
+                                        ? 'bg-emerald-400'
+                                        : matchLevel === 'medium'
+                                          ? 'bg-blue-400'
+                                          : 'bg-slate-300';
+                                      const typeLabel = MATERIAL_TYPE_LABELS[mat.type] ?? '素材';
+                                      return (
+                                        <div
+                                          key={mat.id}
+                                          className={`flex items-center gap-3 px-3 py-2.5 rounded-lg border transition-all ${
+                                            isSelected
+                                              ? 'border-indigo-300 bg-indigo-50'
+                                              : 'border-slate-200 bg-white hover:border-amber-300 hover:bg-amber-50/30'
+                                          }`}
+                                        >
+                                          <Badge variant="outline" className="text-xs px-2 py-0.5 shrink-0 border-slate-300 text-slate-600">
+                                            {typeLabel}
+                                          </Badge>
+                                          <div className="flex-1 min-w-0">
+                                            <p className="text-sm font-medium text-slate-800 truncate">{mat.title}</p>
+                                          </div>
+                                          <Tooltip>
+                                            <TooltipTrigger asChild>
+                                              <div className="flex items-center gap-1 shrink-0 cursor-help">
+                                                <div className="flex gap-0.5">
+                                                  {[1, 2, 3].map((i) => (
+                                                    <div key={i} className={`w-1.5 h-1.5 rounded-full ${i <= matchDots ? matchDotColor : 'bg-slate-200'}`} />
+                                                  ))}
+                                                </div>
+                                                <span className="text-xs text-slate-400">{matchLabel}</span>
+                                              </div>
+                                            </TooltipTrigger>
+                                            <TooltipContent side="top" className="text-xs">
+                                              <div className="space-y-0.5">
+                                                <p>关键词命中: {mat.keywordHitCount ?? 0} 次</p>
+                                                <p>标签命中: {mat.tagHitCount ?? 0} 次</p>
+                                                <p>使用次数: {mat.useCount ?? 0}</p>
+                                              </div>
+                                            </TooltipContent>
+                                          </Tooltip>
+                                          <button
+                                            type="button"
+                                            onClick={() => toggleMaterialSelection(mat)}
+                                            className={`shrink-0 text-xs px-3 py-1.5 rounded-md font-medium transition-all ${
+                                              isSelected
+                                                ? 'bg-indigo-100 text-indigo-600 border border-indigo-200'
+                                                : 'bg-amber-500 text-white hover:bg-amber-600 shadow-sm'
+                                            }`}
+                                          >
+                                            {isSelected ? '✓ 已添加' : '+ 添加'}
+                                          </button>
+                                        </div>
+                                      );
+                                    })}
+                                  </>
+                                )}
+
+                                {/* 推荐速记（与素材同一列表，仅一个子标题区分） */}
+                                {recommendedSnippets.length > 0 && (
+                                  <>
+                                    <div className="flex items-center gap-2 pt-1 px-1">
+                                      <BookOpen className="w-3.5 h-3.5 text-sky-500" />
+                                      <span className="text-xs font-medium text-slate-600">相关速记</span>
+                                    </div>
+                                    {recommendedSnippets.map((snippet) => {
+                                      const isSnippetSelected = snippet.materialId ? selectedMaterialIds.includes(snippet.materialId) : false;
+                                      return (
+                                        <div
+                                          key={snippet.id}
+                                          className={`flex items-center gap-3 px-3 py-2 rounded-lg border transition-all ${
+                                            isSnippetSelected
+                                              ? 'border-indigo-300 bg-indigo-50'
+                                              : 'border-slate-200 bg-sky-50/30 hover:border-sky-300'
+                                          }`}
+                                        >
+                                          <div className="flex-1 min-w-0">
+                                            <p className="text-sm font-medium text-slate-700 truncate">{snippet.title}</p>
+                                            {snippet.summary && (
+                                              <p className="text-xs text-slate-500 mt-0.5 line-clamp-1">{snippet.summary}</p>
+                                            )}
+                                          </div>
+                                          <button
+                                            type="button"
+                                            onClick={() => {
+                                              const snippetObj = snippetList.find((s: InfoSnippet) => s.id === snippet.id);
+                                              if (snippetObj) handleSelectSnippetInMaterialTab(snippetObj);
+                                            }}
+                                            className={`shrink-0 text-xs px-3 py-1.5 rounded-md font-medium transition-all ${
+                                              isSnippetSelected
+                                                ? 'bg-indigo-100 text-indigo-600 border border-indigo-200'
+                                                : 'bg-sky-500 text-white hover:bg-sky-600 shadow-sm'
+                                            }`}
+                                          >
+                                            {isSnippetSelected ? '✓ 已添加' : (snippet.materialId ? '+ 选择' : '入库并选择')}
+                                          </button>
+                                        </div>
+                                      );
+                                    })}
+                                  </>
+                                )}
+
+                                {/* 推荐无结果 */}
+                                {autoRecommendFetched && recommendedMaterials.length === 0 && recommendedSnippets.length === 0 && (
+                                  <div className="text-center py-6 text-sm text-slate-400 bg-slate-50/50 rounded-lg border border-dashed border-slate-200">
+                                    暂无匹配素材，可尝试上方搜索或先创建
+                                  </div>
+                                )}
+                              </>
+                            )}
+
+                            {/* 状态D：无指令也无搜索 → 空态提示 */}
+                            {mainInstruction.trim().length < 4 && !materialSearchQuery.trim() && (
+                              <div className="text-center py-8 text-sm text-slate-400 bg-slate-50/50 rounded-lg border border-dashed border-slate-200">
+                                输入创作指令后将自动推荐相关素材<br />
+                                <span className="text-xs text-slate-300">或直接在上方搜索素材库</span>
                               </div>
                             )}
+                          </div>
+
+                          {/* ─── 底部快捷入口 ─── */}
+                          <div className="flex items-center justify-between pt-1">
+                            <Link href="/materials" className="text-xs text-slate-400 hover:text-indigo-600 flex items-center gap-1 transition-colors">
+                              <ExternalLink className="w-3 h-3" />
+                              管理素材库
+                            </Link>
+                            <button
+                              type="button"
+                              onClick={() => setShowSnippetDrawer(true)}
+                              className="text-xs text-slate-400 hover:text-sky-600 flex items-center gap-1 transition-colors"
+                            >
+                              <BookOpen className="w-3 h-3" />
+                              查看全部速记
+                            </button>
                           </div>
                         </div>
                       )}
