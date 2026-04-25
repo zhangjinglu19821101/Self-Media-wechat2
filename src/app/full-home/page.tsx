@@ -22,7 +22,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { Loader2, Plus, Trash2, Send, Sparkles, ListTodo, CheckCircle2, XCircle, GripVertical, MoveUp, MoveDown, Maximize2, Minimize2, AlertTriangle, GitCompare, RefreshCw, FileText, Save, Eye, Home, BookmarkPlus, ExternalLink, BookOpen, Clock, Building2, X, HelpCircle, Settings, Rocket, Layers, ChevronDown, ChevronUp, Cpu, Brain, Bell, Workflow, Palette, PenTool, ArrowRight, ArrowLeft, Briefcase, Shield, Users, Download, Copy, ImageIcon, Check, AlertCircle, Calendar, Lock } from 'lucide-react';
+import { Loader2, Plus, Trash2, Send, Sparkles, ListTodo, CheckCircle2, XCircle, GripVertical, MoveUp, MoveDown, Maximize2, Minimize2, AlertTriangle, GitCompare, RefreshCw, FileText, Save, Eye, Home, BookmarkPlus, ExternalLink, BookOpen, Clock, Building2, X, HelpCircle, Settings, Rocket, Layers, ChevronDown, ChevronUp, Cpu, Brain, Bell, Workflow, Palette, PenTool, ArrowRight, ArrowLeft, Briefcase, Shield, Users, Download, Copy, ImageIcon, Check, AlertCircle, Calendar, Lock, Search } from 'lucide-react';
 import { toast } from 'sonner';
 import { AgentTaskListNormal } from '@/components/agent-task-list-normal';
 import { XiaohongshuPreview } from '@/components/xiaohongshu-preview';
@@ -446,7 +446,6 @@ export default function HomePage() {
   const [emotionTone, setEmotionTone] = useState('理性客观'); // 默认值：理性客观
   const [selectedMaterialIds, setSelectedMaterialIds] = useState<string[]>([]);
   const [selectedMaterials, setSelectedMaterials] = useState<MaterialItem[]>([]);
-  const [materialSearchOpen, setMaterialSearchOpen] = useState(false);
   const [materialSearchQuery, setMaterialSearchQuery] = useState('');
   const [materialSearchResults, setMaterialSearchResults] = useState<MaterialItem[]>([]);
   const [materialSearchLoading, setMaterialSearchLoading] = useState(false);
@@ -2946,31 +2945,38 @@ export default function HomePage() {
                             <div className="relative flex-1">
                               <FileText className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
                               <Input
-                                placeholder={mainInstruction.trim().length >= 4 ? '搜索素材库，或按回车查看全部...' : '输入创作指令后自动推荐素材'}
+                                placeholder={mainInstruction.trim().length >= 4 ? '搜索素材库...' : '输入创作指令后自动推荐素材'}
                                 value={materialSearchQuery}
-                                onChange={(e) => setMaterialSearchQuery(e.target.value)}
-                                onKeyDown={(e) => { if (e.key === 'Enter') handleSearchMaterials(materialSearchQuery); }}
-                                className="pl-9 text-sm h-9"
+                                onChange={(e) => {
+                                  const val = e.target.value;
+                                  setMaterialSearchQuery(val);
+                                  // 清空搜索框时清除搜索结果，回到推荐视图
+                                  if (!val.trim()) {
+                                    setMaterialSearchResults([]);
+                                  }
+                                }}
+                                onKeyDown={(e) => { if (e.key === 'Enter' && materialSearchQuery.trim()) handleSearchMaterials(materialSearchQuery); }}
+                                className="pl-9 pr-9 text-sm h-9"
                               />
+                              {materialSearchQuery.trim() && (
+                                <button
+                                  type="button"
+                                  onClick={() => { setMaterialSearchQuery(''); setMaterialSearchResults([]); }}
+                                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                                >
+                                  <X className="w-3.5 h-3.5" />
+                                </button>
+                              )}
                             </div>
                             <Button
                               size="sm"
-                              variant="ghost"
-                              onClick={() => {
-                                if (materialSearchQuery.trim()) {
-                                  handleSearchMaterials(materialSearchQuery);
-                                } else if (mainInstruction.trim().length >= 4) {
-                                  handleRecommendMaterials(false);
-                                }
-                              }}
-                              disabled={materialSearchLoading || loadingRecommendedMaterials}
-                              className="h-9 px-2.5 text-slate-500 hover:text-amber-600"
+                              variant="outline"
+                              onClick={() => { if (materialSearchQuery.trim()) handleSearchMaterials(materialSearchQuery); }}
+                              disabled={materialSearchLoading || !materialSearchQuery.trim()}
+                              className="h-9 px-3 text-sm"
                             >
-                              {materialSearchLoading || loadingRecommendedMaterials ? (
-                                <Loader2 className="w-4 h-4 animate-spin" />
-                              ) : (
-                                <Sparkles className="w-4 h-4" />
-                              )}
+                              {materialSearchLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
+                              <span className="ml-1.5">搜索</span>
                             </Button>
                           </div>
 
@@ -3025,8 +3031,15 @@ export default function HomePage() {
                               </>
                             )}
 
-                            {/* 状态C：无搜索但有推荐 → 展示智能推荐（素材+速记合并） */}
-                            {!materialSearchLoading && filteredSearchMaterials.length === 0 && mainInstruction.trim().length >= 4 && (
+                            {/* 状态B2：搜索无结果 */}
+                            {!materialSearchLoading && materialSearchQuery.trim() && filteredSearchMaterials.length === 0 && materialSearchResults.length === 0 && (
+                              <div className="text-center py-4 text-sm text-slate-400 bg-slate-50/50 rounded-lg border border-dashed border-slate-200">
+                                未找到匹配素材，请尝试其他关键词
+                              </div>
+                            )}
+
+                            {/* 状态C：未搜索但有推荐 → 展示智能推荐（素材+速记合并） */}
+                            {!materialSearchLoading && filteredSearchMaterials.length === 0 && !materialSearchQuery.trim() && mainInstruction.trim().length >= 4 && (
                               <>
                                 {/* 推荐素材 */}
                                 {recommendedMaterials.length > 0 && (
@@ -3165,20 +3178,78 @@ export default function HomePage() {
                             )}
                           </div>
 
+                          {/* ─── 可折叠速记浏览区（默认收起） ─── */}
+                          {!materialSearchQuery.trim() && snippetList.length > 0 && (
+                            <div className="border border-slate-200 rounded-lg overflow-hidden">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const el = document.getElementById('snippet-collapse-content');
+                                  if (el) el.classList.toggle('hidden');
+                                }}
+                                className="w-full flex items-center justify-between px-3 py-2 text-xs text-slate-500 hover:bg-slate-50 transition-colors"
+                              >
+                                <div className="flex items-center gap-1.5">
+                                  <BookOpen className="w-3.5 h-3.5 text-sky-500" />
+                                  <span className="font-medium">全部速记</span>
+                                  <span className="text-slate-400">({snippetList.length})</span>
+                                </div>
+                                <ChevronDown className="w-3.5 h-3.5" />
+                              </button>
+                              <div id="snippet-collapse-content" className="hidden max-h-48 overflow-y-auto border-t border-slate-100">
+                                {snippetList.map((snippet) => {
+                                  const isSnippetSelected = snippet.materialId ? selectedMaterialIds.includes(snippet.materialId) : false;
+                                  const cats = snippet.categories || [];
+                                  return (
+                                    <div
+                                      key={snippet.id}
+                                      className={`flex items-center gap-2 px-3 py-2 hover:bg-slate-50 transition-colors border-b border-slate-50 last:border-0 ${
+                                        isSnippetSelected ? 'bg-indigo-50/50' : ''
+                                      }`}
+                                    >
+                                      <div className="flex-1 min-w-0">
+                                        <p className="text-sm text-slate-700 truncate">{snippet.title || '无标题'}</p>
+                                        <div className="flex items-center gap-1 mt-0.5">
+                                          {cats.slice(0, 2).map((cat) => (
+                                            <span key={cat} className="text-[10px] px-1 py-0.5 rounded bg-sky-50 text-sky-600">
+                                              {SNIPPET_CATEGORY_LABELS[cat] || cat}
+                                            </span>
+                                          ))}
+                                          {snippet.complianceLevel && (
+                                            <span className={`text-[10px] px-1 py-0.5 rounded ${
+                                              snippet.complianceLevel === 'A' ? 'bg-emerald-50 text-emerald-600' :
+                                              snippet.complianceLevel === 'B' ? 'bg-amber-50 text-amber-600' :
+                                              'bg-red-50 text-red-600'
+                                            }`}>
+                                              {snippet.complianceLevel}级
+                                            </span>
+                                          )}
+                                        </div>
+                                      </div>
+                                      <button
+                                        type="button"
+                                        onClick={() => handleSelectSnippetInMaterialTab(snippet)}
+                                        className={`shrink-0 text-xs px-2 py-1 rounded font-medium transition-all ${
+                                          isSnippetSelected
+                                            ? 'bg-indigo-100 text-indigo-600 border border-indigo-200'
+                                            : 'text-sky-600 hover:bg-sky-50 border border-transparent hover:border-sky-200'
+                                        }`}
+                                      >
+                                        {isSnippetSelected ? '✓' : (snippet.materialId ? '+选择' : '入库+选')}
+                                      </button>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          )}
+
                           {/* ─── 底部快捷入口 ─── */}
-                          <div className="flex items-center justify-between pt-1">
+                          <div className="flex items-center pt-1">
                             <Link href="/materials" className="text-xs text-slate-400 hover:text-indigo-600 flex items-center gap-1 transition-colors">
                               <ExternalLink className="w-3 h-3" />
                               管理素材库
                             </Link>
-                            <button
-                              type="button"
-                              onClick={() => setShowSnippetDrawer(true)}
-                              className="text-xs text-slate-400 hover:text-sky-600 flex items-center gap-1 transition-colors"
-                            >
-                              <BookOpen className="w-3 h-3" />
-                              查看全部速记
-                            </button>
                           </div>
                         </div>
                       )}
