@@ -2414,149 +2414,24 @@ export default function HomePage() {
                             </div>
                             <p className="text-sm text-slate-500 mt-1">选择内容模版，快速匹配你的创作风格</p>
                           </div>
-                          {/* 内容类型标签页 */}
-                          <div className="flex items-center gap-1 p-0.5 bg-slate-100 rounded-xl">
-                            <button
-                              type="button"
-                              className="
-                                px-4 py-1.5 rounded-lg text-sm font-medium transition-all duration-200
-                                bg-white text-slate-900 shadow-sm
-                              "
-                            >
-                              <div className="flex items-center gap-2">
-                                <div className="w-2 h-2 rounded-full bg-blue-500"></div>
-                                图文
-                              </div>
-                            </button>
-                            <button
-                              type="button"
-                              className="
-                                px-4 py-1.5 rounded-lg text-sm font-medium transition-all duration-200
-                                text-slate-500 hover:text-slate-700
-                              "
-                            >
-                              <div className="flex items-center gap-2">
-                                <div className="w-2 h-2 rounded-full bg-slate-300"></div>
-                                视频
-                              </div>
-                            </button>
-                          </div>
-                        </div>
-                        
-                        {/* 内容区域 */}
-                        <div className="p-6 bg-slate-50/50">
-                          {/* 图文模板展示 */}
-                          <div className="space-y-6">
-                            {/* 图文模板网格 */}
-                            <div>
-                              <h3 className="text-sm font-medium text-slate-700 mb-4 flex items-center gap-2">
-                                <div className="w-2 h-2 rounded-full bg-blue-500"></div>
-                                图文模板
-                              </h3>
-                              <div className="grid gap-4 md:grid-cols-2">
-                                {/* 模板卡片1 */}
-                                <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden hover:shadow-md transition-shadow duration-200">
-                                  <div className="aspect-[4/5] bg-gradient-to-br from-amber-50 to-orange-100 relative overflow-hidden">
-                                    {/* 模板封面模拟 */}
-                                    <div className="absolute inset-0 flex items-center justify-center">
-                                      <div className="text-center">
-                                        <div className="w-24 h-24 bg-gradient-to-br from-amber-500 to-orange-600 rounded-xl mx-auto mb-3 flex items-center justify-center">
-                                          <span className="text-white font-bold text-lg">图文</span>
-                                        </div>
-                                        <p className="text-sm text-slate-600">封面模板</p>
-                                      </div>
-                                    </div>
-                                  </div>
-                                  <div className="p-4">
-                                    <h4 className="font-semibold text-slate-800 mb-1">情感共鸣模板</h4>
-                                    <p className="text-sm text-slate-500">以情感故事为主，引发读者共鸣</p>
-                                  </div>
-                                </div>
-                                
-                                {/* 模板卡片2 */}
-                                <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden hover:shadow-md transition-shadow duration-200">
-                                  <div className="aspect-[4/5] bg-gradient-to-br from-blue-50 to-sky-100 relative overflow-hidden">
-                                    <div className="absolute inset-0 flex items-center justify-center">
-                                      <div className="text-center">
-                                        <div className="w-24 h-24 bg-gradient-to-br from-blue-500 to-sky-600 rounded-xl mx-auto mb-3 flex items-center justify-center">
-                                          <span className="text-white font-bold text-lg">图文</span>
-                                        </div>
-                                        <p className="text-sm text-slate-600">对比模板</p>
-                                      </div>
-                                    </div>
-                                  </div>
-                                  <div className="p-4">
-                                    <h4 className="font-semibold text-slate-800 mb-1">对比分析模板</h4>
-                                    <p className="text-sm text-slate-500">产品对比，突出优势</p>
-                                  </div>
-                                </div>
-                              </div>
-                            </div>
-                            
-                            {/* 模板长图展示 */}
-                            <div>
-                              <h3 className="text-sm font-medium text-slate-700 mb-4 flex items-center gap-2">
-                                <div className="w-2 h-2 rounded-full bg-slate-400"></div>
-                                模板长图
-                              </h3>
-                              <div className="grid gap-4 md:grid-cols-2">
-                                {/* 长图模板卡片1 */}
-                                <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden hover:shadow-md transition-shadow duration-200">
-                                  <div className="aspect-[16/9] bg-gradient-to-br from-blue-500 to-sky-600 relative overflow-hidden">
-                                    <div className="absolute inset-0 flex items-center justify-center">
-                                      <div className="text-center">
-                                        <div className="w-20 h-20 bg-white/20 rounded-full mx-auto mb-3 flex items-center justify-center backdrop-blur-sm">
-                                          <BookOpen className="w-10 h-10 text-white" />
-                                        </div>
-                                        <p className="text-white font-semibold">长图预览</p>
-                                      </div>
-                                    </div>
-                                  </div>
-                                  <div className="p-4">
-                                    <h4 className="font-semibold text-slate-800 mb-1">专业分析长图</h4>
-                                    <p className="text-sm text-slate-500">专业严谨的分析风格</p>
-                                  </div>
-                                </div>
-                                
-                                {/* 长图模板卡片2 */}
-                                <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden hover:shadow-md transition-shadow duration-200">
-                                  <div className="aspect-[16/9] bg-gradient-to-br from-purple-500 to-pink-600 relative overflow-hidden">
-                                    <div className="absolute inset-0 flex items-center justify-center">
-                                      <div className="text-center">
-                                        <div className="w-20 h-20 bg-white/20 rounded-full mx-auto mb-3 flex items-center justify-center backdrop-blur-sm">
-                                          <BookOpen className="w-10 h-10 text-white" />
-                                        </div>
-                                        <p className="text-white font-semibold">长图预览</p>
-                                      </div>
-                                    </div>
-                                  </div>
-                                  <div className="p-4">
-                                    <h4 className="font-semibold text-slate-800 mb-1">情感故事长图</h4>
-                                    <p className="text-sm text-slate-500">温馨感人的故事风格</p>
-                                  </div>
-                                </div>
-                              </div>
-                            </div>
-                            
-                            {/* 实际的 ContentTemplateSelector 组件（保持原有功能） */}
-                            <div className="mt-6">
-                              <ContentTemplateSelector
-                                onSelect={(template) => {
-                                  setSelectedContentTemplate(template);
-                                  if (template?.promptInstruction) {
-                                    if (!coreOpinion.trim() || coreOpinion.startsWith('【图文分工】')) {
-                                      setCoreOpinion(`【图文分工】${template.promptInstruction}`);
-                                    }
-                                  } else {
-                                    if (coreOpinion.startsWith('【图文分工】')) {
-                                      setCoreOpinion('');
-                                    }
+                          {/* 内容区域 - 直接展示模板选择器 */}
+                          <div className="p-6 bg-slate-50/50">
+                            <ContentTemplateSelector
+                              onSelect={(template) => {
+                                setSelectedContentTemplate(template);
+                                if (template?.promptInstruction) {
+                                  if (!coreOpinion.trim() || coreOpinion.startsWith('【图文分工】')) {
+                                    setCoreOpinion(`【图文分工】${template.promptInstruction}`);
                                   }
-                                }}
-                                selectedId={selectedContentTemplate?.id || urlTemplateId || null}
-                              />
-                            </div>
-                            
+                                } else {
+                                  if (coreOpinion.startsWith('【图文分工】')) {
+                                    setCoreOpinion('');
+                                  }
+                                }
+                              }}
+                              selectedId={selectedContentTemplate?.id || urlTemplateId || null}
+                            />
+
                             {/* 已选择模板展示 */}
                             {selectedContentTemplate && (
                               <div className="bg-white rounded-xl p-4 border border-slate-200 shadow-sm">
