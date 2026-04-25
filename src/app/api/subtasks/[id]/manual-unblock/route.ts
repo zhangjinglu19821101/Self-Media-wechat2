@@ -76,6 +76,28 @@ export async function POST(
       );
     }
 
+    // 4. 幂等性守卫：如果 manualSourceArticle 已存在，说明此前已手动解锁过
+    //    直接返回幂等成功，避免并发请求导致 409 或引擎重复触发
+    const currentMetadata = (subTask.metadata as Record<string, any>) || {};
+    const existingManualArticle = currentMetadata?.manualSourceArticle;
+    if (existingManualArticle?.content) {
+      console.log('[Manual Unblock] 幂等命中：任务已手动解锁过', {
+        subTaskId,
+        currentStatus: subTask.status,
+        existingArticleLength: existingManualArticle.content.length,
+      });
+      return NextResponse.json({
+        success: true,
+        message: '此任务已手动解锁过，无需重复操作',
+        data: {
+          taskId: subTaskId,
+          status: subTask.status,
+          taskTitle: subTask.taskTitle,
+          idempotent: true,
+        },
+      });
+    }
+
     console.log('[Manual Unblock] 手动解锁 blocked 任务:', {
       subTaskId,
       taskTitle: subTask.taskTitle,
@@ -83,8 +105,7 @@ export async function POST(
       articleTitle: articleTitle || '(无标题)',
     });
 
-    // 4. 将文章存入 metadata.manualSourceArticle
-    const currentMetadata = (subTask.metadata as Record<string, any>) || {};
+    // 5. 将文章存入 metadata.manualSourceArticle
     const updatedMetadata = {
       ...currentMetadata,
       manualSourceArticle: {
@@ -95,7 +116,7 @@ export async function POST(
       },
     };
 
-    // 5. 原子性更新：blocked → pending + 写入 metadata
+    // 6. 原子性更新：blocked → pending + 写入 metadata
     const updateResult = await db
       .update(agentSubTasks)
       .set({
@@ -123,7 +144,7 @@ export async function POST(
       newStatus: 'pending',
     });
 
-    // 6. 记录操作日志到 step_history
+    // 7. 记录操作日志到 step_history
     try {
       // 获取当前最大 interactNum
       const existingHistory = await db
@@ -160,15 +181,35 @@ export async function POST(
       console.warn('[Manual Unblock] 记录操作日志失败（不影响主流程）:', historyError);
     }
 
-    // 7. 触发引擎执行
+    // 8. 触发引擎执行（带并发安全守卫）
     try {
       const { SubtaskExecutionEngine } = await import('@/lib/services/subtask-execution-engine');
-      const engine = new SubtaskExecutionEngine();
-      // 不 await，异步触发即可
-      engine.execute().catch((err: unknown) => {
-        console.error('[Manual Unblock] 引擎执行失败:', err);
-      });
-      console.log('[Manual Unblock] 引擎已触发执行');
+
+      if (SubtaskExecutionEngine.isCurrentlyExecuting()) {
+        // 引擎正在执行其他任务，当前 execute() 会被锁跳过
+        // 注册延迟重试：等当前执行结束后再触发一次，确保新解锁的 pending 任务被拾取
+        console.log('[Manual Unblock] 引擎正在执行中，注册延迟重试');
+        const retryInterval = setInterval(() => {
+          if (!SubtaskExecutionEngine.isCurrentlyExecuting()) {
+            clearInterval(retryInterval);
+            const retryEngine = new SubtaskExecutionEngine();
+            retryEngine.execute().catch((err: unknown) => {
+              console.error('[Manual Unblock] 延迟重试引擎执行失败:', err);
+            });
+            console.log('[Manual Unblock] 延迟重试已触发');
+          }
+        }, 2000); // 每 2 秒检查一次引擎状态
+
+        // 安全兜底：最多等待 30 秒，防止泄漏
+        setTimeout(() => clearInterval(retryInterval), 30000);
+      } else {
+        // 引擎空闲，直接触发
+        const engine = new SubtaskExecutionEngine();
+        engine.execute().catch((err: unknown) => {
+          console.error('[Manual Unblock] 引擎执行失败:', err);
+        });
+        console.log('[Manual Unblock] 引擎已触发执行');
+      }
     } catch (engineError) {
       console.warn('[Manual Unblock] 触发引擎失败（不影响解锁）:', engineError);
     }
