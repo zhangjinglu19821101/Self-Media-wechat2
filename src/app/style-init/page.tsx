@@ -161,7 +161,6 @@ export default function StyleInitPage() {
 
   // 🔥 图片上传状态（多模态视觉分析）
   const [uploadedImages, setUploadedImages] = useState<Array<{ file: File; previewUrl: string }>>([]);
-  const [imageUploading, setImageUploading] = useState(false);
 
   // 🔥 内容模板状态（Phase 1-3）
   const [savedContentTemplateId, setSavedContentTemplateId] = useState<string | null>(null);
@@ -921,7 +920,7 @@ export default function StyleInitPage() {
                   />
                   <p className="text-xs text-muted-foreground mt-1">
                     当前字数: {articleText.replace(/\s/g, '').length} 字
-                    {articleText.length > 0 && articleText.length < 30 && (
+                    {articleText.replace(/\s/g, '').length > 0 && articleText.replace(/\s/g, '').length < 30 && (
                       <span className="text-amber-600 ml-2">（至少需要 30 个字符）</span>
                     )}
                   </p>
@@ -1024,7 +1023,7 @@ export default function StyleInitPage() {
                   />
                   <p className="text-xs text-muted-foreground mt-1">
                     当前字数: {articleText.replace(/\s/g, '').length} 字
-                    {articleText.length > 0 && articleText.length < 50 && (
+                    {articleText.replace(/\s/g, '').length > 0 && articleText.replace(/\s/g, '').length < 50 && (
                       <span className="text-amber-600 ml-2">（至少需要 50 个字符）</span>
                     )}
                   </p>
