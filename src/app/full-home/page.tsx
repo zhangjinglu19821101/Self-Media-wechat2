@@ -2796,11 +2796,11 @@ export default function HomePage() {
                               AI帮我想
                             </Button>
                           </div>
-                          <Input
+                          <Textarea
                             value={coreOpinion}
                             onChange={(e) => setCoreOpinion(e.target.value)}
-                            placeholder="比如：存款到期别急着买增额寿，先算清楚再决定"
-                            className="h-10 text-sm"
+                            placeholder="比如：存款到期别急着买增额寿，先算清楚再决定&#10;可以详细描述你想表达的核心立场、关键论据、目标受众等"
+                            className="min-h-[140px] text-sm resize-y leading-relaxed"
                           />
                           {suggestedOpinions.length > 0 && (
                             <div className="flex flex-wrap gap-2">
