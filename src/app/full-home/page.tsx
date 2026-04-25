@@ -5649,8 +5649,8 @@ function ContentTemplateSelector({
 
   if (loading) {
     return (
-      <div className="flex items-center gap-2 text-xs text-slate-400">
-        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+      <div className="flex items-center gap-2 text-sm text-slate-400">
+        <Loader2 className="w-4 h-4 animate-spin" />
         正在加载内容模板...
       </div>
     );
@@ -5659,10 +5659,10 @@ function ContentTemplateSelector({
   if (templates.length === 0) {
     return (
       <div className="text-center py-4">
-        <p className="text-xs text-slate-400 mb-2">暂无内容模板</p>
+        <p className="text-sm text-slate-400 mb-2">暂无内容模板</p>
         <Link
           href="/style-init"
-          className="text-xs text-amber-600 hover:text-amber-700 underline"
+          className="text-sm text-rose-600 hover:text-rose-700 underline"
         >
           去风格复刻创建 →
         </Link>
@@ -5671,9 +5671,9 @@ function ContentTemplateSelector({
   }
 
   return (
-    <div className="space-y-2">
-      <p className="text-[10px] text-slate-400">选择一个模板决定图文分工方式（不选则使用默认）</p>
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+    <div className="space-y-3">
+      <p className="text-sm text-slate-400">选择一个模板决定图文分工方式（不选则使用默认）</p>
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
         {/* 不使用模板选项 */}
         <button
           type="button"
@@ -5684,8 +5684,8 @@ function ContentTemplateSelector({
               : 'border-transparent bg-white hover:border-gray-200 hover:bg-gray-50/50 hover:shadow-sm'
           }`}
         >
-          <p className="text-xs font-medium text-slate-500">默认模式</p>
-          <p className="text-[10px] text-slate-400 mt-1">系统自动判断图文分工</p>
+          <p className="text-sm font-medium text-slate-700">默认模式</p>
+          <p className="text-sm text-slate-500 mt-1">系统自动判断图文分工</p>
         </button>
 
         {templates.map((tpl) => (
@@ -5700,26 +5700,26 @@ function ContentTemplateSelector({
             }`}
           >
             <div className="flex items-start justify-between mb-1">
-              <p className="text-xs font-medium text-slate-800 truncate flex-1">{tpl.name}</p>
+              <p className="text-sm font-semibold text-slate-800 truncate flex-1">{tpl.name}</p>
               {selectedId === tpl.id && (
-                <CheckCircle2 className="w-3.5 h-3.5 text-rose-500 shrink-0 ml-1" />
+                <CheckCircle2 className="w-5 h-5 text-rose-500 shrink-0 ml-1" />
               )}
             </div>
-            <div className="flex items-center gap-1.5 mb-1.5">
-              <Badge variant="outline" className="text-[9px] px-1.5 py-0">
+            <div className="flex items-center gap-2 mb-2">
+              <Badge variant="outline" className="text-xs px-2 py-0.5">
                 {tpl.cardCountMode?.replace('-card', '卡') || 'N卡'}
               </Badge>
-              <Badge variant="outline" className="text-[9px] px-1.5 py-0">
+              <Badge variant="outline" className="text-xs px-2 py-0.5">
                 {tpl.densityStyle === 'minimal' ? '极简' :
                  tpl.densityStyle === 'concise' ? '精简' :
                  tpl.densityStyle === 'detailed' ? '详尽' : '标准'}
               </Badge>
               {tpl.useCount > 0 && (
-                <span className="text-[9px] text-slate-400">{tpl.useCount}次使用</span>
+                <span className="text-xs text-slate-400">{tpl.useCount}次使用</span>
               )}
             </div>
             {tpl.promptInstruction && (
-              <p className="text-[10px] text-slate-500 line-clamp-2 leading-relaxed">{tpl.promptInstruction}</p>
+              <p className="text-sm text-slate-500 line-clamp-2 leading-relaxed">{tpl.promptInstruction}</p>
             )}
           </button>
         ))}
@@ -5727,9 +5727,9 @@ function ContentTemplateSelector({
       <div className="flex justify-end pt-1">
         <Link
           href="/style-init"
-          className="text-[10px] text-rose-600 hover:text-rose-700 flex items-center gap-1 transition-colors duration-200"
+          className="text-sm text-rose-600 hover:text-rose-700 flex items-center gap-1.5 transition-colors duration-200"
         >
-          <Sparkles className="w-3 h-3" />
+          <Sparkles className="w-4 h-4" />
           从参考笔记创建新模板
         </Link>
       </div>
