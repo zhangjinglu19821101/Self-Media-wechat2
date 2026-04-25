@@ -161,7 +161,8 @@ export async function POST(
         ? Math.max(...existingHistory.map(h => h.interactNum || 0)) + 1
         : 1;
 
-      await db.insert(agentSubTasksStepHistory).values({
+      // 【P2修复】使用 .returning() 遵循 Drizzle ORM 最佳实践，确认插入成功
+      const insertResult = await db.insert(agentSubTasksStepHistory).values({
         commandResultId: subTask.commandResultId,
         stepNo: subTask.orderIndex,
         interactType: 'manual_unblock',
@@ -176,7 +177,14 @@ export async function POST(
           previousStatus: 'blocked',
           newStatus: 'pending',
         },
-      });
+      }).returning({ insertedId: agentSubTasksStepHistory.id });
+
+      if (insertResult.length > 0) {
+        console.log('[Manual Unblock] 操作日志记录成功:', {
+          subTaskId,
+          historyRecordId: insertResult[0].insertedId,
+        });
+      }
     } catch (historyError) {
       console.warn('[Manual Unblock] 记录操作日志失败（不影响主流程）:', historyError);
     }

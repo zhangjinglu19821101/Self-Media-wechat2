@@ -1280,7 +1280,7 @@ export function AgentTaskListNormal({ agentId, showPanel, onTogglePanel }: Agent
    * 用户直接输入文章内容，触发适配任务执行
    */
   const handleManualUnblock = async () => {
-    if (!displayTask) return;
+    if (!displayTask?.id) return;
 
     if (!manualArticleContent.trim()) {
       toast.error('请输入文章内容');
