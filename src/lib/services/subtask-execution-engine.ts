@@ -1923,6 +1923,7 @@ export class SubtaskExecutionEngine {
             status: 'pending',
             fromParentsExecutor: inheritedExecutor,
             userOpinion: task.userOpinion || null,
+            originalInstruction: (task as any).originalInstruction || null, // 🔥 继承原始指令
             materialIds: task.materialIds || [],
             // 🔥🔥🔥 【修复】继承结构信息
             structureName: inheritedStructureName,
@@ -1951,6 +1952,7 @@ export class SubtaskExecutionEngine {
             status: 'pending', // 等待用户确认大纲后激活
             fromParentsExecutor: inheritedExecutor,
             userOpinion: task.userOpinion || null,
+            originalInstruction: (task as any).originalInstruction || null, // 🔥 继承原始指令
             materialIds: task.materialIds || [],
             // 🔥🔥🔥 【修复】继承结构信息（全文任务需要按结构写作）
             structureName: inheritedStructureName,
