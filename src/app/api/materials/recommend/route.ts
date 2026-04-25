@@ -107,6 +107,8 @@ export async function GET(request: NextRequest) {
       emotionTags: c.emotionTags,
       useCount: c.useCount,
       matchLevel: computeMatchLevel(c, candidates),
+      keywordHitCount: c.keywordHitCount,
+      tagHitCount: c.tagHitCount,
     }));
 
     // ─── 信息速记结果 ───

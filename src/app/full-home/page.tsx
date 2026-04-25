@@ -51,6 +51,16 @@ const SNIPPET_CATEGORY_LABELS: Record<string, string> = {
   quick_note: '简要速记',
 };
 
+// 🔥 素材类型标签映射（提取常量，消除硬编码三元表达式）
+const MATERIAL_TYPE_LABELS: Record<string, string> = {
+  case: '案例',
+  data: '数据',
+  story: '故事',
+  quote: '引用',
+  opening: '开头',
+  ending: '结尾',
+};
+
 // 🔥 提醒中心类型定义
 interface Reminder {
   id: string;
@@ -139,6 +149,8 @@ interface MaterialItem {
   emotionTags?: string[];
   useCount?: number;
   matchLevel?: 'high' | 'medium' | 'low';
+  keywordHitCount?: number;
+  tagHitCount?: number;
 }
 
 // 推荐速记项类型
@@ -2960,7 +2972,13 @@ export default function HomePage() {
                                     const matchLevel = mat.matchLevel || 'medium';
                                     const matchLabel = matchLevel === 'high' ? '高度相关' : matchLevel === 'medium' ? '相关' : '可能相关';
                                     const matchDots = matchLevel === 'high' ? 3 : matchLevel === 'medium' ? 2 : 1;
-                                    const typeLabel = mat.type === 'case' ? '案例' : mat.type === 'data' ? '数据' : mat.type === 'story' ? '故事' : mat.type === 'quote' ? '引用' : mat.type === 'opening' ? '开头' : mat.type === 'ending' ? '结尾' : '素材';
+                                    // P2: 颜色与级别强绑定，消除二义性
+                                    const matchDotColor = matchLevel === 'high'
+                                      ? 'bg-emerald-400'
+                                      : matchLevel === 'medium'
+                                        ? 'bg-blue-400'
+                                        : 'bg-slate-300';
+                                    const typeLabel = MATERIAL_TYPE_LABELS[mat.type] ?? '素材';
 
                                     return (
                                       <div
@@ -2981,22 +2999,31 @@ export default function HomePage() {
                                           <p className="text-sm font-medium text-slate-800 truncate">{mat.title}</p>
                                         </div>
 
-                                        {/* 匹配度 */}
-                                        <div className="flex items-center gap-1 shrink-0">
-                                          <div className="flex gap-0.5">
-                                            {[1, 2, 3].map((i) => (
-                                              <div
-                                                key={i}
-                                                className={`w-1.5 h-1.5 rounded-full ${
-                                                  i <= matchDots
-                                                    ? 'bg-amber-400'
-                                                    : 'bg-slate-200'
-                                                }`}
-                                              />
-                                            ))}
-                                          </div>
-                                          <span className="text-xs text-slate-400">{matchLabel}</span>
-                                        </div>
+                                        {/* 匹配度：颜色语义化 + Tooltip 详情 */}
+                                        <Tooltip>
+                                          <TooltipTrigger asChild>
+                                            <div className="flex items-center gap-1 shrink-0 cursor-help">
+                                              <div className="flex gap-0.5">
+                                                {[1, 2, 3].map((i) => (
+                                                  <div
+                                                    key={i}
+                                                    className={`w-1.5 h-1.5 rounded-full ${
+                                                      i <= matchDots ? matchDotColor : 'bg-slate-200'
+                                                    }`}
+                                                  />
+                                                ))}
+                                              </div>
+                                              <span className="text-xs text-slate-400">{matchLabel}</span>
+                                            </div>
+                                          </TooltipTrigger>
+                                          <TooltipContent side="top" className="text-xs">
+                                            <div className="space-y-0.5">
+                                              <p>关键词命中: {mat.keywordHitCount ?? 0} 次</p>
+                                              <p>标签命中: {mat.tagHitCount ?? 0} 次</p>
+                                              <p>使用次数: {mat.useCount ?? 0}</p>
+                                            </div>
+                                          </TooltipContent>
+                                        </Tooltip>
 
                                         {/* 添加按钮 */}
                                         <button
@@ -3043,7 +3070,7 @@ export default function HomePage() {
                                         <button
                                           type="button"
                                           onClick={() => {
-                                            const snippetObj = snippetList.find((s: any) => s.id === snippet.id);
+                                            const snippetObj = snippetList.find((s: InfoSnippet) => s.id === snippet.id);
                                             if (snippetObj) handleSelectSnippetInMaterialTab(snippetObj);
                                           }}
                                           className={`shrink-0 text-xs px-3 py-1.5 rounded-md font-medium transition-all ${
