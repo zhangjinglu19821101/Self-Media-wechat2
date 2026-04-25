@@ -1039,22 +1039,37 @@ export default function HomePage() {
     }
   };
 
+  // P1-9: AbortController ref，用于取消前序推荐请求
+  const recommendAbortRef = useRef<AbortController | null>(null);
+
   // 🔥 创作引导：智能推荐素材（支持手动和自动触发）
-  const handleRecommendMaterials = async (silent: boolean = false) => {
+  // P1-10: 使用 useCallback 管理依赖，避免 useEffect 依赖抑制
+  const handleRecommendMaterials = useCallback(async (silent: boolean = false) => {
     if (!mainInstruction.trim()) return;
+
+    // P1-9: 取消前序请求，防止竞态条件
+    if (recommendAbortRef.current) {
+      recommendAbortRef.current.abort();
+    }
+    const controller = new AbortController();
+    recommendAbortRef.current = controller;
+
     setLoadingRecommendedMaterials(true);
     try {
-      const data: any = await apiGet(`/api/materials/recommend?instruction=${encodeURIComponent(mainInstruction)}&limit=5`);
+      const data: any = await apiGet(
+        `/api/materials/recommend?instruction=${encodeURIComponent(mainInstruction)}&limit=5`,
+        { signal: controller.signal },
+      );
+      // P1-9: 如果请求已被取消，不更新状态
+      if (controller.signal.aborted) return;
+
       const materials = data?.data || [];
       const snippets = data?.snippets || [];
       setRecommendedMaterials(materials);
       setRecommendedSnippets(snippets);
       setAutoRecommendFetched(true);
-      // 同时更新搜索结果，使选中状态可交互
-      setMaterialSearchResults(prev => {
-        const existing = prev.filter(p => !materials.some((d: any) => d.id === p.id));
-        return [...materials, ...existing];
-      });
+      // P1-11: 移除推荐结果混入搜索结果的逻辑
+      // 推荐和搜索是两个独立数据源，不应互相污染
       if (!silent) {
         if (materials.length > 0) {
           toast.success(`推荐了 ${materials.length} 个相关素材`);
@@ -1062,23 +1077,34 @@ export default function HomePage() {
           toast.info('暂无匹配素材，可先去素材库创建');
         }
       }
-    } catch (error) {
+    } catch (error: unknown) {
+      // P1-9: AbortError 是预期行为，不视为错误
+      if (error instanceof DOMException && error.name === 'AbortError') return;
       console.error('推荐素材失败:', error);
       if (!silent) toast.error('推荐素材失败');
     } finally {
-      setLoadingRecommendedMaterials(false);
+      // P1-9: 仅在请求未被取消时更新 loading 状态
+      if (!controller.signal.aborted) {
+        setLoadingRecommendedMaterials(false);
+      }
     }
-  };
+  }, [mainInstruction]);
 
   // 🔥 自动推荐：指令变化后 800ms 自动触发素材推荐
+  // P1-10: 不再需要 eslint-disable，handleRecommendMaterials 是 useCallback 依赖
   useEffect(() => {
-    if (!mainInstruction.trim() || mainInstruction.trim().length < 4) return;
+    if (!mainInstruction.trim() || mainInstruction.trim().length < 4) {
+      // P2: 指令清空时重置推荐状态
+      setAutoRecommendFetched(false);
+      setRecommendedMaterials([]);
+      setRecommendedSnippets([]);
+      return;
+    }
     const timer = setTimeout(() => {
       handleRecommendMaterials(true);
     }, 800);
     return () => clearTimeout(timer);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mainInstruction]);
+  }, [mainInstruction, handleRecommendMaterials]);
 
   // 🔥 行业案例：推荐相关案例
   const handleRecommendCases = async () => {

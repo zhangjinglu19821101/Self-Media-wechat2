@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { materialLibrary } from '@/lib/db/schema/material-library';
 import { infoSnippets } from '@/lib/db/schema/info-snippets';
-import { or, like, desc, and, eq, sql } from 'drizzle-orm';
+import { or, like, desc, and, eq, sql, notInArray } from 'drizzle-orm';
 import { getWorkspaceId } from '@/lib/auth/context';
 
 /**
@@ -57,7 +57,6 @@ export async function GET(request: NextRequest) {
         emotionTags: string[] | null;
         useCount: number;
       },
-      source: 'keyword' | 'tag' | 'hot',
     ) => {
       if (seen.has(item.id)) return;
       seen.add(item.id);
@@ -71,21 +70,20 @@ export async function GET(request: NextRequest) {
         sceneTags: item.sceneTags || [],
         emotionTags: item.emotionTags || [],
         useCount: item.useCount,
-        source,
-        keywordHitCount: source === 'keyword' ? countKeywordHits(item, keywords) : 0,
-        tagHitCount: source === 'tag' ? countTagHits(item, tagCandidates) : 0,
+        keywordHitCount: 0,
+        tagHitCount: 0,
         score: 0,
       });
     };
 
-    keywordResults.forEach((r) => addCandidate(r, 'keyword'));
-    tagResults.forEach((r) => addCandidate(r, 'tag'));
-    hotResults.forEach((r) => addCandidate(r, 'hot'));
+    keywordResults.forEach(addCandidate);
+    tagResults.forEach(addCandidate);
+    hotResults.forEach(addCandidate);
 
-    // 对 keyword/tag 来源的候选也计算完整命中数
+    // ─── 统一计算所有候选的命中数（P1-4: 消除冗余计算） ───
     candidates.forEach((c) => {
-      if (c.source !== 'keyword') c.keywordHitCount = countKeywordHits(c, keywords);
-      if (c.source !== 'tag') c.tagHitCount = countTagHits(c, tagCandidates);
+      c.keywordHitCount = countKeywordHits(c, keywords);
+      c.tagHitCount = countTagHits(c, tagCandidates);
     });
 
     // ─── 综合分排序 ───
@@ -97,7 +95,7 @@ export async function GET(request: NextRequest) {
 
     candidates.sort((a, b) => b.score - a.score);
 
-    // 取 Top N
+    // ─── P1-5: matchLevel 相对分级（基于得分分布） ───
     const topItems = candidates.slice(0, limit).map((c) => ({
       id: c.id,
       title: c.title,
@@ -108,7 +106,7 @@ export async function GET(request: NextRequest) {
       sceneTags: c.sceneTags,
       emotionTags: c.emotionTags,
       useCount: c.useCount,
-      matchLevel: c.score >= 5 ? 'high' : c.score >= 2 ? 'medium' : 'low',
+      matchLevel: computeMatchLevel(c, candidates),
     }));
 
     // ─── 信息速记结果 ───
@@ -127,9 +125,9 @@ export async function GET(request: NextRequest) {
       snippets: topSnippets,
     });
   } catch (error: unknown) {
-    const msg = error instanceof Error ? error.message : '推荐素材失败';
     console.error('[materials/recommend] 错误:', error);
-    return NextResponse.json({ error: msg }, { status: 500 });
+    // P2: 错误响应脱敏，不暴露内部信息
+    return NextResponse.json({ error: '推荐服务暂时不可用' }, { status: 500 });
   }
 }
 
@@ -144,19 +142,24 @@ interface CandidateItem {
   sceneTags: string[];
   emotionTags: string[];
   useCount: number;
-  source: 'keyword' | 'tag' | 'hot';
   keywordHitCount: number;
   tagHitCount: number;
   score: number;
+}
+
+// ─── P1-2: LIKE 通配符转义 ───
+function escapeLikePattern(str: string): string {
+  return str.replace(/[%_\\]/g, '\\$&');
 }
 
 // ─── 路径1：关键词匹配 ───
 async function recallByKeywords(workspaceId: string, keywords: string[]) {
   if (keywords.length === 0) return [];
 
+  // P1-2: 使用 escapeLikePattern 防止 % 和 _ 被解析为通配符
   const conditions = keywords.flatMap((kw) => [
-    like(materialLibrary.title, `%${kw}%`),
-    like(materialLibrary.content, `%${kw}%`),
+    like(materialLibrary.title, `%${escapeLikePattern(kw)}%`),
+    like(materialLibrary.content, `%${escapeLikePattern(kw)}%`),
   ]);
 
   const whereClause =
@@ -185,13 +188,16 @@ async function recallByKeywords(workspaceId: string, keywords: string[]) {
 async function recallByTags(workspaceId: string, tagCandidates: string[]) {
   if (tagCandidates.length === 0) return [];
 
-  // 使用 @> 操作符匹配 JSONB 数组包含
-  const conditions = tagCandidates.map((tag) =>
-    or(
-      sql`${materialLibrary.topicTags} @> ${JSON.stringify([tag])}::jsonb`,
-      sql`${materialLibrary.sceneTags} @> ${JSON.stringify([tag])}::jsonb`,
-    ),
-  );
+  // P0-1: 使用 sql`${col} @> ${value}::jsonb` 格式
+  // Drizzle 的 sql 模板会将 ${value} 参数化，::jsonb 作为 SQL 字面值保留
+  // 这与项目中 info-snippets/route.ts 的写法一致，经过生产验证
+  const conditions = tagCandidates.map((tag) => {
+    const jsonTag = JSON.stringify([tag]);
+    return or(
+      sql`${materialLibrary.topicTags} @> ${jsonTag}::jsonb`,
+      sql`${materialLibrary.sceneTags} @> ${jsonTag}::jsonb`,
+    );
+  });
 
   return db
     .select({
@@ -234,15 +240,19 @@ async function recallByHotness(workspaceId: string) {
 async function recallSnippets(workspaceId: string, keywords: string[]) {
   if (keywords.length === 0) return [];
 
+  // P1-2: 使用 escapeLikePattern
   const conditions = keywords.flatMap((kw) => [
-    like(infoSnippets.rawContent, `%${kw}%`),
-    like(infoSnippets.title, `%${kw}%`),
+    like(infoSnippets.rawContent, `%${escapeLikePattern(kw)}%`),
+    like(infoSnippets.title, `%${escapeLikePattern(kw)}%`),
   ]);
+
+  // P1-3: 过滤已归档/已禁用/已过期的速记，只召回 draft 状态
+  const statusFilter = notInArray(infoSnippets.materialStatus, ['archived', 'disabled', 'expired']);
 
   const whereClause =
     conditions.length === 1
-      ? and(eq(infoSnippets.workspaceId, workspaceId), conditions[0])
-      : and(eq(infoSnippets.workspaceId, workspaceId), or(...conditions));
+      ? and(eq(infoSnippets.workspaceId, workspaceId), statusFilter, conditions[0])
+      : and(eq(infoSnippets.workspaceId, workspaceId), statusFilter, or(...conditions));
 
   return db
     .select({
@@ -277,6 +287,15 @@ function extractKeywordsAndTags(instruction: string): { keywords: string[]; tagC
     '开头案例', '结尾金句', '数据支撑', '对比分析',
   ];
 
+  // P2: 停用词过滤，去除无意义的通用分词
+  const stopWords = new Set([
+    '我想', '一下', '这个', '关于', '就是', '还是', '或者', '而且',
+    '因为', '所以', '但是', '不过', '虽然', '如果', '那么', '什么',
+    '怎么', '如何', '可以', '应该', '需要', '已经', '正在', '一些',
+    '这些', '那些', '他们', '我们', '你们', '自己', '现在', '之后',
+    '之前', '以后', '比较', '非常', '特别', '真的', '好的', '的话',
+  ]);
+
   const keywords: string[] = [];
   const tagCandidates: string[] = [];
 
@@ -294,12 +313,12 @@ function extractKeywordsAndTags(instruction: string): { keywords: string[]; tagC
     }
   }
 
-  // 3. 通用分词补充
+  // 3. 通用分词补充（带停用词过滤）
   const parts = instruction
     .replace(/[，。！？、；：""''（）【】《》\n\r\t,.!?;:(){}[\]<>]/g, '|')
     .split('|')
     .map((s) => s.trim())
-    .filter((s) => s.length >= 2 && s.length <= 10);
+    .filter((s) => s.length >= 2 && s.length <= 10 && !stopWords.has(s));
 
   for (const part of parts) {
     if (!keywords.includes(part) && keywords.length < 8) {
@@ -327,4 +346,26 @@ function countTagHits(item: { topicTags: string[]; sceneTags: string[] }, tagCan
     if (allTags.includes(tag)) count++;
   }
   return count;
+}
+
+// ─── P1-5: matchLevel 相对分级 ───
+// 基于得分分布而非硬编码阈值：
+// - 有关键词/标签命中且得分在前列 → high
+// - 有命中但排名靠后 → medium
+// - 无命中（仅靠热度召回）→ low
+function computeMatchLevel(item: CandidateItem, allCandidates: CandidateItem[]): 'high' | 'medium' | 'low' {
+  // 有关键词或标签命中
+  const hasRelevanceHit = item.keywordHitCount > 0 || item.tagHitCount > 0;
+  if (!hasRelevanceHit) return 'low';
+
+  // 计算相对排名：得分在前 30% → high，否则 → medium
+  const sortedScores = allCandidates
+    .filter((c) => c.keywordHitCount > 0 || c.tagHitCount > 0)
+    .map((c) => c.score)
+    .sort((a, b) => b - a);
+
+  if (sortedScores.length === 0) return 'low';
+
+  const highThreshold = sortedScores[Math.floor(sortedScores.length * 0.3)];
+  return item.score >= highThreshold ? 'high' : 'medium';
 }

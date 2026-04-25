@@ -145,6 +145,7 @@ export async function apiGet<T = unknown>(url: string, options?: {
   headers?: HeadersInit;
   cache?: RequestCache;
   tags?: string[];
+  signal?: AbortSignal;
 }): Promise<T> {
   const headers = buildHeaders(options?.headers);
 
@@ -153,6 +154,7 @@ export async function apiGet<T = unknown>(url: string, options?: {
     headers,
     cache: options?.cache,
     next: options?.tags ? { tags: options.tags } : undefined,
+    signal: options?.signal,
   });
 
   return handleResponse<T>(response);
