@@ -60,6 +60,7 @@ export async function POST(
           commandContent: subTaskData.commandContent,
           // 🔥 新增：传递用户观点和素材
           userOpinion: userOpinion || null,
+          originalInstruction: body.originalInstruction || null, // 🔥 独立存储原始指令
           materialIds: materialIds || [],
         });
         
@@ -85,6 +86,7 @@ export async function POST(
         orderIndex: 1,
         // 🔥 新增：继承用户观点和素材
         userOpinion: userOpinion || null,
+        originalInstruction: body.originalInstruction || null, // 🔥 独立存储原始指令
         materialIds: materialIds || [],
         // 🔥 Phase 6 多用户：工作空间归属
         workspaceId: authResult.workspaceId,
@@ -167,6 +169,7 @@ export async function POST(
         orderIndex: subTasks[i].orderIndex, // 使用 LLM 返回的 orderIndex
         // 🔥 新增：从父任务继承用户观点和素材
         userOpinion: (task as any).userOpinion || null,
+        originalInstruction: (task as any).originalInstruction || null, // 🔥 独立存储原始指令
         materialIds: (task as any).materialIds || [],
         // 🔥 Phase 6 多用户：从父任务继承 workspaceId
         workspaceId: task.workspaceId || authResult.workspaceId,

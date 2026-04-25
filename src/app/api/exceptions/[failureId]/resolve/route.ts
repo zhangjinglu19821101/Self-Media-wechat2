@@ -112,6 +112,7 @@ export async function PUT(
           estimatedDuration: subTask.estimatedHours ? `${subTask.estimatedHours}小时` : '未定',
           // 🔥 新增：从原任务继承用户观点和素材
           userOpinion: (failureRecord as any).user_opinion || null,
+          originalInstruction: (failureRecord as any).original_instruction || null, // 🔥 独立存储原始指令
           materialIds: (failureRecord as any).material_ids || [],
           // 🔥 Phase 6 多用户：工作空间归属
           workspaceId: authResult.workspaceId,

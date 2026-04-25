@@ -1593,3 +1593,35 @@
        - 分组构建时预先计算 phase（第一个 wechat_official → base_article，其余 → platform_adaptation）
        - `isBaseArticleGroup` 改用 `group.phase === 'base_article'`
        - `adaptationCount` 简化为 `selectedAccountIds.length - 1`（两阶段架构始终有一个基础文章组）
+78. **originalInstruction 分离改造**: 将用户原始指令（originalInstruction）从 userOpinion 中分离，实现消费端精准控制
+   - **设计原则**: `userOpinion` 仅存储创作引导结构化内容（核心观点+情感基调+文章结构），`originalInstruction` 独立存储用户原始指令
+   - **消费端分离**: insurance-d 只消费 `userOpinion`（硬约束），Agent B 同时参考 `userOpinion` 和 `originalInstruction`（仅供参考）
+   - **Step 1（Schema + 迁移）**:
+     - `src/lib/db/schema.ts`: 3张表（agentTasks、dailyTask、agentSubTasks）新增 `originalInstruction: text('original_instruction')` 字段
+     - `src/app/api/db/add-original-instruction-field/route.ts`: 新建迁移API，3张表新增字段 + 数据迁移
+     - 数据迁移：从 `user_opinion` 中提取原始指令部分写入 `original_instruction`
+   - **Step 2（API 层存储分离）**: 12+ 文件修改，所有创建子任务的入口都传递 `originalInstruction`
+     - `src/app/full-home/page.tsx`: 前端提交时 `originalInstruction: mainInstruction.trim()`
+     - `src/app/api/agents/b/simple-split/route.ts`: 接收并存储 `originalInstruction`
+     - `src/lib/services/command-result-service.ts`: 两处创建方法参数和 INSERT 补充
+     - `src/app/api/commands/route.ts`、`src/app/api/tasks/route.ts`: 传递 `originalInstruction`
+     - `src/lib/services/subtask-execution-engine.ts`: 自动拆分 INSERT 补充
+     - `src/app/api/exceptions/[failureId]/resolve/route.ts`: 继承 `originalInstruction`
+     - `src/app/api/agents/[id]/subtasks/route.ts`: 3处 INSERT 补充
+     - `src/app/api/agent-sub-tasks/confirm-split/route.ts`: 原生 SQL INSERT 补充
+     - `src/app/api/split/confirm/route.ts`: 原生 SQL INSERT 补充
+     - `src/lib/services/save-split-result-v2.ts`: 原生 SQL INSERT 补充
+   - **Step 3（执行层消费端分离）**:
+     - `ExecutionContext` 接口新增 `originalInstruction?: string` 字段
+     - `buildExecutionContext()`: 从 `task.originalInstruction` 读取，注入到执行上下文
+     - `buildAgentBBusinessControllerUserPrompt()`: 新增 `originalInstruction` 参数，注入到 Agent B 提示词（标注为"仅供参考"）
+     - `agent-b-business-controller.ts`: 提示词模板新增"用户原始需求（仅供参考，非执行指令）"注入点
+     - insurance-d 的 `userOpinionAndMaterialsText` 不包含原始指令（仅消费 `task.userOpinion`）
+   - **数据流**:
+     ```
+     用户输入指令 + 创作引导
+       → originalInstruction: 用户原始指令（完整保存）
+       → userOpinion: 仅创作引导结构化内容（核心观点+情感基调+文章结构）
+         → insurance-d: 只消费 userOpinion（硬约束）
+         → Agent B: 同时参考 userOpinion + originalInstruction（仅供参考）
+     ```

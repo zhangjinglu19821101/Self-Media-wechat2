@@ -86,6 +86,7 @@ export async function POST(request: NextRequest) {
       timeWindowDays: 7,
       // 🔥 新增：用户观点和素材
       userOpinion: userOpinion || null,
+      originalInstruction: body.originalInstruction || null, // 🔥 独立存储原始指令
       materialIds: materialIds || [],
       workspaceId,
     });

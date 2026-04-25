@@ -69,7 +69,8 @@ export async function POST(request: NextRequest) {
       executionDate,
       subTasks,
       tempSessionId, // 临时会话 ID，用于替换逻辑
-      userOpinion, // 🔥 用户观点（核心锚点 + 关键素材）
+      userOpinion, // 🔥 用户观点（仅创作引导结构化内容：核心观点+情感基调+文章结构）
+      originalInstruction, // 🔥 用户原始指令（独立存储，不传给 insurance-d）
       materialIds, // 🔥 素材ID列表
       caseIds, // 🔥 行业案例ID列表（用户手动选择）
       relatedMaterials = '', // 🔥 关联素材补充区内容
@@ -279,6 +280,9 @@ export async function POST(request: NextRequest) {
           const taskUserOpinion = subTask.userOpinion !== undefined
             ? subTask.userOpinion
             : (userOpinion || null);
+          const taskOriginalInstruction = subTask.originalInstruction !== undefined
+            ? subTask.originalInstruction
+            : (originalInstruction || null);
           const taskMaterialIds = subTask.materialIds !== undefined
             ? subTask.materialIds
             : (materialIds || []);
@@ -309,6 +313,7 @@ export async function POST(request: NextRequest) {
             workspaceId,
             executionDate: executionDate || new Date().toISOString().split('T')[0],
             userOpinion: taskUserOpinion,
+            originalInstruction: taskOriginalInstruction, // 🔥 独立存储原始指令
             materialIds: taskMaterialIds,
             relatedMaterials: relatedMaterials || null,
             structureName: subTask.structureName !== undefined ? subTask.structureName : (structureName || null),
@@ -381,6 +386,7 @@ export async function POST(request: NextRequest) {
               workspaceId,
               executionDate: executionDate || new Date().toISOString().split('T')[0],
               userOpinion: userOpinion || null,
+              originalInstruction: originalInstruction || null, // 🔥 独立存储原始指令
               materialIds: materialIds || [],
               relatedMaterials: relatedMaterials || null,
               metadata: {
@@ -422,6 +428,9 @@ export async function POST(request: NextRequest) {
         const taskUserOpinion = subTask.userOpinion !== undefined
           ? subTask.userOpinion
           : (userOpinion || null);
+        const taskOriginalInstruction = subTask.originalInstruction !== undefined
+          ? subTask.originalInstruction
+          : (originalInstruction || null);
         const taskMaterialIds = subTask.materialIds !== undefined
           ? subTask.materialIds
           : (materialIds || []);
@@ -456,6 +465,7 @@ export async function POST(request: NextRequest) {
           workspaceId,
           executionDate: executionDate || new Date().toISOString().split('T')[0],
           userOpinion: taskUserOpinion,
+          originalInstruction: taskOriginalInstruction, // 🔥 独立存储原始指令
           materialIds: taskMaterialIds,
           relatedMaterials: relatedMaterials || null,
           structureName: subTask.structureName !== undefined ? subTask.structureName : (structureName || null),

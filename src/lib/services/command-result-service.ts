@@ -581,6 +581,7 @@ export class CommandResultService {
     entryUser?: string;
     // 🔥 新增：用户观点和素材
     userOpinion?: string | null;
+    originalInstruction?: string | null; // 🔥 用户原始指令（独立存储）
     materialIds?: string[];
     // 🔥 Phase 6 多用户：工作空间归属
     workspaceId?: string;
@@ -700,6 +701,7 @@ export class CommandResultService {
       metadata: params.metadata || {},
       // 🔥 新增：用户观点和素材
       userOpinion: params.userOpinion || null,
+      originalInstruction: params.originalInstruction || null, // 🔥 独立存储原始指令
       materialIds: params.materialIds || [],
       // 🔥 Phase 6 多用户：工作空间归属
       workspaceId: params.workspaceId || null,
@@ -855,6 +857,7 @@ export async function createAgentTaskWithDuplicateCheck(params: {
   timeWindowDays?: number;
   // 🔥 新增：用户观点和素材
   userOpinion?: string | null;
+  originalInstruction?: string | null; // 🔥 用户原始指令（独立存储）
   materialIds?: string[];
   // 🔥 Phase 6 多用户：工作空间归属
   workspaceId?: string;
@@ -961,6 +964,7 @@ export async function createAgentTaskWithDuplicateCheck(params: {
     metadata: params.metadata || {},
     // 🔥 新增：用户观点和素材
     userOpinion: params.userOpinion || null,
+    originalInstruction: params.originalInstruction || null, // 🔥 独立存储原始指令
     materialIds: params.materialIds || [],
     // 🔥 Phase 6 多用户：工作空间归属
     workspaceId: params.workspaceId || null,

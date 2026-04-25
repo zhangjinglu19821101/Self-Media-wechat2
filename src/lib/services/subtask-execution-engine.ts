@@ -733,12 +733,14 @@ interface ExecutionContext {
   availableCapabilities: any[];
   // 🔴 新增：上一步骤输出结果（不仅仅是文章内容）
   priorStepOutput?: string;
-  // 🔥 用户观点和素材（insurance-d 必须遵守）
+  // 🔥 用户观点和素材（insurance-d 必须遵守，仅含创作引导结构化内容）
   userOpinionAndMaterials?: {
     userOpinion?: string;
     materials?: Array<{ id: string; title: string; type: string; content: string; sourceDesc?: string }>;
     relatedMaterials?: string;
   };
+  // 🔴 【Step3 新增】用户原始指令（Agent B 仅供参考，不注入 insurance-d）
+  originalInstruction?: string;
 }
 
 
@@ -1657,6 +1659,7 @@ export class SubtaskExecutionEngine {
             fromParentsExecutor: task.fromParentsExecutor,
             // 🔥 新增：从原任务继承用户观点和素材
             userOpinion: task.userOpinion || null,
+            originalInstruction: (task as any).originalInstruction || null, // 🔥 独立存储原始指令
             materialIds: task.materialIds || [],
             // 🔥 Phase 6 多用户：从原任务继承 workspaceId
             workspaceId: task.workspaceId || null,
@@ -5021,9 +5024,9 @@ export class SubtaskExecutionEngine {
       console.log('[SubtaskEngine] 🔴🔴🔴 BossOrder 指令已注入，优先级最高');
     }
 
-    // 🔥🔥🔥 【新增】获取用户观点和素材（insurance-d 必须遵守）
+    // 🔥🔥🔥 【新增】获取用户观点和素材（insurance-d 必须遵守，仅含创作引导结构化内容）
     const userOpinionAndMaterials: {
-      userOpinion?: string; // 核心锚点 + 关键素材（硬约束）
+      userOpinion?: string; // 仅创作引导结构化内容（核心观点+情感基调+文章结构）
       materials?: Array<{ id: string; title: string; type: string; content: string; sourceDesc?: string }>;
       // 🔥 新增：关联素材补充区内容（软参考，与 keyMaterials 区分处理）
       relatedMaterials?: string;
@@ -5136,8 +5139,10 @@ export class SubtaskExecutionEngine {
       bossOrder: bossOrder,
       // 🔴🔴🔴 【新增】BossOrder 文本指令（用于直接注入到 prompt 中）
       bossOrderInstruction: bossOrderInstruction,
-      // 🔥🔥🔥 【新增】用户观点和素材（insurance-d 必须遵守）
+      // 🔥🔥🔥 【新增】用户观点和素材（insurance-d 必须遵守，仅含创作引导结构化内容）
       userOpinionAndMaterials: userOpinionAndMaterials,
+      // 🔴 【Step3 新增】用户原始指令（Agent B 仅供参考，不注入 insurance-d）
+      originalInstruction: (task as any).originalInstruction || undefined,
       // 🔥🔥🔥 【统一提取】大纲内容（用户确认 或 前序任务自动提取）
       extractedOutline: extractedOutline,
       executorFeedback: {
@@ -9623,7 +9628,8 @@ ${resultData.executionSummary}
         reexecuteHistoryText,  // 🔴 传入执行者切换历史
         isLastTask,             // 🔴 传入是否是最后一个任务
         validationResultText,  // 🔴 Phase 4: 校验结果文本
-        phase5ResultText       // 🔴 Phase 5: 情绪分类 + 风格一致性评估结果
+        phase5ResultText,      // 🔴 Phase 5: 情绪分类 + 风格一致性评估结果
+        executionContext.originalInstruction || ''  // 🔴 【Step3 新增】用户原始指令（仅供参考）
       ) + '\n\n' +
       executionSummaryText + '\n\n' +  // 🔴 添加客观描述
       AGENT_B_OUTPUT_FORMAT;

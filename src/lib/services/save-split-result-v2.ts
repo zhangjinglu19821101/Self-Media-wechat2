@@ -319,7 +319,7 @@ export async function saveSplitResultToDailyTasks(
           dialogue_session_id, dialogue_rounds, dialogue_status, last_dialogue_at,
           latest_report_id, report_count, requires_intervention,
           task_title, command_content, command_priority,
-          user_opinion, material_ids, workspace_id
+          user_opinion, original_instruction, material_ids, workspace_id
         ) VALUES (
           gen_random_uuid(), ${commandId}, ${task.task_id}, ${subTask.commandContent}, ${executorId}, ${subTask.priority === '高' ? 'high' : 'normal'},
           ${new Date(`${executionDate.toISOString().split('T')[0]} 09:00:00`)}, ${new Date(`${executionDate.toISOString().split('T')[0]} 18:00:00`)}, ${subTask.acceptanceCriteria || '未指定'},
@@ -344,7 +344,7 @@ export async function saveSplitResultToDailyTasks(
           ${null}, ${0}, ${'none'}, ${null},
           ${null}, ${0}, ${false},
           ${subTask.taskTitle}, ${subTask.commandContent}, ${subTask.priority === '高' ? 'high' : 'normal'},
-          ${task.user_opinion || null}, ${task.material_ids || '[]'},
+          ${task.user_opinion || null}, ${task.original_instruction || null}, ${task.material_ids || '[]'},
           ${task.workspace_id || null}
         ) RETURNING *
       `;

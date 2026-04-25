@@ -83,6 +83,7 @@ export async function POST(request: NextRequest) {
         commandContent: cmd.commandContent,
         // 🔥 新增：从主任务继承用户观点和素材
         userOpinion: (task as any).userOpinion || null,
+        originalInstruction: (task as any).originalInstruction || null, // 🔥 独立存储原始指令
         materialIds: (task as any).materialIds || [],
         // 🔥 Phase 6 多用户：工作空间归属（优先从父任务继承）
         workspaceId: task.workspaceId || authResult.workspaceId,

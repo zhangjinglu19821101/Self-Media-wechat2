@@ -1656,11 +1656,12 @@ export default function HomePage() {
         if (selectedStructure) {
           taskUserOpinion += `${taskUserOpinion ? '\n' : ''}【文章结构】${selectedStructure.name}（${selectedStructure.sections.length}段，约${selectedStructure.totalSuggestedWordCount || selectedStructure.sections.reduce((sum, s) => sum + s.suggestedWordCount, 0)}字）`;
         }
-        taskUserOpinion += `${taskUserOpinion ? '\n' : ''}【原始指令】${mainInstruction.trim()}`;
+        // 🔥 原始指令不再拼入 userOpinion，改为独立传递 originalInstruction
 
         return {
           ...task,
           userOpinion: taskUserOpinion,
+          originalInstruction: mainInstruction.trim() || null, // 🔥 独立字段
           materialIds: selectedMaterialIds,
           caseIds: selectedCaseIds,
           structureName: taskStructureName,
@@ -1671,11 +1672,12 @@ export default function HomePage() {
         if (selectedStructure) {
           taskUserOpinion += `\n【文章结构】${selectedStructure.name}（${selectedStructure.sections.length}段，约${selectedStructure.totalSuggestedWordCount || selectedStructure.sections.reduce((sum, s) => sum + s.suggestedWordCount, 0)}字）`;
         }
-        taskUserOpinion += `\n【原始指令】${mainInstruction.trim()}`;
+        // 🔥 原始指令不再拼入 userOpinion，改为独立传递 originalInstruction
 
         return {
           ...task,
           userOpinion: taskUserOpinion,
+          originalInstruction: mainInstruction.trim() || null, // 🔥 独立字段
           materialIds: [],
           caseIds: [],
           structureName: taskStructureName,
@@ -1693,6 +1695,7 @@ export default function HomePage() {
         tempSessionId,
         // 以下字段用于 daily_task 表存储（向后兼容）
         userOpinion: coreOpinion.trim() || null,
+        originalInstruction: mainInstruction.trim() || null, // 🔥 独立字段：用户原始指令
         materialIds: selectedMaterialIds,
         caseIds: selectedCaseIds,
         // 结构选择数据（隐性继承，始终传递）

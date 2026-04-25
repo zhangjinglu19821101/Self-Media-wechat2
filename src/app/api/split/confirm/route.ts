@@ -154,7 +154,7 @@ export async function POST(request: NextRequest) {
         await sql`
           INSERT INTO agent_sub_tasks (
             id, command_result_id, from_parents_executor, task_title, task_description,
-            status, order_index, execution_date, metadata, user_opinion, material_ids, workspace_id, created_at, updated_at
+            status, order_index, execution_date, metadata, user_opinion, original_instruction, material_ids, workspace_id, created_at, updated_at
           ) VALUES (
             ${newSubTaskId},
             ${dailyTask.id},
@@ -166,6 +166,7 @@ export async function POST(request: NextRequest) {
             ${executionDate},
             ${JSON.stringify(subTask)},
             ${(dailyTask as any).user_opinion || (dailyTask as any).userOpinion || null},
+            ${(dailyTask as any).original_instruction || null},
             ${(dailyTask as any).material_ids || (dailyTask as any).materialIds || '[]'},
             ${authResult.workspaceId},
             NOW(),

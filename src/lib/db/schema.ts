@@ -219,8 +219,9 @@ export const agentTasks = pgTable('agent_tasks', {
   metadata: jsonb('metadata').$type<Record<string, any>>().default({}),
   
   // === 用户观点与素材（新增）===
-  userOpinion: text('user_opinion'), // 🔥 用户期望表达的核心观点
+  userOpinion: text('user_opinion'), // 🔥 用户期望表达的核心观点（仅创作引导结构化内容）
   materialIds: jsonb('material_ids').$type<string[]>().default([]), // 🔥 关联的素材ID列表
+  originalInstruction: text('original_instruction'), // 🔥 用户原始指令（独立存储，不传给 insurance-d）
   
   // === 时间戳 ===
   createdAt: timestamp('created_at').notNull().defaultNow(),
@@ -333,8 +334,9 @@ export const dailyTask = pgTable('daily_task', {
   metadata: jsonb('metadata').$type<Record<string, any>>().default({}), // 额外元数据
 
   // === 用户观点与素材（新增）===
-  userOpinion: text('user_opinion'), // 🔥 用户期望表达的核心观点
+  userOpinion: text('user_opinion'), // 🔥 用户期望表达的核心观点（仅创作引导结构化内容）
   materialIds: jsonb('material_ids').$type<string[]>().default([]), // 🔥 关联的素材ID列表
+  originalInstruction: text('original_instruction'), // 🔥 用户原始指令（独立存储，不传给 insurance-d）
 
   // === 时间戳 ===
   createdAt: timestamp('created_at').notNull().defaultNow(),
@@ -482,9 +484,10 @@ export const agentSubTasks = pgTable('agent_sub_tasks', {
   articleMetadata: jsonb('article_metadata').$type<ArticleMetadata | null>(), // 🔥 新增：文章元数据（JSON格式，存储文章相关信息）
 
   // === 用户观点与素材（新增）===
-  userOpinion: text('user_opinion'), // 🔥 用户期望表达的核心观点（从主任务继承）
+  userOpinion: text('user_opinion'), // 🔥 用户期望表达的核心观点（仅创作引导结构化内容，从主任务继承）
   materialIds: jsonb('material_ids').$type<string[]>().default([]), // 🔥 关联的素材ID列表（从主任务继承）
   relatedMaterials: text('related_materials'), // 🔥 关联素材补充区内容（软参考，灵活整合）
+  originalInstruction: text('original_instruction'), // 🔥 用户原始指令（独立存储，不传给 insurance-d）
 
   // === 结构选择（新增）===
   structureName: text('structure_name'), // 🔥 选择的文章结构名称

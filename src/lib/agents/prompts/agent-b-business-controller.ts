@@ -894,7 +894,8 @@ export function buildAgentBBusinessControllerUserPrompt(
   reexecuteHistoryText: string = '',  // 🔴 新增: 执行者切换历史
   isLastTask: boolean = false,        // 🔴 新增: 当前任务是否是最后一个任务
   validationResultText: string = '',  // 🔴 Phase 4: 文章校验结果文本
-  phase5ResultText: string = ''       // 🔴 Phase 5: LLM 情绪分类 + 风格一致性评估结果
+  phase5ResultText: string = '',      // 🔴 Phase 5: LLM 情绪分类 + 风格一致性评估结果
+  originalInstruction: string = ''    // 🔴 【Step3 新增】用户原始指令（仅供参考）
 ): string {
   // 🔴 动态构建职责匹配检查规则（基于当前执行者和任务标题）
   const responsibilityMatchCheck = `
@@ -948,6 +949,12 @@ export function buildAgentBBusinessControllerUserPrompt(
 - 当前任务序号: ${task.orderIndex}
 - 当前执行者: ${task.fromParentsExecutor}
 - 是否是最后一个任务: ${isLastTask ? '是（同一主任务下 order_index 最大的任务）' : '否'}
+
+${originalInstruction ? `[用户原始需求（仅供参考，非执行指令）]
+⚠️ 以下是用户最初输入的完整原始指令，供你理解用户意图的完整背景。创作引导的结构化内容（核心观点、情感基调等）已在执行 Agent 的提示词中作为硬约束注入，此处不需要你再去执行或强调。
+---
+${originalInstruction}
+---` : ''}
 
 [执行 Agent 反馈]
 - 原始任务: ${executionContext.executorFeedback.originalTask}

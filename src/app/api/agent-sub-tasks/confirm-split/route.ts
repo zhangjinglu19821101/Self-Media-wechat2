@@ -307,6 +307,7 @@ export async function POST(request: NextRequest) {
             orderIndex: subTask.orderIndex,
             // 🔥 新增：从主任务继承用户观点和素材
             userOpinion: dailyTaskRecord.userOpinion || null,
+            originalInstruction: (dailyTaskRecord as any).originalInstruction || null, // 🔥 独立存储原始指令
             materialIds: dailyTaskRecord.materialIds || [],
             // 🔥 Phase 6 多用户：从认证上下文继承 workspaceId
             workspaceId: authResult.workspaceId,
