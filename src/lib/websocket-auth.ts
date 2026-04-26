@@ -3,10 +3,12 @@
  * 
  * 支持两种连接模式：
  * 1. Agent 连接（后端内部）：ws://host:5001/agent/{agentId}
- * 2. 用户连接（前端浏览器）：ws://host:5001/user?token={sessionToken}&workspaceId={wsId}
+ * 2. 用户连接（前端浏览器/App/小程序）：ws://host:5001/user?token={sessionToken|accessToken}&workspaceId={wsId}
  * 
  * Agent 连接使用白名单验证（内部服务可信）
- * 用户连接使用 NextAuth JWT 验证（解析 session token 获取用户身份）
+ * 用户连接支持两种 Token：
+ * - NextAuth Session Token（Web 浏览器）
+ * - Bearer Access Token（App/小程序）
  */
 
 import { db } from '@/lib/db';
@@ -14,6 +16,7 @@ import { workspaces, workspaceMembers } from '@/lib/db/schema/auth';
 import { eq, and } from 'drizzle-orm';
 import { AgentId } from '@/lib/agent-types';
 import { decode } from 'next-auth/jwt';
+import { tokenService } from '@/lib/auth/token-service';
 
 /** 合法的 Agent ID 列表（内部服务白名单） */
 const VALID_AGENT_IDS: AgentId[] = ['A', 'B', 'C', 'D', 'insurance-c', 'insurance-d', 'insurance-xiaohongshu', 'insurance-zhihu', 'insurance-toutiao', 'deai-optimizer'];
@@ -30,6 +33,8 @@ export interface WSAuthResult {
   sessionId?: string;
   /** Workspace ID（user 连接时） */
   workspaceId?: string;
+  /** 认证方式（user 连接时） */
+  authMethod?: 'nextauth' | 'bearer';
 }
 
 /**
@@ -50,14 +55,13 @@ export function authenticateAgent(agentId: string): WSAuthResult | null {
 /**
  * 认证用户 WebSocket 连接
  * 
- * 验证流程（使用 NextAuth JWT 策略）：
- * 1. 解析 URL 中的 token 参数（即 next-auth.session-token cookie 值）
- * 2. 使用 NextAuth JWT decode 验证 token 有效性
- * 3. 从 JWT payload 中提取 accountId（sub 字段）
- * 4. 如果提供了 workspaceId，验证用户是否有权限访问
+ * 验证流程（双 Token 策略）：
+ * 1. 先尝试 Bearer Access Token（App/小程序）
+ * 2. 失败则降级到 NextAuth JWT Session Token（Web 浏览器）
  * 
  * 前端连接方式：
- *   const ws = new WebSocket(`wss://host/user?token=${sessionToken}&workspaceId=${wsId}`);
+ * - Web 浏览器: new WebSocket(`wss://host/user?token=${sessionToken}&workspaceId=${wsId}`);
+ * - App/小程序: new WebSocket(`wss://host/user?token=${accessToken}&workspaceId=${wsId}`);
  */
 export async function authenticateUser(
   token: string | null,
@@ -65,9 +69,44 @@ export async function authenticateUser(
 ): Promise<WSAuthResult | null> {
   if (!token) return null;
 
+  // 🔴 新增：先尝试 Bearer Access Token
   try {
-    // 使用 NextAuth JWT decode 验证 token
-    // NextAuth 使用 strategy: 'jwt'，token 存储在客户端 cookie 中
+    const accessPayload = tokenService.verifyAccessToken(token);
+    if (accessPayload && accessPayload.type === 'access') {
+      // Access Token 验证成功
+      const accountId = accessPayload.sub;
+      const wsId = accessPayload.wid || workspaceId;
+
+      // 如果指定了 workspaceId（非 JWT 中的），验证用户权限
+      if (workspaceId && workspaceId !== accessPayload.wid) {
+        const members = await db
+          .select()
+          .from(workspaceMembers)
+          .where(
+            and(
+              eq(workspaceMembers.workspaceId, workspaceId),
+              eq(workspaceMembers.accountId, accountId),
+              eq(workspaceMembers.status, 'active')
+            )
+          )
+          .limit(1);
+
+        if (members.length === 0) return null;
+      }
+
+      return {
+        connectionType: 'user',
+        accountId,
+        workspaceId: wsId || workspaceId || 'default-workspace',
+        authMethod: 'bearer',
+      };
+    }
+  } catch {
+    // 不是有效的 Access Token，降级到 NextAuth
+  }
+
+  // 原有逻辑：NextAuth JWT Session Token 验证
+  try {
     const decoded = await decode({
       token,
       secret: process.env.NEXTAUTH_SECRET || process.env.AUTH_SECRET || '',
@@ -95,7 +134,6 @@ export async function authenticateUser(
         .limit(1);
 
       if (members.length === 0) {
-        // 用户不属于该 workspace
         return null;
       }
     } else {
@@ -119,6 +157,7 @@ export async function authenticateUser(
       accountId,
       sessionId: decoded.jti || undefined,
       workspaceId,
+      authMethod: 'nextauth',
     };
   } catch (error) {
     console.error('[WS Auth] 用户认证失败:', error);

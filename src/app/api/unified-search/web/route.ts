@@ -16,6 +16,7 @@ import { z } from 'zod';
 import { getWorkspaceId } from '@/lib/auth/context';
 import { webSearcher } from '@/lib/services/unified-search/web-searcher';
 import { llmProcessor } from '@/lib/services/unified-search/llm-processor';
+import { searchStateStore } from '@/lib/services/unified-search/search-state-store';
 import type { DomainKey } from '@/lib/services/unified-search/types';
 
 // ==================== 请求体校验 (P0-3) ====================
@@ -29,6 +30,8 @@ const webSearchRequestSchema = z.object({
   domains: z.array(z.enum(VALID_DOMAIN_KEYS as [string, ...string[]])).optional(),
   limit: z.number().int().min(1).max(20).default(5),
   needSummary: z.boolean().default(true),
+  /** 轮询模式（小程序不支持 SSE 时使用）：返回 searchId，通过 GET /status 轮询 */
+  polling: z.boolean().default(false),
 });
 
 // ==================== SSE 工具 ====================
@@ -139,7 +142,63 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: message }, { status: 400 });
     }
 
-    const { query, domains, limit, needSummary } = parsed;
+    const { query, domains, limit, needSummary, polling } = parsed;
+
+    // 🔴 轮询模式（小程序）：返回 searchId，后台执行搜索
+    if (polling) {
+      const searchId = searchStateStore.createSearchState();
+
+      // 异步执行搜索，结果写入 searchStateStore
+      (async () => {
+        try {
+          searchStateStore.pushEvent(searchId, 'progress', {
+            message: '正在搜索权威站点...',
+            phase: 'searching',
+          });
+
+          const searchResult = await executeSearch(
+            query, domains as DomainKey[] | undefined, limit, needSummary, workspaceId, request.headers
+          );
+
+          searchStateStore.pushEvent(searchId, 'results', {
+            items: searchResult.webResults,
+          });
+
+          if (searchResult.materialFormats.length > 0) {
+            searchStateStore.pushEvent(searchId, 'progress', {
+              message: 'AI 正在概括提炼...',
+              phase: 'processing',
+            });
+
+            searchStateStore.pushEvent(searchId, 'summary', {
+              materialFormats: searchResult.materialFormats,
+              summary: searchResult.summary,
+            });
+          }
+
+          searchStateStore.pushEvent(searchId, 'done', {
+            source: 'web',
+            totalCount: searchResult.webResults.length,
+            cached: false,
+          });
+        } catch (error) {
+          console.error('[UnifiedSearch/Web] 轮询模式搜索失败:', error);
+          searchStateStore.pushEvent(searchId, 'error', {
+            message: error instanceof Error ? error.message : '搜索失败',
+            code: 'SEARCH_ERROR',
+          });
+        }
+      })();
+
+      return NextResponse.json({
+        success: true,
+        data: {
+          searchId,
+          statusUrl: `/api/unified-search/web/${searchId}/status`,
+          pollIntervalMs: 2000,
+        },
+      });
+    }
 
     // SSE 流式响应
     if (preferSSE) {

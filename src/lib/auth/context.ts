@@ -2,6 +2,11 @@
  * API 请求上下文工具
  * 
  * 从请求中提取认证信息和 workspaceId
+ * 
+ * 支持三种认证方式：
+ * 1. Bearer Token（App/小程序）— middleware 注入 x-account-id/x-workspace-id/x-account-role
+ * 2. NextAuth Cookie Session（Web 浏览器）
+ * 3. 内部调用 Token（后端 Agent/Cron/MCP）
  */
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -19,10 +24,54 @@ import { extractWorkspaceId, getDefaultWorkspaceId } from '@/lib/db/tenant';
 const INTERNAL_API_TOKEN = process.env.INTERNAL_API_TOKEN || 'internal-svc-token-2025-07';
 
 /**
+ * 从 Bearer Token 认证上下文中提取 accountId
+ * middleware 已将 JWT payload 注入到 x-account-id 请求头
+ */
+function getBearerAccountId(request?: NextRequest): string | null {
+  if (!request) return null;
+  const authMethod = request.headers.get('x-auth-method');
+  if (authMethod === 'bearer') {
+    return request.headers.get('x-account-id') || null;
+  }
+  return null;
+}
+
+/**
+ * 从 Bearer Token 认证上下文中提取 workspaceId
+ */
+function getBearerWorkspaceId(request?: NextRequest): string | null {
+  if (!request) return null;
+  const authMethod = request.headers.get('x-auth-method');
+  if (authMethod === 'bearer') {
+    return request.headers.get('x-workspace-id') || null;
+  }
+  return null;
+}
+
+/**
+ * 从 Bearer Token 认证上下文中提取 role
+ */
+function getBearerRole(request?: NextRequest): string | null {
+  if (!request) return null;
+  const authMethod = request.headers.get('x-auth-method');
+  if (authMethod === 'bearer') {
+    return request.headers.get('x-account-role') || null;
+  }
+  return null;
+}
+
+/**
  * 获取当前认证用户的 accountId
  * 如果未登录返回 null
+ * 
+ * 优先级：Bearer Token → Cookie Session
  */
-export async function getAccountId(): Promise<string | null> {
+export async function getAccountId(request?: NextRequest): Promise<string | null> {
+  // 1. Bearer Token（App/小程序）
+  const bearerId = getBearerAccountId(request);
+  if (bearerId) return bearerId;
+
+  // 2. Cookie Session（Web 浏览器）
   const session = await auth();
   return session?.user?.id || null;
 }
@@ -31,7 +80,12 @@ export async function getAccountId(): Promise<string | null> {
  * 获取当前用户的系统级角色
  * 返回 'super_admin' 或 'normal'
  */
-export async function getAccountRole(): Promise<string> {
+export async function getAccountRole(request?: NextRequest): Promise<string> {
+  // Bearer Token
+  const bearerRole = getBearerRole(request);
+  if (bearerRole) return bearerRole;
+
+  // Cookie Session
   const session = await auth();
   return (session?.user as any)?.role || 'normal';
 }
@@ -39,8 +93,8 @@ export async function getAccountRole(): Promise<string> {
 /**
  * 检查当前用户是否为超级管理员
  */
-export async function isSuperAdmin(): Promise<boolean> {
-  const role = await getAccountRole();
+export async function isSuperAdmin(request?: NextRequest): Promise<boolean> {
+  const role = await getAccountRole(request);
   return role === 'super_admin';
 }
 
@@ -48,26 +102,28 @@ export async function isSuperAdmin(): Promise<boolean> {
  * 获取当前工作空间 ID
  * 
  * 优先级：
- * 1. 请求头 x-workspace-id
+ * 1. 请求头 x-workspace-id（含 Bearer Token 注入）
  * 2. URL 参数 workspaceId
  * 3. 用户的默认个人工作空间
  * 4. 兜底 'default-workspace'
  */
 export async function getWorkspaceId(request?: NextRequest): Promise<string> {
-  // 1. 从请求中提取
+  // 1. 从请求中提取（含 Bearer Token 注入的 x-workspace-id）
   if (request) {
     const wsId = extractWorkspaceId(request);
     if (wsId) return wsId;
   }
 
-  // 2. 从 session 获取用户默认 workspace
+  // 2. Bearer Token 的 workspaceId 已在步骤1中通过 x-workspace-id 获取
+
+  // 3. 从 session 获取用户默认 workspace
   const session = await auth();
   if (session?.user?.id) {
     const defaultWsId = await getDefaultWorkspaceId(session.user.id);
     if (defaultWsId) return defaultWsId;
   }
 
-  // 3. 兜底
+  // 4. 兜底
   return 'default-workspace';
 }
 
@@ -81,11 +137,11 @@ export async function getAuthContext(request?: NextRequest): Promise<{
   role: string;
   isSuperAdmin: boolean;
 } | null> {
-  const accountId = await getAccountId();
+  const accountId = await getAccountId(request);
   if (!accountId) return null;
 
   const workspaceId = await getWorkspaceId(request);
-  const role = await getAccountRole();
+  const role = await getAccountRole(request);
 
   return { 
     accountId, 
@@ -130,9 +186,10 @@ export function getInternalHeaders(workspaceId?: string): Record<string, string>
  * 认证守卫：要求用户已登录
  * 返回认证上下文，未登录则返回 401 响应
  * 
- * 支持两种认证方式：
- * 1. 正常用户认证（NextAuth session）
- * 2. 内部调用认证（x-internal-token 请求头）
+ * 支持三种认证方式：
+ * 1. Bearer Token 认证（App/小程序）
+ * 2. 正常用户认证（NextAuth session）
+ * 3. 内部调用认证（x-internal-token 请求头）
  * 
  * @example
  * const authResult = await requireAuth(request);

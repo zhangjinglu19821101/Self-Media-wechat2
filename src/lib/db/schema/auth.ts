@@ -32,6 +32,9 @@ export const accounts = pgTable('accounts', {
   emailVerified: boolean('email_verified').default(false),
   passwordHash: text('password_hash').notNull(),
 
+  // 微信小程序 OpenID（用于 wx.login 静默登录）
+  wechatOpenid: text('wechat_openid').unique(),
+
   // 基本信息
   name: text('name').notNull(),
   avatarUrl: text('avatar_url'),
