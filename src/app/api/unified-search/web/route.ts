@@ -146,7 +146,7 @@ export async function POST(request: NextRequest) {
 
     // 🔴 轮询模式（小程序）：返回 searchId，后台执行搜索
     if (polling) {
-      const searchId = searchStateStore.createSearchState();
+      const searchId = searchStateStore.createSearchState(workspaceId);
 
       // 异步执行搜索，结果写入 searchStateStore
       (async () => {

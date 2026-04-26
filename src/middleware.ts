@@ -42,14 +42,22 @@ const INTERNAL_API_TOKEN = process.env.INTERNAL_API_TOKEN || 'internal-svc-token
 
 /**
  * JWT 签名密钥（与 TokenService 共用）
+ * P0-1 修复：空密钥时拒绝验证，防止伪造 JWT
  */
 const JWT_SECRET = process.env.AUTH_SECRET || process.env.NEXTAUTH_SECRET || '';
 
 /**
+ * base64url 解码（JWT 规范要求 - → +, _ → /）
+ * P0-2 修复：header 和 payload 都必须做 base64url 转换
+ */
+function decodeBase64Url(str: string): string {
+  return atob(str.replace(/-/g, '+').replace(/_/g, '/'));
+}
+
+/**
  * 验证 Bearer Access Token（轻量级同步验证，不依赖数据库）
  * 
- * 使用 jose 或 jsonwebtoken 的同步验证。
- * 为了在 Edge Middleware 中可用，使用 Web Crypto API 手动验证。
+ * 使用 Web Crypto API 验证 JWT（Edge Runtime 兼容）
  * 
  * @returns 解码后的 payload，无效返回 null
  */
@@ -59,13 +67,19 @@ async function verifyAccessToken(token: string): Promise<{
   role: string;
   type: string;
 } | null> {
+  // P0-1 修复：密钥为空时拒绝验证，防止伪造 JWT 通过
+  if (!JWT_SECRET || JWT_SECRET.length < 32) {
+    console.error('[Middleware] AUTH_SECRET 未设置或长度不足，拒绝 Bearer Token 验证');
+    return null;
+  }
+
   try {
     // 使用 Web Crypto API 验证 JWT（Edge Runtime 兼容）
     const parts = token.split('.');
     if (parts.length !== 3) return null;
 
-    // 解码 header 获取算法
-    const headerJson = atob(parts[0]);
+    // 解码 header 获取算法（P0-2: header 也使用 base64url 编码）
+    const headerJson = decodeBase64Url(parts[0]);
     const header = JSON.parse(headerJson);
     if (header.alg !== 'HS256') return null;
 
@@ -81,13 +95,13 @@ async function verifyAccessToken(token: string): Promise<{
     );
 
     const signatureInput = encoder.encode(`${parts[0]}.${parts[1]}`);
-    const signatureBytes = Uint8Array.from(atob(parts[2].replace(/-/g, '+').replace(/_/g, '/')), c => c.charCodeAt(0));
+    const signatureBytes = Uint8Array.from(decodeBase64Url(parts[2]), c => c.charCodeAt(0));
 
     const valid = await crypto.subtle.verify('HMAC', key, signatureBytes, signatureInput);
     if (!valid) return null;
 
-    // 解码 payload
-    const payloadJson = atob(parts[1].replace(/-/g, '+').replace(/_/g, '/'));
+    // 解码 payload（P0-2: 统一使用 decodeBase64Url）
+    const payloadJson = decodeBase64Url(parts[1]);
     const payload = JSON.parse(payloadJson);
 
     // 检查类型和过期

@@ -16,7 +16,8 @@ export async function POST(request: NextRequest) {
 
     // 吊销所有 Token（需要认证）
     if (revokeAll) {
-      const accountId = await getAccountId();
+      // P0-3 修复：传入 request 支持 Bearer Token 认证
+      const accountId = await getAccountId(request);
       if (!accountId) {
         return NextResponse.json(
           { success: false, error: '需要认证', code: 'AUTH_REQUIRED' },

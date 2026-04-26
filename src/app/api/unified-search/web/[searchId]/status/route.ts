@@ -7,10 +7,13 @@
  * 1. 前端 POST /api/unified-search/web（body 带 polling: true）→ 返回 { searchId }
  * 2. 前端每 2 秒 GET 此端点 → 获取搜索进度和结果
  * 3. 当 status=done 或 status=error 时停止轮询
+ * 
+ * P1-7: 支持 workspaceId 隔离校验
  */
 
 import { NextRequest, NextResponse } from 'next/server';
 import { searchStateStore } from '@/lib/services/unified-search/search-state-store';
+import { getWorkspaceId } from '@/lib/auth/context';
 
 export async function GET(
   request: NextRequest,
@@ -18,7 +21,9 @@ export async function GET(
 ) {
   const { searchId } = await params;
 
-  const state = searchStateStore.getSearchState(searchId);
+  // P1-7: 从认证上下文获取 workspaceId 进行隔离校验
+  const workspaceId = await getWorkspaceId(request);
+  const state = searchStateStore.getSearchState(searchId, workspaceId);
   if (!state) {
     return NextResponse.json(
       { success: false, error: '搜索任务不存在或已过期', code: 'SEARCH_NOT_FOUND' },

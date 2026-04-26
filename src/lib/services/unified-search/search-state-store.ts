@@ -7,6 +7,9 @@
  * 3. 每 2 秒轮询，直到 status=done
  * 
  * 使用内存 Map 存储（单实例足够，进程重启搜索会丢失）
+ * 
+ * P1-7: 支持 workspaceId 隔离
+ * P1-8: cleanup 使用计数器降低频率
  */
 
 import type { WebSearchResultItem, MaterialFormat, SSEEventType } from '@/lib/services/unified-search/types';
@@ -15,6 +18,8 @@ import type { WebSearchResultItem, MaterialFormat, SSEEventType } from '@/lib/se
 
 export interface SearchState {
   searchId: string;
+  /** P1-7: 所属 workspace，用于多租户隔离 */
+  workspaceId: string;
   status: 'searching' | 'processing' | 'done' | 'error';
   /** 当前阶段描述 */
   phase: string;
@@ -51,14 +56,21 @@ const STATE_TTL_MS = 10 * 60 * 1000;
 // ==================== 服务 ====================
 
 export class SearchStateStore {
+  /** P1-8: 创建计数器，每 N 次创建触发一次 cleanup */
+  private createCount = 0;
+  /** P1-8: 每 10 次创建触发一次 cleanup */
+  private static readonly CLEANUP_INTERVAL = 10;
+
   /**
    * 创建搜索状态
+   * P1-7: workspaceId 参数用于多租户隔离
    */
-  createSearchState(): string {
+  createSearchState(workspaceId: string): string {
     const searchId = `search-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
     const state: SearchState = {
       searchId,
+      workspaceId,
       status: 'searching',
       phase: '初始化搜索...',
       webResults: [],
@@ -73,15 +85,31 @@ export class SearchStateStore {
     };
 
     SEARCH_STATES.set(searchId, state);
-    this.cleanup();
+
+    // P1-8: 降低 cleanup 频率
+    this.createCount++;
+    if (this.createCount >= SearchStateStore.CLEANUP_INTERVAL) {
+      this.createCount = 0;
+      this.cleanup();
+    }
+
     return searchId;
   }
 
   /**
    * 获取搜索状态
+   * P1-7: 可选 workspaceId 校验
    */
-  getSearchState(searchId: string): SearchState | null {
-    return SEARCH_STATES.get(searchId) || null;
+  getSearchState(searchId: string, workspaceId?: string): SearchState | null {
+    const state = SEARCH_STATES.get(searchId);
+    if (!state) return null;
+
+    // P1-7: 如果指定了 workspaceId，校验归属
+    if (workspaceId && state.workspaceId !== workspaceId) {
+      return null;
+    }
+
+    return state;
   }
 
   /**

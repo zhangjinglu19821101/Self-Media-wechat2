@@ -87,11 +87,13 @@ export async function POST(request: NextRequest) {
     }
 
     // 4. 使用 openid 登录/注册
+    // P1-9: 传递 session_key 供后续解密用户手机号等敏感数据
     const result = await tokenService.loginWithWechatOpenid(wxData.openid, {
       deviceType: 'wechat_miniprogram',
       deviceName: deviceName || '微信小程序',
       deviceId: deviceId || undefined,
       workspaceId: workspaceId || undefined,
+      wechatSessionKey: wxData.session_key || undefined,
     });
 
     return NextResponse.json({

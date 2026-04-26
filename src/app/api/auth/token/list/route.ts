@@ -2,16 +2,17 @@
  * GET /api/auth/token/list
  * 
  * 查询当前用户所有活跃 Token（多设备管理）
- * 需要 Cookie Session 认证（Web 端管理设备列表）
+ * 支持 Cookie Session 认证（Web 端）和 Bearer Token 认证（App 端）
  */
 
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { tokenService } from '@/lib/auth/token-service';
 import { getAccountId } from '@/lib/auth/context';
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
-    const accountId = await getAccountId();
+    // P0-3 修复：传入 request 支持 Bearer Token 认证（App 用户也可管理设备）
+    const accountId = await getAccountId(request);
     if (!accountId) {
       return NextResponse.json(
         { success: false, error: '需要认证', code: 'AUTH_REQUIRED' },

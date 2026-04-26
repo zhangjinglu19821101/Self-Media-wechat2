@@ -48,6 +48,8 @@ export const apiTokens = pgTable('api_tokens', {
   idxApiTokensAccount: index('idx_api_tokens_account').on(table.accountId),
   idxApiTokensHash: index('idx_api_tokens_hash').on(table.tokenHash),
   idxApiTokensExpires: index('idx_api_tokens_expires').on(table.expiresAt),
+  // P1-6: 复合索引，优化 listActiveTokens 和 rotateRefreshToken 查询
+  idxApiTokensAccountActive: index('idx_api_tokens_account_active').on(table.accountId, table.isRevoked, table.expiresAt),
 }));
 
 // ==================== 关系定义 ====================

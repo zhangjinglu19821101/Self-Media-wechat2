@@ -56,16 +56,20 @@ export async function POST(request: NextRequest) {
           { success: false, error: '账号已被禁用', code: 'ACCOUNT_DISABLED' },
           { status: 403 },
         );
-      case 'ACCOUNT_LOCKED':
+      case 'ACCOUNT_LOCKED': {
+        const lockoutMinutes = (error instanceof Error && 'lockoutMinutes' in error)
+          ? (error as Error & { lockoutMinutes: number }).lockoutMinutes
+          : 30;
         return NextResponse.json(
           {
             success: false,
-            error: `账号已锁定，请${error.lockoutMinutes || 30}分钟后重试`,
+            error: `账号已锁定，请${lockoutMinutes}分钟后重试`,
             code: 'ACCOUNT_LOCKED',
-            lockoutMinutes: error.lockoutMinutes || 30,
+            lockoutMinutes,
           },
           { status: 423 },
         );
+      }
       default:
         console.error('[Auth/Token] 登录失败:', error);
         return NextResponse.json(

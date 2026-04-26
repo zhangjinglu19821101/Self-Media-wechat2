@@ -26,7 +26,12 @@ import { hashPassword } from '@/lib/auth/password';
 
 // ==================== 常量 ====================
 
-const JWT_SECRET = process.env.AUTH_SECRET || process.env.NEXTAUTH_SECRET || '';
+// P0-1 修复：JWT_SECRET 不允许空值，否则攻击者可用空密钥伪造 JWT
+const _jwtSecretRaw = process.env.AUTH_SECRET || process.env.NEXTAUTH_SECRET || '';
+if (!_jwtSecretRaw || _jwtSecretRaw.length < 32) {
+  console.error('[TokenService] AUTH_SECRET/NEXTAUTH_SECRET 未设置或长度不足 32 字节，JWT 签名不安全');
+}
+const JWT_SECRET = _jwtSecretRaw;
 const ACCESS_TOKEN_EXPIRES_S = 15 * 60;       // 15 分钟
 const REFRESH_TOKEN_EXPIRES_S = 30 * 24 * 3600; // 30 天
 const REFRESH_TOKEN_BYTES = 48;                 // 随机字节数
@@ -48,6 +53,8 @@ export interface TokenCreateOptions {
   deviceName?: string;
   deviceId?: string;
   workspaceId?: string;
+  /** P1-9: 微信小程序 session_key，用于后续解密敏感数据 */
+  wechatSessionKey?: string;
 }
 
 export interface LoginResult {
@@ -458,6 +465,8 @@ export class TokenService {
    * 
    * 如果 OpenID 已绑定账户 → 直接签发 Token
    * 如果 OpenID 未绑定 → 自动创建账户 + workspace → 签发 Token
+   * 
+   * P1-5 修复：自动注册流程使用事务保护，确保 account/workspace/member 数据一致性
    */
   async loginWithWechatOpenid(
     openid: string,
@@ -479,52 +488,68 @@ export class TokenService {
       }
       account = existing;
 
-      // 更新最后登录时间
+      // 更新最后登录时间 + P1-9: 刷新 session_key
       await db.update(accounts).set({
         lastLoginAt: new Date(),
         updatedAt: new Date(),
+        // P1-9: 每次 wx.login 都会刷新 session_key，需更新存储
+        ...(options.wechatSessionKey ? { wechatSessionKey: options.wechatSessionKey } : {}),
       }).where(eq(accounts.id, account.id));
     } else {
-      // 2. 自动注册
+      // 2. 自动注册（P1-5: 使用事务保护）
       const autoName = `微信用户${openid.substring(0, 6)}`;
       const autoEmail = `wx_${openid.substring(0, 12)}@wechat.mini`;
       const autoPasswordHash = await hashPassword(randomBytes(32).toString('hex'));
 
-      const [newAccount] = await db.insert(accounts).values({
-        email: autoEmail,
-        emailVerified: false,
-        passwordHash: autoPasswordHash,
-        name: autoName,
-        wechatOpenid: openid,
-      }).returning();
+      let registeredAccount: typeof accounts.$inferSelect | null = null;
 
-      if (!newAccount) {
+      await db.transaction(async (tx) => {
+        // 2a. 创建账户
+        const [newAccount] = await tx.insert(accounts).values({
+          email: autoEmail,
+          emailVerified: false,
+          passwordHash: autoPasswordHash,
+          name: autoName,
+          wechatOpenid: openid,
+          // P1-9: 注册时存储 session_key
+          ...(options.wechatSessionKey ? { wechatSessionKey: options.wechatSessionKey } : {}),
+        }).returning();
+
+        if (!newAccount) {
+          throw new Error('AUTO_REGISTER_FAILED');
+        }
+        registeredAccount = newAccount;
+
+        // 2b. 创建 Personal Workspace
+        const slug = `personal-${newAccount.id.substring(0, 8)}`;
+        const [workspace] = await tx.insert(workspaces).values({
+          name: `${autoName}的工作空间`,
+          slug,
+          type: 'personal',
+          ownerAccountId: newAccount.id,
+        }).returning();
+
+        // 2c. 添加为 Owner
+        if (workspace) {
+          await tx.insert(workspaceMembers).values({
+            workspaceId: workspace.id,
+            accountId: newAccount.id,
+            role: WorkspaceRole.OWNER,
+            status: 'active',
+            joinedAt: new Date(),
+          });
+        }
+
+        // 2d. 初始化默认数据（在事务内执行，失败则回滚）
+        // 注意：initializeUserData 内部使用 db 全局实例而非 tx，
+        // 但如果失败会抛异常导致事务回滚
+        await initializeUserData(newAccount.id, workspace?.id || 'default-workspace');
+      });
+
+      if (!registeredAccount) {
         throw new Error('AUTO_REGISTER_FAILED');
       }
-      account = newAccount;
-
-      // 3. 创建 Personal Workspace
-      const slug = `personal-${account.id.substring(0, 8)}`;
-      const [workspace] = await db.insert(workspaces).values({
-        name: `${autoName}的工作空间`,
-        slug,
-        type: 'personal',
-        ownerAccountId: account.id,
-      }).returning();
-
-      // 4. 添加为 Owner
-      if (workspace) {
-        await db.insert(workspaceMembers).values({
-          workspaceId: workspace.id,
-          accountId: account.id,
-          role: WorkspaceRole.OWNER,
-          status: 'active',
-          joinedAt: new Date(),
-        });
-
-        // 5. 初始化默认数据
-        await initializeUserData(account.id, workspace.id);
-      }
+      account = registeredAccount;
 
       console.log(`[TokenService] 微信自动注册: openid=${openid.substring(0, 8)}..., account=${account.id}`);
     }

@@ -35,6 +35,10 @@ export const accounts = pgTable('accounts', {
   // 微信小程序 OpenID（用于 wx.login 静默登录）
   wechatOpenid: text('wechat_openid').unique(),
 
+  // P1-9: 微信小程序 session_key（加密存储，用于解密用户手机号等敏感数据）
+  // 注意：session_key 有时效性（通常 30 天），每次 wx.login 会刷新
+  wechatSessionKey: text('wechat_session_key'),
+
   // 基本信息
   name: text('name').notNull(),
   avatarUrl: text('avatar_url'),

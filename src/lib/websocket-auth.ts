@@ -107,9 +107,13 @@ export async function authenticateUser(
 
   // 原有逻辑：NextAuth JWT Session Token 验证
   try {
+    // P0-4 修复：NextAuth v5 decode 要求 salt 参数（用于派生解密密钥）
+    // cookie 名作为 salt，与 NextAuth 内部逻辑一致
+    const secret = process.env.NEXTAUTH_SECRET || process.env.AUTH_SECRET || '';
     const decoded = await decode({
       token,
-      secret: process.env.NEXTAUTH_SECRET || process.env.AUTH_SECRET || '',
+      secret,
+      salt: 'authjs.session-token',
     });
 
     if (!decoded?.sub) {
