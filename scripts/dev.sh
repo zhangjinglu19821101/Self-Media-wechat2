@@ -20,35 +20,8 @@ fi
 
 # 设置开发环境变量
 export NODE_ENV="development"
-# 🔴 不再强制覆盖，尊重 .env.local 中的配置
-export COZE_PROJECT_ENV="${COZE_PROJECT_ENV:-DEV}"
-# 🔴 强制使用 5000 端口（不继承环境中的 PORT，防止被沙箱平台的 PORT=9000 污染）
-export PORT=5000
-
-# ============================================
-# 端口占用自动清理
-# 如果 5000 端口被占用（残留的 Next.js 进程），自动 kill 后再启动
-# ============================================
-kill_port_if_listening() {
-    local port=$1
-    local pids
-    pids=$(ss -H -lntp 2>/dev/null | awk -v p="${port}" '$4 ~ ":"p"$"' | grep -o 'pid=[0-9]*' | cut -d= -f2 | paste -sd' ' - || true)
-    if [[ -z "${pids}" ]]; then
-      echo "[dev.sh] 端口 ${port} 空闲，可直接启动"
-      return 0
-    fi
-    echo "[dev.sh] 端口 ${port} 被占用 (PID: ${pids})，正在清理..."
-    echo "${pids}" | xargs -I {} kill -9 {} 2>/dev/null || true
-    sleep 1
-    # 二次检查
-    pids=$(ss -H -lntp 2>/dev/null | awk -v p="${port}" '$4 ~ ":"p"$"' | grep -o 'pid=[0-9]*' | cut -d= -f2 | paste -sd' ' - || true)
-    if [[ -n "${pids}" ]]; then
-      echo "[dev.sh] ⚠️ 端口 ${port} 仍被占用 (PID: ${pids})，无法清理"
-      return 1
-    fi
-    echo "[dev.sh] 端口 ${port} 已清理"
-    return 0
-}
+export COZE_PROJECT_ENV="${COZE_PROJECT_ENV:-DEV}"  # 允许外部覆盖，默认 DEV
+export PORT="${PORT:-5000}"
 
 echo "[dev.sh] 启动开发服务器..."
 echo "[dev.sh] 端口: ${PORT}"
