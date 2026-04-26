@@ -502,6 +502,7 @@ export class TokenService {
       const autoPasswordHash = await hashPassword(randomBytes(32).toString('hex'));
 
       let registeredAccount: typeof accounts.$inferSelect | null = null;
+      let registeredWorkspaceId: string | null = null;
 
       await db.transaction(async (tx) => {
         // 2a. 创建账户
@@ -531,6 +532,7 @@ export class TokenService {
 
         // 2c. 添加为 Owner
         if (workspace) {
+          registeredWorkspaceId = workspace.id;
           await tx.insert(workspaceMembers).values({
             workspaceId: workspace.id,
             accountId: newAccount.id,
@@ -540,16 +542,26 @@ export class TokenService {
           });
         }
 
-        // 2d. 初始化默认数据（在事务内执行，失败则回滚）
-        // 注意：initializeUserData 内部使用 db 全局实例而非 tx，
-        // 但如果失败会抛异常导致事务回滚
-        await initializeUserData(newAccount.id, workspace?.id || 'default-workspace');
+        // 注意：initializeUserData 必须在事务外部调用
+        // 原因：它内部使用 db 全局实例（非 tx），不走事务连接，
+        // 且内部 catch 吞掉异常不会触发回滚，放在事务内是无效的
       });
 
       if (!registeredAccount) {
         throw new Error('AUTO_REGISTER_FAILED');
       }
       account = registeredAccount;
+
+      // 2d. 初始化默认数据（事务提交后执行，容错不阻塞注册）
+      try {
+        await initializeUserData(
+          registeredAccount.id,
+          registeredWorkspaceId || 'default-workspace',
+        );
+      } catch (initError) {
+        // initializeUserData 内部已有 try-catch，此处是双重保障
+        console.error('[TokenService] 微信自动注册后初始化数据失败（不影响注册结果）:', initError);
+      }
 
       console.log(`[TokenService] 微信自动注册: openid=${openid.substring(0, 8)}..., account=${account.id}`);
     }
