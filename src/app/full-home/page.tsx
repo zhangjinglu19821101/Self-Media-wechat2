@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import Link from 'next/link';
 import { apiGet, apiPost, apiPut, apiDelete, checkApiKeyMissing, getCurrentWorkspaceId } from '@/lib/api/client';
+import type { MaterialFormat, WebSearchResultItem } from '@/lib/services/unified-search/types';
 import { Card, CardHeader, CardTitle, CardContent, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
@@ -1258,7 +1259,7 @@ export default function HomePage() {
   };
 
   // 🔥 互联网搜索：保存结果到素材库
-  const handleSaveWebResultToMaterial = async (materialFormat: any) => {
+  const handleSaveWebResultToMaterial = async (materialFormat: MaterialFormat) => {
     try {
       await apiPost('/api/unified-search/save-to-material', { materialFormat });
       toast.success('已保存到素材库');
@@ -3382,7 +3383,7 @@ export default function HomePage() {
                                 </div>
                               )}
 
-                              {webSearchResults.map((item: any) => (
+                              {webSearchResults.map((item: WebSearchResultItem) => (
                                 <div
                                   key={item.id}
                                   className="px-3 py-2.5 rounded-lg border border-teal-200 bg-teal-50/30 hover:border-teal-300 transition-all"
@@ -4961,7 +4962,7 @@ export default function HomePage() {
                             <Globe className="w-3 h-3" />
                             <span>权威来源结果</span>
                           </div>
-                          {webSearchResults.map((item: any) => (
+                          {webSearchResults.map((item: WebSearchResultItem) => (
                             <div
                               key={item.id}
                               className="px-3 py-2 rounded-lg border border-teal-200 bg-teal-50/20 hover:border-teal-300 transition-all"

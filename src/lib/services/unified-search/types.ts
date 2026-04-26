@@ -104,7 +104,7 @@ export interface WebSearchRequest {
 }
 
 /** SSE 事件类型 */
-export type SSEEventType = 'progress' | 'results' | 'summarizing' | 'summary' | 'done' | 'error';
+export type SSEEventType = 'progress' | 'results' | 'summary' | 'done' | 'error';
 
 /** SSE 事件数据 */
 export interface SSEEvent {

@@ -121,23 +121,20 @@ ${batch.map((item, i) => `${i + 1}. [${item.siteName}] ${item.title}
   }
 
   /**
-   * 解析 LLM 返回的 JSON
+   * 解析 LLM 返回的 JSON（P2-2: 增强健壮性）
+   *
+   * 支持场景：
+   * 1. 纯 JSON 对象
+   * 2. ```json\n{...}\n``` 代码块
+   * 3. 前导/后导解释文字 + JSON
+   * 4. 嵌套在文本中的 JSON
    */
   private parseResponse(text: string, batch: WebSearchResultItem[]): { materialFormats: MaterialFormat[]; summary: string } {
     try {
-      // 尝试从文本中提取 JSON
-      let jsonStr = text.trim();
-
-      // 去掉 markdown 代码块
-      if (jsonStr.startsWith('```')) {
-        jsonStr = jsonStr.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '');
-      }
-
-      // 尝试定位 JSON 对象的起止
-      const firstBrace = jsonStr.indexOf('{');
-      const lastBrace = jsonStr.lastIndexOf('}');
-      if (firstBrace !== -1 && lastBrace !== -1) {
-        jsonStr = jsonStr.slice(firstBrace, lastBrace + 1);
+      const jsonStr = this.extractJsonFromText(text);
+      if (!jsonStr) {
+        console.warn('[LLMProcessor] 未能从响应中提取 JSON，使用降级模式');
+        return this.fallbackProcess(batch);
       }
 
       const parsed = JSON.parse(jsonStr);
@@ -179,6 +176,95 @@ ${batch.map((item, i) => `${i + 1}. [${item.siteName}] ${item.title}
     const summary = batch.map(item => `${item.siteName}: ${item.snippet.slice(0, 50)}`).join('；');
 
     return { materialFormats, summary };
+  }
+
+  /**
+   * 从 LLM 响应文本中提取 JSON 字符串（P2-2: 增强健壮性）
+   *
+   * 提取策略（按优先级）：
+   * 1. 查找 ```json\n{...}\n``` 代码块
+   * 2. 查找 ```\n{...}\n``` 简单代码块
+   * 3. 使用栈匹配精确提取 JSON 对象
+   * 4. 直接定位首尾大括号
+   */
+  private extractJsonFromText(text: string): string | null {
+    const trimmed = text.trim();
+
+    // 1. 查找 markdown 代码块（支持前导/后导文字）
+    const codeBlockMatch = trimmed.match(/```(?:json)?\s*\n?([\s\S]*?)\n?```/);
+    if (codeBlockMatch) {
+      const captured = codeBlockMatch[1].trim();
+      if (captured.length > 10) {
+        // 代码块内可能还有首尾大括号定位
+        const firstBrace = captured.indexOf('{');
+        const lastBrace = captured.lastIndexOf('}');
+        if (firstBrace !== -1 && lastBrace > firstBrace) {
+          return captured.slice(firstBrace, lastBrace + 1);
+        }
+        return captured;
+      }
+    }
+
+    // 2. 栈匹配精确提取 JSON 对象（避免贪婪匹配问题）
+    const stackResult = this.extractJsonWithStackMatching(trimmed);
+    if (stackResult) return stackResult;
+
+    // 3. 兜底：直接定位首尾大括号
+    const firstBrace = trimmed.indexOf('{');
+    const lastBrace = trimmed.lastIndexOf('}');
+    if (firstBrace !== -1 && lastBrace > firstBrace) {
+      return trimmed.slice(firstBrace, lastBrace + 1);
+    }
+
+    return null;
+  }
+
+  /**
+   * 栈匹配精确提取 JSON 对象（防止贪婪正则误匹配）
+   */
+  private extractJsonWithStackMatching(text: string): string | null {
+    let startIndex = -1;
+    let depth = 0;
+    let inString = false;
+    let escapeNext = false;
+
+    for (let i = 0; i < text.length; i++) {
+      const char = text[i];
+
+      if (escapeNext) {
+        escapeNext = false;
+        continue;
+      }
+
+      if (char === '\\') {
+        escapeNext = true;
+        continue;
+      }
+
+      if (char === '"' && !inString) {
+        inString = true;
+        continue;
+      }
+
+      if (char === '"' && inString) {
+        inString = false;
+        continue;
+      }
+
+      if (inString) continue;
+
+      if (char === '{') {
+        if (depth === 0) startIndex = i;
+        depth++;
+      } else if (char === '}') {
+        depth--;
+        if (depth === 0 && startIndex !== -1) {
+          return text.slice(startIndex, i + 1);
+        }
+      }
+    }
+
+    return null;
   }
 
   /**

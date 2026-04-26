@@ -157,7 +157,7 @@ export class WebSearcher {
 
     // 5. 转换结果格式
     const results: WebSearchResultItem[] = (response.web_items || []).map(item => ({
-      id: item.id || `web-${Math.random().toString(36).slice(2, 10)}`,
+      id: item.id || `web-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
       title: item.title || '',
       snippet: item.snippet || '',
       url: item.url || '',
