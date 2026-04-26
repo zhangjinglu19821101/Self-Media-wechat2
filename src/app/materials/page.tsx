@@ -13,7 +13,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { 
   Search, Plus, Edit, Trash2, Eye, Tag, Filter, 
   FileText, BarChart2, BookOpen, Quote, Play, CheckCircle,
-  ChevronLeft, ChevronRight, X, Layers, List
+  ChevronLeft, ChevronRight, X, Layers, List,
+  Bookmark, BookmarkCheck, Shield, Star, Sparkles
 } from 'lucide-react';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
@@ -25,6 +26,7 @@ interface Material {
   title: string;
   type: MaterialType;
   content: string;
+  ownerType: 'system' | 'user';
   sourceType: string;
   sourceDesc: string | null;
   sourceUrl: string | null;
@@ -36,6 +38,7 @@ interface Material {
   effectiveCount: number | null;
   ineffectiveCount: number | null;
   status: string;
+  isBookmarked?: boolean;
   createdAt: string;
   updatedAt: string;
   lastUsedAt: string | null;
@@ -73,6 +76,20 @@ const SOURCE_TYPES = [
   { value: 'import', label: '外部导入' },
 ];
 
+const SYSTEM_SOURCE_TYPES = [
+  { value: 'system_admin', label: '管理员录入' },
+  { value: 'system_crawl', label: '系统爬取' },
+  { value: 'info_snippet', label: '信息速记' },
+  { value: 'web_search', label: '互联网搜索' },
+];
+
+const OWNER_TABS = [
+  { value: 'all', label: '全部', icon: <Layers className="w-4 h-4" /> },
+  { value: 'user', label: '我的素材', icon: <Star className="w-4 h-4" /> },
+  { value: 'system', label: '系统素材', icon: <Shield className="w-4 h-4" /> },
+  { value: 'bookmarked', label: '已收藏', icon: <Bookmark className="w-4 h-4" /> },
+];
+
 // ==================== 工具函数 ====================
 const getTypeInfo = (type: MaterialType) => {
   return MATERIAL_TYPES.find(t => t.value === type) || MATERIAL_TYPES[0];
@@ -98,6 +115,7 @@ export default function MaterialsPage() {
   const [error, setError] = useState('');
 
   // 筛选状态
+  const [ownerTab, setOwnerTab] = useState<string>('all');
   const [filterType, setFilterType] = useState<string>('all');
   const [filterStatus, setFilterStatus] = useState<string>('active');
   const [searchKeyword, setSearchKeyword] = useState('');
@@ -113,11 +131,15 @@ export default function MaterialsPage() {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [selectedMaterial, setSelectedMaterial] = useState<Material | null>(null);
 
+  // 管理员状态
+  const [isAdmin, setIsAdmin] = useState(false);
+
   // 表单状态
   const [formData, setFormData] = useState({
     title: '',
     type: 'case' as MaterialType,
     content: '',
+    ownerType: 'user' as 'system' | 'user',
     sourceType: 'manual',
     sourceDesc: '',
     sourceUrl: '',
@@ -129,6 +151,21 @@ export default function MaterialsPage() {
   const [tagInput, setTagInput] = useState('');
   const [formLoading, setFormLoading] = useState(false);
 
+  // 检查管理员状态
+  useEffect(() => {
+    const checkAdmin = async () => {
+      try {
+        const result = await apiGet('/api/auth/session') as Record<string, any>;
+        if (result?.user?.role === 'owner' || result?.user?.isSuperAdmin) {
+          setIsAdmin(true);
+        }
+      } catch {
+        // 非管理员，不处理
+      }
+    };
+    checkAdmin();
+  }, []);
+
   // ==================== 数据加载 ====================
   const fetchMaterials = useCallback(async () => {
     setLoading(true);
@@ -136,6 +173,7 @@ export default function MaterialsPage() {
 
     try {
       const params = new URLSearchParams();
+      if (ownerTab && ownerTab !== 'all') params.append('owner', ownerTab);
       if (filterType && filterType !== 'all') params.append('type', filterType);
       if (filterStatus) params.append('status', filterStatus);
       if (searchKeyword) params.append('search', searchKeyword);
@@ -159,7 +197,7 @@ export default function MaterialsPage() {
     } finally {
       setLoading(false);
     }
-  }, [filterType, filterStatus, searchKeyword, selectedTags, tagType, pagination.page, pagination.pageSize]);
+  }, [ownerTab, filterType, filterStatus, searchKeyword, selectedTags, tagType, pagination.page, pagination.pageSize]);
 
   const fetchTagCloud = useCallback(async () => {
     try {
@@ -192,6 +230,7 @@ export default function MaterialsPage() {
   };
 
   const handleReset = () => {
+    setOwnerTab('all');
     setFilterType('');
     setFilterStatus('active');
     setSearchKeyword('');
@@ -212,12 +251,31 @@ export default function MaterialsPage() {
     setPagination(prev => ({ ...prev, page: newPage }));
   };
 
+  // ─── 收藏/取消收藏 ───
+  const handleToggleBookmark = async (material: Material, e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    try {
+      if (material.isBookmarked) {
+        await apiDelete(`/api/materials/bookmarks?materialId=${material.id}`);
+      } else {
+        await apiPost('/api/materials/bookmarks', { materialId: material.id });
+      }
+      // 更新本地状态
+      setMaterials(prev => prev.map(m => 
+        m.id === material.id ? { ...m, isBookmarked: !m.isBookmarked } : m
+      ));
+    } catch (err) {
+      console.error('收藏操作失败:', err);
+    }
+  };
+
   // 打开创建弹窗
   const openCreateDialog = () => {
     setFormData({
       title: '',
       type: 'case',
       content: '',
+      ownerType: 'user',
       sourceType: 'manual',
       sourceDesc: '',
       sourceUrl: '',
@@ -232,11 +290,14 @@ export default function MaterialsPage() {
 
   // 打开编辑弹窗
   const openEditDialog = (material: Material) => {
+    // 系统素材仅管理员可编辑
+    if (material.ownerType === 'system' && !isAdmin) return;
     setSelectedMaterial(material);
     setFormData({
       title: material.title,
       type: material.type,
       content: material.content,
+      ownerType: material.ownerType,
       sourceType: material.sourceType,
       sourceDesc: material.sourceDesc || '',
       sourceUrl: material.sourceUrl || '',
@@ -256,6 +317,8 @@ export default function MaterialsPage() {
 
   // 打开删除确认弹窗
   const openDeleteDialog = (material: Material) => {
+    // 系统素材仅管理员可删除
+    if (material.ownerType === 'system' && !isAdmin) return;
     setSelectedMaterial(material);
     setDeleteDialogOpen(true);
   };
@@ -265,6 +328,11 @@ export default function MaterialsPage() {
     if (!formData.title || !formData.type || !formData.content) {
       setError('请填写必要字段：标题、类型、内容');
       return;
+    }
+
+    // 非管理员创建系统素材，自动修正为用户素材
+    if (formData.ownerType === 'system' && !isAdmin) {
+      formData.ownerType = 'user';
     }
 
     setFormLoading(true);
@@ -328,6 +396,16 @@ export default function MaterialsPage() {
     }));
   };
 
+  // 判断素材是否可编辑
+  const canEdit = (material: Material) => {
+    return material.ownerType === 'user' || (material.ownerType === 'system' && isAdmin);
+  };
+
+  // 判断素材是否可删除
+  const canDelete = (material: Material) => {
+    return material.ownerType === 'user' || (material.ownerType === 'system' && isAdmin);
+  };
+
   // ==================== 渲染 ====================
   return (
     <div className="min-h-screen bg-gradient-to-br from-sky-50 via-white to-cyan-50">
@@ -343,81 +421,67 @@ export default function MaterialsPage() {
               <p className="text-muted-foreground mt-1">管理可复用的创作素材</p>
             </div>
           </div>
-          <Button onClick={openCreateDialog}>
-            <Plus className="w-4 h-4 mr-2" />
-            新建素材
-          </Button>
+          <div className="flex items-center gap-3">
+            {isAdmin && (
+              <Badge variant="secondary" className="bg-amber-100 text-amber-700 border-amber-200 flex items-center gap-1">
+                <Shield className="w-3 h-3" />
+                管理员模式
+              </Badge>
+            )}
+            <Button onClick={openCreateDialog}>
+              <Plus className="w-4 h-4 mr-2" />
+              新建素材
+            </Button>
+          </div>
         </div>
 
-      {/* 搜索和筛选区域 */}
+      {/* 归属Tab筛选 */}
       <Card className="bg-white/80 backdrop-blur-md border-sky-100/50 shadow-sm">
-        <CardHeader>
-          <CardTitle className="text-lg flex items-center gap-2">
-            <div className="rounded-xl bg-gradient-to-br from-sky-400 to-cyan-500 p-2 shadow-md">
-              <Filter className="w-4 h-4 text-white" />
-            </div>
-            筛选条件
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            {/* 关键词搜索 */}
-            <div className="space-y-2">
-              <Label>关键词搜索</Label>
-              <div className="flex gap-2">
-                <Input
-                  placeholder="搜索标题/内容..."
-                  value={searchKeyword}
-                  onChange={(e) => setSearchKeyword(e.target.value)}
-                  onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
-                />
-                <Button variant="outline" size="icon" onClick={handleSearch}>
-                  <Search className="w-4 h-4" />
-                </Button>
-              </div>
-            </div>
+        <CardContent className="pt-6">
+          <div className="flex flex-wrap items-center gap-4">
+            <Tabs value={ownerTab} onValueChange={(v) => { setOwnerTab(v); setPagination(prev => ({ ...prev, page: 1 })); }}>
+              <TabsList>
+                {OWNER_TABS.map(tab => (
+                  <TabsTrigger key={tab.value} value={tab.value} className="flex items-center gap-1.5">
+                    {tab.icon}
+                    {tab.label}
+                  </TabsTrigger>
+                ))}
+              </TabsList>
+            </Tabs>
+
+            <div className="h-8 w-px bg-sky-200" />
 
             {/* 类型筛选 */}
-            <div className="space-y-2">
-              <Label>素材类型</Label>
-              <Select value={filterType} onValueChange={setFilterType}>
-                <SelectTrigger>
-                  <SelectValue placeholder="全部类型" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">全部类型</SelectItem>
-                  {MATERIAL_TYPES.map(type => (
-                    <SelectItem key={type.value} value={type.value}>
-                      {type.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+            <Select value={filterType} onValueChange={setFilterType}>
+              <SelectTrigger className="w-[140px]">
+                <SelectValue placeholder="全部类型" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">全部类型</SelectItem>
+                {MATERIAL_TYPES.map(type => (
+                  <SelectItem key={type.value} value={type.value}>
+                    {type.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
 
-            {/* 状态筛选 */}
-            <div className="space-y-2">
-              <Label>状态</Label>
-              <Select value={filterStatus} onValueChange={setFilterStatus}>
-                <SelectTrigger>
-                  <SelectValue placeholder="选择状态" />
-                </SelectTrigger>
-                <SelectContent>
-                  {STATUS_OPTIONS.map(status => (
-                    <SelectItem key={status.value} value={status.value}>
-                      {status.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            {/* 重置按钮 */}
-            <div className="space-y-2">
-              <Label>&nbsp;</Label>
-              <Button variant="outline" onClick={handleReset} className="w-full">
-                <X className="w-4 h-4 mr-2" />
-                重置筛选
+            {/* 搜索 */}
+            <div className="flex gap-2 flex-1 min-w-[200px]">
+              <Input
+                placeholder="搜索标题/内容..."
+                value={searchKeyword}
+                onChange={(e) => setSearchKeyword(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
+                className="max-w-[300px]"
+              />
+              <Button variant="outline" size="icon" onClick={handleSearch}>
+                <Search className="w-4 h-4" />
+              </Button>
+              <Button variant="outline" onClick={handleReset} className="whitespace-nowrap">
+                <X className="w-4 h-4 mr-1" />
+                重置
               </Button>
             </div>
           </div>
@@ -484,6 +548,9 @@ export default function MaterialsPage() {
           </div>
           <CardDescription>
             共 {pagination.total} 条素材
+            {ownerTab === 'system' && ' (系统素材)'}
+            {ownerTab === 'user' && ' (我的素材)'}
+            {ownerTab === 'bookmarked' && ' (已收藏)'}
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -493,21 +560,43 @@ export default function MaterialsPage() {
             <div className="text-center py-8 text-destructive">{error}</div>
           ) : materials.length === 0 ? (
             <div className="text-center py-8 text-muted-foreground">
-              暂无素材，点击右上角"新建素材"开始创建
+              {ownerTab === 'bookmarked' 
+                ? '暂无收藏素材，点击素材卡片上的收藏按钮添加'
+                : ownerTab === 'system'
+                ? '暂无系统素材'
+                : '暂无素材，点击右上角"新建素材"开始创建'
+              }
             </div>
           ) : (
             <div className="space-y-4">
               {materials.map((material) => {
                 const typeInfo = getTypeInfo(material.type);
+                const isSystem = material.ownerType === 'system';
                 return (
                   <div
                     key={material.id}
-                    className="border border-sky-100/50 bg-white/50 rounded-xl p-4 hover:border-sky-300 hover:bg-sky-50/50 transition-all shadow-sm hover:shadow-md"
+                    className={`border bg-white/50 rounded-xl p-4 transition-all shadow-sm hover:shadow-md ${
+                      isSystem 
+                        ? 'border-blue-100/50 hover:border-blue-300 hover:bg-blue-50/50' 
+                        : 'border-sky-100/50 hover:border-sky-300 hover:bg-sky-50/50'
+                    }`}
                   >
                     <div className="flex items-start justify-between">
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 mb-2">
-                          <Badge variant="secondary" className="flex items-center gap-1">
+                          {/* 归属Badge */}
+                          {isSystem ? (
+                            <Badge className="flex items-center gap-1 bg-blue-100 text-blue-700 border-blue-200 hover:bg-blue-200">
+                              <Shield className="w-3 h-3" />
+                              系统素材
+                            </Badge>
+                          ) : (
+                            <Badge variant="secondary" className="flex items-center gap-1">
+                              <Star className="w-3 h-3" />
+                              我的素材
+                            </Badge>
+                          )}
+                          <Badge variant="outline" className="flex items-center gap-1">
                             {typeInfo.icon}
                             {typeInfo.label}
                           </Badge>
@@ -530,16 +619,33 @@ export default function MaterialsPage() {
                           )}
                         </div>
                       </div>
-                      <div className="flex items-center gap-2 ml-4">
+                      <div className="flex items-center gap-1 ml-4">
+                        {/* 收藏按钮 */}
+                        <Button 
+                          variant="ghost" 
+                          size="icon" 
+                          onClick={(e) => handleToggleBookmark(material, e)}
+                          title={material.isBookmarked ? '取消收藏' : '收藏素材'}
+                        >
+                          {material.isBookmarked ? (
+                            <BookmarkCheck className="w-4 h-4 text-amber-500" />
+                          ) : (
+                            <Bookmark className="w-4 h-4 text-muted-foreground" />
+                          )}
+                        </Button>
                         <Button variant="ghost" size="icon" onClick={() => openDetailDialog(material)}>
                           <Eye className="w-4 h-4" />
                         </Button>
-                        <Button variant="ghost" size="icon" onClick={() => openEditDialog(material)}>
-                          <Edit className="w-4 h-4" />
-                        </Button>
-                        <Button variant="ghost" size="icon" onClick={() => openDeleteDialog(material)}>
-                          <Trash2 className="w-4 h-4 text-destructive" />
-                        </Button>
+                        {canEdit(material) && (
+                          <Button variant="ghost" size="icon" onClick={() => openEditDialog(material)}>
+                            <Edit className="w-4 h-4" />
+                          </Button>
+                        )}
+                        {canDelete(material) && (
+                          <Button variant="ghost" size="icon" onClick={() => openDeleteDialog(material)}>
+                            <Trash2 className="w-4 h-4 text-destructive" />
+                          </Button>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -579,7 +685,15 @@ export default function MaterialsPage() {
       <Dialog open={detailDialogOpen} onOpenChange={setDetailDialogOpen}>
         <DialogContent className="max-w-3xl max-h-[80vh] overflow-hidden flex flex-col">
           <DialogHeader>
-            <DialogTitle>素材详情</DialogTitle>
+            <DialogTitle className="flex items-center gap-2">
+              素材详情
+              {selectedMaterial?.ownerType === 'system' && (
+                <Badge className="bg-blue-100 text-blue-700 border-blue-200 flex items-center gap-1">
+                  <Shield className="w-3 h-3" />
+                  系统素材
+                </Badge>
+              )}
+            </DialogTitle>
           </DialogHeader>
           {selectedMaterial && (
             <ScrollArea className="flex-1 pr-4">
@@ -595,12 +709,41 @@ export default function MaterialsPage() {
                     <p>{getTypeInfo(selectedMaterial.type).label}</p>
                   </div>
                   <div>
+                    <Label className="text-muted-foreground">归属</Label>
+                    <p>{selectedMaterial.ownerType === 'system' ? '系统素材' : '我的素材'}</p>
+                  </div>
+                  <div>
+                    <Label className="text-muted-foreground">来源</Label>
+                    <p>{[...SOURCE_TYPES, ...SYSTEM_SOURCE_TYPES].find(s => s.value === selectedMaterial.sourceType)?.label || selectedMaterial.sourceType}</p>
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
                     <Label className="text-muted-foreground">状态</Label>
                     <p>{STATUS_OPTIONS.find(s => s.value === selectedMaterial.status)?.label}</p>
                   </div>
                   <div>
-                    <Label className="text-muted-foreground">来源</Label>
-                    <p>{SOURCE_TYPES.find(s => s.value === selectedMaterial.sourceType)?.label}</p>
+                    <Label className="text-muted-foreground">收藏状态</Label>
+                    <div className="flex items-center gap-2">
+                      <p>{selectedMaterial.isBookmarked ? '已收藏' : '未收藏'}</p>
+                      <Button
+                        variant={selectedMaterial.isBookmarked ? 'secondary' : 'outline'}
+                        size="sm"
+                        onClick={() => handleToggleBookmark(selectedMaterial)}
+                      >
+                        {selectedMaterial.isBookmarked ? (
+                          <>
+                            <BookmarkCheck className="w-3 h-3 mr-1 text-amber-500" />
+                            取消收藏
+                          </>
+                        ) : (
+                          <>
+                            <Bookmark className="w-3 h-3 mr-1" />
+                            收藏
+                          </>
+                        )}
+                      </Button>
+                    </div>
                   </div>
                 </div>
                 {selectedMaterial.sourceDesc && (
@@ -726,6 +869,97 @@ export default function MaterialsPage() {
                 </div>
               </div>
 
+              {/* 归属类型 - 仅管理员可设置 */}
+              {isAdmin && (
+                <div className="p-3 rounded-lg border border-amber-200 bg-amber-50/50">
+                  <div className="flex items-center gap-2 mb-2">
+                    <Shield className="w-4 h-4 text-amber-600" />
+                    <Label className="text-amber-700">素材归属（管理员专属）</Label>
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <Select value={formData.ownerType} onValueChange={(v) => setFormData({ ...formData, ownerType: v as 'system' | 'user' })}>
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="user">用户素材</SelectItem>
+                        <SelectItem value="system">系统素材</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <Select 
+                      value={formData.sourceType} 
+                      onValueChange={(v) => setFormData({ ...formData, sourceType: v })}
+                    >
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {formData.ownerType === 'system' ? (
+                          SYSTEM_SOURCE_TYPES.map(source => (
+                            <SelectItem key={source.value} value={source.value}>
+                              {source.label}
+                            </SelectItem>
+                          ))
+                        ) : (
+                          SOURCE_TYPES.map(source => (
+                            <SelectItem key={source.value} value={source.value}>
+                              {source.label}
+                            </SelectItem>
+                          ))
+                        )}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  {formData.ownerType === 'system' && (
+                    <p className="text-xs text-amber-600 mt-2 flex items-center gap-1">
+                      <Sparkles className="w-3 h-3" />
+                      系统素材对所有用户可见，请确保内容合规、质量可靠
+                    </p>
+                  )}
+                </div>
+              )}
+
+              {/* 非管理员的来源选择 */}
+              {!isAdmin && (
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label>来源类型</Label>
+                    <Select value={formData.sourceType} onValueChange={(v) => setFormData({ ...formData, sourceType: v })}>
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {SOURCE_TYPES.map(source => (
+                          <SelectItem key={source.value} value={source.value}>
+                            {source.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>来源描述</Label>
+                    <Input
+                      value={formData.sourceDesc}
+                      onChange={(e) => setFormData({ ...formData, sourceDesc: e.target.value })}
+                      placeholder="如：原创、XX报告、XX新闻"
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* 管理员选择系统素材时也显示来源描述 */}
+              {isAdmin && (
+                <div className="space-y-2">
+                  <Label>来源描述</Label>
+                  <Input
+                    value={formData.sourceDesc}
+                    onChange={(e) => setFormData({ ...formData, sourceDesc: e.target.value })}
+                    placeholder="如：原创、XX报告、XX新闻"
+                  />
+                </div>
+              )}
+
               {/* 内容 */}
               <div className="space-y-2">
                 <Label>内容 *</Label>
@@ -735,33 +969,6 @@ export default function MaterialsPage() {
                   placeholder="素材内容..."
                   rows={6}
                 />
-              </div>
-
-              {/* 来源信息 */}
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label>来源类型</Label>
-                  <Select value={formData.sourceType} onValueChange={(v) => setFormData({ ...formData, sourceType: v })}>
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {SOURCE_TYPES.map(source => (
-                        <SelectItem key={source.value} value={source.value}>
-                          {source.label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-2">
-                  <Label>来源描述</Label>
-                  <Input
-                    value={formData.sourceDesc}
-                    onChange={(e) => setFormData({ ...formData, sourceDesc: e.target.value })}
-                    placeholder="如：原创、XX报告、XX新闻"
-                  />
-                </div>
               </div>
 
               <Separator />
@@ -845,7 +1052,10 @@ export default function MaterialsPage() {
           <DialogHeader>
             <DialogTitle>确认删除</DialogTitle>
             <DialogDescription>
-              确定要删除素材 "{selectedMaterial?.title}" 吗？此操作不可撤销。
+              {selectedMaterial?.ownerType === 'system' 
+                ? `确定要删除系统素材 "${selectedMaterial?.title}" 吗？此操作会影响所有用户。`
+                : `确定要删除素材 "${selectedMaterial?.title}" 吗？此操作不可撤销。`
+              }
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>

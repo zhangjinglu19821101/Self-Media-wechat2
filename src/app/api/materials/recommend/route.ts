@@ -200,10 +200,16 @@ async function recallByKeywords(workspaceId: string, keywords: string[]) {
     like(materialLibrary.content, `%${escapeLikePattern(kw)}%`),
   ]);
 
+  // ─── 可见性条件：系统素材 + 当前工作区的用户素材 ───
+  const visibilityCondition = or(
+    eq(materialLibrary.ownerType, 'system'),
+    eq(materialLibrary.workspaceId, workspaceId),
+  );
+
   const whereClause =
     conditions.length === 1
-      ? and(eq(materialLibrary.status, 'active'), workspaceVisible(workspaceId), conditions[0])
-      : and(eq(materialLibrary.status, 'active'), workspaceVisible(workspaceId), or(...conditions));
+      ? and(eq(materialLibrary.status, 'active'), visibilityCondition, conditions[0])
+      : and(eq(materialLibrary.status, 'active'), visibilityCondition, or(...conditions));
 
   return db
     .select({
@@ -237,6 +243,12 @@ async function recallByTags(workspaceId: string, tagCandidates: string[]) {
     );
   });
 
+  // ─── 可见性条件：系统素材 + 当前工作区的用户素材 ───
+  const visibilityCondition = or(
+    eq(materialLibrary.ownerType, 'system'),
+    eq(materialLibrary.workspaceId, workspaceId),
+  );
+
   return db
     .select({
       id: materialLibrary.id,
@@ -250,12 +262,18 @@ async function recallByTags(workspaceId: string, tagCandidates: string[]) {
       useCount: materialLibrary.useCount,
     })
     .from(materialLibrary)
-    .where(and(eq(materialLibrary.status, 'active'), workspaceVisible(workspaceId), or(...conditions)))
+    .where(and(eq(materialLibrary.status, 'active'), visibilityCondition, or(...conditions)))
     .limit(10);
 }
 
 // ─── 路径3：近期热门 ───
 async function recallByHotness(workspaceId: string) {
+  // ─── 可见性条件：系统素材 + 当前工作区的用户素材 ───
+  const visibilityCondition = or(
+    eq(materialLibrary.ownerType, 'system'),
+    eq(materialLibrary.workspaceId, workspaceId),
+  );
+
   return db
     .select({
       id: materialLibrary.id,
@@ -269,7 +287,7 @@ async function recallByHotness(workspaceId: string) {
       useCount: materialLibrary.useCount,
     })
     .from(materialLibrary)
-    .where(and(eq(materialLibrary.status, 'active'), workspaceVisible(workspaceId)))
+    .where(and(eq(materialLibrary.status, 'active'), visibilityCondition))
     .orderBy(desc(materialLibrary.useCount))
     .limit(3);
 }

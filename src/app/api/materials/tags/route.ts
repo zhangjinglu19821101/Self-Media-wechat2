@@ -29,14 +29,27 @@ export async function GET(request: NextRequest) {
                      tagType === 'emotion' ? 'emotion_tags' :
                      'topic_tags';
 
-    // 使用jsonb_array_elements_text展开JSONB数组 + workspace 可见性（用户workspace OR 系统预置）
-    // 参数化查询：workspaceId/materialType 使用参数绑定，tagColumnName 使用 sql.raw（字段名不可参数化）
-    const conditions = [
-      sql`status = 'active'`,
-      sql`(workspace_id = ${workspaceId} OR workspace_id = ${SYSTEM_WORKSPACE_ID})`
-    ];
+    // 使用jsonb_array_elements_text展开JSONB数组
+    // 可见性：系统素材 + 当前工作区的用户素材
+    let query: string;
     if (materialType) {
-      conditions.push(sql`type = ${materialType}`);
+      query = `
+        SELECT tag, count(*) as count 
+        FROM material_library, jsonb_array_elements_text(${tagColumnName}) as tag 
+        WHERE status = 'active' AND type = '${materialType}' AND (owner_type = 'system' OR workspace_id = '${workspaceId}')
+        GROUP BY tag 
+        ORDER BY count DESC 
+        LIMIT 50
+      `;
+    } else {
+      query = `
+        SELECT tag, count(*) as count 
+        FROM material_library, jsonb_array_elements_text(${tagColumnName}) as tag 
+        WHERE status = 'active' AND (owner_type = 'system' OR workspace_id = '${workspaceId}')
+        GROUP BY tag 
+        ORDER BY count DESC 
+        LIMIT 50
+      `;
     }
 
     const query = sql`

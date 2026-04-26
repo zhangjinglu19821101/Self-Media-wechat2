@@ -3,40 +3,37 @@
  * GET    - 获取素材详情
  * PUT    - 更新素材
  * DELETE - 删除素材
+ * 
+ * 权限控制：
+ * - 系统素材：仅管理员可编辑/删除
+ * - 用户素材：仅素材所有者可编辑/删除
+ * - 读取：系统素材所有人可见，用户素材仅所有者可见
  */
 
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-import { materialLibrary, materialUsageLog, SYSTEM_WORKSPACE_ID } from '@/lib/db/schema/material-library';
-import { eq, desc, sql, and, or } from 'drizzle-orm';
-import { getWorkspaceId } from '@/lib/auth/context';
+import { materialLibrary, materialUsageLog } from '@/lib/db/schema/material-library';
+import { eq, desc, sql, and } from 'drizzle-orm';
+import { getWorkspaceId, isSuperAdmin } from '@/lib/auth/context';
 
 interface RouteParams {
   params: Promise<{ id: string }>;
 }
 
 /**
- * GET /api/materials/[id]
- * 获取素材详情（包含使用记录）
+ * 获取素材详情（含权限校验）
+ * 系统素材所有人可见，用户素材仅所有者可见
  */
 export async function GET(request: NextRequest, { params }: RouteParams) {
   try {
     const { id } = await params;
     const workspaceId = await getWorkspaceId(request);
 
-    // 获取素材详情 - 使用sql处理UUID类型 + 可见性：用户workspace OR 系统预置
+    // 获取素材详情
     const [material] = await db
       .select()
       .from(materialLibrary)
-      .where(
-        and(
-          sql`${materialLibrary.id} = ${id}::uuid`,
-          or(
-            eq(materialLibrary.workspaceId, workspaceId),
-            eq(materialLibrary.workspaceId, SYSTEM_WORKSPACE_ID)
-          )
-        )
-      );
+      .where(sql`${materialLibrary.id} = ${id}::uuid`);
 
     if (!material) {
       return NextResponse.json({
@@ -45,18 +42,21 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       }, { status: 404 });
     }
 
-    // 获取使用记录（最近10条，表可能不存在需容错）
-    let usageLogs: any[] = [];
-    try {
-      usageLogs = await db
-        .select()
-        .from(materialUsageLog)
-        .where(sql`${materialUsageLog.materialId} = ${id}::uuid`)
-        .orderBy(desc(materialUsageLog.createdAt))
-        .limit(10);
-    } catch {
-      // material_usage_log 表可能未创建，忽略错误
+    // 权限校验：用户素材仅所有者可见
+    if (material.ownerType === 'user' && material.workspaceId !== workspaceId) {
+      return NextResponse.json({
+        success: false,
+        error: '素材不存在'
+      }, { status: 404 });
     }
+
+    // 获取使用记录（最近10条）
+    const usageLogs = await db
+      .select()
+      .from(materialUsageLog)
+      .where(sql`${materialUsageLog.materialId} = ${id}::uuid`)
+      .orderBy(desc(materialUsageLog.createdAt))
+      .limit(10);
 
     return NextResponse.json({
       success: true,
@@ -75,28 +75,22 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 }
 
 /**
- * PUT /api/materials/[id]
- * 更新素材
+ * 更新素材（含权限校验）
+ * 系统素材：仅管理员
+ * 用户素材：仅所有者
  */
 export async function PUT(request: NextRequest, { params }: RouteParams) {
   try {
     const { id } = await params;
     const workspaceId = await getWorkspaceId(request);
+    const adminFlag = await isSuperAdmin(request);
     const body = await request.json();
 
-    // 检查素材是否存在（含可见性：用户workspace OR 系统预置）
+    // 获取素材
     const [existing] = await db
       .select()
       .from(materialLibrary)
-      .where(
-        and(
-          sql`${materialLibrary.id} = ${id}::uuid`,
-          or(
-            eq(materialLibrary.workspaceId, workspaceId),
-            eq(materialLibrary.workspaceId, SYSTEM_WORKSPACE_ID)
-          )
-        )
-      );
+      .where(sql`${materialLibrary.id} = ${id}::uuid`);
 
     if (!existing) {
       return NextResponse.json({
@@ -105,12 +99,23 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       }, { status: 404 });
     }
 
-    // 系统预置素材禁止修改
-    if (existing.workspaceId === SYSTEM_WORKSPACE_ID) {
-      return NextResponse.json({
-        success: false,
-        error: '系统预置素材不可修改'
-      }, { status: 403 });
+    // ─── 权限校验 ───
+    if (existing.ownerType === 'system') {
+      // 系统素材：仅管理员可编辑
+      if (!adminFlag) {
+        return NextResponse.json({
+          success: false,
+          error: '权限不足：仅管理员可编辑系统素材'
+        }, { status: 403 });
+      }
+    } else {
+      // 用户素材：仅所有者可编辑
+      if (existing.workspaceId !== workspaceId) {
+        return NextResponse.json({
+          success: false,
+          error: '素材不存在'
+        }, { status: 404 });
+      }
     }
 
     // 构建更新数据
@@ -132,7 +137,25 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       }
     }
 
-    // 执行更新（WHERE 补充 workspaceId，形成双重保护）
+    // 管理员可修改 ownerType
+    if (body.ownerType !== undefined && adminFlag) {
+      const validOwnerTypes = ['system', 'user'];
+      if (!validOwnerTypes.includes(body.ownerType)) {
+        return NextResponse.json({
+          success: false,
+          error: `无效的归属类型，有效值为：${validOwnerTypes.join(', ')}`
+        }, { status: 400 });
+      }
+      updateData['ownerType'] = body.ownerType;
+      // 如果切换为系统素材，清除 workspaceId
+      if (body.ownerType === 'system') {
+        updateData['workspaceId'] = null;
+      } else {
+        updateData['workspaceId'] = workspaceId;
+      }
+    }
+
+    // 执行更新
     const [updated] = await db
       .update(materialLibrary)
       .set(updateData)
@@ -159,29 +182,23 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
 }
 
 /**
- * DELETE /api/materials/[id]
- * 删除素材（软删除：改为 archived 状态）
+ * 删除素材（含权限校验）
+ * 系统素材：仅管理员
+ * 用户素材：仅所有者
  */
 export async function DELETE(request: NextRequest, { params }: RouteParams) {
   try {
     const { id } = await params;
     const workspaceId = await getWorkspaceId(request);
+    const adminFlag = await isSuperAdmin(request);
     const { searchParams } = new URL(request.url);
     const hard = searchParams.get('hard') === 'true';
 
-    // 检查素材是否存在（含可见性：用户workspace OR 系统预置）
+    // 获取素材
     const [existing] = await db
       .select()
       .from(materialLibrary)
-      .where(
-        and(
-          sql`${materialLibrary.id} = ${id}::uuid`,
-          or(
-            eq(materialLibrary.workspaceId, workspaceId),
-            eq(materialLibrary.workspaceId, SYSTEM_WORKSPACE_ID)
-          )
-        )
-      );
+      .where(sql`${materialLibrary.id} = ${id}::uuid`);
 
     if (!existing) {
       return NextResponse.json({
@@ -190,12 +207,23 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
       }, { status: 404 });
     }
 
-    // 系统预置素材禁止删除
-    if (existing.workspaceId === SYSTEM_WORKSPACE_ID) {
-      return NextResponse.json({
-        success: false,
-        error: '系统预置素材不可删除'
-      }, { status: 403 });
+    // ─── 权限校验 ───
+    if (existing.ownerType === 'system') {
+      // 系统素材：仅管理员可删除
+      if (!adminFlag) {
+        return NextResponse.json({
+          success: false,
+          error: '权限不足：仅管理员可删除系统素材'
+        }, { status: 403 });
+      }
+    } else {
+      // 用户素材：仅所有者可删除
+      if (existing.workspaceId !== workspaceId) {
+        return NextResponse.json({
+          success: false,
+          error: '素材不存在'
+        }, { status: 404 });
+      }
     }
 
     if (hard) {

@@ -86,31 +86,39 @@
 ## 素材库模块
 
 ### 功能概述
-素材库用于存储和管理可复用的创作素材，支持快速查找和智能推荐。
+素材库用于存储和管理可复用的创作素材，支持系统素材和用户素材的归属区分、收藏管理、快速查找和智能推荐。
 
 ### 核心功能
-1. **素材创建**: 手动创建案例、数据、故事、引用等素材
-2. **素材列表**: 分页展示、按类型/状态筛选
+1. **素材创建**: 手动创建案例、数据、故事、引用等素材（管理员可创建系统素材）
+2. **素材列表**: 分页展示、按归属/类型/状态筛选、Tab快速切换
 3. **素材搜索**: 关键词搜索（标题+内容）
 4. **标签云**: 主题标签、场景标签、情绪标签统计
+5. **归属区分**: 系统素材（所有用户可见）vs 用户素材（仅创建者可见）
+6. **收藏管理**: 用户可收藏系统素材和自己的素材，支持"已收藏"筛选
+7. **权限控制**: 系统素材仅管理员可编辑/删除，用户素材仅创建者可编辑/删除
 
 ### 关键文件
-- **Schema**: `src/lib/db/schema/material-library.ts`
-- **API**: `src/app/api/materials/` (CRUD + 搜索 + 标签统计)
+- **Schema**: `src/lib/db/schema/material-library.ts`（含 ownerType 字段 + materialBookmarks 收藏表）
+- **API**: `src/app/api/materials/` (CRUD + 搜索 + 标签统计 + 归属筛选)
+- **收藏API**: `src/app/api/materials/bookmarks/` (收藏/取消收藏/状态查询)
 - **页面**: `src/app/materials/page.tsx`
+- **迁移API**: `/api/db/add-material-owner-type` (owner_type字段 + 收藏表迁移)
 
 ### API 接口
 | 接口 | 方法 | 说明 |
 |-----|------|------|
-| `/api/materials` | GET | 获取素材列表（支持搜索、筛选、分页） |
-| `/api/materials` | POST | 创建新素材 |
-| `/api/materials/[id]` | GET | 获取素材详情 |
-| `/api/materials/[id]` | PUT | 更新素材 |
-| `/api/materials/[id]` | DELETE | 删除素材 |
+| `/api/materials` | GET | 获取素材列表（支持 owner 归属筛选：all/user/system/bookmarked） |
+| `/api/materials` | POST | 创建新素材（管理员可创建系统素材，非管理员使用系统来源类型返回403） |
+| `/api/materials/[id]` | GET | 获取素材详情（系统素材所有人可见，用户素材仅所有者可见） |
+| `/api/materials/[id]` | PUT | 更新素材（系统素材仅管理员，用户素材仅所有者） |
+| `/api/materials/[id]` | DELETE | 删除素材（系统素材仅管理员，用户素材仅所有者） |
 | `/api/materials/[id]/use` | POST | 记录素材使用 |
-| `/api/materials/tags` | GET | 获取标签统计 |
-| `/api/materials/recommend` | GET | 根据指令推荐素材（关键词匹配+使用频率排序） |
-| `/api/db/create-material-library` | GET | 创建素材库表（迁移） |
+| `/api/materials/tags` | GET | 获取标签统计（含系统素材标签） |
+| `/api/materials/recommend` | GET | 根据指令推荐素材（含系统素材推荐） |
+| `/api/materials/bookmarks` | GET | 检查素材收藏状态 |
+| `/api/materials/bookmarks` | POST | 收藏素材（幂等，已收藏则更新标签/备注） |
+| `/api/materials/bookmarks` | DELETE | 取消收藏 |
+| `/api/db/add-material-owner-type` | GET | owner_type字段 + 收藏表迁移 |
 
 ### 素材类型
 - `case`: 案例素材
@@ -119,6 +127,30 @@
 - `quote`: 引用素材
 - `opening`: 开头素材
 - `ending`: 结尾素材
+
+### 归属模型
+- **系统素材** (`ownerType='system'`): 所有用户可见，workspaceId=null，仅管理员可创建/编辑/删除
+- **用户素材** (`ownerType='user'`): 仅创建者可见，workspaceId=用户工作区
+
+### 来源类型
+- **用户来源**: `manual`(手动创建)、`article`(从文章提取)、`ai_generate`(AI生成)、`import`(外部导入)
+- **系统来源** (仅管理员): `system_admin`(管理员录入)、`system_crawl`(系统爬取)、`info_snippet`(信息速记)、`web_search`(互联网搜索)
+
+### 收藏机制
+- `material_bookmarks` 表关联 `material_library.id`，支持 userTags 和 notes
+- 收藏状态通过 `isBookmarked` 字段附加到素材列表响应中
+- 收藏API幂等：重复收藏更新标签/备注而非报错
+
+### 权限控制矩阵
+| 操作 | 系统素材 | 用户素材 |
+|------|---------|---------|
+| 查看列表 | 所有用户 | 仅所有者 |
+| 查看详情 | 所有用户 | 仅所有者 |
+| 创建 | 仅管理员 | 所有用户 |
+| 编辑 | 仅管理员 | 仅所有者 |
+| 删除 | 仅管理员 | 仅所有者 |
+| 收藏 | 所有用户 | 仅所有者 |
+| 切换归属 | 仅管理员 | N/A |
 
 ### 标签维度
 - **主题标签** (topicTags): 港险、重疾、医疗险、意外险等
@@ -1726,109 +1758,34 @@
      - 修复：从 `max: 1` 改为 `max: 2`，支持并行步骤（如克隆结构）
    - **P2-5 修复（pool stats 类型安全）**:
      - 修复：使用精确类型 `{ pool?: { size?: number } }` 替代 `as any`
-82. **两阶段架构适配组提前解锁 Bug 修复（彻底修复）**: 解决公众号 waiting_user 时同组小红书已经开始执行的问题
-   - **核心 Bug**: `unlockAdaptationGroupsIfNeeded` 中 `isVirtualExecutor` 检查不区分任务状态，`user_preview_edit` 变为 `waiting_user` 时就触发适配组解锁
-   - **根因链路**:
-     1. `markTaskWaitingUser`（第9343行）调用 `unlockAdaptationGroupsIfNeeded`
-     2. `unlockAdaptationGroupsIfNeeded` 第7329行仅检查 `isVirtualExecutor(task.fromParentsExecutor)`，不检查 `task.status`
-     3. `user_preview_edit` 刚变为 `waiting_user` 就被当作定稿点，立即解锁同 multiPlatformGroupId 的所有 blocked 适配任务
-   - **修复1（核心）**: `unlockAdaptationGroupsIfNeeded` 第7329行增加 `task.status === 'completed'` 条件
-     - 修复前：`if (isVirtualExecutor(task.fromParentsExecutor))`
-     - 修复后：`if (isVirtualExecutor(task.fromParentsExecutor) && task.status === 'completed')`
-   - **修复2（调用源）**: `markTaskWaitingUser` 中移除 `unlockAdaptationGroupsIfNeeded` 调用
-     - waiting_user 不应触发解锁，只有 completed 才应触发
-     - unlockAdaptationGroupsIfNeeded 已在 markTaskCompleted 路径中正确调用
-   - **修复3（oi=9000 根除）**: `splitForOutlineConfirmationIfNeeded` 将原任务从"搬到 oi=9000"改为"直接删除"
-     - 删除 `OUTLINE_SPLIT_BASE_ORDER = 9000` 常量
-     - 事务中先记录 step_history，再删除关联 step_history，最后删除原任务
-   - **修复4（兜底逻辑防护）**: `unlockAdaptationGroupsIfNeeded` 和 `healBlockedAdaptationGroups` 的兜底计算增加 `orderIndex < 9000` 过滤
-   - **数据清理**: 删除数据库中 6 条 oi=9000 遗留任务
-   - **设计原则**:
-     - 定稿点 = 用户确认预览（completed），不是等待用户（waiting_user）
-     - 适配组只有基础文章真正定稿后才应解锁
-     - 删除优于标记（oi=9000 标记为 completed 会干扰兜底逻辑）
-   - **验证**: 5 个测试用例全部通过（waiting_user 不解锁 / completed 解锁 / 兜底逻辑正确 / failed 不解锁 / maxOrderIndex 排除虚拟执行器）
-83. **多用户并发执行改造（组级并行）**: 将全局串行锁改为按 commandResultId 组级并行，解决多用户任务互阻塞问题
-   - **问题**: `SubtaskExecutionEngine.isExecuting` 全局锁导致不同用户的任务被串行处理，用户 A 的 insurance-d 执行（60-180秒）会阻塞用户 B、C 的所有任务
-   - **根因**: 3 层串行瓶颈
-     - L1: 全局锁 `isExecuting = true/false` — 整个进程同一时刻只能有 1 个 `execute()` 运行
-     - L2: 分组串行循环 `for...await processGroup` — 不同 commandResultId 的任务被逐个串行处理
-     - L3: 组内 orderIndex 串行 — 同组内多步任务只能一步步执行（业务逻辑需要，不能并行）
-   - **解决方案**: L1 + L2 改为组级并行，L3 保持不变
-     - `isExecuting: boolean` → `executingGroups: Map<string, { startTime: Date }>`，按 commandResultId 隔离
-     - `for...await processGroup` → `Promise.allSettled(executeGroupWithLock)`，不同组并行执行
-     - 最大并行组数 `MAX_PARALLEL_GROUPS = 5`（防止资源耗尽）
-     - 组级超时 `GROUP_EXECUTION_TIMEOUT_MS = 10min`（写作 Agent 最长 180s × 3 次重试）
-   - **LLM 请求去重键改造** (`agent-llm.ts`):
-     - inflight 请求键从 `agentId` 改为 `agentId:commandResultId`
-     - 不同用户的 insurance-d 调用使用不同键，互不取消
-     - 同一用户超时重试仍会取消前一个请求（key 相同）
-   - **修改文件**:
-     - `src/lib/services/subtask-execution-engine.ts`:
-       - 全局锁 → 组级并行锁（`executingGroups` Map + `tryAcquireGroupLock` / `releaseGroupLock`）
-       - `execute()`: 串行循环 → `Promise.allSettled` 并行
-       - 新增 `executeGroupWithLock()` 方法：加锁 → 执行 → 释放锁
-       - `executeSpecificTask()`: 也使用组级锁保护
-       - 5 处 `callLLM` 调用新增 `commandResultId` 参数
-     - `src/lib/agent-llm.ts`:
-       - `registerInflightRequest` / `unregisterInflightRequest` 新增 `commandResultId` 参数
-       - `buildInflightKey()` 构建 `agentId:commandResultId` 格式键
-       - `callLLM` / `callLLMInternal` options 新增 `commandResultId` 字段
-     - `src/lib/services/precedent-info-fetcher.ts`: `callLLM` 新增 `commandResultId`
-     - `src/lib/cron/index.ts`: 移除 `isCurrentlyExecuting()` 跳过逻辑，改为检查并行组数上限
-     - `src/app/api/health/route.ts`: 引擎状态新增 `executingGroups`/`maxParallelGroups`/`groupDetails` 字段
-     - `src/app/api/subtasks/[id]/manual-unblock/route.ts`: 简化触发逻辑，总是调用 `engine.execute()`
-   - **效果**: 3 个用户同时提交任务时，3 个 commandResultId 组并行执行，总耗时从 18-63 分钟降为 6-21 分钟
-84. **P0 组级锁超时竞态修复（心跳机制 + processId 守卫）**: 解决组级锁超时后同一 commandResultId 被两个进程同时执行的双重执行风险
-   - **问题**: 组级锁超时（10分钟）过短，`processGroup` 可能运行超过10分钟（写作 Agent 180s×3重试 + Agent B 评审 + MCP 执行），超时后锁被强制释放，导致同一 `commandResultId` 的组可能被两个进程同时执行
-   - **根因**:
-     1. 锁超时无法区分"活跃执行中"和"真正卡死"——LLM 长调用期间无心跳信号
-     2. 锁释放无身份验证——超时释放后新执行获取锁，旧执行完成后可能释放新执行的锁
-     3. 绝对超时阈值 10 分钟远低于实际最长执行时间（保险写作可达 18 分钟）
-   - **修复方案: 心跳机制 + processId 身份验证**:
-     - `executingGroups` Map value 从 `{ startTime }` 升级为 `{ startTime, lastHeartbeat, processId }`
-     - 绝对超时阈值从 10 分钟提升到 30 分钟（兜底保护）
-     - 新增心跳超时阈值 `HEARTBEAT_TIMEOUT_MS = 10min`（精准卡死检测）
-     - 6 处 LLM 调用点 + 1 处 MCP 执行点前后刷新心跳（`refreshGroupHeartbeat`）
-     - `cleanupExpiredGroups` 双重超时判断：优先心跳超时，兜底绝对超时
-     - `tryAcquireGroupLock` 生成唯一 `processId`（`${Date.now()}-${random}`）
-     - `refreshGroupHeartbeat` 可选 processId 验证，防止旧执行刷新新执行的心跳
-     - `executeGroupWithLock` / `executeSpecificTask` finally 块只释放 processId 匹配的锁
-   - **修改文件**:
-     - `src/lib/services/subtask-execution-engine.ts`:
-       - 锁数据结构升级（lastHeartbeat + processId）
-       - 新增 `refreshGroupHeartbeat()` 方法
-       - `cleanupExpiredGroups()` 双重超时判断 + 增强日志
-       - `isGroupExecuting()` 基于心跳超时判断
-       - `tryAcquireGroupLock()` 生成 processId
-       - `executeGroupWithLock()` / `executeSpecificTask()` processId 守卫
-       - `processGroup()` / `processOrderIndexTasks()` 接受并传递 processId
-       - 6 处 callLLM + 1 处 MCP 执行前后心跳刷新
-       - `MAX_PARALLEL_GROUPS` 从 private 改为 public（供 health API 读取）
-       - `getExecutionStatus()` 新增 lastHeartbeatMs/processId 监控字段
-     - `src/app/api/health/route.ts`:
-       - groupDetails 新增 lastHeartbeatMs/processId 字段映射
-       - catch 块动态读取 `SubtaskExecutionEngine.MAX_PARALLEL_GROUPS`
-   - **效果**:
-     - 活跃执行（LLM 调用中）通过心跳续期，不会被误清理
-     - 真正卡死（10分钟无心跳）或极端超时（30分钟绝对兜底）才会被清理
-     - processId 验证确保旧执行无法干扰新执行的锁或心跳
-85. **P1 组级并行可靠性补全（6 项修复）**: 修复心跳身份验证绕过、内存泄漏、监控盲区等问题
-   - **P1-1: refreshGroupHeartbeat 身份验证绕过修复**:
-     - 问题：7 处 LLM/MCP 心跳刷新调用缺少 `processId` 参数，深层方法（callExecutorAgentDirectly 等）无法获取 processId，导致身份验证被绕过
-     - 修复：`refreshGroupHeartbeat` 未传入 processId 时，自动从 `executingGroups` Map 中查找当前 processId，确保深层方法的心跳刷新仍能通过身份验证
-   - **P1-2: inflightRequests 内存泄漏修复**:
-     - 问题：`inflightRequests` Map 无清理机制，进程异常（未调用 unregisterInflightRequest）会导致 orphaned 条目无限积累
-     - 修复：新增 `INFLIGHT_REQUEST_MAX_AGE_MS = 5min` 常量 + `cleanupStaleInflightRequests()` 方法，在 `registerInflightRequest` 时惰性清理过期条目；`getInflightRequestStats()` 返回 `mapSize` 信息
-   - **P1-3: executingGroups Map 泄漏监控**:
-     - 问题：`executingGroups` Map 大小无监控，接近 `MAX_PARALLEL_GROUPS` 时无告警
-     - 修复：`getExecutionStatus()` 新增 `mapSize` 字段；Map 大小达上限时输出 `console.warn` 告警
-   - **P1-4: health API 类型定义过时**:
-     - 问题：`HealthCheckResult` 接口的 `engine.groupDetails` 类型缺少 `lastHeartbeatMs`/`processId`，`engine` 缺少 `mapSize`
-     - 修复：更新类型定义，补充 `mapSize`/`lastHeartbeatMs`/`processId` 字段；catch 分支补充 `mapSize: 0`
-   - **P1-5: retryWithBackoff 抖动不足**:
-     - 问题：重试抖动为固定 `Math.random() * 1000`（最大 1s），对于 30s 的退避延迟来说抖动不足，多 Agent 同时失败时可能产生 thundering herd
-     - 修复：抖动比例从固定 1s 改为 25% 的退避时间（`baseDelay * 0.25`），延迟越大抖动越大
-   - **P1-6: 并行组失败日志缺少堆栈**:
-     - 问题：`Promise.allSettled` 失败日志仅输出 `reason.message`，无堆栈和组 ID，无法定位具体失败组
-     - 修复：逐个输出失败组的 `commandResultId` + `errorMessage` + `errorStack`，替代合并的 `failed_reasons` 数组
+82. **素材库归属区分 + 收藏功能**: 实现系统素材与用户素材的归属区分，支持用户收藏管理
+   - **数据模型升级** (`src/lib/db/schema/material-library.ts`):
+     - 新增 `ownerType` 字段（'system' | 'user'），默认 'user'
+     - 新增 `materialBookmarks` 收藏表（workspaceId + materialId + userTags + notes）
+     - 新增 `MaterialOwnerType`/`MaterialSourceType`/`VALID_SOURCE_TYPES`/`SYSTEM_SOURCE_TYPES` 常量
+     - 来源类型扩展：新增 system_admin/system_crawl/info_snippet/web_search（仅管理员可用）
+     - 迁移API: `/api/db/add-material-owner-type`
+   - **素材列表API重写** (`src/app/api/materials/route.ts`):
+     - GET: 新增 `owner` 查询参数（all/user/system/bookmarked）
+     - GET: 可见性条件改为 `or(eq(ownerType, 'system'), eq(workspaceId, workspaceId))`
+     - GET: 附加 `isBookmarked` 状态到每条素材
+     - POST: 非管理员创建系统素材返回403，非管理员使用系统来源类型返回403
+   - **单个素材API改造** (`src/app/api/materials/[id]/route.ts`):
+     - GET: 系统素材所有人可见，用户素材仅所有者可见
+     - PUT: 系统素材仅管理员可编辑，用户素材仅所有者可编辑
+     - DELETE: 系统素材仅管理员可删除，用户素材仅所有者可删除
+     - 管理员可通过 PUT 修改 ownerType
+   - **收藏API** (`src/app/api/materials/bookmarks/route.ts`):
+     - GET: 检查收藏状态，返回 `{isBookmarked, bookmark}`
+     - POST: 收藏素材（幂等，已收藏则更新标签/备注）
+     - DELETE: 取消收藏，workspaceId 隔离
+   - **推荐API改造** (`src/app/api/materials/recommend/route.ts`):
+     - 三个召回函数均新增系统素材可见性条件
+   - **标签API改造** (`src/app/api/materials/tags/route.ts`):
+     - SQL WHERE 条件包含系统素材标签
+   - **前端页面改造** (`src/app/materials/page.tsx`):
+     - 归属Tab筛选：全部/我的素材/系统素材/已收藏
+     - 系统素材卡片蓝色边框+Badge标识，用户素材天蓝色边框+Badge标识
+     - 收藏按钮：BookmarkCheck/Bookmark 切换
+     - 管理员模式：琥珀色Badge + 系统素材创建/编辑/删除权限
+     - 权限控制函数：canEdit(material)/canDelete(material)
