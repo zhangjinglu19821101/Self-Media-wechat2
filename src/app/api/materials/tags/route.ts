@@ -1,6 +1,8 @@
 /**
  * 素材标签统计 API
  * GET - 获取所有标签及其使用频率
+ * 
+ * 安全性：使用 Drizzle sql 模板标签参数化查询，避免 SQL 注入
  */
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -24,42 +26,38 @@ export async function GET(request: NextRequest) {
     const tagType = searchParams.get('type') || 'topic';
     const materialType = searchParams.get('materialType');
 
-    // 确定要查询的标签字段
+    // 确定要查询的标签字段（列名来自常量，非用户输入，安全）
     const tagColumnName = tagType === 'scene' ? 'scene_tags' :
                      tagType === 'emotion' ? 'emotion_tags' :
                      'topic_tags';
 
-    // 使用jsonb_array_elements_text展开JSONB数组
-    // 可见性：系统素材 + 当前工作区的用户素材
-    let query: string;
+    // 使用 Drizzle sql 模板标签实现参数化查询
+    // - tagColumnName 是内部常量（非用户输入），使用 sql.identifier 安全引用
+    // - workspaceId / materialType 使用 ${} 参数化绑定
+    // 可见性条件：系统素材 + 当前工作区的用户素材
+    let query;
     if (materialType) {
-      query = `
+      query = sql`
         SELECT tag, count(*) as count 
-        FROM material_library, jsonb_array_elements_text(${tagColumnName}) as tag 
-        WHERE status = 'active' AND type = '${materialType}' AND (owner_type = 'system' OR workspace_id = '${workspaceId}')
+        FROM material_library, jsonb_array_elements_text(${sql.identifier(tagColumnName)}) as tag 
+        WHERE status = 'active' 
+          AND type = ${materialType} 
+          AND (owner_type = 'system' OR workspace_id = ${workspaceId})
         GROUP BY tag 
         ORDER BY count DESC 
         LIMIT 50
       `;
     } else {
-      query = `
+      query = sql`
         SELECT tag, count(*) as count 
-        FROM material_library, jsonb_array_elements_text(${tagColumnName}) as tag 
-        WHERE status = 'active' AND (owner_type = 'system' OR workspace_id = '${workspaceId}')
+        FROM material_library, jsonb_array_elements_text(${sql.identifier(tagColumnName)}) as tag 
+        WHERE status = 'active' 
+          AND (owner_type = 'system' OR workspace_id = ${workspaceId})
         GROUP BY tag 
         ORDER BY count DESC 
         LIMIT 50
       `;
     }
-
-    const query = sql`
-      SELECT tag, count(*) as count 
-      FROM material_library, jsonb_array_elements_text(${sql.raw(tagColumnName)}) as tag 
-      WHERE ${sql.join(conditions, sql` AND `)}
-      GROUP BY tag 
-      ORDER BY count DESC 
-      LIMIT 50
-    `;
 
     const result = await db.execute(query);
 
@@ -77,7 +75,7 @@ export async function GET(request: NextRequest) {
     console.error('[MaterialTagsAPI] GET error:', error);
     return NextResponse.json({
       success: false,
-      error: error.message
+      error: '标签统计服务暂时不可用'
     }, { status: 500 });
   }
 }

@@ -19,6 +19,7 @@ import {
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
 import { apiGet, apiPost, apiPut, apiDelete } from '@/lib/api/client';
+import { toast } from 'sonner';
 
 // ==================== 类型定义 ====================
 interface Material {
@@ -330,9 +331,17 @@ export default function MaterialsPage() {
       return;
     }
 
-    // 非管理员创建系统素材，自动修正为用户素材
+    // 非管理员创建系统素材，自动修正为用户素材并提示
     if (formData.ownerType === 'system' && !isAdmin) {
+      toast.error('您没有权限创建系统素材，已自动创建为用户素材');
       formData.ownerType = 'user';
+    }
+
+    // 非管理员使用系统来源类型，自动修正为手动创建并提示
+    const systemSourceTypes = ['system_admin', 'system_crawl', 'info_snippet', 'web_search'];
+    if (systemSourceTypes.includes(formData.sourceType) && !isAdmin) {
+      toast.error('您没有权限使用系统来源类型，已自动切换为手动创建');
+      formData.sourceType = 'manual';
     }
 
     setFormLoading(true);
