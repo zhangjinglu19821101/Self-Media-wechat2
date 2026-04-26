@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import Link from 'next/link';
-import { apiGet, apiPost, apiPut, apiDelete, checkApiKeyMissing } from '@/lib/api/client';
+import { apiGet, apiPost, apiPut, apiDelete, checkApiKeyMissing, getCurrentWorkspaceId } from '@/lib/api/client';
 import { Card, CardHeader, CardTitle, CardContent, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
@@ -22,7 +22,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { Loader2, Plus, Trash2, Send, Sparkles, ListTodo, CheckCircle2, XCircle, GripVertical, MoveUp, MoveDown, Maximize2, Minimize2, AlertTriangle, GitCompare, RefreshCw, FileText, Save, Eye, Home, BookmarkPlus, ExternalLink, BookOpen, Clock, Building2, X, HelpCircle, Settings, Rocket, Layers, ChevronDown, ChevronUp, Cpu, Brain, Bell, Workflow, Palette, PenTool, ArrowRight, ArrowLeft, Briefcase, Shield, Users, Download, Copy, ImageIcon, Check, AlertCircle, Calendar, Lock, Search } from 'lucide-react';
+import { Loader2, Plus, Trash2, Send, Sparkles, ListTodo, CheckCircle2, XCircle, GripVertical, MoveUp, MoveDown, Maximize2, Minimize2, AlertTriangle, GitCompare, RefreshCw, FileText, Save, Eye, Home, BookmarkPlus, ExternalLink, BookOpen, Clock, Building2, X, HelpCircle, Settings, Rocket, Layers, ChevronDown, ChevronUp, Cpu, Brain, Bell, Workflow, Palette, PenTool, ArrowRight, ArrowLeft, Briefcase, Shield, Users, Download, Copy, ImageIcon, Check, AlertCircle, Calendar, Lock, Search, Globe } from 'lucide-react';
 import { toast } from 'sonner';
 import { AgentTaskListNormal } from '@/components/agent-task-list-normal';
 import { XiaohongshuPreview } from '@/components/xiaohongshu-preview';
@@ -455,6 +455,12 @@ export default function HomePage() {
   const [loadingRecommendedMaterials, setLoadingRecommendedMaterials] = useState(false);
   const [recommendedSnippets, setRecommendedSnippets] = useState<RecommendedSnippet[]>([]);
   const [autoRecommendFetched, setAutoRecommendFetched] = useState(false);
+
+  // 🔥 互联网搜索相关状态
+  const [webSearchResults, setWebSearchResults] = useState<any[]>([]);
+  const [webSearchLoading, setWebSearchLoading] = useState(false);
+  const [webSearchProgress, setWebSearchProgress] = useState('');
+  const [webSearchSummary, setWebSearchSummary] = useState('');
 
   // 🔥 行业案例引用相关状态
   const [selectedCaseIds, setSelectedCaseIds] = useState<string[]>([]);
@@ -1116,6 +1122,116 @@ export default function HomePage() {
     }, 800);
     return () => clearTimeout(timer);
   }, [mainInstruction, handleRecommendMaterials]);
+
+  // 🔥 互联网搜索：搜索权威站点的保险相关信息
+  const handleWebSearch = async (query?: string) => {
+    const searchQuery = query || mainInstruction.trim();
+    if (!searchQuery) return;
+
+    setWebSearchLoading(true);
+    setWebSearchProgress('正在搜索权威站点...');
+    setWebSearchResults([]);
+    setWebSearchSummary('');
+
+    try {
+      const response = await fetch('/api/unified-search/web', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-workspace-id': getCurrentWorkspaceId(),
+        },
+        body: JSON.stringify({
+          query: searchQuery,
+          limit: 5,
+          needSummary: true,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`搜索失败: ${response.status}`);
+      }
+
+      // 尝试 SSE 流式读取
+      const contentType = response.headers.get('content-type') || '';
+      if (contentType.includes('text/event-stream')) {
+        const reader = response.body?.getReader();
+        if (!reader) throw new Error('无法读取响应流');
+
+        const decoder = new TextDecoder();
+        let buffer = '';
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split('\n');
+          buffer = lines.pop() || '';
+
+          let currentEvent = '';
+          for (const line of lines) {
+            if (line.startsWith('event: ')) {
+              currentEvent = line.slice(7).trim();
+            } else if (line.startsWith('data: ') && currentEvent) {
+              try {
+                const data = JSON.parse(line.slice(6));
+                switch (currentEvent) {
+                  case 'progress':
+                    setWebSearchProgress(data.message || '搜索中...');
+                    break;
+                  case 'results':
+                    setWebSearchResults(data.items || []);
+                    break;
+                  case 'summary':
+                    if (data.materialFormats) {
+                      setWebSearchResults(prev => prev.map((item, i) => ({
+                        ...item,
+                        materialFormat: data.materialFormats[i],
+                        summarizedContent: data.materialFormats[i]?.content,
+                      })));
+                    }
+                    if (data.summary) setWebSearchSummary(data.summary);
+                    break;
+                  case 'done':
+                    setWebSearchProgress('');
+                    break;
+                  case 'error':
+                    toast.error(data.message || '互联网搜索失败');
+                    break;
+                }
+              } catch { /* ignore parse errors */ }
+              currentEvent = '';
+            }
+          }
+        }
+      } else {
+        // 普通 JSON 响应
+        const data = await response.json();
+        setWebSearchResults(data.webResults || []);
+        setWebSearchSummary(data.summary || '');
+      }
+
+      setWebSearchProgress('');
+    } catch (error) {
+      console.error('互联网搜索失败:', error);
+      toast.error('互联网搜索失败，请稍后重试');
+    } finally {
+      setWebSearchLoading(false);
+    }
+  };
+
+  // 🔥 互联网搜索：保存结果到素材库
+  const handleSaveWebResultToMaterial = async (materialFormat: any) => {
+    try {
+      await apiPost('/api/unified-search/save-to-material', { materialFormat });
+      toast.success('已保存到素材库');
+      // 刷新推荐列表
+      handleRecommendMaterials(false);
+    } catch (error) {
+      console.error('保存素材失败:', error);
+      toast.error('保存素材失败');
+    }
+  };
 
   // 🔥 行业案例：推荐相关案例
   const handleRecommendCases = async () => {
@@ -3031,10 +3147,22 @@ export default function HomePage() {
                               </>
                             )}
 
-                            {/* 状态B2：搜索无结果 */}
+                            {/* 状态B2：搜索无结果 → 显示互联网搜索按钮 */}
                             {!materialSearchLoading && materialSearchQuery.trim() && filteredSearchMaterials.length === 0 && materialSearchResults.length === 0 && (
-                              <div className="text-center py-4 text-sm text-slate-400 bg-slate-50/50 rounded-lg border border-dashed border-slate-200">
-                                未找到匹配素材，请尝试其他关键词
+                              <div className="text-center py-4 bg-slate-50/50 rounded-lg border border-dashed border-slate-200">
+                                <p className="text-sm text-slate-400 mb-3">素材库未找到匹配素材</p>
+                                <button
+                                  type="button"
+                                  onClick={() => handleWebSearch(materialSearchQuery)}
+                                  disabled={webSearchLoading}
+                                  className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-gradient-to-r from-teal-500 to-cyan-500 text-white text-sm font-medium hover:from-teal-600 hover:to-cyan-600 shadow-sm transition-all disabled:opacity-50"
+                                >
+                                  {webSearchLoading ? (
+                                    <><Loader2 className="w-4 h-4 animate-spin" />{webSearchProgress || '搜索中...'}</>
+                                  ) : (
+                                    <><Globe className="w-4 h-4" />搜索互联网（权威来源）</>
+                                  )}
+                                </button>
                               </div>
                             )}
 
@@ -3160,10 +3288,22 @@ export default function HomePage() {
                                   </>
                                 )}
 
-                                {/* 推荐无结果 */}
+                                {/* 推荐无结果 → 显示互联网搜索按钮 */}
                                 {autoRecommendFetched && recommendedMaterials.length === 0 && recommendedSnippets.length === 0 && (
-                                  <div className="text-center py-6 text-sm text-slate-400 bg-slate-50/50 rounded-lg border border-dashed border-slate-200">
-                                    暂无匹配素材，可尝试上方搜索或先创建
+                                  <div className="text-center py-6 bg-slate-50/50 rounded-lg border border-dashed border-slate-200">
+                                    <p className="text-sm text-slate-400 mb-3">暂无匹配素材</p>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleWebSearch()}
+                                      disabled={webSearchLoading}
+                                      className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-gradient-to-r from-teal-500 to-cyan-500 text-white text-sm font-medium hover:from-teal-600 hover:to-cyan-600 shadow-sm transition-all disabled:opacity-50"
+                                    >
+                                      {webSearchLoading ? (
+                                        <><Loader2 className="w-4 h-4 animate-spin" />{webSearchProgress || '搜索中...'}</>
+                                      ) : (
+                                        <><Globe className="w-4 h-4" />搜索互联网（权威来源）</>
+                                      )}
+                                    </button>
                                   </div>
                                 )}
                               </>
@@ -3177,6 +3317,87 @@ export default function HomePage() {
                               </div>
                             )}
                           </div>
+
+                          {/* ─── 互联网搜索结果 ─── */}
+                          {(webSearchResults.length > 0 || webSearchLoading) && (
+                            <div className="space-y-2 pt-2">
+                              <div className="flex items-center gap-2 px-1">
+                                <Globe className="w-3.5 h-3.5 text-teal-500" />
+                                <span className="text-xs font-medium text-slate-600">互联网搜索</span>
+                                {webSearchLoading && (
+                                  <span className="text-xs text-teal-500">{webSearchProgress}</span>
+                                )}
+                              </div>
+
+                              {webSearchLoading && webSearchResults.length === 0 && (
+                                <div className="flex items-center gap-2 py-4 justify-center text-sm text-slate-400">
+                                  <Loader2 className="w-4 h-4 animate-spin" />
+                                  {webSearchProgress || '正在搜索权威站点...'}
+                                </div>
+                              )}
+
+                              {webSearchResults.map((item: any) => (
+                                <div
+                                  key={item.id}
+                                  className="px-3 py-2.5 rounded-lg border border-teal-200 bg-teal-50/30 hover:border-teal-300 transition-all"
+                                >
+                                  <div className="flex items-start gap-2">
+                                    <div className="flex-1 min-w-0">
+                                      <div className="flex items-center gap-2 mb-1">
+                                        <p className="text-sm font-medium text-slate-800 truncate">{item.title}</p>
+                                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-teal-100 text-teal-700 shrink-0">
+                                          {item.siteName}
+                                        </span>
+                                      </div>
+                                      {item.summarizedContent ? (
+                                        <p className="text-xs text-slate-600 line-clamp-3">{item.summarizedContent}</p>
+                                      ) : (
+                                        <p className="text-xs text-slate-500 line-clamp-2">{item.snippet}</p>
+                                      )}
+                                      {item.materialFormat?.topicTags?.length > 0 && (
+                                        <div className="flex items-center gap-1 mt-1.5 flex-wrap">
+                                          {item.materialFormat.topicTags.slice(0, 4).map((tag: string) => (
+                                            <span key={tag} className="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-500">{tag}</span>
+                                          ))}
+                                        </div>
+                                      )}
+                                    </div>
+                                  </div>
+                                  <div className="flex items-center gap-2 mt-2 pt-2 border-t border-teal-100">
+                                    {item.materialFormat && (
+                                      <button
+                                        type="button"
+                                        onClick={() => handleSaveWebResultToMaterial(item.materialFormat)}
+                                        className="text-xs px-3 py-1 rounded-md bg-teal-500 text-white hover:bg-teal-600 font-medium transition-all"
+                                      >
+                                        存入素材库
+                                      </button>
+                                    )}
+                                    {item.url && (
+                                      <a
+                                        href={item.url}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="text-xs text-slate-400 hover:text-teal-600 transition-colors"
+                                      >
+                                        查看原文
+                                      </a>
+                                    )}
+                                  </div>
+                                </div>
+                              ))}
+
+                              {webSearchSummary && (
+                                <div className="px-3 py-2 rounded-lg bg-amber-50/50 border border-amber-200">
+                                  <div className="flex items-center gap-1.5 mb-1">
+                                    <Sparkles className="w-3 h-3 text-amber-500" />
+                                    <span className="text-xs font-medium text-amber-700">AI 综合概括</span>
+                                  </div>
+                                  <p className="text-xs text-slate-600 leading-relaxed">{webSearchSummary}</p>
+                                </div>
+                              )}
+                            </div>
+                          )}
 
                           {/* ─── 可折叠速记浏览区（默认收起） ─── */}
                           {!materialSearchQuery.trim() && snippetList.length > 0 && (
@@ -4667,6 +4888,85 @@ export default function HomePage() {
                       <><Sparkles className="mr-2 h-4 w-4" />AI 智能分析</>
                     )}
                   </Button>
+
+                  {/* 互联网搜索（权威来源） */}
+                  {snippetForm.rawContent.trim().length > 0 && !snippetAnalyzeResult && (
+                    <div className="pt-1">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const query = snippetForm.rawContent.trim().slice(0, 100);
+                          handleWebSearch(query);
+                        }}
+                        disabled={webSearchLoading}
+                        className="w-full h-9 flex items-center justify-center gap-2 rounded-lg border border-teal-300 bg-teal-50/60 text-teal-700 text-sm font-medium hover:bg-teal-100 transition-all disabled:opacity-50"
+                      >
+                        {webSearchLoading ? (
+                          <><Loader2 className="w-4 h-4 animate-spin" />{webSearchProgress || '搜索互联网中...'}</>
+                        ) : (
+                          <><Globe className="w-4 h-4" />搜索互联网（权威来源）</>
+                        )}
+                      </button>
+
+                      {/* 互联网搜索结果（速记场景） */}
+                      {webSearchResults.length > 0 && (
+                        <div className="mt-3 space-y-2 max-h-60 overflow-y-auto">
+                          <div className="flex items-center gap-1.5 text-xs text-teal-600 font-medium">
+                            <Globe className="w-3 h-3" />
+                            <span>权威来源结果</span>
+                          </div>
+                          {webSearchResults.map((item: any) => (
+                            <div
+                              key={item.id}
+                              className="px-3 py-2 rounded-lg border border-teal-200 bg-teal-50/20 hover:border-teal-300 transition-all"
+                            >
+                              <div className="flex items-start justify-between gap-2">
+                                <div className="flex-1 min-w-0">
+                                  <p className="text-xs font-medium text-slate-800 truncate">{item.title}</p>
+                                  {item.summarizedContent ? (
+                                    <p className="text-[11px] text-slate-600 line-clamp-2 mt-0.5">{item.summarizedContent}</p>
+                                  ) : (
+                                    <p className="text-[11px] text-slate-500 line-clamp-2 mt-0.5">{item.snippet}</p>
+                                  )}
+                                  <span className="text-[10px] text-slate-400 mt-1 inline-block">{item.siteName}</span>
+                                </div>
+                                <div className="flex flex-col gap-1 shrink-0">
+                                  {item.materialFormat && (
+                                    <button
+                                      type="button"
+                                      onClick={() => handleSaveWebResultToMaterial(item.materialFormat)}
+                                      className="text-[10px] px-2 py-1 rounded bg-teal-500 text-white hover:bg-teal-600 font-medium whitespace-nowrap"
+                                    >
+                                      存入素材库
+                                    </button>
+                                  )}
+                                  {item.url && (
+                                    <a
+                                      href={item.url}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="text-[10px] text-slate-400 hover:text-teal-600 text-center"
+                                    >
+                                      原文
+                                    </a>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                          {webSearchSummary && (
+                            <div className="px-3 py-2 rounded-lg bg-amber-50/50 border border-amber-200">
+                              <div className="flex items-center gap-1 mb-0.5">
+                                <Sparkles className="w-3 h-3 text-amber-500" />
+                                <span className="text-[10px] font-medium text-amber-700">AI 概括</span>
+                              </div>
+                              <p className="text-[11px] text-slate-600">{webSearchSummary}</p>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               ) : (
                 // 步骤2：显示分析结果 + 确认保存

@@ -147,6 +147,12 @@ export async function GET(request: NextRequest) {
       success: true,
       data: topItems,
       snippets: topSnippets,
+      // 互联网搜索提示：本地结果不足时，前端可据此展示"互联网搜索"按钮
+      internetSearchHint: {
+        show: topItems.length === 0 && snippetResults.length === 0,
+        query: instruction.slice(0, 100),
+        message: '本地素材库未找到相关素材，可搜索互联网权威来源',
+      },
     });
   } catch (error: unknown) {
     console.error('[materials/recommend] 错误:', error);
