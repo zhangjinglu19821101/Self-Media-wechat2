@@ -7,12 +7,13 @@
  *
  * 设计原则：
  * 1. 轻量模型：doubao-seed-1-6-lite（快+便宜）
- * 2. 超时短：15s 超时，不阻塞
+ * 2. 超时短：15s 超时 + AbortController 真正中断请求
  * 3. 降级安全：LLM 失败返回原始 snippet
  * 4. 最多处理 3 条：控制成本
+ * 5. BYOK 合规：传入 workspaceId 走工厂方法
  */
 
-import { getPlatformLLM } from '@/lib/llm/factory';
+import { createUserLLMClient } from '@/lib/llm/factory';
 import type { Message } from 'coze-coding-dev-sdk';
 import type { WebSearchResultItem, MaterialFormat } from './types';
 
@@ -34,11 +35,13 @@ export class LLMProcessor {
    *
    * @param items 互联网搜索结果（最多取前3条）
    * @param query 原始搜索词
+   * @param workspaceId workspace ID（BYOK: 按工作空间选择 LLM Key）
    * @returns 每条结果对应一个 materialFormat
    */
   async processWebResults(
     items: WebSearchResultItem[],
-    query: string
+    query: string,
+    workspaceId: string
   ): Promise<{ materialFormats: MaterialFormat[]; summary: string }> {
     // 最多处理 3 条
     const batch = items.slice(0, 3);
@@ -47,8 +50,16 @@ export class LLMProcessor {
       return { materialFormats: [], summary: '' };
     }
 
+    // P0-4: 使用 AbortController 真正中断超时请求
+    const abortController = new AbortController();
+    const timeoutId = setTimeout(() => {
+      abortController.abort();
+      console.warn('[LLMProcessor] LLM 调用超时 15s，已中断请求');
+    }, 15000);
+
     try {
-      const llm = getPlatformLLM();
+      // P0-2: 传入 workspaceId，遵守 BYOK 原则
+      const { client: llm } = await createUserLLMClient(workspaceId, { timeout: 15000 });
 
       const messages: Message[] = [
         {
@@ -84,21 +95,28 @@ ${batch.map((item, i) => `${i + 1}. [${item.siteName}] ${item.title}
         },
       ];
 
-      // 15s 超时
-      const timeoutPromise = new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error('LLM process timeout')), 15000)
-      );
+      // P0-4: 传递 signal 给 llm.invoke()，超时后真正中断 HTTP 请求
+      // 使用 Record<string, unknown> 绕过 LLMConfig 类型限制（SDK 底层 fetch 支持 signal）
+      const llmConfig: Record<string, unknown> = {
+        model: 'doubao-seed-1-6-lite',
+        temperature: 0.2,
+        signal: abortController.signal,
+      };
 
-      const result = await Promise.race([
-        llm.invoke(messages, { model: 'doubao-seed-1-6-lite', temperature: 0.2 }),
-        timeoutPromise,
-      ]);
+      const result = await llm.invoke(messages, llmConfig as any);
 
       const text = result.content || '';
       return this.parseResponse(text, batch);
     } catch (error) {
-      console.warn('[LLMProcessor] LLM 概括失败，使用降级模式:', error instanceof Error ? error.message : String(error));
+      // AbortError 是我们主动中断，静默处理
+      if (error instanceof Error && error.name === 'AbortError') {
+        console.warn('[LLMProcessor] LLM 调用被超时中断，使用降级模式');
+      } else {
+        console.warn('[LLMProcessor] LLM 概括失败，使用降级模式:', error instanceof Error ? error.message : String(error));
+      }
       return this.fallbackProcess(batch);
+    } finally {
+      clearTimeout(timeoutId);
     }
   }
 

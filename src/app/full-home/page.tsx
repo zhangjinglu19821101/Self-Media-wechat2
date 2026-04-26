@@ -461,6 +461,8 @@ export default function HomePage() {
   const [webSearchLoading, setWebSearchLoading] = useState(false);
   const [webSearchProgress, setWebSearchProgress] = useState('');
   const [webSearchSummary, setWebSearchSummary] = useState('');
+  // P1-2: AbortController 用于取消并发请求 + 竞态保护
+  const webSearchAbortRef = useRef<AbortController | null>(null);
 
   // 🔥 行业案例引用相关状态
   const [selectedCaseIds, setSelectedCaseIds] = useState<string[]>([]);
@@ -1124,9 +1126,24 @@ export default function HomePage() {
   }, [mainInstruction, handleRecommendMaterials]);
 
   // 🔥 互联网搜索：搜索权威站点的保险相关信息
+  // P1-2: AbortController 竞态取消 + P1-6: workspaceId 空值保护
   const handleWebSearch = async (query?: string) => {
     const searchQuery = query || mainInstruction.trim();
     if (!searchQuery) return;
+
+    // P1-6: workspaceId 空值保护
+    const workspaceId = getCurrentWorkspaceId();
+    if (!workspaceId || workspaceId === 'default-workspace') {
+      toast.error('请先选择工作空间');
+      return;
+    }
+
+    // P1-2: 取消前一个未完成的请求
+    if (webSearchAbortRef.current) {
+      webSearchAbortRef.current.abort();
+    }
+    const abortController = new AbortController();
+    webSearchAbortRef.current = abortController;
 
     setWebSearchLoading(true);
     setWebSearchProgress('正在搜索权威站点...');
@@ -1138,20 +1155,25 @@ export default function HomePage() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'x-workspace-id': getCurrentWorkspaceId(),
+          'Accept': 'text/event-stream',
+          'x-workspace-id': workspaceId,
         },
         body: JSON.stringify({
           query: searchQuery,
           limit: 5,
           needSummary: true,
         }),
+        signal: abortController.signal,
       });
+
+      // P1-2: 检查请求是否已被取消
+      if (abortController.signal.aborted) return;
 
       if (!response.ok) {
         throw new Error(`搜索失败: ${response.status}`);
       }
 
-      // 尝试 SSE 流式读取
+      // SSE 流式读取
       const contentType = response.headers.get('content-type') || '';
       if (contentType.includes('text/event-stream')) {
         const reader = response.body?.getReader();
@@ -1163,6 +1185,12 @@ export default function HomePage() {
         while (true) {
           const { done, value } = await reader.read();
           if (done) break;
+
+          // P1-2: 检查请求是否已被取消
+          if (abortController.signal.aborted) {
+            reader.cancel();
+            return;
+          }
 
           buffer += decoder.decode(value, { stream: true });
           const lines = buffer.split('\n');
@@ -1213,9 +1241,18 @@ export default function HomePage() {
 
       setWebSearchProgress('');
     } catch (error) {
+      // P1-2: AbortError 不显示错误提示（用户主动取消）
+      if (error instanceof Error && error.name === 'AbortError') {
+        console.log('[WebSearch] 请求已取消');
+        return;
+      }
       console.error('互联网搜索失败:', error);
       toast.error('互联网搜索失败，请稍后重试');
     } finally {
+      // P1-2: 清理 abortController 引用（仅当前请求）
+      if (webSearchAbortRef.current === abortController) {
+        webSearchAbortRef.current = null;
+      }
       setWebSearchLoading(false);
     }
   };
@@ -1232,6 +1269,15 @@ export default function HomePage() {
       toast.error('保存素材失败');
     }
   };
+
+  // P1-2: 组件卸载时取消互联网搜索请求
+  useEffect(() => {
+    return () => {
+      if (webSearchAbortRef.current) {
+        webSearchAbortRef.current.abort();
+      }
+    };
+  }, []);
 
   // 🔥 行业案例：推荐相关案例
   const handleRecommendCases = async () => {

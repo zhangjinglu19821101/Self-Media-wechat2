@@ -6,28 +6,78 @@
  * 设计原则：
  * 1. 站点白名单：只搜索权威站点，保证信息可靠性
  * 2. 超时控制：10s 超时，不阻塞主流程
- * 3. 结果缓存：相同 query+domains 缓存 30 分钟
- * 4. 限流保护：同一 workspace 每分钟最多 10 次
+ * 3. 结果缓存：相同 query+domains 缓存 30 分钟（LRU 淘汰）
+ * 4. 限流保护：同一 workspace 每分钟最多 10 次（⚠️ 进程级，单实例部署有效）
  */
 
 import { SearchClient, Config, HeaderUtils } from 'coze-coding-dev-sdk';
 import { getSitesForDomains } from './domain-whitelist';
 import type { WebSearchResultItem, DomainKey } from './types';
 
-// ==================== 缓存层 ====================
+// ==================== LRU 缓存 ====================
+
+/**
+ * 简易 LRU Cache（P1-4: 替代普通 Map，maxSize 时淘汰最久未访问条目）
+ *
+ * - get() 自动刷新访问顺序（移到尾部 = 最近使用）
+ * - set() 超出 maxSize 时淘汰头部（最久未使用）
+ */
+class LRUCache<T> {
+  private readonly max: number;
+  private readonly map = new Map<string, T>();
+
+  constructor(maxSize: number) {
+    this.max = maxSize;
+  }
+
+  get(key: string): T | undefined {
+    const val = this.map.get(key);
+    if (val !== undefined) {
+      // 刷新访问顺序：删除再插入 → 移到尾部
+      this.map.delete(key);
+      this.map.set(key, val);
+    }
+    return val;
+  }
+
+  set(key: string, value: T): void {
+    if (this.map.has(key)) {
+      this.map.delete(key);
+    } else if (this.map.size >= this.max) {
+      // 淘汰最久未访问（头部第一个）
+      const oldest = this.map.keys().next().value;
+      if (oldest !== undefined) this.map.delete(oldest);
+    }
+    this.map.set(key, value);
+  }
+
+  get size(): number {
+    return this.map.size;
+  }
+
+  entries(): IterableIterator<[string, T]> {
+    return this.map.entries();
+  }
+}
 
 interface CacheEntry {
   results: WebSearchResultItem[];
   createdAt: number;
 }
 
-/** 搜索结果缓存（30分钟TTL） */
-const searchCache = new Map<string, CacheEntry>();
+/** 搜索结果缓存（30分钟TTL，LRU 最多 200 条） */
+const searchCache = new LRUCache<CacheEntry>(200);
 const CACHE_TTL_MS = 30 * 60 * 1000;
 
 // ==================== 限流层 ====================
 
-/** workspace 维度的限流计数器 */
+/**
+ * workspace 维度的限流计数器
+ *
+ * ⚠️ 限流器为进程内 Map 实现，仅在单实例部署下有效。
+ * 多实例/分布式部署场景需替换为 Redis 或数据库原子计数。
+ * 当前部署为单实例 PM2 fork 模式，因此可安全使用。
+ */
 const rateLimitMap = new Map<string, { count: number; windowStart: number }>();
 const RATE_LIMIT_PER_MINUTE = 10;
 const RATE_LIMIT_WINDOW_MS = 60 * 1000;
@@ -63,7 +113,7 @@ export class WebSearcher {
    * @param limit 返回数量
    * @param workspaceId workspace ID（限流用）
    * @param requestHeaders Next.js 请求头（转发给 SDK）
-   * @returns 搜索结果列表
+   * @returns 搜索结果列表（深拷贝，调用方可安全修改）
    */
   async search(
     query: string,
@@ -77,12 +127,13 @@ export class WebSearcher {
       throw new Error('互联网搜索频率超限，请稍后再试');
     }
 
-    // 2. 缓存检查
-    const cacheKey = `${query}::${(domains || []).sort().join(',')}::${limit}`;
+    // 2. 缓存检查（P1-3: 结构化缓存键，避免碰撞）
+    const cacheKey = JSON.stringify({ q: query, d: (domains || []).sort(), l: limit });
     const cached = searchCache.get(cacheKey);
     if (cached && Date.now() - cached.createdAt < CACHE_TTL_MS) {
       console.log(`[WebSearcher] 缓存命中: "${query}"`);
-      return cached.results;
+      // P0-1: 返回深拷贝，防止调用方修改污染缓存
+      return JSON.parse(JSON.stringify(cached.results));
     }
 
     // 3. 构建站点列表
@@ -114,19 +165,12 @@ export class WebSearcher {
       authLevel: item.auth_info_level ?? 0,
     }));
 
-    // 6. 写入缓存
+    // 6. 写入缓存（LRU 自动淘汰最久未访问条目）
     searchCache.set(cacheKey, { results, createdAt: Date.now() });
 
-    // 7. 清理过期缓存
-    if (searchCache.size > 200) {
-      const now = Date.now();
-      for (const [key, val] of searchCache.entries()) {
-        if (now - val.createdAt > CACHE_TTL_MS) searchCache.delete(key);
-      }
-    }
-
     console.log(`[WebSearcher] 搜索完成: "${query}", 结果数: ${results.length}`);
-    return results;
+    // P0-1: 返回深拷贝，保持一致性
+    return JSON.parse(JSON.stringify(results));
   }
 
   /**
