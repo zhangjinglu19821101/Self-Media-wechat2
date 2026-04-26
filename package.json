@@ -15,6 +15,8 @@
     "lint": "eslint",
     "start": "bash ./scripts/start.sh",
     "start:prod": "pm2 start ecosystem.config.cjs --env production",
+    "start:dev-schema": "COZE_PROJECT_ENV=DEV pm2 start ecosystem.config.cjs",
+    "start:prod-schema": "COZE_PROJECT_ENV=PROD pm2 start ecosystem.config.cjs --env production",
     "stop:prod": "pm2 stop ecosystem.config.cjs",
     "restart:prod": "pm2 restart ecosystem.config.cjs",
     "status:prod": "pm2 status",

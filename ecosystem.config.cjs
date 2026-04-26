@@ -42,6 +42,7 @@ module.exports = {
         PORT: '5000',
       },
       // 🔴 P1 修复：新增 env_production 区块，确保生产环境关键变量存在
+      // 🔴 Schema 隔离：COZE_PROJECT_ENV=PROD → 使用 public schema
       env_production: {
         NODE_ENV: 'production',
         DEPLOY_RUN_PORT: '5000',

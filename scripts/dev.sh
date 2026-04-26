@@ -18,7 +18,7 @@ fi
 # 设置开发环境变量
 export NODE_ENV="development"
 export COZE_PROJECT_ENV="DEV"
-export PORT="${PORT:-3000}"
+export PORT="${PORT:-5000}"
 
 echo "[dev.sh] 启动开发服务器..."
 echo "[dev.sh] 端口: ${PORT}"
@@ -26,4 +26,4 @@ echo "[dev.sh] 环境: ${NODE_ENV}"
 echo "[dev.sh] 数据库: ${DATABASE_URL:+已配置}"
 
 # 启动 Next.js 开发服务器（带热更新）
-npx next dev --port ${PORT} --host
+pnpm next dev --port ${PORT} -H 0.0.0.0

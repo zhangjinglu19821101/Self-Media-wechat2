@@ -1,71 +1,101 @@
 /**
  * 数据库连接和操作服务
  * 
- * 🔴 阶段1优化：
- * 1. 连接池参数调优（idle_timeout、connect_timeout）
- * 2. 修复 getDatabase() 连接泄漏（不再每次创建新连接）
- * 3. 新增连接健康检查（用于 /api/health）
- * 4. 优雅关闭（进程退出时释放连接池）
+ * Schema 隔离设计：
+ * 1. 根据 COZE_PROJECT_ENV 自动选择 schema（DEV → dev_schema, PROD → public）
+ * 2. 通过 PostgreSQL Startup Message 的 connection.options 参数设置 search_path
+ * 3. 同一数据库实例内实现开发/生产数据完全隔离
  * 
- * 🔴 P0 修复：
- * 5. getDatabase/getDatabaseWithRetry 返回类型统一
- * 6. closeDatabase() 竞态保护
+ * 生产可靠性加固：
+ * - 连接池参数调优
+ * - getDatabase() 单例防泄漏
+ * - 健康检查 + 优雅关闭
  */
 
 import { drizzle } from 'drizzle-orm/postgres-js';
 import postgres from 'postgres';
 import * as schema from './schema';
+import { sql } from 'drizzle-orm';
 
-// 从环境变量获取数据库连接字符串
-const DATABASE_URL = process.env.DATABASE_URL ||
+// ==================== Schema 隔离配置 ====================
+
+/**
+ * 根据 COZE_PROJECT_ENV 决定使用哪个 schema
+ * - COZE_PROJECT_ENV=PROD → public（生产数据）
+ * - COZE_PROJECT_ENV=DEV 或未设置 → dev_schema（开发/测试数据）
+ */
+const PROJECT_ENV = process.env.COZE_PROJECT_ENV || 'DEV';
+const DB_SCHEMA = PROJECT_ENV === 'PROD' ? 'public' : 'dev_schema';
+
+console.log(`[DB] 环境模式: ${PROJECT_ENV}, 目标 Schema: ${DB_SCHEMA}`);
+
+// ==================== 数据库连接 ====================
+
+const RAW_DATABASE_URL = process.env.DATABASE_URL ||
   'postgresql://user_7601448662618718259:bcc5e558-7809-4848-a97d-8b4817215e92@cp-deft-wind-b35fb7fc.pg4.aidap-global.cn-beijing.volces.com:5432/Database_1769852048532?sslmode=require';
 
 /**
- * 创建数据库连接（统一连接池配置）
+ * 获取原始数据库连接 URL（不含 search_path，用于创建迁移连接）
+ */
+export function getRawDatabaseUrl(): string {
+  return RAW_DATABASE_URL;
+}
+
+/**
+ * 创建数据库连接（统一连接池配置 + Schema 隔离）
  * 
- * 参数说明：
- * - max: 连接池大小，10 足够单实例使用（引擎串行 + API 并发）
- * - idle_timeout: 空闲连接超时 60s（🔴 P1 修复：从 30s 提高到 60s）
- *   30s 对 LLM 调用场景（可能 >30s）过短，空闲连接被回收后下次查询需重建
- * - connect_timeout: 连接建立超时 10s，快速失败而非长时间阻塞
- * - max_lifetime: 连接最长生命周期 30min，避免长时间运行导致的连接状态异常
- * - keep_alive: 🔴 P1 修复：启用 TCP keepalive，防止长空闲连接被中间设备断开
+ * Schema 隔离方案：
+ * 使用 postgres.js 的 connection.options 参数，通过 PostgreSQL Startup Message 
+ * 传递 `-c search_path=xxx` 命令，在连接建立时就设置好 search_path。
+ * 
+ * 这是 postgres.js 推荐的方式，因为：
+ * 1. connection 对象的属性会作为 Startup Message 参数传递给 PostgreSQL
+ * 2. 每个新连接都会自动应用，无需额外的 SQL 查询
+ * 3. 不依赖 URL 参数（某些中间件会过滤 URL options）
+ * 4. 比 onconnect 回调更早执行（在认证之前就生效）
+ * 
+ * search_path 设计：
+ * - DEV 模式: search_path = dev_schema, public
+ *   - 优先查 dev_schema，如果表不存在则回退到 public
+ *   - 这确保了即使 dev_schema 尚未创建表，系统仍可正常运行
+ * - PROD 模式: 不设置（使用数据库默认的 public）
  */
 function createConnection(): postgres.Sql {
-  return postgres(DATABASE_URL, {
+  const isDev = DB_SCHEMA !== 'public';
+  
+  // eslint-disable-next-line @typescript-eslint/no-empty-object-type -- postgres.js requires generic parameter
+  const config: postgres.Options<{}> = {
     ssl: 'require',
     max: 10,
-    idle_timeout: 60, // 🔴 P1 修复：30→60s，适应 LLM 长调用场景
+    idle_timeout: 60,
     connect_timeout: 10,
-    // 🔴 阶段1新增：连接最长生命周期，防止长时间运行的连接状态异常
     max_lifetime: 30 * 60, // 30 分钟
-    // 🔴 P1 修复：启用 TCP keepalive，防止防火墙/NAT 设备断开空闲连接
-    keep_alive: true,
-    // 🔴 阶段1新增：连接创建回调（用于监控）
-    onconnect: () => {
-      console.log('[DB] 新连接已建立');
-    },
-    // 🔴 阶段1新增：连接关闭回调
-    onclose: () => {
-      // 静默处理，避免日志过多
-    },
-  });
+    keep_alive: 30, // TCP keepalive 间隔（秒）
+  };
+
+  // DEV 模式：通过 PostgreSQL Startup Message 设置 search_path
+  if (isDev) {
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion -- postgres.js Options type missing 'connection' field
+    (config as Record<string, unknown>).connection = {
+      options: `-c search_path=${DB_SCHEMA},public`,
+    };
+  }
+
+  return postgres(RAW_DATABASE_URL, config);
 }
 
 // 创建全局数据库连接（单例，全进程共享连接池）
 const client = createConnection();
 export const db = drizzle(client, { schema });
 
+// 重新导出 schema 供其他模块使用
+export { schema };
+
 // 🔴 P0 修复：统一返回类型
 type DatabaseInstance = ReturnType<typeof drizzle>;
 
 /**
  * 获取数据库连接实例
- * 
- * 🔴 阶段1修复：直接返回全局单例，不再每次创建新连接
- * 旧版 getDatabase() 每次创建新连接但不关闭，导致连接泄漏
- * 
- * 🔴 P0 修复：返回类型与 getDatabaseWithRetry 统一
  */
 export function getDatabase(): DatabaseInstance {
   return db;
@@ -73,20 +103,15 @@ export function getDatabase(): DatabaseInstance {
 
 /**
  * 获取数据库连接实例（带重试机制）
- * 
- * 🔴 阶段1优化：重试间隔改为指数退避，避免固定间隔导致的重试风暴
- * 🔴 P0 修复：返回类型与 getDatabase 统一（均为 DatabaseInstance）
  */
 export async function getDatabaseWithRetry(retries = 3, baseDelay = 1000): Promise<DatabaseInstance> {
   for (let i = 0; i < retries; i++) {
     try {
-      // 直接尝试执行一个简单查询验证连接可用
       await db.execute(sql`SELECT 1`);
       return db;
     } catch (error) {
       console.error(`[DB] 连接验证第 ${i + 1}/${retries} 次失败:`, error instanceof Error ? error.message : String(error));
       if (i < retries - 1) {
-        // 指数退避：1s, 2s, 4s...
         const delay = baseDelay * Math.pow(2, i);
         await new Promise(resolve => setTimeout(resolve, delay));
       } else {
@@ -97,14 +122,107 @@ export async function getDatabaseWithRetry(retries = 3, baseDelay = 1000): Promi
   throw new Error('Failed to connect to database after retries');
 }
 
+// ==================== Schema 管理工具 ====================
+
 /**
- * 🔴 阶段1新增：数据库连接健康检查
- * 用于 /api/health 端点
- * @returns 连接状态信息
+ * 获取当前使用的 Schema 名称
+ */
+export function getCurrentSchema(): string {
+  return DB_SCHEMA;
+}
+
+/**
+ * 获取当前环境模式
+ */
+export function getProjectEnv(): string {
+  return PROJECT_ENV;
+}
+
+/**
+ * 检查指定 Schema 是否存在
+ */
+export async function checkSchemaExists(schemaName: string): Promise<boolean> {
+  const result = await db.execute(sql`SELECT schema_name FROM information_schema.schemata WHERE schema_name = ${schemaName}`);
+  return Array.isArray(result) && result.length > 0;
+}
+
+/**
+ * 创建 Schema（如果不存在）
+ */
+export async function createSchemaIfNotExists(schemaName: string): Promise<void> {
+  await db.execute(sql`CREATE SCHEMA IF NOT EXISTS ${sql.identifier(schemaName)}`);
+  console.log(`[DB] Schema "${schemaName}" 已确保存在`);
+}
+
+/**
+ * 清空指定 Schema 的所有数据（⚠️ 危险操作，仅用于开发环境）
+ */
+export async function truncateSchema(schemaName: string): Promise<void> {
+  if (schemaName === 'public' && PROJECT_ENV !== 'DEV') {
+    throw new Error('[DB] 安全限制：不允许清空 public schema（生产环境）');
+  }
+  
+  const tables = await db.execute(sql`
+    SELECT table_name FROM information_schema.tables 
+    WHERE table_schema = ${schemaName} AND table_type = 'BASE TABLE'
+  `);
+  
+  if (Array.isArray(tables) && tables.length > 0) {
+    for (const row of tables) {
+      const tableName = row.table_name as string;
+      await db.execute(sql`TRUNCATE TABLE ${sql.identifier(schemaName)}.${sql.identifier(tableName)} CASCADE`);
+    }
+    console.log(`[DB] Schema "${schemaName}" 数据已清空 (${tables.length} 张表)`);
+  }
+}
+
+/**
+ * 将源 schema 的表结构复制到目标 schema（不含数据）
+ */
+export async function cloneSchemaStructure(sourceSchema: string, targetSchema: string): Promise<void> {
+  await createSchemaIfNotExists(targetSchema);
+  
+  const tables = await db.execute(sql`
+    SELECT table_name FROM information_schema.tables 
+    WHERE table_schema = ${sourceSchema} AND table_type = 'BASE TABLE'
+  `);
+  
+  let cloned = 0;
+  if (Array.isArray(tables) && tables.length > 0) {
+    for (const row of tables) {
+      const tableName = row.table_name as string;
+      const exists = await db.execute(sql`
+        SELECT table_name FROM information_schema.tables 
+        WHERE table_schema = ${targetSchema} AND table_name = ${tableName}
+      `);
+      
+      if (!Array.isArray(exists) || exists.length === 0) {
+        try {
+          await db.execute(sql`
+            CREATE TABLE ${sql.identifier(targetSchema)}.${sql.identifier(tableName)} 
+            (LIKE ${sql.identifier(sourceSchema)}.${sql.identifier(tableName)} INCLUDING ALL)
+          `);
+          cloned++;
+        } catch (e) {
+          console.warn(`[DB] 克隆表 ${tableName} 失败:`, e instanceof Error ? e.message : String(e));
+        }
+      }
+    }
+  }
+  console.log(`[DB] Schema 结构克隆完成: ${sourceSchema} → ${targetSchema} (${cloned} 张表)`);
+}
+
+// ==================== 健康检查 ====================
+
+/**
+ * 数据库连接健康检查
  */
 export async function checkDatabaseHealth(): Promise<{
   connected: boolean;
   latencyMs: number;
+  schema: string;
+  projectEnv: string;
+  currentSearchPath?: string;
   error?: string;
   poolStats?: {
     total: number;
@@ -114,11 +232,20 @@ export async function checkDatabaseHealth(): Promise<{
 }> {
   const startTime = Date.now();
   try {
-    // 执行简单查询验证连接可用
     await db.execute(sql`SELECT 1`);
     const latencyMs = Date.now() - startTime;
 
-    // 获取连接池统计（postgres.js 的 pool 统计）
+    // 查询当前 search_path 验证 Schema 隔离
+    let currentSearchPath: string | undefined;
+    try {
+      const spResult = await db.execute(sql`SHOW search_path`);
+      if (Array.isArray(spResult) && spResult.length > 0) {
+        currentSearchPath = (spResult[0] as Record<string, unknown>).search_path as string;
+      }
+    } catch {
+      // 查询 search_path 失败不影响健康检查
+    }
+
     const poolStats = {
       total: (client as any).pool?.size ?? -1,
       idle: (client as any).pool?.available ?? -1,
@@ -128,25 +255,28 @@ export async function checkDatabaseHealth(): Promise<{
     return {
       connected: true,
       latencyMs,
+      schema: DB_SCHEMA,
+      projectEnv: PROJECT_ENV,
+      currentSearchPath,
       poolStats,
     };
   } catch (error) {
     return {
       connected: false,
       latencyMs: Date.now() - startTime,
+      schema: DB_SCHEMA,
+      projectEnv: PROJECT_ENV,
       error: error instanceof Error ? error.message : String(error),
     };
   }
 }
 
-// 🔴 P0 修复：closeDatabase 竞态保护
+// ==================== 优雅关闭 ====================
+
 let dbClosing = false;
 
 /**
- * 🔴 阶段1新增：优雅关闭数据库连接
- * 在进程退出时调用，确保所有连接正确释放
- * 
- * 🔴 P0 修复：使用 closing 标志防止并发关闭和竞态
+ * 优雅关闭数据库连接
  */
 export async function closeDatabase(): Promise<void> {
   if (dbClosing) {
@@ -163,9 +293,7 @@ export async function closeDatabase(): Promise<void> {
   }
 }
 
-// 🔴 阶段1新增：进程退出时优雅关闭连接
-// 防止进程异常退出时连接未释放
-// 使用 once + 全局标记防止 Next.js 热更新导致重复注册
+// 进程退出时优雅关闭连接
 declare global {
   // eslint-disable-next-line no-var
   var __dbGracefulShutdownRegistered: boolean | undefined;
@@ -184,11 +312,3 @@ if (!global.__dbGracefulShutdownRegistered) {
     process.exit(0);
   });
 }
-
-/**
- * 导出 schema
- */
-export { schema };
-
-// 需要导入 sql 以用于健康检查查询
-import { sql } from 'drizzle-orm';

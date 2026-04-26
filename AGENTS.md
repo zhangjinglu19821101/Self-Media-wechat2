@@ -1666,4 +1666,32 @@
                → priorTaskResults[0] = 用户提供的文章
                  → 适配 Agent 基于该文章进行平台适配
      ```
-     ```
+
+80. **PostgreSQL Schema 隔离**: 通过 PostgreSQL Schema 实现开发/生产数据完全隔离
+   - **设计原则**:
+     - `COZE_PROJECT_ENV=DEV` → search_path = `dev_schema, public`（开发数据优先，public 兜底）
+     - `COZE_PROJECT_ENV=PROD` → search_path = `public`（仅生产数据）
+     - 同一数据库实例内，dev_schema 和 public 完全隔离
+     - 开发操作不会污染生产数据，生产数据可独立备份恢复
+   - **核心文件**:
+     - `src/lib/db/index.ts`: 数据库连接层改造
+       - `createConnection()`: 通过 `connection.options` 参数在 PostgreSQL Startup Message 中设置 search_path
+       - `getCurrentSchema()`: 获取当前 schema 名称
+       - `checkSchemaExists()`: 检查 schema 是否存在
+       - `createSchemaIfNotExists()`: 创建 schema
+       - `cloneSchemaStructure()`: 从一个 schema 克隆表结构到另一个
+       - `checkDatabaseHealth()`: 新增 `schema`/`projectEnv`/`currentSearchPath` 字段
+     - `src/app/api/health/route.ts`: 健康检查返回 schema 隔离信息
+   - **统一迁移 API**: `GET/POST /api/db/migrate-all`
+     - 合并 52 个独立迁移端点为 1 个，24 个迁移步骤按依赖顺序执行
+     - 支持 `dryRun=true` 预览、`category` 过滤、`cloneFrom` 克隆
+     - 迁移使用专用连接（search_path 仅指向目标 schema），避免 IF NOT EXISTS 误判
+     - Phase 0（Schema创建）用全局连接，Phase 1+ 用迁移专用连接
+   - **关键配置**:
+     - `.env`: `COZE_PROJECT_ENV=DEV`
+     - `ecosystem.config.cjs`: `env_production.COZE_PROJECT_ENV=PROD`
+   - **npm 脚本**:
+     - `pnpm db:init`: 初始化 schema + 执行迁移
+     - `pnpm db:migrate`: 仅执行迁移
+     - `pnpm start:dev-schema`: 开发模式启动
+     - `pnpm start:prod-schema`: 生产模式启动

@@ -43,6 +43,9 @@ interface HealthCheckResult {
       status: HealthLevel;
       connected: boolean;
       latencyMs: number;
+      schema?: string;
+      projectEnv?: string;
+      currentSearchPath?: string;
       poolStats?: Record<string, number>;
       error?: string;
     };
@@ -128,6 +131,9 @@ export async function GET(request: NextRequest) {
       status: dbHealth.connected ? 'healthy' : 'unhealthy',
       connected: dbHealth.connected,
       latencyMs: dbHealth.latencyMs,
+      schema: dbHealth.schema,
+      projectEnv: dbHealth.projectEnv,
+      currentSearchPath: dbHealth.currentSearchPath,
       poolStats: dbHealth.poolStats as Record<string, number> | undefined,
       error: dbHealth.error,
     };
