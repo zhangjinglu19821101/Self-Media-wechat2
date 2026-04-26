@@ -23,9 +23,15 @@ import { sql } from 'drizzle-orm';
  * 根据 COZE_PROJECT_ENV 决定使用哪个 schema
  * - COZE_PROJECT_ENV=PROD → public（生产数据）
  * - COZE_PROJECT_ENV=DEV 或未设置 → dev_schema（开发/测试数据）
+ * 
+ * 🔴 P0-2 修复：支持环境变量覆盖默认 Schema 名称
+ * - DEV_SCHEMA: 开发环境 Schema 名称（默认 dev_schema）
+ * - PROD_SCHEMA: 生产环境 Schema 名称（默认 public）
  */
 const PROJECT_ENV = process.env.COZE_PROJECT_ENV || 'DEV';
-const DB_SCHEMA = PROJECT_ENV === 'PROD' ? 'public' : 'dev_schema';
+const DB_SCHEMA = PROJECT_ENV === 'PROD' 
+  ? (process.env.PROD_SCHEMA || 'public') 
+  : (process.env.DEV_SCHEMA || 'dev_schema');
 
 console.log(`[DB] 环境模式: ${PROJECT_ENV}, 目标 Schema: ${DB_SCHEMA}`);
 
@@ -58,7 +64,7 @@ export function getRawDatabaseUrl(): string {
  * - DEV 模式: search_path = dev_schema, public
  *   - 优先查 dev_schema，如果表不存在则回退到 public
  *   - 这确保了即使 dev_schema 尚未创建表，系统仍可正常运行
- * - PROD 模式: 不设置（使用数据库默认的 public）
+ * - PROD 模式: 不设置 connection.options（PostgreSQL 默认使用 public）
  */
 function createConnection(): postgres.Sql {
   const isDev = DB_SCHEMA !== 'public';
@@ -75,8 +81,11 @@ function createConnection(): postgres.Sql {
 
   // DEV 模式：通过 PostgreSQL Startup Message 设置 search_path
   if (isDev) {
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion -- postgres.js Options type missing 'connection' field
-    (config as Record<string, unknown>).connection = {
+    // postgres.js 类型定义已包含 connection: Partial<ConnectionParameters>
+    // ConnectionParameters 包含 [name: string] 索引签名，因此 options 字段类型安全
+    // 该字段通过 Startup Message 传递 -c 参数，比 URL options 更可靠
+    // 参考: https://www.postgresql.org/docs/current/protocol-flow.html#id-1.10.5.7.3
+    config.connection = {
       options: `-c search_path=${DB_SCHEMA},public`,
     };
   }
@@ -156,10 +165,20 @@ export async function createSchemaIfNotExists(schemaName: string): Promise<void>
 
 /**
  * 清空指定 Schema 的所有数据（⚠️ 危险操作，仅用于开发环境）
+ * 
+ * 🔴 P1-3 安全防护：
+ * 1. 只能清空当前激活的 schema（防止误操作其他 schema）
+ * 2. 绝对不允许清空 public schema（即使是 DEV 环境也不允许，public 可能包含生产数据）
  */
 export async function truncateSchema(schemaName: string): Promise<void> {
-  if (schemaName === 'public' && PROJECT_ENV !== 'DEV') {
-    throw new Error('[DB] 安全限制：不允许清空 public schema（生产环境）');
+  // 安全检查1：只能清空当前激活的 schema
+  if (schemaName !== DB_SCHEMA) {
+    throw new Error(`[DB] 安全限制：只能清空当前 schema (${DB_SCHEMA})，请求的 ${schemaName} 不匹配`);
+  }
+  
+  // 安全检查2：绝对不允许清空 public schema
+  if (schemaName === 'public') {
+    throw new Error('[DB] 安全限制：不允许清空 public schema（可能包含生产数据）');
   }
   
   const tables = await db.execute(sql`
@@ -246,10 +265,11 @@ export async function checkDatabaseHealth(): Promise<{
       // 查询 search_path 失败不影响健康检查
     }
 
+    // P2-5: postgres.js 内部 pool 结构可能随版本变化，安全获取
     const poolStats = {
-      total: (client as any).pool?.size ?? -1,
-      idle: (client as any).pool?.available ?? -1,
-      waiting: (client as any).pool?.waiting ?? -1,
+      total: (client as unknown as { pool?: { size?: number } }).pool?.size ?? -1,
+      idle: (client as unknown as { pool?: { available?: number } }).pool?.available ?? -1,
+      waiting: (client as unknown as { pool?: { waiting?: number } }).pool?.waiting ?? -1,
     };
 
     return {

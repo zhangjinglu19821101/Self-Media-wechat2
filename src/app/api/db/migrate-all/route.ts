@@ -20,28 +20,39 @@
  */
 
 import { NextResponse } from 'next/server';
-import { db as globalDb, getCurrentSchema, createSchemaIfNotExists, cloneSchemaStructure, getRawDatabaseUrl } from '@/lib/db';
+import { db as globalDb, getCurrentSchema, createSchemaIfNotExists, checkSchemaExists, cloneSchemaStructure, getRawDatabaseUrl } from '@/lib/db';
 import { sql } from 'drizzle-orm';
 import postgres from 'postgres';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import * as schema from '@/lib/db/schema';
+import { AsyncLocalStorage } from 'async_hooks';
 
-// ==================== 可切换的数据库引用 ====================
+// ==================== 请求级数据库引用隔离 ====================
 
-// 🔴 迁移模式切换：
-// 正常模式下 activeDb = globalDb（使用 search_path = dev_schema, public）
-// 迁移模式下 activeDb = migrationDb（使用 search_path = 仅目标 schema）
+// 🔴 P0-1 修复：使用 AsyncLocalStorage 替代模块级变量，消除并发请求竞态条件
 // 
-// 这样迁移步骤中的 CREATE TABLE IF NOT EXISTS 不会因为发现 public 中的同名表而跳过
-let activeDb: typeof globalDb = globalDb;
+// 旧方案：模块级 `let getActiveDb()`，并发迁移请求会相互覆盖
+// 新方案：每个请求通过 AsyncLocalStorage 拥有独立的 db 引用
+// 
+// 正常模式下 store 中的 db = globalDb（search_path = dev_schema, public）
+// 迁移模式下 store 中的 db = migrationDb（search_path = 仅目标 schema）
+// 
+// 这样 CREATE TABLE IF NOT EXISTS 不会因为发现 public 中的同名表而跳过
+const migrationDbStore = new AsyncLocalStorage<typeof globalDb>();
 
-// 注意：不使用 export，避免 Next.js 路由文件导出非路由函数
-function _setActiveDb(newDb: typeof globalDb) {
-  activeDb = newDb;
+/**
+ * 获取当前请求上下文中的数据库实例
+ * 如果不在 AsyncLocalStorage 上下文中，返回全局 db
+ */
+function getActiveDb(): typeof globalDb {
+  return migrationDbStore.getStore() ?? globalDb;
 }
 
-function _resetActiveDb() {
-  activeDb = globalDb;
+/**
+ * 在指定 db 上下文中执行函数（请求级隔离）
+ */
+async function withActiveDb<T>(db: typeof globalDb, fn: () => Promise<T>): Promise<T> {
+  return migrationDbStore.run(db, fn);
 }
 
 // ==================== 迁移步骤定义 ====================
@@ -71,7 +82,7 @@ const MIGRATION_STEPS: MigrationStep[] = [
     name: '创建认证表 (accounts / workspaces / workspace_members / account_sessions)',
     category: 'create',
     execute: async (_targetSchema: string) => {
-      await activeDb.execute(sql`
+      await getActiveDb().execute(sql`
         CREATE TABLE IF NOT EXISTS accounts (
           id TEXT PRIMARY KEY,
           email TEXT UNIQUE NOT NULL,
@@ -84,11 +95,11 @@ const MIGRATION_STEPS: MigrationStep[] = [
           updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
         )
       `);
-      await activeDb.execute(sql`CREATE UNIQUE INDEX IF NOT EXISTS idx_accounts_email ON accounts(email)`);
-      await activeDb.execute(sql`CREATE INDEX IF NOT EXISTS idx_accounts_role ON accounts(role)`);
-      await activeDb.execute(sql`CREATE INDEX IF NOT EXISTS idx_accounts_status ON accounts(status)`);
+      await getActiveDb().execute(sql`CREATE UNIQUE INDEX IF NOT EXISTS idx_accounts_email ON accounts(email)`);
+      await getActiveDb().execute(sql`CREATE INDEX IF NOT EXISTS idx_accounts_role ON accounts(role)`);
+      await getActiveDb().execute(sql`CREATE INDEX IF NOT EXISTS idx_accounts_status ON accounts(status)`);
 
-      await activeDb.execute(sql`
+      await getActiveDb().execute(sql`
         CREATE TABLE IF NOT EXISTS workspaces (
           id TEXT PRIMARY KEY,
           name TEXT NOT NULL,
@@ -99,10 +110,10 @@ const MIGRATION_STEPS: MigrationStep[] = [
           updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
         )
       `);
-      await activeDb.execute(sql`CREATE INDEX IF NOT EXISTS idx_workspaces_owner ON workspaces(owner_account_id)`);
-      await activeDb.execute(sql`CREATE INDEX IF NOT EXISTS idx_workspaces_type ON workspaces(type)`);
+      await getActiveDb().execute(sql`CREATE INDEX IF NOT EXISTS idx_workspaces_owner ON workspaces(owner_account_id)`);
+      await getActiveDb().execute(sql`CREATE INDEX IF NOT EXISTS idx_workspaces_type ON workspaces(type)`);
 
-      await activeDb.execute(sql`
+      await getActiveDb().execute(sql`
         CREATE TABLE IF NOT EXISTS workspace_members (
           id TEXT PRIMARY KEY,
           workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
@@ -111,10 +122,10 @@ const MIGRATION_STEPS: MigrationStep[] = [
           joined_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
         )
       `);
-      await activeDb.execute(sql`CREATE UNIQUE INDEX IF NOT EXISTS idx_workspace_members_unique ON workspace_members(workspace_id, account_id)`);
-      await activeDb.execute(sql`CREATE INDEX IF NOT EXISTS idx_workspace_members_account ON workspace_members(account_id)`);
+      await getActiveDb().execute(sql`CREATE UNIQUE INDEX IF NOT EXISTS idx_workspace_members_unique ON workspace_members(workspace_id, account_id)`);
+      await getActiveDb().execute(sql`CREATE INDEX IF NOT EXISTS idx_workspace_members_account ON workspace_members(account_id)`);
 
-      await activeDb.execute(sql`
+      await getActiveDb().execute(sql`
         CREATE TABLE IF NOT EXISTS account_sessions (
           id TEXT PRIMARY KEY,
           account_id TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
@@ -125,7 +136,7 @@ const MIGRATION_STEPS: MigrationStep[] = [
           created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
         )
       `);
-      await activeDb.execute(sql`CREATE INDEX IF NOT EXISTS idx_sessions_account ON account_sessions(account_id)`);
+      await getActiveDb().execute(sql`CREATE INDEX IF NOT EXISTS idx_sessions_account ON account_sessions(account_id)`);
 
       return '认证表创建完成';
     },
@@ -139,16 +150,16 @@ const MIGRATION_STEPS: MigrationStep[] = [
     execute: async (_targetSchema: string) => {
       // 先尝试重命名旧表
       try {
-        const check = await activeDb.execute(sql`SELECT table_name FROM information_schema.tables WHERE table_name = 'command_results'`);
+        const check = await getActiveDb().execute(sql`SELECT table_name FROM information_schema.tables WHERE table_name = 'command_results'`);
         if (Array.isArray(check) && check.length > 0) {
-          await activeDb.execute(sql`ALTER TABLE command_results RENAME TO daily_task`);
-          await activeDb.execute(sql`ALTER TABLE daily_task RENAME COLUMN command_id TO task_id`);
-          await activeDb.execute(sql`ALTER TABLE daily_task RENAME COLUMN command_content TO task_description`);
-          await activeDb.execute(sql`ALTER TABLE daily_task RENAME COLUMN command_priority TO task_priority`);
+          await getActiveDb().execute(sql`ALTER TABLE command_results RENAME TO daily_task`);
+          await getActiveDb().execute(sql`ALTER TABLE daily_task RENAME COLUMN command_id TO task_id`);
+          await getActiveDb().execute(sql`ALTER TABLE daily_task RENAME COLUMN command_content TO task_description`);
+          await getActiveDb().execute(sql`ALTER TABLE daily_task RENAME COLUMN command_priority TO task_priority`);
         }
       } catch { /* 忽略，表可能不存在 */ }
 
-      await activeDb.execute(sql`
+      await getActiveDb().execute(sql`
         CREATE TABLE IF NOT EXISTS daily_task (
           id TEXT PRIMARY KEY,
           task_id TEXT,
@@ -167,9 +178,9 @@ const MIGRATION_STEPS: MigrationStep[] = [
           updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
         )
       `);
-      await activeDb.execute(sql`CREATE INDEX IF NOT EXISTS idx_daily_task_status ON daily_task(task_status)`);
-      await activeDb.execute(sql`CREATE INDEX IF NOT EXISTS idx_daily_task_date ON daily_task(execution_date)`);
-      await activeDb.execute(sql`CREATE INDEX IF NOT EXISTS idx_daily_task_workspace ON daily_task(workspace_id)`);
+      await getActiveDb().execute(sql`CREATE INDEX IF NOT EXISTS idx_daily_task_status ON daily_task(task_status)`);
+      await getActiveDb().execute(sql`CREATE INDEX IF NOT EXISTS idx_daily_task_date ON daily_task(execution_date)`);
+      await getActiveDb().execute(sql`CREATE INDEX IF NOT EXISTS idx_daily_task_workspace ON daily_task(workspace_id)`);
 
       // 补充可能缺失的列
       const columns = [
@@ -186,7 +197,7 @@ const MIGRATION_STEPS: MigrationStep[] = [
         { name: 'updated_at', type: 'TIMESTAMP WITH TIME ZONE DEFAULT NOW()' },
       ];
       for (const col of columns) {
-        await activeDb.execute(sql`ALTER TABLE daily_task ADD COLUMN IF NOT EXISTS ${sql.identifier(col.name)} ${sql.raw(col.type)}`).catch(() => {});
+        await getActiveDb().execute(sql`ALTER TABLE daily_task ADD COLUMN IF NOT EXISTS ${sql.identifier(col.name)} ${sql.raw(col.type)}`).catch(() => {});
       }
 
       return 'daily_task 表创建/更新完成';
@@ -198,7 +209,7 @@ const MIGRATION_STEPS: MigrationStep[] = [
     name: '创建 Agent 任务表 (agent_tasks)',
     category: 'create',
     execute: async (_targetSchema: string) => {
-      await activeDb.execute(sql`
+      await getActiveDb().execute(sql`
         CREATE TABLE IF NOT EXISTS agent_tasks (
           id TEXT PRIMARY KEY,
           task_id TEXT,
@@ -217,12 +228,12 @@ const MIGRATION_STEPS: MigrationStep[] = [
           updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
         )
       `);
-      await activeDb.execute(sql`CREATE INDEX IF NOT EXISTS idx_agent_tasks_status ON agent_tasks(task_status)`);
-      await activeDb.execute(sql`CREATE INDEX IF NOT EXISTS idx_agent_tasks_workspace ON agent_tasks(workspace_id)`);
+      await getActiveDb().execute(sql`CREATE INDEX IF NOT EXISTS idx_agent_tasks_status ON agent_tasks(task_status)`);
+      await getActiveDb().execute(sql`CREATE INDEX IF NOT EXISTS idx_agent_tasks_workspace ON agent_tasks(workspace_id)`);
       // 补充可能缺失的列
-      await activeDb.execute(sql`ALTER TABLE agent_tasks ADD COLUMN IF NOT EXISTS user_opinion TEXT`).catch(() => {});
-      await activeDb.execute(sql`ALTER TABLE agent_tasks ADD COLUMN IF NOT EXISTS material_ids JSONB DEFAULT '[]'`).catch(() => {});
-      await activeDb.execute(sql`ALTER TABLE agent_tasks ADD COLUMN IF NOT EXISTS original_instruction TEXT`).catch(() => {});
+      await getActiveDb().execute(sql`ALTER TABLE agent_tasks ADD COLUMN IF NOT EXISTS user_opinion TEXT`).catch(() => {});
+      await getActiveDb().execute(sql`ALTER TABLE agent_tasks ADD COLUMN IF NOT EXISTS material_ids JSONB DEFAULT '[]'`).catch(() => {});
+      await getActiveDb().execute(sql`ALTER TABLE agent_tasks ADD COLUMN IF NOT EXISTS original_instruction TEXT`).catch(() => {});
       return 'agent_tasks 表创建/更新完成';
     },
   },
@@ -232,7 +243,7 @@ const MIGRATION_STEPS: MigrationStep[] = [
     name: '创建子任务表 (agent_sub_tasks)',
     category: 'create',
     execute: async (_targetSchema: string) => {
-      await activeDb.execute(sql`
+      await getActiveDb().execute(sql`
         CREATE TABLE IF NOT EXISTS agent_sub_tasks (
           id TEXT PRIMARY KEY,
           command_result_id TEXT NOT NULL,
@@ -258,11 +269,11 @@ const MIGRATION_STEPS: MigrationStep[] = [
           updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
         )
       `);
-      await activeDb.execute(sql`CREATE INDEX IF NOT EXISTS idx_agent_sub_tasks_status ON agent_sub_tasks(status)`);
-      await activeDb.execute(sql`CREATE INDEX IF NOT EXISTS idx_agent_sub_tasks_cmd ON agent_sub_tasks(command_result_id)`);
-      await activeDb.execute(sql`CREATE INDEX IF NOT EXISTS idx_agent_sub_tasks_cmd_order ON agent_sub_tasks(command_result_id, order_index)`);
-      await activeDb.execute(sql`CREATE INDEX IF NOT EXISTS idx_agent_sub_tasks_workspace ON agent_sub_tasks(workspace_id)`);
-      await activeDb.execute(sql`CREATE INDEX IF NOT EXISTS idx_agent_sub_tasks_article_metadata ON agent_sub_tasks USING GIN (article_metadata)`);
+      await getActiveDb().execute(sql`CREATE INDEX IF NOT EXISTS idx_agent_sub_tasks_status ON agent_sub_tasks(status)`);
+      await getActiveDb().execute(sql`CREATE INDEX IF NOT EXISTS idx_agent_sub_tasks_cmd ON agent_sub_tasks(command_result_id)`);
+      await getActiveDb().execute(sql`CREATE INDEX IF NOT EXISTS idx_agent_sub_tasks_cmd_order ON agent_sub_tasks(command_result_id, order_index)`);
+      await getActiveDb().execute(sql`CREATE INDEX IF NOT EXISTS idx_agent_sub_tasks_workspace ON agent_sub_tasks(workspace_id)`);
+      await getActiveDb().execute(sql`CREATE INDEX IF NOT EXISTS idx_agent_sub_tasks_article_metadata ON agent_sub_tasks USING GIN (article_metadata)`);
 
       // 补充可能缺失的列
       const alterColumns = [
@@ -276,12 +287,12 @@ const MIGRATION_STEPS: MigrationStep[] = [
         { name: 'related_materials', type: 'TEXT DEFAULT \'\'' },
       ];
       for (const col of alterColumns) {
-        await activeDb.execute(sql`ALTER TABLE agent_sub_tasks ADD COLUMN IF NOT EXISTS ${sql.identifier(col.name)} ${sql.raw(col.type)}`).catch(() => {});
+        await getActiveDb().execute(sql`ALTER TABLE agent_sub_tasks ADD COLUMN IF NOT EXISTS ${sql.identifier(col.name)} ${sql.raw(col.type)}`).catch(() => {});
       }
 
       // 唯一约束
       try {
-        await activeDb.execute(sql`ALTER TABLE agent_sub_tasks ADD CONSTRAINT uq_sub_tasks_cmd_order UNIQUE (command_result_id, order_index)`);
+        await getActiveDb().execute(sql`ALTER TABLE agent_sub_tasks ADD CONSTRAINT uq_sub_tasks_cmd_order UNIQUE (command_result_id, order_index)`);
       } catch { /* 已存在 */ }
 
       return 'agent_sub_tasks 表创建/更新完成';
@@ -293,7 +304,7 @@ const MIGRATION_STEPS: MigrationStep[] = [
     name: '创建执行历史表 (agent_sub_tasks_step_history)',
     category: 'create',
     execute: async (_targetSchema: string) => {
-      await activeDb.execute(sql`
+      await getActiveDb().execute(sql`
         CREATE TABLE IF NOT EXISTS agent_sub_tasks_step_history (
           id TEXT PRIMARY KEY,
           task_id TEXT NOT NULL,
@@ -305,9 +316,9 @@ const MIGRATION_STEPS: MigrationStep[] = [
           command_result_id TEXT
         )
       `);
-      await activeDb.execute(sql`CREATE INDEX IF NOT EXISTS idx_step_history_command_result ON agent_sub_tasks_step_history(command_result_id)`);
-      await activeDb.execute(sql`CREATE INDEX IF NOT EXISTS idx_step_history_step_no ON agent_sub_tasks_step_history(task_id, step_no)`);
-      await activeDb.execute(sql`CREATE INDEX IF NOT EXISTS idx_step_history_interact_time ON agent_sub_tasks_step_history(interact_time)`);
+      await getActiveDb().execute(sql`CREATE INDEX IF NOT EXISTS idx_step_history_command_result ON agent_sub_tasks_step_history(command_result_id)`);
+      await getActiveDb().execute(sql`CREATE INDEX IF NOT EXISTS idx_step_history_step_no ON agent_sub_tasks_step_history(task_id, step_no)`);
+      await getActiveDb().execute(sql`CREATE INDEX IF NOT EXISTS idx_step_history_interact_time ON agent_sub_tasks_step_history(interact_time)`);
       return 'step_history 表创建完成';
     },
   },
@@ -317,7 +328,7 @@ const MIGRATION_STEPS: MigrationStep[] = [
     name: '创建 MCP 执行记录表 (agent_sub_tasks_mcp_executions)',
     category: 'create',
     execute: async (_targetSchema: string) => {
-      await activeDb.execute(sql`
+      await getActiveDb().execute(sql`
         CREATE TABLE IF NOT EXISTS agent_sub_tasks_mcp_executions (
           id TEXT PRIMARY KEY,
           task_id TEXT NOT NULL,
@@ -330,7 +341,7 @@ const MIGRATION_STEPS: MigrationStep[] = [
           command_result_id TEXT
         )
       `);
-      await activeDb.execute(sql`CREATE INDEX IF NOT EXISTS idx_mcp_executions_task ON agent_sub_tasks_mcp_executions(task_id)`);
+      await getActiveDb().execute(sql`CREATE INDEX IF NOT EXISTS idx_mcp_executions_task ON agent_sub_tasks_mcp_executions(task_id)`);
       return 'mcp_executions 表创建完成';
     },
   },
@@ -341,7 +352,7 @@ const MIGRATION_STEPS: MigrationStep[] = [
     name: '创建素材库表 (material_library)',
     category: 'create',
     execute: async (_targetSchema: string) => {
-      await activeDb.execute(sql`
+      await getActiveDb().execute(sql`
         CREATE TABLE IF NOT EXISTS material_library (
           id TEXT PRIMARY KEY,
           title TEXT NOT NULL,
@@ -359,12 +370,12 @@ const MIGRATION_STEPS: MigrationStep[] = [
           updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
         )
       `);
-      await activeDb.execute(sql`CREATE INDEX IF NOT EXISTS idx_material_type ON material_library(type)`);
-      await activeDb.execute(sql`CREATE INDEX IF NOT EXISTS idx_material_status ON material_library(status)`);
-      await activeDb.execute(sql`CREATE INDEX IF NOT EXISTS idx_material_workspace ON material_library(workspace_id)`);
-      await activeDb.execute(sql`CREATE INDEX IF NOT EXISTS idx_material_topic_tags ON material_library USING GIN (topic_tags)`);
-      await activeDb.execute(sql`CREATE INDEX IF NOT EXISTS idx_material_scene_tags ON material_library USING GIN (scene_tags)`);
-      await activeDb.execute(sql`CREATE INDEX IF NOT EXISTS idx_material_emotion_tags ON material_library USING GIN (emotion_tags)`);
+      await getActiveDb().execute(sql`CREATE INDEX IF NOT EXISTS idx_material_type ON material_library(type)`);
+      await getActiveDb().execute(sql`CREATE INDEX IF NOT EXISTS idx_material_status ON material_library(status)`);
+      await getActiveDb().execute(sql`CREATE INDEX IF NOT EXISTS idx_material_workspace ON material_library(workspace_id)`);
+      await getActiveDb().execute(sql`CREATE INDEX IF NOT EXISTS idx_material_topic_tags ON material_library USING GIN (topic_tags)`);
+      await getActiveDb().execute(sql`CREATE INDEX IF NOT EXISTS idx_material_scene_tags ON material_library USING GIN (scene_tags)`);
+      await getActiveDb().execute(sql`CREATE INDEX IF NOT EXISTS idx_material_emotion_tags ON material_library USING GIN (emotion_tags)`);
       return 'material_library 表创建完成';
     },
   },
@@ -374,7 +385,7 @@ const MIGRATION_STEPS: MigrationStep[] = [
     name: '创建风格模板表 (style_templates / platform_accounts / account_style_configs)',
     category: 'create',
     execute: async (_targetSchema: string) => {
-      await activeDb.execute(sql`
+      await getActiveDb().execute(sql`
         CREATE TABLE IF NOT EXISTS style_templates (
           id TEXT PRIMARY KEY,
           name TEXT NOT NULL,
@@ -387,10 +398,10 @@ const MIGRATION_STEPS: MigrationStep[] = [
           updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
         )
       `);
-      await activeDb.execute(sql`CREATE INDEX IF NOT EXISTS idx_style_templates_workspace ON style_templates(workspace_id)`);
-      await activeDb.execute(sql`CREATE INDEX IF NOT EXISTS idx_style_templates_platform ON style_templates(platform)`);
+      await getActiveDb().execute(sql`CREATE INDEX IF NOT EXISTS idx_style_templates_workspace ON style_templates(workspace_id)`);
+      await getActiveDb().execute(sql`CREATE INDEX IF NOT EXISTS idx_style_templates_platform ON style_templates(platform)`);
 
-      await activeDb.execute(sql`
+      await getActiveDb().execute(sql`
         CREATE TABLE IF NOT EXISTS platform_accounts (
           id TEXT PRIMARY KEY,
           platform TEXT NOT NULL,
@@ -404,11 +415,11 @@ const MIGRATION_STEPS: MigrationStep[] = [
           updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
         )
       `);
-      await activeDb.execute(sql`CREATE INDEX IF NOT EXISTS idx_platform_accounts_workspace ON platform_accounts(workspace_id)`);
-      await activeDb.execute(sql`CREATE INDEX IF NOT EXISTS idx_platform_accounts_platform ON platform_accounts(platform)`);
-      await activeDb.execute(sql`CREATE INDEX IF NOT EXISTS idx_platform_accounts_platform_config ON platform_accounts USING GIN (platform_config)`);
+      await getActiveDb().execute(sql`CREATE INDEX IF NOT EXISTS idx_platform_accounts_workspace ON platform_accounts(workspace_id)`);
+      await getActiveDb().execute(sql`CREATE INDEX IF NOT EXISTS idx_platform_accounts_platform ON platform_accounts(platform)`);
+      await getActiveDb().execute(sql`CREATE INDEX IF NOT EXISTS idx_platform_accounts_platform_config ON platform_accounts USING GIN (platform_config)`);
 
-      await activeDb.execute(sql`
+      await getActiveDb().execute(sql`
         CREATE TABLE IF NOT EXISTS account_style_configs (
           id TEXT PRIMARY KEY,
           account_id TEXT NOT NULL REFERENCES platform_accounts(id) ON DELETE CASCADE,
@@ -417,7 +428,7 @@ const MIGRATION_STEPS: MigrationStep[] = [
           created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
         )
       `);
-      await activeDb.execute(sql`CREATE UNIQUE INDEX IF NOT EXISTS idx_account_style_unique ON account_style_configs(account_id, template_id)`);
+      await getActiveDb().execute(sql`CREATE UNIQUE INDEX IF NOT EXISTS idx_account_style_unique ON account_style_configs(account_id, template_id)`);
       return '风格模板表创建完成';
     },
   },
@@ -427,7 +438,7 @@ const MIGRATION_STEPS: MigrationStep[] = [
     name: '创建数字资产表 (core_anchor_assets / style_assets / feedback_assets)',
     category: 'create',
     execute: async (_targetSchema: string) => {
-      await activeDb.execute(sql`
+      await getActiveDb().execute(sql`
         CREATE TABLE IF NOT EXISTS core_anchor_assets (
           id TEXT PRIMARY KEY,
           anchor_type TEXT NOT NULL,
@@ -439,11 +450,11 @@ const MIGRATION_STEPS: MigrationStep[] = [
           created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
         )
       `);
-      await activeDb.execute(sql`CREATE INDEX IF NOT EXISTS idx_core_anchor_source_task ON core_anchor_assets(source_task_id)`);
-      await activeDb.execute(sql`CREATE INDEX IF NOT EXISTS idx_core_anchor_type ON core_anchor_assets(anchor_type)`);
-      await activeDb.execute(sql`CREATE INDEX IF NOT EXISTS idx_core_anchor_workspace ON core_anchor_assets(workspace_id)`);
+      await getActiveDb().execute(sql`CREATE INDEX IF NOT EXISTS idx_core_anchor_source_task ON core_anchor_assets(source_task_id)`);
+      await getActiveDb().execute(sql`CREATE INDEX IF NOT EXISTS idx_core_anchor_type ON core_anchor_assets(anchor_type)`);
+      await getActiveDb().execute(sql`CREATE INDEX IF NOT EXISTS idx_core_anchor_workspace ON core_anchor_assets(workspace_id)`);
 
-      await activeDb.execute(sql`
+      await getActiveDb().execute(sql`
         CREATE TABLE IF NOT EXISTS style_assets (
           id TEXT PRIMARY KEY,
           rule_type TEXT NOT NULL,
@@ -458,10 +469,10 @@ const MIGRATION_STEPS: MigrationStep[] = [
           updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
         )
       `);
-      await activeDb.execute(sql`CREATE INDEX IF NOT EXISTS idx_style_assets_template ON style_assets(template_id)`);
-      await activeDb.execute(sql`CREATE INDEX IF NOT EXISTS idx_style_assets_workspace ON style_assets(workspace_id)`);
+      await getActiveDb().execute(sql`CREATE INDEX IF NOT EXISTS idx_style_assets_template ON style_assets(template_id)`);
+      await getActiveDb().execute(sql`CREATE INDEX IF NOT EXISTS idx_style_assets_workspace ON style_assets(workspace_id)`);
 
-      await activeDb.execute(sql`
+      await getActiveDb().execute(sql`
         CREATE TABLE IF NOT EXISTS feedback_assets (
           id TEXT PRIMARY KEY,
           workspace_id TEXT,
@@ -481,7 +492,7 @@ const MIGRATION_STEPS: MigrationStep[] = [
     name: '创建文章内容表 (article_content)',
     category: 'create',
     execute: async (_targetSchema: string) => {
-      await activeDb.execute(sql`
+      await getActiveDb().execute(sql`
         CREATE TABLE IF NOT EXISTS article_content (
           id TEXT PRIMARY KEY,
           article_id TEXT UNIQUE,
@@ -500,11 +511,11 @@ const MIGRATION_STEPS: MigrationStep[] = [
           updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
         )
       `);
-      await activeDb.execute(sql`CREATE INDEX IF NOT EXISTS idx_article_content_task_id ON article_content(task_id)`);
-      await activeDb.execute(sql`CREATE INDEX IF NOT EXISTS idx_article_content_sub_task_id ON article_content(sub_task_id)`);
-      await activeDb.execute(sql`CREATE INDEX IF NOT EXISTS idx_article_content_creator_status ON article_content(creator_status)`);
-      await activeDb.execute(sql`CREATE INDEX IF NOT EXISTS idx_article_content_keywords ON article_content USING GIN (keywords)`);
-      await activeDb.execute(sql`CREATE INDEX IF NOT EXISTS idx_article_content_publish_time ON article_content(publish_time)`);
+      await getActiveDb().execute(sql`CREATE INDEX IF NOT EXISTS idx_article_content_task_id ON article_content(task_id)`);
+      await getActiveDb().execute(sql`CREATE INDEX IF NOT EXISTS idx_article_content_sub_task_id ON article_content(sub_task_id)`);
+      await getActiveDb().execute(sql`CREATE INDEX IF NOT EXISTS idx_article_content_creator_status ON article_content(creator_status)`);
+      await getActiveDb().execute(sql`CREATE INDEX IF NOT EXISTS idx_article_content_keywords ON article_content USING GIN (keywords)`);
+      await getActiveDb().execute(sql`CREATE INDEX IF NOT EXISTS idx_article_content_publish_time ON article_content(publish_time)`);
       return 'article_content 表创建完成';
     },
   },
@@ -514,7 +525,7 @@ const MIGRATION_STEPS: MigrationStep[] = [
     name: '创建文章哈希表 (article_hashes)',
     category: 'create',
     execute: async (_targetSchema: string) => {
-      await activeDb.execute(sql`
+      await getActiveDb().execute(sql`
         CREATE TABLE IF NOT EXISTS article_hashes (
           id TEXT PRIMARY KEY,
           sha256 TEXT NOT NULL,
@@ -528,12 +539,12 @@ const MIGRATION_STEPS: MigrationStep[] = [
           created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
         )
       `);
-      await activeDb.execute(sql`ALTER TABLE article_hashes ADD COLUMN IF NOT EXISTS normalized_sha256 TEXT`).catch(() => {});
-      await activeDb.execute(sql`ALTER TABLE article_hashes ALTER COLUMN normalized_sha256 SET NOT NULL`).catch(() => {});
-      await activeDb.execute(sql`CREATE INDEX IF NOT EXISTS idx_article_hashes_sha256 ON article_hashes(sha256)`);
-      await activeDb.execute(sql`CREATE INDEX IF NOT EXISTS idx_article_hashes_normalized_sha256 ON article_hashes(normalized_sha256)`);
-      await activeDb.execute(sql`CREATE INDEX IF NOT EXISTS idx_article_hashes_workspace ON article_hashes(workspace_id)`);
-      await activeDb.execute(sql`CREATE INDEX IF NOT EXISTS idx_article_hashes_template ON article_hashes(template_id)`);
+      await getActiveDb().execute(sql`ALTER TABLE article_hashes ADD COLUMN IF NOT EXISTS normalized_sha256 TEXT`).catch(() => {});
+      await getActiveDb().execute(sql`ALTER TABLE article_hashes ALTER COLUMN normalized_sha256 SET NOT NULL`).catch(() => {});
+      await getActiveDb().execute(sql`CREATE INDEX IF NOT EXISTS idx_article_hashes_sha256 ON article_hashes(sha256)`);
+      await getActiveDb().execute(sql`CREATE INDEX IF NOT EXISTS idx_article_hashes_normalized_sha256 ON article_hashes(normalized_sha256)`);
+      await getActiveDb().execute(sql`CREATE INDEX IF NOT EXISTS idx_article_hashes_workspace ON article_hashes(workspace_id)`);
+      await getActiveDb().execute(sql`CREATE INDEX IF NOT EXISTS idx_article_hashes_template ON article_hashes(template_id)`);
       return 'article_hashes 表创建完成';
     },
   },
@@ -543,7 +554,7 @@ const MIGRATION_STEPS: MigrationStep[] = [
     name: '创建用户 API Key 表 (user_api_keys)',
     category: 'create',
     execute: async (_targetSchema: string) => {
-      await activeDb.execute(sql`
+      await getActiveDb().execute(sql`
         CREATE TABLE IF NOT EXISTS user_api_keys (
           id TEXT PRIMARY KEY,
           workspace_id TEXT NOT NULL,
@@ -557,7 +568,7 @@ const MIGRATION_STEPS: MigrationStep[] = [
           updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
         )
       `);
-      await activeDb.execute(sql`CREATE INDEX IF NOT EXISTS idx_user_api_keys_workspace ON user_api_keys(workspace_id)`);
+      await getActiveDb().execute(sql`CREATE INDEX IF NOT EXISTS idx_user_api_keys_workspace ON user_api_keys(workspace_id)`);
       return 'user_api_keys 表创建完成';
     },
   },
@@ -567,7 +578,7 @@ const MIGRATION_STEPS: MigrationStep[] = [
     name: '创建发布记录表 (publish_records)',
     category: 'create',
     execute: async (_targetSchema: string) => {
-      await activeDb.execute(sql`
+      await getActiveDb().execute(sql`
         CREATE TABLE IF NOT EXISTS publish_records (
           id TEXT PRIMARY KEY,
           article_id TEXT NOT NULL,
@@ -584,8 +595,8 @@ const MIGRATION_STEPS: MigrationStep[] = [
           created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
         )
       `);
-      await activeDb.execute(sql`CREATE INDEX IF NOT EXISTS idx_publish_records_article ON publish_records(article_id)`);
-      await activeDb.execute(sql`CREATE INDEX IF NOT EXISTS idx_publish_records_workspace ON publish_records(workspace_id)`);
+      await getActiveDb().execute(sql`CREATE INDEX IF NOT EXISTS idx_publish_records_article ON publish_records(article_id)`);
+      await getActiveDb().execute(sql`CREATE INDEX IF NOT EXISTS idx_publish_records_workspace ON publish_records(workspace_id)`);
       return 'publish_records 表创建完成';
     },
   },
@@ -595,7 +606,7 @@ const MIGRATION_STEPS: MigrationStep[] = [
     name: '创建小红书卡片表 (xhs_cards / xhs_card_groups)',
     category: 'create',
     execute: async (_targetSchema: string) => {
-      await activeDb.execute(sql`
+      await getActiveDb().execute(sql`
         CREATE TABLE IF NOT EXISTS xhs_cards (
           id TEXT PRIMARY KEY,
           group_id TEXT,
@@ -614,13 +625,13 @@ const MIGRATION_STEPS: MigrationStep[] = [
           created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
         )
       `);
-      await activeDb.execute(sql`CREATE INDEX IF NOT EXISTS idx_xhs_cards_sub_task_id ON xhs_cards(sub_task_id)`);
-      await activeDb.execute(sql`CREATE INDEX IF NOT EXISTS idx_xhs_cards_command_result_id ON xhs_cards(command_result_id)`);
-      await activeDb.execute(sql`CREATE INDEX IF NOT EXISTS idx_xhs_cards_card_index ON xhs_cards(card_index)`);
-      await activeDb.execute(sql`CREATE INDEX IF NOT EXISTS idx_xhs_cards_status ON xhs_cards(status)`);
-      await activeDb.execute(sql`CREATE INDEX IF NOT EXISTS idx_xhs_cards_workspace_id ON xhs_cards(workspace_id)`);
+      await getActiveDb().execute(sql`CREATE INDEX IF NOT EXISTS idx_xhs_cards_sub_task_id ON xhs_cards(sub_task_id)`);
+      await getActiveDb().execute(sql`CREATE INDEX IF NOT EXISTS idx_xhs_cards_command_result_id ON xhs_cards(command_result_id)`);
+      await getActiveDb().execute(sql`CREATE INDEX IF NOT EXISTS idx_xhs_cards_card_index ON xhs_cards(card_index)`);
+      await getActiveDb().execute(sql`CREATE INDEX IF NOT EXISTS idx_xhs_cards_status ON xhs_cards(status)`);
+      await getActiveDb().execute(sql`CREATE INDEX IF NOT EXISTS idx_xhs_cards_workspace_id ON xhs_cards(workspace_id)`);
 
-      await activeDb.execute(sql`
+      await getActiveDb().execute(sql`
         CREATE TABLE IF NOT EXISTS xhs_card_groups (
           id TEXT PRIMARY KEY,
           sub_task_id TEXT,
@@ -632,8 +643,8 @@ const MIGRATION_STEPS: MigrationStep[] = [
           created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
         )
       `);
-      await activeDb.execute(sql`CREATE INDEX IF NOT EXISTS idx_xhs_card_groups_sub_task_id ON xhs_card_groups(sub_task_id)`);
-      await activeDb.execute(sql`CREATE INDEX IF NOT EXISTS idx_xhs_card_groups_command_result_id ON xhs_card_groups(command_result_id)`);
+      await getActiveDb().execute(sql`CREATE INDEX IF NOT EXISTS idx_xhs_card_groups_sub_task_id ON xhs_card_groups(sub_task_id)`);
+      await getActiveDb().execute(sql`CREATE INDEX IF NOT EXISTS idx_xhs_card_groups_command_result_id ON xhs_card_groups(command_result_id)`);
       return 'xhs_cards 表创建完成';
     },
   },
@@ -643,7 +654,7 @@ const MIGRATION_STEPS: MigrationStep[] = [
     name: '创建信息速记表 (info_snippets)',
     category: 'create',
     execute: async (_targetSchema: string) => {
-      await activeDb.execute(sql`
+      await getActiveDb().execute(sql`
         CREATE TABLE IF NOT EXISTS info_snippets (
           id TEXT PRIMARY KEY,
           title TEXT,
@@ -668,17 +679,17 @@ const MIGRATION_STEPS: MigrationStep[] = [
           updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
         )
       `);
-      await activeDb.execute(sql`CREATE INDEX IF NOT EXISTS idx_info_snippet_status ON info_snippets(status)`);
-      await activeDb.execute(sql`CREATE INDEX IF NOT EXISTS idx_info_snippet_workspace ON info_snippets(workspace_id)`);
-      await activeDb.execute(sql`CREATE INDEX IF NOT EXISTS idx_info_snippets_categories_gin ON info_snippets USING GIN (categories)`);
-      await activeDb.execute(sql`CREATE INDEX IF NOT EXISTS idx_info_snippet_created_at ON info_snippets(created_at)`);
-      await activeDb.execute(sql`CREATE INDEX IF NOT EXISTS idx_info_snippets_snippet_type ON info_snippets(snippet_type)`);
-      await activeDb.execute(sql`CREATE INDEX IF NOT EXISTS idx_info_snippets_remind_at ON info_snippets(remind_at)`);
+      await getActiveDb().execute(sql`CREATE INDEX IF NOT EXISTS idx_info_snippet_status ON info_snippets(status)`);
+      await getActiveDb().execute(sql`CREATE INDEX IF NOT EXISTS idx_info_snippet_workspace ON info_snippets(workspace_id)`);
+      await getActiveDb().execute(sql`CREATE INDEX IF NOT EXISTS idx_info_snippets_categories_gin ON info_snippets USING GIN (categories)`);
+      await getActiveDb().execute(sql`CREATE INDEX IF NOT EXISTS idx_info_snippet_created_at ON info_snippets(created_at)`);
+      await getActiveDb().execute(sql`CREATE INDEX IF NOT EXISTS idx_info_snippets_snippet_type ON info_snippets(snippet_type)`);
+      await getActiveDb().execute(sql`CREATE INDEX IF NOT EXISTS idx_info_snippets_remind_at ON info_snippets(remind_at)`);
       // 补充可能缺失的列
-      await activeDb.execute(sql`ALTER TABLE info_snippets ADD COLUMN IF NOT EXISTS raw_content TEXT`).catch(() => {});
-      await activeDb.execute(sql`ALTER TABLE info_snippets ADD COLUMN IF NOT EXISTS categories JSONB DEFAULT '["quick_note"]'::jsonb`).catch(() => {});
-      await activeDb.execute(sql`ALTER TABLE info_snippets ADD COLUMN IF NOT EXISTS snippet_type TEXT NOT NULL DEFAULT 'memory'`).catch(() => {});
-      await activeDb.execute(sql`ALTER TABLE info_snippets ADD COLUMN IF NOT EXISTS highlights JSONB`).catch(() => {});
+      await getActiveDb().execute(sql`ALTER TABLE info_snippets ADD COLUMN IF NOT EXISTS raw_content TEXT`).catch(() => {});
+      await getActiveDb().execute(sql`ALTER TABLE info_snippets ADD COLUMN IF NOT EXISTS categories JSONB DEFAULT '["quick_note"]'::jsonb`).catch(() => {});
+      await getActiveDb().execute(sql`ALTER TABLE info_snippets ADD COLUMN IF NOT EXISTS snippet_type TEXT NOT NULL DEFAULT 'memory'`).catch(() => {});
+      await getActiveDb().execute(sql`ALTER TABLE info_snippets ADD COLUMN IF NOT EXISTS highlights JSONB`).catch(() => {});
       return 'info_snippets 表创建完成';
     },
   },
@@ -688,7 +699,7 @@ const MIGRATION_STEPS: MigrationStep[] = [
     name: '创建内容模板表 (content_templates)',
     category: 'create',
     execute: async (_targetSchema: string) => {
-      await activeDb.execute(sql`
+      await getActiveDb().execute(sql`
         CREATE TABLE IF NOT EXISTS content_templates (
           id TEXT PRIMARY KEY,
           name TEXT NOT NULL,
@@ -704,10 +715,10 @@ const MIGRATION_STEPS: MigrationStep[] = [
           updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
         )
       `);
-      await activeDb.execute(sql`CREATE INDEX IF NOT EXISTS idx_content_templates_workspace ON content_templates(workspace_id)`);
-      await activeDb.execute(sql`CREATE INDEX IF NOT EXISTS idx_content_templates_platform ON content_templates(platform)`);
-      await activeDb.execute(sql`CREATE INDEX IF NOT EXISTS idx_content_templates_active ON content_templates(is_active, use_count DESC)`);
-      await activeDb.execute(sql`CREATE INDEX IF NOT EXISTS idx_content_templates_style ON content_templates(style_template_id)`);
+      await getActiveDb().execute(sql`CREATE INDEX IF NOT EXISTS idx_content_templates_workspace ON content_templates(workspace_id)`);
+      await getActiveDb().execute(sql`CREATE INDEX IF NOT EXISTS idx_content_templates_platform ON content_templates(platform)`);
+      await getActiveDb().execute(sql`CREATE INDEX IF NOT EXISTS idx_content_templates_active ON content_templates(is_active, use_count DESC)`);
+      await getActiveDb().execute(sql`CREATE INDEX IF NOT EXISTS idx_content_templates_style ON content_templates(style_template_id)`);
       return 'content_templates 表创建完成';
     },
   },
@@ -717,7 +728,7 @@ const MIGRATION_STEPS: MigrationStep[] = [
     name: '创建文章模板表 (article_templates)',
     category: 'create',
     execute: async (_targetSchema: string) => {
-      await activeDb.execute(sql`
+      await getActiveDb().execute(sql`
         CREATE TABLE IF NOT EXISTS article_templates (
           id TEXT PRIMARY KEY,
           name TEXT NOT NULL,
@@ -737,7 +748,7 @@ const MIGRATION_STEPS: MigrationStep[] = [
     name: '创建提醒表 (reminders)',
     category: 'create',
     execute: async (_targetSchema: string) => {
-      await activeDb.execute(sql`
+      await getActiveDb().execute(sql`
         CREATE TABLE IF NOT EXISTS reminders (
           id TEXT PRIMARY KEY,
           snippet_id TEXT NOT NULL,
@@ -747,8 +758,8 @@ const MIGRATION_STEPS: MigrationStep[] = [
           created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
         )
       `);
-      await activeDb.execute(sql`CREATE INDEX IF NOT EXISTS idx_reminders_status ON reminders(status)`);
-      await activeDb.execute(sql`CREATE INDEX IF NOT EXISTS idx_reminders_remind_at ON reminders(remind_at)`);
+      await getActiveDb().execute(sql`CREATE INDEX IF NOT EXISTS idx_reminders_status ON reminders(status)`);
+      await getActiveDb().execute(sql`CREATE INDEX IF NOT EXISTS idx_reminders_remind_at ON reminders(remind_at)`);
       return 'reminders 表创建完成';
     },
   },
@@ -758,7 +769,7 @@ const MIGRATION_STEPS: MigrationStep[] = [
     name: '创建速记哈希表 (snippet_hashes)',
     category: 'create',
     execute: async (_targetSchema: string) => {
-      await activeDb.execute(sql`
+      await getActiveDb().execute(sql`
         CREATE TABLE IF NOT EXISTS snippet_hashes (
           id TEXT PRIMARY KEY,
           snippet_id TEXT NOT NULL,
@@ -767,8 +778,8 @@ const MIGRATION_STEPS: MigrationStep[] = [
           created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
         )
       `);
-      await activeDb.execute(sql`CREATE INDEX IF NOT EXISTS idx_snippet_hashes_sha256 ON snippet_hashes(sha256)`);
-      await activeDb.execute(sql`CREATE INDEX IF NOT EXISTS idx_snippet_hashes_snippet ON snippet_hashes(snippet_id)`);
+      await getActiveDb().execute(sql`CREATE INDEX IF NOT EXISTS idx_snippet_hashes_sha256 ON snippet_hashes(sha256)`);
+      await getActiveDb().execute(sql`CREATE INDEX IF NOT EXISTS idx_snippet_hashes_snippet ON snippet_hashes(snippet_id)`);
       return 'snippet_hashes 表创建完成';
     },
   },
@@ -778,7 +789,7 @@ const MIGRATION_STEPS: MigrationStep[] = [
     name: '创建拆解失败表 (split_failures)',
     category: 'create',
     execute: async (_targetSchema: string) => {
-      await activeDb.execute(sql`
+      await getActiveDb().execute(sql`
         CREATE TABLE IF NOT EXISTS split_failures (
           id TEXT PRIMARY KEY,
           task_id TEXT NOT NULL,
@@ -797,7 +808,7 @@ const MIGRATION_STEPS: MigrationStep[] = [
     name: '创建行业案例库表 (industry_case_library)',
     category: 'create',
     execute: async (_targetSchema: string) => {
-      await activeDb.execute(sql`
+      await getActiveDb().execute(sql`
         CREATE TABLE IF NOT EXISTS industry_case_library (
           id TEXT PRIMARY KEY,
           title TEXT NOT NULL,
@@ -813,9 +824,9 @@ const MIGRATION_STEPS: MigrationStep[] = [
           updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
         )
       `);
-      await activeDb.execute(sql`CREATE INDEX IF NOT EXISTS idx_case_industry ON industry_case_library(industry)`);
-      await activeDb.execute(sql`CREATE INDEX IF NOT EXISTS idx_case_type ON industry_case_library(case_type)`);
-      await activeDb.execute(sql`CREATE INDEX IF NOT EXISTS idx_case_status ON industry_case_library(status)`);
+      await getActiveDb().execute(sql`CREATE INDEX IF NOT EXISTS idx_case_industry ON industry_case_library(industry)`);
+      await getActiveDb().execute(sql`CREATE INDEX IF NOT EXISTS idx_case_type ON industry_case_library(case_type)`);
+      await getActiveDb().execute(sql`CREATE INDEX IF NOT EXISTS idx_case_status ON industry_case_library(status)`);
       return 'industry_case_library 表创建完成';
     },
   },
@@ -838,37 +849,37 @@ const MIGRATION_STEPS: MigrationStep[] = [
       for (const table of tablesNeedWorkspace) {
         try {
           // 检查表是否存在
-          const tableCheck = await activeDb.execute(sql`SELECT table_name FROM information_schema.tables WHERE table_name = ${table}`);
+          const tableCheck = await getActiveDb().execute(sql`SELECT table_name FROM information_schema.tables WHERE table_name = ${table}`);
           if (!Array.isArray(tableCheck) || tableCheck.length === 0) continue;
 
           // 检查是否有 user_id 列
-          const columnCheck = await activeDb.execute(sql`SELECT column_name FROM information_schema.columns WHERE table_name = ${table} AND column_name = 'user_id'`);
+          const columnCheck = await getActiveDb().execute(sql`SELECT column_name FROM information_schema.columns WHERE table_name = ${table} AND column_name = 'user_id'`);
           
           if (Array.isArray(columnCheck) && columnCheck.length > 0) {
             // 检查是否已有 workspace_id 列
-            const wsCheck = await activeDb.execute(sql`SELECT column_name FROM information_schema.columns WHERE table_name = ${table} AND column_name = 'workspace_id'`);
+            const wsCheck = await getActiveDb().execute(sql`SELECT column_name FROM information_schema.columns WHERE table_name = ${table} AND column_name = 'workspace_id'`);
             
             if (Array.isArray(wsCheck) && wsCheck.length > 0) {
               // 已有 workspace_id，迁移数据并删除 user_id
-              await activeDb.execute(sql`UPDATE ${sql.identifier(table)} SET workspace_id = user_id WHERE workspace_id IS NULL OR workspace_id = ''`).catch(() => {});
+              await getActiveDb().execute(sql`UPDATE ${sql.identifier(table)} SET workspace_id = user_id WHERE workspace_id IS NULL OR workspace_id = ''`).catch(() => {});
             } else {
               // 重命名 user_id → workspace_id
               try {
-                await activeDb.execute(sql`ALTER TABLE ${sql.identifier(table)} RENAME COLUMN user_id TO workspace_id`);
+                await getActiveDb().execute(sql`ALTER TABLE ${sql.identifier(table)} RENAME COLUMN user_id TO workspace_id`);
               } catch {
                 // 重命名失败，添加新列
-                await activeDb.execute(sql`ALTER TABLE ${sql.identifier(table)} ADD COLUMN IF NOT EXISTS workspace_id TEXT`);
+                await getActiveDb().execute(sql`ALTER TABLE ${sql.identifier(table)} ADD COLUMN IF NOT EXISTS workspace_id TEXT`);
               }
             }
             // 创建索引
             try {
-              await activeDb.execute(sql`CREATE INDEX IF NOT EXISTS ${sql.identifier(`idx_${table}_workspace_id`)} ON ${sql.identifier(table)}(workspace_id)`);
+              await getActiveDb().execute(sql`CREATE INDEX IF NOT EXISTS ${sql.identifier(`idx_${table}_workspace_id`)} ON ${sql.identifier(table)}(workspace_id)`);
             } catch { /* 索引已存在 */ }
           } else {
             // 没有 user_id，确保有 workspace_id
-            await activeDb.execute(sql`ALTER TABLE ${sql.identifier(table)} ADD COLUMN IF NOT EXISTS workspace_id TEXT`).catch(() => {});
+            await getActiveDb().execute(sql`ALTER TABLE ${sql.identifier(table)} ADD COLUMN IF NOT EXISTS workspace_id TEXT`).catch(() => {});
             try {
-              await activeDb.execute(sql`CREATE INDEX IF NOT EXISTS ${sql.identifier(`idx_${table}_workspace_id`)} ON ${sql.identifier(table)}(workspace_id)`);
+              await getActiveDb().execute(sql`CREATE INDEX IF NOT EXISTS ${sql.identifier(`idx_${table}_workspace_id`)} ON ${sql.identifier(table)}(workspace_id)`);
             } catch { /* 索引已存在 */ }
           }
         } catch (e) {
@@ -886,7 +897,7 @@ const MIGRATION_STEPS: MigrationStep[] = [
     category: 'init',
     execute: async (_targetSchema: string) => {
       // 检查是否已有模板
-      const existing = await activeDb.execute(sql`SELECT COUNT(*) as count FROM style_templates`);
+      const existing = await getActiveDb().execute(sql`SELECT COUNT(*) as count FROM style_templates`);
       const count = Number((existing as any)[0]?.count ?? 0);
       if (count > 0) {
         return `已有 ${count} 个模板，跳过初始化`;
@@ -913,11 +924,12 @@ function createMigrationClient(targetSchema: string) {
   
   const rawClient = postgres(DATABASE_URL, {
     ssl: 'require',
-    max: 1, // 迁移只需要一个连接
+    max: 2, // P2-3: 迁移通常串行，2 连接可兼顾并行步骤（如克隆结构）
     idle_timeout: 10,
     connection: {
       options: `-c search_path=${targetSchema}`,
     },
+    // eslint-disable-next-line @typescript-eslint/no-empty-object-type -- postgres.js requires generic parameter
   } as postgres.Options<{}>);
   const migrationDb = drizzle(rawClient, { schema });
   
@@ -934,6 +946,14 @@ export async function GET(request: Request) {
 
   // 克隆模式：将已有 schema 的表结构复制到目标 schema
   if (cloneFrom) {
+    // 🔴 P1-4 修复：检查源 Schema 是否存在
+    const sourceExists = await checkSchemaExists(cloneFrom);
+    if (!sourceExists) {
+      return NextResponse.json({
+        mode: 'clone',
+        error: `源 schema "${cloneFrom}" 不存在，请先执行迁移创建表`,
+      }, { status: 400 });
+    }
     try {
       await cloneSchemaStructure(cloneFrom, targetSchema);
       return NextResponse.json({
@@ -997,43 +1017,55 @@ export async function GET(request: Request) {
       console.warn('[migrate] 无法验证迁移连接 search_path:', e instanceof Error ? e.message : String(e));
     }
     
-    _setActiveDb(migrationDb);
+    // 🔴 P0-1 修复：使用 AsyncLocalStorage 包裹所有迁移步骤，请求级隔离
+    // 不再使用模块级 _setActiveDb/_resetActiveDb，消除并发竞态条件
+    console.log(`[migrate] AsyncLocalStorage 上下文已建立，开始执行 ${remainingSteps.length} 个步骤`);
     
-    // 🔴 验证 activeDb 引用是否正确切换
-    console.log(`[migrate] activeDb 切换完成，开始执行 ${remainingSteps.length} 个步骤`);
+    // 🔴 P1-2 修复：连续失败次数上限，防止级联错误
+    const MAX_CONSECUTIVE_FAILURES = 3;
+    let consecutiveFailures = 0;
     
     // 执行第一个步骤后验证表位置
     let firstStepVerified = false;
+    
     try {
-      for (const step of remainingSteps) {
-        const startTime = Date.now();
-        try {
-          const message = await step.execute(targetSchema);
-          const duration = Date.now() - startTime;
-          results.push({ id: step.id, name: step.name, status: 'success', message, duration });
-          console.log(`[migrate] ✅ ${step.name} (${duration}ms)`);
+      await withActiveDb(migrationDb, async () => {
+        for (const step of remainingSteps) {
+          const startTime = Date.now();
+          try {
+            const message = await step.execute(targetSchema);
+            const duration = Date.now() - startTime;
+            results.push({ id: step.id, name: step.name, status: 'success', message, duration });
+            console.log(`[migrate] ✅ ${step.name} (${duration}ms)`);
+            consecutiveFailures = 0; // 成功后重置计数
           
-          // 首个 create 步骤后验证表位置
-          if (!firstStepVerified && step.category === 'create') {
-            firstStepVerified = true;
-            try {
-              const locResult = await activeDb.execute(sql`SELECT table_schema, COUNT(*) as cnt FROM information_schema.tables WHERE table_schema IN ('dev_schema', 'public') AND table_type = 'BASE TABLE' GROUP BY table_schema`);
-              console.log(`[migrate] 表位置验证:`, JSON.stringify(locResult));
-            } catch (e) {
-              console.warn('[migrate] 表位置验证失败:', e instanceof Error ? e.message : String(e));
+            // 首个 create 步骤后验证表位置
+            if (!firstStepVerified && step.category === 'create') {
+              firstStepVerified = true;
+              try {
+                const locResult = await getActiveDb().execute(sql`SELECT table_schema, COUNT(*) as cnt FROM information_schema.tables WHERE table_schema IN ('dev_schema', 'public') AND table_type = 'BASE TABLE' GROUP BY table_schema`);
+                console.log(`[migrate] 表位置验证:`, JSON.stringify(locResult));
+              } catch (e) {
+                console.warn('[migrate] 表位置验证失败:', e instanceof Error ? e.message : String(e));
+              }
+            }
+          } catch (error) {
+            const duration = Date.now() - startTime;
+            const message = error instanceof Error ? error.message : String(error);
+            results.push({ id: step.id, name: step.name, status: 'failed', message, duration });
+            failed++;
+            consecutiveFailures++;
+            console.warn(`[migrate] ❌ ${step.name}: ${message}`);
+            
+            // 🔴 P1-2: 连续失败次数达到上限，停止迁移
+            if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
+              console.error(`[migrate] 连续失败 ${consecutiveFailures} 次，停止迁移`);
+              break;
             }
           }
-        } catch (error) {
-          const duration = Date.now() - startTime;
-          const message = error instanceof Error ? error.message : String(error);
-          results.push({ id: step.id, name: step.name, status: 'failed', message, duration });
-          failed++;
-          console.warn(`[migrate] ❌ ${step.name}: ${message}`);
-          // 继续执行后续步骤（不中断）
         }
-      }
+      });
     } finally {
-      _resetActiveDb();
       await close();
     }
   }

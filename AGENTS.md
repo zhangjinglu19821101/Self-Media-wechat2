@@ -1695,3 +1695,34 @@
      - `pnpm db:migrate`: 仅执行迁移
      - `pnpm start:dev-schema`: 开发模式启动
      - `pnpm start:prod-schema`: 生产模式启动
+
+81. **Schema 隔离技术评审修复**: 根据技术专家评审报告修复 P0/P1/P2 级问题
+   - **P0-1 修复（activeDb 竞态条件）**:
+     - 问题：模块级 `let activeDb` 变量在并发迁移请求时存在竞态条件
+     - 修复：使用 `AsyncLocalStorage` 实现请求级 db 引用隔离
+     - 新增 `migrationDbStore` / `getActiveDb()` / `withActiveDb()` 函数
+     - 迁移步骤在 `withActiveDb()` 包裹下执行，每个请求独立上下文
+   - **P0-2 修复（硬编码 Schema 名称）**:
+     - 问题：Schema 名称硬编码为 `dev_schema`/`public`，无法自定义
+     - 修复：支持环境变量 `DEV_SCHEMA`/`PROD_SCHEMA` 覆盖默认值
+   - **P1-1 修复（环境变量冲突）**:
+     - 问题：`.env` 和 `.env.local` 同时定义 `COZE_PROJECT_ENV`
+     - 修复：`.env` 中注释掉该配置，实际值在 `.env.local` 中设置
+   - **P1-2 修复（迁移级联失败）**:
+     - 问题：迁移步骤失败后继续执行，可能产生级联错误
+     - 修复：新增 `MAX_CONSECUTIVE_FAILURES=3`，连续失败达到上限后停止迁移
+   - **P1-3 修复（truncateSchema 安全防护）**:
+     - 问题：仅检查 `PROJECT_ENV`，未检查当前 schema
+     - 修复：新增双重安全检查（只能清空当前 schema + 禁止清空 public）
+   - **P1-4 修复（cloneFrom 缺少检查）**:
+     - 问题：克隆模式未检查源 schema 是否存在
+     - 修复：调用 `checkSchemaExists()` 验证，不存在时返回 400 错误
+   - **P2-1 修复（注释不一致）**:
+     - 修复：PROD 模式注释改为"不设置 connection.options（PostgreSQL 默认使用 public）"
+   - **P2-2 修复（类型断言）**:
+     - 问题：使用 `as Record<string, unknown>` 绕过类型检查
+     - 修复：postgres.js 类型已支持 `connection: Partial<ConnectionParameters>`，移除不必要的断言
+   - **P2-3 修复（迁移连接池大小）**:
+     - 修复：从 `max: 1` 改为 `max: 2`，支持并行步骤（如克隆结构）
+   - **P2-5 修复（pool stats 类型安全）**:
+     - 修复：使用精确类型 `{ pool?: { size?: number } }` 替代 `as any`
