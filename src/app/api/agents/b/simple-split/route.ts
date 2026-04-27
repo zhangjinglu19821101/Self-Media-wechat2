@@ -413,7 +413,7 @@ export async function POST(request: NextRequest) {
             }).returning();
 
             insertedSubTasks.push(inserted[0]);
-            console.log(`🔵 [Agent B 简化拆解] [适配组-${adaptAcc.platformLabel}] 已插入子任务 ${i + 1}/${adaptationSteps.length}: ${taskTitleForDb} (blocked)`);
+            console.log(`🔵 [Agent B 简化拆解] [适配组-${adaptAcc.platformLabel}] 已插入子任务 ${i + 1}/${adaptationSteps.length}: ${taskTitleForDb} (${taskStatus})`);
           }
         }
       }); // 事务结束

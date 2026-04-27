@@ -7492,10 +7492,11 @@ export class SubtaskExecutionEngine {
 
         if (baseArticleTasks.length === 0) continue;
 
-        // 🔥 新逻辑：预览修改节点已完成 = 定稿点已到达
-        // 业务含义：用户确认预览后，文章内容已确定，适配组可以开始工作
+        // 🔥 修复：预览修改节点仅 completed 才视为定稿点
+        // waiting_user 只是等待用户操作，用户可能修改文章内容，不应过早解锁适配组
+        // 否则适配组会基于未确认的文章内容生成适配版本，用户修改后适配版本就作废了
         const previewEditTask = baseArticleTasks.find(
-          t => isVirtualExecutor(t.fromParentsExecutor) && (t.status === 'completed' || t.status === 'waiting_user')
+          t => isVirtualExecutor(t.fromParentsExecutor) && t.status === 'completed'
         );
 
         if (previewEditTask) {
