@@ -38,11 +38,11 @@ export async function GET(request: NextRequest) {
     // 构建查询条件
     const conditions = [];
 
-    // 数据可见性：用户的私有素材 + 系统预置素材（对所有用户可见）
+    // 数据可见性：用户私有素材 + 系统预置素材
     conditions.push(
       or(
-        eq(materialLibrary.workspaceId, workspaceId),
-        eq(materialLibrary.isSystem, true)
+        eq(materialLibrary.workspaceId, workspaceId),      // 用户私有
+        eq(materialLibrary.workspaceId, 'system')          // 系统预置
       )!
     );
 
