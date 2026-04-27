@@ -12,12 +12,17 @@ cd "${COZE_WORKSPACE_PATH}"
 # 加载开发环境变量（如果存在）
 if [ -f ".env.local" ]; then
     echo "[dev.sh] 加载 .env.local 开发环境配置"
-    export $(grep -v '^#' .env.local | xargs)
+    # 使用 source 加载，支持带空格的值
+    set -a  # 自动导出所有变量
+    source .env.local
+    set +a
+    echo "[dev.sh] COZE_PROJECT_ENV=${COZE_PROJECT_ENV}"
 fi
 
 # 设置开发环境变量
 export NODE_ENV="development"
-export COZE_PROJECT_ENV="DEV"
+# 🔴 不再强制覆盖，尊重 .env.local 中的配置
+export COZE_PROJECT_ENV="${COZE_PROJECT_ENV:-DEV}"
 export PORT="${PORT:-5000}"
 
 echo "[dev.sh] 启动开发服务器..."
