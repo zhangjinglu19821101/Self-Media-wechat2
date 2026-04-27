@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-import { materialLibrary } from '@/lib/db/schema/material-library';
+import { materialLibrary, SYSTEM_WORKSPACE_ID } from '@/lib/db/schema/material-library';
 import { infoSnippets } from '@/lib/db/schema/info-snippets';
 import { or, like, desc, and, eq, sql, notInArray } from 'drizzle-orm';
 import { getWorkspaceId } from '@/lib/auth/context';
@@ -182,6 +182,14 @@ function escapeLikePattern(str: string): string {
   return str.replace(/[%_\\]/g, '\\$&');
 }
 
+// ─── 可见性条件：用户workspace OR 系统预置 ───
+function workspaceVisible(workspaceId: string) {
+  return or(
+    eq(materialLibrary.workspaceId, workspaceId),
+    eq(materialLibrary.workspaceId, SYSTEM_WORKSPACE_ID)
+  );
+}
+
 // ─── 路径1：关键词匹配 ───
 async function recallByKeywords(workspaceId: string, keywords: string[]) {
   if (keywords.length === 0) return [];
@@ -194,8 +202,8 @@ async function recallByKeywords(workspaceId: string, keywords: string[]) {
 
   const whereClause =
     conditions.length === 1
-      ? and(eq(materialLibrary.status, 'active'), eq(materialLibrary.workspaceId, workspaceId), conditions[0])
-      : and(eq(materialLibrary.status, 'active'), eq(materialLibrary.workspaceId, workspaceId), or(...conditions));
+      ? and(eq(materialLibrary.status, 'active'), workspaceVisible(workspaceId), conditions[0])
+      : and(eq(materialLibrary.status, 'active'), workspaceVisible(workspaceId), or(...conditions));
 
   return db
     .select({
@@ -242,7 +250,7 @@ async function recallByTags(workspaceId: string, tagCandidates: string[]) {
       useCount: materialLibrary.useCount,
     })
     .from(materialLibrary)
-    .where(and(eq(materialLibrary.status, 'active'), eq(materialLibrary.workspaceId, workspaceId), or(...conditions)))
+    .where(and(eq(materialLibrary.status, 'active'), workspaceVisible(workspaceId), or(...conditions)))
     .limit(10);
 }
 
@@ -261,7 +269,7 @@ async function recallByHotness(workspaceId: string) {
       useCount: materialLibrary.useCount,
     })
     .from(materialLibrary)
-    .where(and(eq(materialLibrary.status, 'active'), eq(materialLibrary.workspaceId, workspaceId)))
+    .where(and(eq(materialLibrary.status, 'active'), workspaceVisible(workspaceId)))
     .orderBy(desc(materialLibrary.useCount))
     .limit(3);
 }

@@ -7,6 +7,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { sql } from 'drizzle-orm';
 import { getWorkspaceId } from '@/lib/auth/context';
+import { SYSTEM_WORKSPACE_ID } from '@/lib/db/schema/material-library';
 
 /**
  * GET /api/materials/tags
@@ -28,13 +29,13 @@ export async function GET(request: NextRequest) {
                      tagType === 'emotion' ? 'emotion_tags' :
                      'topic_tags';
 
-    // 使用jsonb_array_elements_text展开JSONB数组 + workspace 隔离
+    // 使用jsonb_array_elements_text展开JSONB数组 + workspace 可见性（用户workspace OR 系统预置）
     let query: string;
     if (materialType) {
       query = `
         SELECT tag, count(*) as count 
         FROM material_library, jsonb_array_elements_text(${tagColumnName}) as tag 
-        WHERE status = 'active' AND type = '${materialType}' AND workspace_id = '${workspaceId}'
+        WHERE status = 'active' AND type = '${materialType}' AND (workspace_id = '${workspaceId}' OR workspace_id = '${SYSTEM_WORKSPACE_ID}')
         GROUP BY tag 
         ORDER BY count DESC 
         LIMIT 50
@@ -43,7 +44,7 @@ export async function GET(request: NextRequest) {
       query = `
         SELECT tag, count(*) as count 
         FROM material_library, jsonb_array_elements_text(${tagColumnName}) as tag 
-        WHERE status = 'active' AND workspace_id = '${workspaceId}'
+        WHERE status = 'active' AND (workspace_id = '${workspaceId}' OR workspace_id = '${SYSTEM_WORKSPACE_ID}')
         GROUP BY tag 
         ORDER BY count DESC 
         LIMIT 50

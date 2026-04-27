@@ -14,7 +14,7 @@
  */
 
 import { db } from '@/lib/db';
-import { materialLibrary, materialUsageLog } from '@/lib/db/schema/material-library';
+import { materialLibrary, materialUsageLog, SYSTEM_WORKSPACE_ID } from '@/lib/db/schema/material-library';
 import { styleAssets, feedbackAssets, coreAnchorAssets } from '@/lib/db/schema/digital-assets';
 import {
   eq,
@@ -395,7 +395,8 @@ export class DigitalAssetService {
   async getMaterials(
     keyword?: string,
     materialType?: string,
-    limit = 20
+    limit = 20,
+    workspaceId?: string
   ): Promise<{
     id: string;
     title: string;
@@ -409,6 +410,14 @@ export class DigitalAssetService {
     createdAt: Date;
   }[]> {
     try {
+      // 可见性条件：指定workspace时，用户workspace OR 系统预置
+      const visibilityCondition = workspaceId
+        ? or(
+            eq(materialLibrary.workspaceId, workspaceId),
+            eq(materialLibrary.workspaceId, SYSTEM_WORKSPACE_ID)
+          )
+        : undefined;
+
       let whereCondition;
 
       if (keyword && materialType) {
@@ -419,6 +428,7 @@ export class DigitalAssetService {
             like(materialLibrary.content, `%${keyword}%`)
           ),
           eq(materialLibrary.type, materialType),
+          visibilityCondition,
         );
       } else if (keyword) {
         whereCondition = and(
@@ -427,14 +437,19 @@ export class DigitalAssetService {
             like(materialLibrary.title, `%${keyword}%`),
             like(materialLibrary.content, `%${keyword}%`)
           ),
+          visibilityCondition,
         );
       } else if (materialType) {
         whereCondition = and(
           eq(materialLibrary.status, 'active'),
           eq(materialLibrary.type, materialType),
+          visibilityCondition,
         );
       } else {
-        whereCondition = eq(materialLibrary.status, 'active');
+        whereCondition = and(
+          eq(materialLibrary.status, 'active'),
+          visibilityCondition,
+        );
       }
 
       const results = await db
@@ -477,7 +492,7 @@ export class DigitalAssetService {
         this.getUserExclusiveRules(workspaceId),
         this.getStyleRules(workspaceId, templateId), // 🔥 传递 templateId
         this.getSampleArticles(),
-        this.getMaterials(),
+        this.getMaterials(undefined, undefined, 20, workspaceId),
       ]);
 
     return {
@@ -738,9 +753,8 @@ export class DigitalAssetService {
         id: crypto.randomUUID(),
         materialId,
         articleId: options.articleId ?? null,
-        articleTitle: options.articleTitle ?? null,
-        usedPosition: options.usedPosition ?? null,
-        effectType: options.effectType ?? null,
+        position: options.usedPosition ?? null,
+        effectiveness: options.effectType ?? null,
       });
 
       await db

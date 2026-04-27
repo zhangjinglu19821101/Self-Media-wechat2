@@ -7,8 +7,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getWorkspaceId } from '@/lib/auth/context';
 import { db } from '@/lib/db';
-import { materialLibrary } from '@/lib/db/schema/material-library';
-import { eq, and } from 'drizzle-orm';
+import { materialLibrary, SYSTEM_WORKSPACE_ID } from '@/lib/db/schema/material-library';
+import { eq, and, or } from 'drizzle-orm';
 import type { MaterialFormat } from '@/lib/services/unified-search/types';
 
 export async function POST(request: NextRequest) {
@@ -21,14 +21,17 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: '缺少素材标题或内容' }, { status: 400 });
     }
 
-    // 查重：同标题+同来源URL（防止重复入库）
+    // 查重：同标题+同来源URL（防止重复入库，含系统预置素材查重）
     const sourceUrl = materialFormat.sourceUrl || '';
     const existing = await db
       .select({ id: materialLibrary.id })
       .from(materialLibrary)
       .where(
         and(
-          eq(materialLibrary.workspaceId, workspaceId),
+          or(
+            eq(materialLibrary.workspaceId, workspaceId),
+            eq(materialLibrary.workspaceId, SYSTEM_WORKSPACE_ID)
+          ),
           eq(materialLibrary.title, materialFormat.title),
           eq(materialLibrary.sourceUrl, sourceUrl)
         )

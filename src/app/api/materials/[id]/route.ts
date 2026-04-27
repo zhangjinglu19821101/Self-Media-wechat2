@@ -7,8 +7,8 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-import { materialLibrary, materialUsageLog } from '@/lib/db/schema/material-library';
-import { eq, desc, sql, and } from 'drizzle-orm';
+import { materialLibrary, materialUsageLog, SYSTEM_WORKSPACE_ID } from '@/lib/db/schema/material-library';
+import { eq, desc, sql, and, or } from 'drizzle-orm';
 import { getWorkspaceId } from '@/lib/auth/context';
 
 interface RouteParams {
@@ -24,11 +24,19 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     const { id } = await params;
     const workspaceId = await getWorkspaceId(request);
 
-    // 获取素材详情 - 使用sql处理UUID类型 + workspace 隔离
+    // 获取素材详情 - 使用sql处理UUID类型 + 可见性：用户workspace OR 系统预置
     const [material] = await db
       .select()
       .from(materialLibrary)
-      .where(and(sql`${materialLibrary.id} = ${id}::uuid`, eq(materialLibrary.workspaceId, workspaceId)));
+      .where(
+        and(
+          sql`${materialLibrary.id} = ${id}::uuid`,
+          or(
+            eq(materialLibrary.workspaceId, workspaceId),
+            eq(materialLibrary.workspaceId, SYSTEM_WORKSPACE_ID)
+          )
+        )
+      );
 
     if (!material) {
       return NextResponse.json({
@@ -37,13 +45,18 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       }, { status: 404 });
     }
 
-    // 获取使用记录（最近10条）
-    const usageLogs = await db
-      .select()
-      .from(materialUsageLog)
-      .where(sql`${materialUsageLog.materialId} = ${id}::uuid`)
-      .orderBy(desc(materialUsageLog.createdAt))
-      .limit(10);
+    // 获取使用记录（最近10条，表可能不存在需容错）
+    let usageLogs: any[] = [];
+    try {
+      usageLogs = await db
+        .select()
+        .from(materialUsageLog)
+        .where(sql`${materialUsageLog.materialId} = ${id}::uuid`)
+        .orderBy(desc(materialUsageLog.createdAt))
+        .limit(10);
+    } catch {
+      // material_usage_log 表可能未创建，忽略错误
+    }
 
     return NextResponse.json({
       success: true,
@@ -71,17 +84,33 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
     const workspaceId = await getWorkspaceId(request);
     const body = await request.json();
 
-    // 检查素材是否存在（含 workspace 隔离）
+    // 检查素材是否存在（含可见性：用户workspace OR 系统预置）
     const [existing] = await db
       .select()
       .from(materialLibrary)
-      .where(and(sql`${materialLibrary.id} = ${id}::uuid`, eq(materialLibrary.workspaceId, workspaceId)));
+      .where(
+        and(
+          sql`${materialLibrary.id} = ${id}::uuid`,
+          or(
+            eq(materialLibrary.workspaceId, workspaceId),
+            eq(materialLibrary.workspaceId, SYSTEM_WORKSPACE_ID)
+          )
+        )
+      );
 
     if (!existing) {
       return NextResponse.json({
         success: false,
         error: '素材不存在'
       }, { status: 404 });
+    }
+
+    // 系统预置素材禁止修改
+    if (existing.workspaceId === SYSTEM_WORKSPACE_ID) {
+      return NextResponse.json({
+        success: false,
+        error: '系统预置素材不可修改'
+      }, { status: 403 });
     }
 
     // 构建更新数据
@@ -135,17 +164,33 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
     const { searchParams } = new URL(request.url);
     const hard = searchParams.get('hard') === 'true';
 
-    // 检查素材是否存在（含 workspace 隔离）
+    // 检查素材是否存在（含可见性：用户workspace OR 系统预置）
     const [existing] = await db
       .select()
       .from(materialLibrary)
-      .where(and(sql`${materialLibrary.id} = ${id}::uuid`, eq(materialLibrary.workspaceId, workspaceId)));
+      .where(
+        and(
+          sql`${materialLibrary.id} = ${id}::uuid`,
+          or(
+            eq(materialLibrary.workspaceId, workspaceId),
+            eq(materialLibrary.workspaceId, SYSTEM_WORKSPACE_ID)
+          )
+        )
+      );
 
     if (!existing) {
       return NextResponse.json({
         success: false,
         error: '素材不存在'
       }, { status: 404 });
+    }
+
+    // 系统预置素材禁止删除
+    if (existing.workspaceId === SYSTEM_WORKSPACE_ID) {
+      return NextResponse.json({
+        success: false,
+        error: '系统预置素材不可删除'
+      }, { status: 403 });
     }
 
     if (hard) {
