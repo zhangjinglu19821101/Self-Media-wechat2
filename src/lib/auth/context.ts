@@ -102,7 +102,7 @@ export async function isSuperAdmin(request?: NextRequest): Promise<boolean> {
  * 获取当前工作空间 ID
  * 
  * 优先级：
- * 1. 请求头 x-workspace-id（含 Bearer Token 注入）
+ * 1. 请求头 x-workspace-id（含 Bearer Token 注入，非 'default-workspace'）
  * 2. URL 参数 workspaceId
  * 3. 用户的默认个人工作空间
  * 4. 兜底 'default-workspace'
@@ -111,7 +111,8 @@ export async function getWorkspaceId(request?: NextRequest): Promise<string> {
   // 1. 从请求中提取（含 Bearer Token 注入的 x-workspace-id）
   if (request) {
     const wsId = extractWorkspaceId(request);
-    if (wsId) return wsId;
+    // 🔴 修复：'default-workspace' 是兜底值，跳过它，继续从 session 获取
+    if (wsId && wsId !== 'default-workspace') return wsId;
   }
 
   // 2. Bearer Token 的 workspaceId 已在步骤1中通过 x-workspace-id 获取
