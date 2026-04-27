@@ -1039,7 +1039,8 @@ export default function HomePage() {
     setMaterialSearchLoading(true);
     try {
       const data: any = await apiGet(`/api/materials?search=${encodeURIComponent(query)}&limit=10`);
-      setMaterialSearchResults(data?.data || []);
+      // API 返回 { success: true, data: { list: [...], pagination: {...} } }
+      setMaterialSearchResults(Array.isArray(data?.data?.list) ? data.data.list : Array.isArray(data?.data) ? data.data : []);
     } catch (error) {
       console.error('搜索素材失败:', error);
     } finally {
