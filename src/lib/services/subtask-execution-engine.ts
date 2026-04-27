@@ -894,6 +894,9 @@ export class SubtaskExecutionEngine {
         }))
       });
 
+      // 🏥 【自愈】检查并解锁应该被解锁但被阻塞的适配组任务
+      await this.healBlockedAdaptationGroups();
+
       if (pendingTasks.length === 0) {
         console.log('[SubtaskEngine] 没有待执行任务，结束');
         console.log('[SubtaskEngine] 🔴🔴🔴 ========== 子任务引擎执行结束（无任务） ========== 🔴🔴🔴');
@@ -4950,11 +4953,14 @@ export class SubtaskExecutionEngine {
           )
           .orderBy(agentSubTasks.orderIndex);
 
-        // 提取基础文章内容：优先找写作 Agent 的 result_text
+        // 提取基础文章内容：优先找 user_preview_edit 的 result_text（用户确认后的最新版本）
+        // 其次找写作 Agent 的 result_text（原始版本，兜底）
         let baseArticleContent = '';
         let baseArticleTitle = '';
+        
+        // 🔥 优先级1：user_preview_edit 节点（用户确认后的最新版本）
         for (const baseTask of baseArticleTasks) {
-          if (isWritingAgent(baseTask.fromParentsExecutor)) {
+          if (isVirtualExecutor(baseTask.fromParentsExecutor)) {
             let content = baseTask.resultText || '';
             if (!content && baseTask.resultData) {
               content = this.extractResultTextFromResultData(baseTask.resultData, baseTask.fromParentsExecutor);
@@ -4962,12 +4968,34 @@ export class SubtaskExecutionEngine {
             if (content) {
               baseArticleContent = content;
               baseArticleTitle = baseTask.taskTitle || '基础文章';
-              console.log('[SubtaskEngine] 🔥 找到基础文章内容，长度:', content.length, {
+              console.log('[SubtaskEngine] 🔥 找到用户确认后的基础文章（预览修改节点），长度:', content.length, {
                 baseTaskId: baseTask.id,
                 orderIndex: baseTask.orderIndex,
                 executor: baseTask.fromParentsExecutor,
               });
               break;
+            }
+          }
+        }
+        
+        // 🔥 优先级2：写作 Agent 的 result_text（原始版本，兜底）
+        if (!baseArticleContent) {
+          for (const baseTask of baseArticleTasks) {
+            if (isWritingAgent(baseTask.fromParentsExecutor)) {
+              let content = baseTask.resultText || '';
+              if (!content && baseTask.resultData) {
+                content = this.extractResultTextFromResultData(baseTask.resultData, baseTask.fromParentsExecutor);
+              }
+              if (content) {
+                baseArticleContent = content;
+                baseArticleTitle = baseTask.taskTitle || '基础文章';
+                console.log('[SubtaskEngine] 🔥 找到基础文章内容（写作Agent），长度:', content.length, {
+                  baseTaskId: baseTask.id,
+                  orderIndex: baseTask.orderIndex,
+                  executor: baseTask.fromParentsExecutor,
+                });
+                break;
+              }
             }
           }
         }
@@ -7237,9 +7265,11 @@ export class SubtaskExecutionEngine {
   /**
    * 🔥🔥🔥 两阶段架构：基础文章定稿后解锁适配组
    *
-   * 触发条件：
-   * 1. 任务属于基础文章组（metadata.phase === 'base_article'）
-   * 2. 任务是写作 Agent（insurance-d）完成合规整改（orderIndex >= 6）
+   * 触发条件（满足任一）：
+   * 1. 用户预览修改节点（user_preview_edit）确认 → 定稿点（优先）
+   *    - 用户确认预览后，文章内容已确定，其他平台可并行开始适配
+   *    - 后续步骤（合规校验/整改/上传）只是打磨发布，不阻塞适配
+   * 2. 非预览修改节点完成，且 orderIndex >= maxWritingOrderIndex（兜底）
    *
    * 解锁逻辑：
    * 1. 按 multiPlatformGroupId 查找所有 blocked 的适配组任务
@@ -7278,39 +7308,53 @@ export class SubtaskExecutionEngine {
       }
       if (!multiPlatformGroupId) return;
 
-      // 定稿点判断：取 base_article 组中 max order_index 作为定稿点
+      // 定稿点判断：用户预览修改节点确认 = 定稿点
+      // 业务逻辑：用户确认预览后，文章内容已确定，其他平台可以开始适配
+      // 后续步骤（合规校验、合规整改、上传）只是打磨发布，不影响适配
       let isFinalizationPoint = false;
-      try {
-        const baseArticleTasks = await db
-          .select({ orderIndex: agentSubTasks.orderIndex })
-          .from(agentSubTasks)
-          .where(
-            and(
-              sql`${agentSubTasks.metadata}->>'multiPlatformGroupId' = ${multiPlatformGroupId}`,
-              sql`${agentSubTasks.metadata}->>'phase' = 'base_article'`
-            )
-          );
-        const writingOrderIndices = baseArticleTasks
-          .map(t => t.orderIndex)
-          .filter(idx => idx !== null && idx >= 2);
-        const maxWritingOrderIndex = writingOrderIndices.length > 0
-          ? Math.max(...writingOrderIndices)
-          : 6;
-        // 定稿点：触发任务的 order_index >= 组内最大 order_index
-        isFinalizationPoint = task.orderIndex >= maxWritingOrderIndex;
 
-        if (!isFinalizationPoint) {
-          console.log('[SubtaskEngine] 🔥 基础文章组任务完成，但尚未到达定稿点', {
-            orderIndex: task.orderIndex,
-            maxWritingOrderIndex,
-            taskId: task.id,
-          });
-          return;
+      // 🔥 核心判断：触发任务是 user_preview_edit 虚拟执行器 → 即为定稿点
+      if (isVirtualExecutor(task.fromParentsExecutor)) {
+        isFinalizationPoint = true;
+        console.log('[SubtaskEngine] 🔥🔥🔥 预览修改节点确认，视为定稿点，触发适配组解锁', {
+          taskId: task.id,
+          orderIndex: task.orderIndex,
+          executor: task.fromParentsExecutor,
+          multiPlatformGroupId,
+        });
+      } else {
+        // 兜底：非预览修改节点，使用动态定稿点计算（如用户通过"指令已完成"直接完成最后一步）
+        try {
+          const baseArticleTasks = await db
+            .select({ orderIndex: agentSubTasks.orderIndex, fromParentsExecutor: agentSubTasks.fromParentsExecutor })
+            .from(agentSubTasks)
+            .where(
+              and(
+                sql`${agentSubTasks.metadata}->>'multiPlatformGroupId' = ${multiPlatformGroupId}`,
+                sql`${agentSubTasks.metadata}->>'phase' = 'base_article'`
+              )
+            );
+          const writingOrderIndices = baseArticleTasks
+            .filter(t => t.orderIndex !== null && t.orderIndex >= 2 && !isVirtualExecutor(t.fromParentsExecutor))
+            .map(t => t.orderIndex);
+          const maxWritingOrderIndex = writingOrderIndices.length > 0
+            ? Math.max(...writingOrderIndices)
+            : 6;
+          isFinalizationPoint = task.orderIndex >= maxWritingOrderIndex;
+
+          if (!isFinalizationPoint) {
+            console.log('[SubtaskEngine] 🔥 基础文章组任务完成，但尚未到达定稿点', {
+              orderIndex: task.orderIndex,
+              maxWritingOrderIndex,
+              taskId: task.id,
+            });
+            return;
+          }
+        } catch (err) {
+          console.warn('[SubtaskEngine] ⚠️ 定稿点动态计算失败，降级为 orderIndex >= 4:', err);
+          isFinalizationPoint = task.orderIndex >= 4;
+          if (!isFinalizationPoint) return;
         }
-      } catch (err) {
-        console.warn('[SubtaskEngine] ⚠️ 定稿点动态计算失败，降级为 orderIndex >= 6:', err);
-        isFinalizationPoint = task.orderIndex >= 6;
-        if (!isFinalizationPoint) return;
       }
 
       console.log('[SubtaskEngine] 🔥🔥🔥 基础文章定稿点已到达，开始解锁适配组', {
@@ -7395,6 +7439,147 @@ export class SubtaskExecutionEngine {
     } catch (error) {
       console.error('[SubtaskEngine] 🔥 解锁适配组失败（不影响基础文章流程）:', error);
       // 不影响基础文章的主流程
+    }
+  }
+
+  /**
+   * 【自愈】检查并解锁应该被解锁但被阻塞的适配组任务
+   *
+   * 场景：当 unlockAdaptationGroupsIfNeeded 因代码 bug 未被触发时（如定稿点计算包含虚拟执行器），
+   * 适配组会永远处于 blocked 状态。此自愈逻辑每次引擎执行时扫描一次，自动修复此类问题。
+   *
+   * 判断逻辑：
+   * 1. 查询所有 blocked 且 phase='platform_adaptation' 的任务
+   * 2. 对每个任务，找到同 multiPlatformGroupId 的基础文章组
+   * 3. 计算定稿点（排除虚拟执行器）
+   * 4. 如果定稿点任务已完成或 waiting_user，则解锁该 blocked 任务
+   */
+  private async healBlockedAdaptationGroups() {
+    try {
+      const blockedTasks = await db
+        .select()
+        .from(agentSubTasks)
+        .where(
+          and(
+            eq(agentSubTasks.status, 'blocked'),
+            sql`${agentSubTasks.metadata}->>'phase' = 'platform_adaptation'`
+          )
+        );
+
+      if (blockedTasks.length === 0) return;
+
+      console.log('[SubtaskEngine] 🏥 发现 blocked 适配组任务:', blockedTasks.length, '个，开始自愈检查');
+
+      for (const task of blockedTasks) {
+        const metadata = task.metadata as Record<string, any> | null;
+        const mpId = metadata?.multiPlatformGroupId;
+        if (!mpId) continue;
+
+        // 查找对应的基础文章组
+        const baseArticleTasks = await db
+          .select({
+            orderIndex: agentSubTasks.orderIndex,
+            fromParentsExecutor: agentSubTasks.fromParentsExecutor,
+            status: agentSubTasks.status,
+          })
+          .from(agentSubTasks)
+          .where(
+            and(
+              sql`${agentSubTasks.metadata}->>'multiPlatformGroupId' = ${mpId}`,
+              sql`${agentSubTasks.metadata}->>'phase' = 'base_article'`
+            )
+          );
+
+        if (baseArticleTasks.length === 0) continue;
+
+        // 🔥 新逻辑：预览修改节点已完成 = 定稿点已到达
+        // 业务含义：用户确认预览后，文章内容已确定，适配组可以开始工作
+        const previewEditTask = baseArticleTasks.find(
+          t => isVirtualExecutor(t.fromParentsExecutor) && (t.status === 'completed' || t.status === 'waiting_user')
+        );
+
+        if (previewEditTask) {
+          console.log('[SubtaskEngine] 🏥 预览修改节点已完成，视为定稿点已到达，解锁适配组:', {
+            taskId: task.id,
+            commandResultId: task.commandResultId,
+            previewEditOrderIndex: previewEditTask.orderIndex,
+            previewEditStatus: previewEditTask.status,
+          });
+
+          // 原子性解锁
+          const updateResult = await db
+            .update(agentSubTasks)
+            .set({
+              status: 'pending',
+              updatedAt: getCurrentBeijingTime(),
+            })
+            .where(
+              and(
+                eq(agentSubTasks.id, task.id),
+                eq(agentSubTasks.status, 'blocked')
+              )
+            )
+            .returning();
+
+          if (updateResult.length > 0) {
+            console.log('[SubtaskEngine] 🏥 自愈成功：已解锁适配组任务:', {
+              taskId: task.id,
+              orderIndex: task.orderIndex,
+              taskTitle: task.taskTitle,
+            });
+          }
+        } else {
+          // 兜底：没有预览修改节点或未完成，检查基础文章组是否所有任务都已完成
+          const nonVirtualTasks = baseArticleTasks.filter(
+            t => t.orderIndex !== null && t.orderIndex >= 2 && !isVirtualExecutor(t.fromParentsExecutor)
+          );
+          const maxOrderIndex = nonVirtualTasks.length > 0
+            ? Math.max(...nonVirtualTasks.map(t => t.orderIndex))
+            : 0;
+          const finalTasks = nonVirtualTasks.filter(t => t.orderIndex === maxOrderIndex);
+          const isFullyComplete = finalTasks.some(t => t.status === 'completed');
+
+          if (isFullyComplete) {
+            console.log('[SubtaskEngine] 🏥 基础文章组全部完成（兜底），解锁适配组:', {
+              taskId: task.id,
+              commandResultId: task.commandResultId,
+              maxOrderIndex,
+            });
+
+            // 原子性解锁
+            const updateResult = await db
+              .update(agentSubTasks)
+              .set({
+                status: 'pending',
+                updatedAt: getCurrentBeijingTime(),
+              })
+              .where(
+                and(
+                  eq(agentSubTasks.id, task.id),
+                  eq(agentSubTasks.status, 'blocked')
+                )
+              )
+              .returning();
+
+            if (updateResult.length > 0) {
+              console.log('[SubtaskEngine] 🏥 自愈成功（兜底）：已解锁适配组任务:', {
+                taskId: task.id,
+                orderIndex: task.orderIndex,
+                taskTitle: task.taskTitle,
+              });
+            }
+          } else {
+            console.log('[SubtaskEngine] 🏥 基础文章组尚未到达定稿点，继续阻塞:', {
+              taskId: task.id,
+              previewEditExists: !!previewEditTask,
+              maxOrderIndex,
+              finalTaskStatus: finalTasks.map(t => t.status),
+            });
+          }
+        }
+      }
+    } catch (error) {
+      console.error('[SubtaskEngine] 🏥 自愈检查失败:', error);
     }
   }
 
@@ -9139,6 +9324,10 @@ ${agentBDecision ?
       savedResultTextPreview: updatedTask.resultText?.substring(0, 200) || ''
     });
     console.log('[SubtaskEngine] ✅✅✅ ========== 保存完成 ==========');
+
+    // 🔥🔥🔥 两阶段架构：虚拟执行器变为 waiting_user 时也可能到达定稿点
+    // 例如 user_preview_edit 是组内最后一个非虚拟执行器之后的任务，需要触发解锁
+    await this.unlockAdaptationGroupsIfNeeded(updatedTask || task);
   }
 
   /**
