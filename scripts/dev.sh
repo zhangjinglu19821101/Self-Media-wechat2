@@ -23,7 +23,9 @@ fi
 export NODE_ENV="development"
 # 🔴 不再强制覆盖，尊重 .env.local 中的配置
 export COZE_PROJECT_ENV="${COZE_PROJECT_ENV:-DEV}"
-export PORT="${PORT:-5000}"
+# 🔴 强制使用 5000 端口（不继承环境中的 PORT，防止被沙箱平台的 PORT=9000 污染）
+# 沙箱平台 FastAPI 进程占用 9000 端口，如果继承 PORT=9000 会导致 EADDRINUSE
+export PORT=5000
 
 echo "[dev.sh] 启动开发服务器..."
 echo "[dev.sh] 端口: ${PORT}"

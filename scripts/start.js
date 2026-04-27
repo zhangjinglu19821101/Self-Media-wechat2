@@ -19,7 +19,9 @@ const { spawn } = require('child_process');
 const http = require('http');
 
 const COZE_WORKSPACE_PATH = process.env.COZE_WORKSPACE_PATH || process.cwd();
-const PORT = process.env.DEPLOY_RUN_PORT || process.env.PORT || '5000';
+// 🔴 强制使用 5000 端口：不继承环境中的 PORT（沙箱平台 PORT=9000 会导致 EADDRINUSE）
+// DEPLOY_RUN_PORT 由 .coze 配置保证是 5000，作为首选
+const PORT = process.env.DEPLOY_RUN_PORT || '5000';
 const READY_CHECK_INTERVAL = 1000; // 每 1s 检查一次端口
 const READY_CHECK_TIMEOUT = 30000; // 30s 超时
 
