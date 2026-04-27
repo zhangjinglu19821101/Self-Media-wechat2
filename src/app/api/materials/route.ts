@@ -38,8 +38,13 @@ export async function GET(request: NextRequest) {
     // 构建查询条件
     const conditions = [];
 
-    // Workspace 隔离
-    conditions.push(eq(materialLibrary.workspaceId, workspaceId));
+    // 数据可见性：用户的私有素材 + 系统预置素材（对所有用户可见）
+    conditions.push(
+      or(
+        eq(materialLibrary.workspaceId, workspaceId),
+        eq(materialLibrary.isSystem, true)
+      )!
+    );
 
     // 状态筛选
     if (status) {

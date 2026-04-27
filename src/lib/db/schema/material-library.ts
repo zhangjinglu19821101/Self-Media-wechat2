@@ -3,7 +3,7 @@
  * 存储可复用的创作素材：案例、数据、故事、引用等
  */
 
-import { pgTable, text, timestamp, jsonb, uuid, integer, numeric, index } from 'drizzle-orm/pg-core';
+import { pgTable, text, timestamp, jsonb, uuid, integer, numeric, index, boolean } from 'drizzle-orm/pg-core';
 
 /**
  * 素材类型枚举
@@ -36,6 +36,10 @@ export type MaterialStatus =
 /**
  * 素材库表
  * 核心字段：标题、类型、内容、来源、标签
+ * 
+ * 数据可见性规则：
+ * - isSystem=true: 系统预置素材，对所有用户可见
+ * - isSystem=false: 用户私有素材，仅对所属 workspace 可见
  */
 export const materialLibrary = pgTable('material_library', {
   // === 主键 ===
@@ -76,45 +80,59 @@ export const materialLibrary = pgTable('material_library', {
   // === 工作空间归属（由 user_id 重命名而来）===
   workspaceId: text('workspace_id'),
   
+  // === 系统预置标识 ===
+  isSystem: boolean('is_system').notNull().default(false),  // true: 系统预置素材，对所有用户可见
+  
   // === 时间戳 ===
   createdAt: timestamp('created_at').notNull().defaultNow(),
   updatedAt: timestamp('updated_at').notNull().defaultNow(),
 }, (table) => ({
-  // 索引：支持快速查询
+  // 索引：workspace_id + 状态（快速查询用户的素材）
+  workspaceIdx: index('idx_material_workspace_status').on(table.workspaceId, table.status),
+  // 索引：系统预置素材（快速查询系统素材）
+  systemIdx: index('idx_material_is_system').on(table.isSystem),
+  // 索引：类型（按类型筛选）
   typeIdx: index('idx_material_type').on(table.type),
-  statusIdx: index('idx_material_status').on(table.status),
-  workspaceIdIdx: index('idx_material_workspace_id').on(table.workspaceId),
-  useCountIdx: index('idx_material_use_count').on(table.useCount),
-  // GIN索引：支持JSONB数组查询
-  topicTagsIdx: index('idx_material_topic_tags').using('gin', table.topicTags),
-  sceneTagsIdx: index('idx_material_scene_tags').using('gin', table.sceneTags),
-}));
-
-/**
- * 素材使用记录表
- * 记录素材在哪些文章中使用过
- */
-export const materialUsageLog = pgTable('material_usage_log', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  materialId: uuid('material_id').notNull().references(() => materialLibrary.id, { onDelete: 'cascade' }),
-  
-  // === 使用场景 ===
-  articleId: text('article_id'),           // 关联的文章ID
-  articleTitle: text('article_title'),     // 文章标题
-  usedPosition: text('used_position'),     // 使用位置：opening/body/conclusion
-  
-  // === 使用效果 ===
-  effectType: text('effect_type'),         // 效果类型：good/neutral/bad
-  
-  // === 时间戳 ===
-  createdAt: timestamp('created_at').notNull().defaultNow(),
-}, (table) => ({
-  materialIdx: index('idx_usage_material_id').on(table.materialId),
-  articleIdx: index('idx_usage_article_id').on(table.articleId),
+  // 索引：标题搜索（支持 ILIKE）
+  titleIdx: index('idx_material_title').on(table.title),
 }));
 
 // === 类型导出 ===
 export type MaterialLibrary = typeof materialLibrary.$inferSelect;
-export type NewMaterial = typeof materialLibrary.$inferInsert;
+export type NewMaterialLibrary = typeof materialLibrary.$inferInsert;
+
+/**
+ * 素材使用记录表
+ * 记录素材在哪些文章中被使用，用于效果分析
+ */
+export const materialUsageLog = pgTable('material_usage_log', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  
+  // 素材ID
+  materialId: uuid('material_id').notNull().references(() => materialLibrary.id),
+  
+  // 使用场景
+  articleId: text('article_id'),           // 文章ID
+  taskId: uuid('task_id'),                 // 任务ID
+  commandResultId: text('command_result_id'), // 指令结果ID
+  
+  // 使用位置
+  position: text('position'),              // opening/body/conclusion
+  positionDesc: text('position_desc'),     // 具体描述
+  
+  // 效果评估
+  effectiveness: text('effectiveness'),    // effective/ineffective/unknown
+  feedback: text('feedback'),              // 用户反馈
+  
+  // 工作空间
+  workspaceId: text('workspace_id'),
+  
+  // 时间戳
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+}, (table) => ({
+  materialIdx: index('idx_usage_material').on(table.materialId),
+  workspaceIdx: index('idx_usage_workspace').on(table.workspaceId),
+}));
+
 export type MaterialUsageLog = typeof materialUsageLog.$inferSelect;
 export type NewMaterialUsageLog = typeof materialUsageLog.$inferInsert;
