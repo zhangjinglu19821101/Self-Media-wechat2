@@ -6,7 +6,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-import { materialLibrary } from '@/lib/db/schema/material-library';
+import { materialLibrary, SYSTEM_WORKSPACE_ID } from '@/lib/db/schema/material-library';
 import { desc, eq, ilike, or, sql, and } from 'drizzle-orm';
 import { getWorkspaceId } from '@/lib/auth/context';
 import { expandKeywordsWithSynonyms } from '@/lib/utils/synonym-dictionary';
@@ -42,7 +42,7 @@ export async function GET(request: NextRequest) {
     conditions.push(
       or(
         eq(materialLibrary.workspaceId, workspaceId),      // 用户私有
-        eq(materialLibrary.workspaceId, 'system')          // 系统预置
+        eq(materialLibrary.workspaceId, SYSTEM_WORKSPACE_ID)    // 系统预置
       )!
     );
 

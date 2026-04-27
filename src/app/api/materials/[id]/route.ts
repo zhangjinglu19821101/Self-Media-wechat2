@@ -132,11 +132,16 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       }
     }
 
-    // 执行更新
+    // 执行更新（WHERE 补充 workspaceId，形成双重保护）
     const [updated] = await db
       .update(materialLibrary)
       .set(updateData)
-      .where(sql`${materialLibrary.id} = ${id}::uuid`)
+      .where(
+        and(
+          sql`${materialLibrary.id} = ${id}::uuid`,
+          eq(materialLibrary.workspaceId, workspaceId)
+        )
+      )
       .returning();
 
     return NextResponse.json({
@@ -194,21 +199,31 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
     }
 
     if (hard) {
-      // 硬删除：真正删除记录
+      // 硬删除：真正删除记录（WHERE 补充 workspaceId，形成双重保护）
       await db
         .delete(materialLibrary)
-        .where(sql`${materialLibrary.id} = ${id}::uuid`);
+        .where(
+          and(
+            sql`${materialLibrary.id} = ${id}::uuid`,
+            eq(materialLibrary.workspaceId, workspaceId)
+          )
+        );
 
       return NextResponse.json({
         success: true,
         message: '素材已永久删除'
       });
     } else {
-      // 软删除：改为归档状态
+      // 软删除：改为归档状态（WHERE 补充 workspaceId，形成双重保护）
       await db
         .update(materialLibrary)
         .set({ status: 'archived', updatedAt: new Date() })
-        .where(sql`${materialLibrary.id} = ${id}::uuid`);
+        .where(
+          and(
+            sql`${materialLibrary.id} = ${id}::uuid`,
+            eq(materialLibrary.workspaceId, workspaceId)
+          )
+        );
 
       return NextResponse.json({
         success: true,

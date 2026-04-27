@@ -30,28 +30,25 @@ export async function GET(request: NextRequest) {
                      'topic_tags';
 
     // 使用jsonb_array_elements_text展开JSONB数组 + workspace 可见性（用户workspace OR 系统预置）
-    let query: string;
+    // 参数化查询：workspaceId/materialType 使用参数绑定，tagColumnName 使用 sql.raw（字段名不可参数化）
+    const conditions = [
+      sql`status = 'active'`,
+      sql`(workspace_id = ${workspaceId} OR workspace_id = ${SYSTEM_WORKSPACE_ID})`
+    ];
     if (materialType) {
-      query = `
-        SELECT tag, count(*) as count 
-        FROM material_library, jsonb_array_elements_text(${tagColumnName}) as tag 
-        WHERE status = 'active' AND type = '${materialType}' AND (workspace_id = '${workspaceId}' OR workspace_id = '${SYSTEM_WORKSPACE_ID}')
-        GROUP BY tag 
-        ORDER BY count DESC 
-        LIMIT 50
-      `;
-    } else {
-      query = `
-        SELECT tag, count(*) as count 
-        FROM material_library, jsonb_array_elements_text(${tagColumnName}) as tag 
-        WHERE status = 'active' AND (workspace_id = '${workspaceId}' OR workspace_id = '${SYSTEM_WORKSPACE_ID}')
-        GROUP BY tag 
-        ORDER BY count DESC 
-        LIMIT 50
-      `;
+      conditions.push(sql`type = ${materialType}`);
     }
 
-    const result = await db.execute(sql.raw(query));
+    const query = sql`
+      SELECT tag, count(*) as count 
+      FROM material_library, jsonb_array_elements_text(${sql.raw(tagColumnName)}) as tag 
+      WHERE ${sql.join(conditions, sql` AND `)}
+      GROUP BY tag 
+      ORDER BY count DESC 
+      LIMIT 50
+    `;
+
+    const result = await db.execute(query);
 
     // 处理返回结果
     const rows = Array.isArray(result) ? result : (result as any).rows || [];
