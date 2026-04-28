@@ -1787,10 +1787,10 @@ export class SubtaskExecutionEngine {
    * 检测 insurance-d 创作任务是否需要拆分为大纲确认双子任务
    *
    * 拆分策略（复用 auto-split 整数递增模式）：
-   * - 原任务 order_index → 改为 9000（status=completed，标记为 outline_split）
+   * - 原任务 → 直接删除（不再搬到 oi=9000）
    * - 子任务A(生成大纲) → order_index = 原值
    * - 子任务B(生成全文) → order_index = 原值 + 1（初始 pending，需用户确认后激活）
-   * - 后续任务 order_index → 原值 + 2 顺延
+   * - 后续任务 order_index → 原值 + 1 顺延（因原任务已删除，只需 +1）
    *
    * @param task 当前 insurance-d 子任务
    * @returns true=已拆分（调用方应跳过本次执行），false=无需拆分（正常执行）
@@ -7270,8 +7270,8 @@ export class SubtaskExecutionEngine {
     // Phase 3: 核心锚点自动归档（insurance-d 完成后）
     await this.archiveCoreAnchorsIfNeeded(latestTaskForCompleted);
 
-    // 🔥🔥🔥 两阶段架构：基础文章定稿后解锁适配组
-    await this.unlockAdaptationGroupsIfNeeded(latestTaskForCompleted);
+    // 🔥 两阶段架构：markTaskCompleted 内部已调用 unlockAdaptationGroupsIfNeeded
+    // 不再重复调用，避免：1) 重复 DB 查询 2) latestTaskForCompleted 是调用前快照，状态可能不是 completed
   }
 
   /**
@@ -7350,7 +7350,7 @@ export class SubtaskExecutionEngine {
               )
             );
           const writingOrderIndices = baseArticleTasks
-            .filter(t => t.orderIndex !== null && t.orderIndex >= 2 && t.orderIndex < 9000 && !isVirtualExecutor(t.fromParentsExecutor))
+            .filter(t => t.orderIndex !== null && t.orderIndex >= 2 && !isVirtualExecutor(t.fromParentsExecutor))
             .map(t => t.orderIndex);
           const maxWritingOrderIndex = writingOrderIndices.length > 0
             ? Math.max(...writingOrderIndices)
@@ -7460,14 +7460,15 @@ export class SubtaskExecutionEngine {
   /**
    * 【自愈】检查并解锁应该被解锁但被阻塞的适配组任务
    *
-   * 场景：当 unlockAdaptationGroupsIfNeeded 因代码 bug 未被触发时（如定稿点计算包含虚拟执行器），
+   * 场景：当 unlockAdaptationGroupsIfNeeded 因代码 bug 未被触发时，
    * 适配组会永远处于 blocked 状态。此自愈逻辑每次引擎执行时扫描一次，自动修复此类问题。
    *
    * 判断逻辑：
    * 1. 查询所有 blocked 且 phase='platform_adaptation' 的任务
    * 2. 对每个任务，找到同 multiPlatformGroupId 的基础文章组
-   * 3. 计算定稿点（排除虚拟执行器）
-   * 4. 如果定稿点任务已完成或 waiting_user，则解锁该 blocked 任务
+   * 3. 优先检查预览修改节点是否已 completed（排除虚拟执行器）
+   * 4. 如果预览修改节点已完成，或基础文章组最后一步已完成（兜底），则解锁
+   * 5. waiting_user 状态不触发解锁（用户可能修改文章）
    */
   private async healBlockedAdaptationGroups() {
     try {
@@ -7547,7 +7548,7 @@ export class SubtaskExecutionEngine {
         } else {
           // 兜底：没有预览修改节点或未完成，检查基础文章组是否所有任务都已完成
           const nonVirtualTasks = baseArticleTasks.filter(
-            t => t.orderIndex !== null && t.orderIndex >= 2 && t.orderIndex < 9000 && !isVirtualExecutor(t.fromParentsExecutor)
+            t => t.orderIndex !== null && t.orderIndex >= 2 && !isVirtualExecutor(t.fromParentsExecutor)
           );
           const maxOrderIndex = nonVirtualTasks.length > 0
             ? Math.max(...nonVirtualTasks.map(t => t.orderIndex))
