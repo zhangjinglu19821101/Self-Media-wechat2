@@ -1,8 +1,10 @@
 /**
- * 微信公众号合规审核 MCP 能力实现
+ * 保险内容合规审核 MCP 能力实现（支持全平台）
  *
  * 能力 ID：20（content_audit - 完整审核）、21（content_audit_simple - 快速检查）
- * 能力名称：微信公众号内容合规审核
+ * 能力名称：保险内容合规审核
+ *
+ * 支持平台：微信公众号、小红书、知乎、头条/微博等所有平台
  *
  * 三层审核架构：
  *   第1层：关键词硬匹配（零成本、确定性、即时）
@@ -598,7 +600,7 @@ function formatMcpAuditResultToSummary(auditResult: ComplianceAuditResult | Simp
 
 export class WeChatComplianceAuditExecutor extends BaseMCPCapabilityExecutor {
   readonly capabilityId = 20;
-  readonly capabilityName = '微信公众号内容合规审核（关键词 + RAG + LLM 三层审核）';
+  readonly capabilityName = '保险内容合规审核（关键词 + RAG + LLM 三层审核，支持全平台）';
 
   private retriever: ReturnType<typeof createVectorRetriever>;
 
@@ -838,7 +840,7 @@ async function executeThreeLayerAudit(
 
 export class WeChatComplianceAuditSimpleExecutor extends BaseMCPCapabilityExecutor {
   readonly capabilityId = 21;
-  readonly capabilityName = '微信公众号内容合规审核（快速检查 - 仅关键词匹配）';
+  readonly capabilityName = '保险内容合规审核（快速检查 - 仅关键词匹配，支持全平台）';
 
   constructor() {
     super();
