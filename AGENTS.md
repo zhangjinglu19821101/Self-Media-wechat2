@@ -1779,3 +1779,37 @@
      - `src/app/api/health/route.ts`: 引擎状态新增 `executingGroups`/`maxParallelGroups`/`groupDetails` 字段
      - `src/app/api/subtasks/[id]/manual-unblock/route.ts`: 简化触发逻辑，总是调用 `engine.execute()`
    - **效果**: 3 个用户同时提交任务时，3 个 commandResultId 组并行执行，总耗时从 18-63 分钟降为 6-21 分钟
+84. **P0 组级锁超时竞态修复（心跳机制 + processId 守卫）**: 解决组级锁超时后同一 commandResultId 被两个进程同时执行的双重执行风险
+   - **问题**: 组级锁超时（10分钟）过短，`processGroup` 可能运行超过10分钟（写作 Agent 180s×3重试 + Agent B 评审 + MCP 执行），超时后锁被强制释放，导致同一 `commandResultId` 的组可能被两个进程同时执行
+   - **根因**:
+     1. 锁超时无法区分"活跃执行中"和"真正卡死"——LLM 长调用期间无心跳信号
+     2. 锁释放无身份验证——超时释放后新执行获取锁，旧执行完成后可能释放新执行的锁
+     3. 绝对超时阈值 10 分钟远低于实际最长执行时间（保险写作可达 18 分钟）
+   - **修复方案: 心跳机制 + processId 身份验证**:
+     - `executingGroups` Map value 从 `{ startTime }` 升级为 `{ startTime, lastHeartbeat, processId }`
+     - 绝对超时阈值从 10 分钟提升到 30 分钟（兜底保护）
+     - 新增心跳超时阈值 `HEARTBEAT_TIMEOUT_MS = 10min`（精准卡死检测）
+     - 6 处 LLM 调用点 + 1 处 MCP 执行点前后刷新心跳（`refreshGroupHeartbeat`）
+     - `cleanupExpiredGroups` 双重超时判断：优先心跳超时，兜底绝对超时
+     - `tryAcquireGroupLock` 生成唯一 `processId`（`${Date.now()}-${random}`）
+     - `refreshGroupHeartbeat` 可选 processId 验证，防止旧执行刷新新执行的心跳
+     - `executeGroupWithLock` / `executeSpecificTask` finally 块只释放 processId 匹配的锁
+   - **修改文件**:
+     - `src/lib/services/subtask-execution-engine.ts`:
+       - 锁数据结构升级（lastHeartbeat + processId）
+       - 新增 `refreshGroupHeartbeat()` 方法
+       - `cleanupExpiredGroups()` 双重超时判断 + 增强日志
+       - `isGroupExecuting()` 基于心跳超时判断
+       - `tryAcquireGroupLock()` 生成 processId
+       - `executeGroupWithLock()` / `executeSpecificTask()` processId 守卫
+       - `processGroup()` / `processOrderIndexTasks()` 接受并传递 processId
+       - 6 处 callLLM + 1 处 MCP 执行前后心跳刷新
+       - `MAX_PARALLEL_GROUPS` 从 private 改为 public（供 health API 读取）
+       - `getExecutionStatus()` 新增 lastHeartbeatMs/processId 监控字段
+     - `src/app/api/health/route.ts`:
+       - groupDetails 新增 lastHeartbeatMs/processId 字段映射
+       - catch 块动态读取 `SubtaskExecutionEngine.MAX_PARALLEL_GROUPS`
+   - **效果**:
+     - 活跃执行（LLM 调用中）通过心跳续期，不会被误清理
+     - 真正卡死（10分钟无心跳）或极端超时（30分钟绝对兜底）才会被清理
+     - processId 验证确保旧执行无法干扰新执行的锁或心跳

@@ -755,9 +755,20 @@ export class SubtaskExecutionEngine {
 
   // 🔒 组级并行锁：按 commandResultId 隔离，不同组可并行执行
   // 🔴 改造：从全局串行锁升级为组级并行锁，解决多用户任务互阻塞问题
-  private static executingGroups = new Map<string, { startTime: Date }>();
-  private static readonly GROUP_EXECUTION_TIMEOUT_MS = 10 * 60 * 1000; // 10 分钟组级超时（写作 Agent 最长 180s × 3 次重试）
-  private static readonly MAX_PARALLEL_GROUPS = 5; // 最大并行组数（防止资源耗尽）
+  // 🔴 P0 修复：增加心跳机制，防止锁超时后同一组被重复执行
+  private static executingGroups = new Map<string, {
+    startTime: Date;
+    lastHeartbeat: Date;  // 🔴 P0：心跳时间戳，每次 LLM 调用前后刷新
+    processId: string;    // 🔴 P0：唯一进程标识，用于检测是否为同一次执行
+  }>();
+  // 🔴 P0 修复：超时从 10 分钟提升到 30 分钟（覆盖极端场景：写作 Agent 180s × 3 重试 + Agent B 评审 + MCP 执行）
+  // 心跳机制确保活跃执行不会被超时清理，30 分钟是真正卡死的兜底阈值
+  private static readonly GROUP_EXECUTION_TIMEOUT_MS = 30 * 60 * 1000;
+  // 🔴 P0 修复：心跳超时阈值，超过此时间无心跳则认为进程已卡死
+  // 设为 10 分钟（远大于单次 LLM 调用时间，远小于总超时时间）
+  private static readonly HEARTBEAT_TIMEOUT_MS = 10 * 60 * 1000;
+  // 🔴 P0 修复：改为 public，供 health API 等外部读取
+  public static readonly MAX_PARALLEL_GROUPS = 5; // 最大并行组数（防止资源耗尽）
 
   /**
    * 🔒 查询引擎是否有任何组正在执行（供外部调用方使用）
@@ -770,13 +781,15 @@ export class SubtaskExecutionEngine {
 
   /**
    * 🔒 查询指定组是否正在执行
+   * 🔴 P0 修复：使用心跳超时判断（而非绝对超时），活跃执行不会被误判
    */
   static isGroupExecuting(commandResultId: string): boolean {
     const entry = SubtaskExecutionEngine.executingGroups.get(commandResultId);
     if (!entry) return false;
-    // 超时自动释放
-    if (Date.now() - entry.startTime.getTime() > SubtaskExecutionEngine.GROUP_EXECUTION_TIMEOUT_MS) {
-      console.warn(`[SubtaskEngine] 🔒 组 ${commandResultId} 执行超时，强制解锁`);
+    // 心跳超时检查
+    const heartbeatAge = Date.now() - entry.lastHeartbeat.getTime();
+    if (heartbeatAge > SubtaskExecutionEngine.HEARTBEAT_TIMEOUT_MS) {
+      console.warn(`[SubtaskEngine] 🔒 组 ${commandResultId} 心跳超时，强制解锁`);
       SubtaskExecutionEngine.executingGroups.delete(commandResultId);
       return false;
     }
@@ -785,12 +798,40 @@ export class SubtaskExecutionEngine {
 
   /**
    * 清理超时的组级锁
+   * 🔴 P0 修复：双重超时判断
+   *   1. 心跳超时：超过 HEARTBEAT_TIMEOUT_MS 无心跳 → 认为进程卡死 → 强制解锁
+   *   2. 绝对超时：超过 GROUP_EXECUTION_TIMEOUT_MS → 兜底强制解锁
+   * 正常活跃执行会通过 refreshGroupHeartbeat 持续刷新心跳，不会被误清理
    */
   private static cleanupExpiredGroups(): void {
     const now = Date.now();
     for (const [groupId, entry] of SubtaskExecutionEngine.executingGroups) {
-      if (now - entry.startTime.getTime() > SubtaskExecutionEngine.GROUP_EXECUTION_TIMEOUT_MS) {
-        console.warn(`[SubtaskEngine] 🔒 组 ${groupId} 执行超时，强制解锁`);
+      const heartbeatAge = now - entry.lastHeartbeat.getTime();
+      const totalAge = now - entry.startTime.getTime();
+      
+      // 优先检查心跳超时（更精准的卡死检测）
+      if (heartbeatAge > SubtaskExecutionEngine.HEARTBEAT_TIMEOUT_MS) {
+        console.warn(`[SubtaskEngine] 🔒 组 ${groupId} 心跳超时（${Math.round(heartbeatAge / 1000)}s 无心跳），强制解锁`, {
+          groupId,
+          startTime: entry.startTime.toISOString(),
+          lastHeartbeat: entry.lastHeartbeat.toISOString(),
+          heartbeatAgeMs: heartbeatAge,
+          totalAgeMs: totalAge,
+          processId: entry.processId,
+        });
+        SubtaskExecutionEngine.executingGroups.delete(groupId);
+        continue;
+      }
+      
+      // 兜底：绝对超时（无论心跳是否活跃，超过最大时间强制解锁）
+      if (totalAge > SubtaskExecutionEngine.GROUP_EXECUTION_TIMEOUT_MS) {
+        console.warn(`[SubtaskEngine] 🔒 组 ${groupId} 绝对超时（${Math.round(totalAge / 1000)}s），强制解锁`, {
+          groupId,
+          startTime: entry.startTime.toISOString(),
+          lastHeartbeat: entry.lastHeartbeat.toISOString(),
+          totalAgeMs: totalAge,
+          processId: entry.processId,
+        });
         SubtaskExecutionEngine.executingGroups.delete(groupId);
       }
     }
@@ -799,6 +840,7 @@ export class SubtaskExecutionEngine {
   /**
    * 🔒 尝试获取组级锁
    * @returns true 表示获取成功，false 表示该组已有执行在进行
+   * 🔴 P0 修复：新增 processId 标识和 lastHeartbeat 心跳
    */
   private static tryAcquireGroupLock(commandResultId: string): boolean {
     // 先清理过期锁
@@ -815,7 +857,37 @@ export class SubtaskExecutionEngine {
       return false;
     }
 
-    SubtaskExecutionEngine.executingGroups.set(commandResultId, { startTime: new Date() });
+    const now = new Date();
+    const processId = `${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
+    SubtaskExecutionEngine.executingGroups.set(commandResultId, {
+      startTime: now,
+      lastHeartbeat: now,
+      processId,
+    });
+    return true;
+  }
+
+  /**
+   * 🔴 P0 修复：刷新组级锁的心跳时间戳
+   * 在 LLM 调用前后调用，确保活跃执行不会被超时清理
+   * @param commandResultId 组 ID
+   * @param processId 调用方的进程标识（防止已过期的执行继续刷新心跳）
+   * @returns true 表示心跳刷新成功，false 表示该组已不属于当前执行
+   */
+  private static refreshGroupHeartbeat(commandResultId: string, processId?: string): boolean {
+    const entry = SubtaskExecutionEngine.executingGroups.get(commandResultId);
+    if (!entry) return false;
+    // 🔴 P0 安全检查：如果传入了 processId，必须匹配才允许刷新心跳
+    // 防止锁超时释放后被新执行获取，旧执行仍在刷新心跳
+    if (processId && entry.processId !== processId) {
+      console.warn(`[SubtaskEngine] 🔒 心跳刷新失败：processId 不匹配`, {
+        commandResultId,
+        expectedProcessId: entry.processId,
+        receivedProcessId: processId,
+      });
+      return false;
+    }
+    entry.lastHeartbeat = new Date();
     return true;
   }
 
@@ -828,6 +900,7 @@ export class SubtaskExecutionEngine {
 
   /**
    * 获取引擎执行状态（用于监控）
+   * 🔴 P0 修复：新增 lastHeartbeatMs 字段，便于运维判断进程是否卡死
    */
   static getExecutionStatus(): {
     isRunning: boolean;
@@ -835,7 +908,7 @@ export class SubtaskExecutionEngine {
     runningDurationMs: number | null;
     executingGroups: number;
     maxParallelGroups: number;
-    groupDetails: Array<{ commandResultId: string; startTime: Date; runningMs: number }>;
+    groupDetails: Array<{ commandResultId: string; startTime: Date; runningMs: number; lastHeartbeatMs: number; processId: string }>;
   } {
     SubtaskExecutionEngine.cleanupExpiredGroups();
     const groups = Array.from(SubtaskExecutionEngine.executingGroups.entries());
@@ -846,13 +919,15 @@ export class SubtaskExecutionEngine {
     return {
       isRunning: groups.length > 0,
       startTime: earliest,
-      runningDurationMs: earliest ? Date.now() - earliest.getTime() : null,
+      runningDurationMs: earliest ? Math.max(0, Date.now() - earliest.getTime()) : null,
       executingGroups: groups.length,
       maxParallelGroups: SubtaskExecutionEngine.MAX_PARALLEL_GROUPS,
       groupDetails: groups.map(([commandResultId, entry]) => ({
         commandResultId,
         startTime: entry.startTime,
-        runningMs: Date.now() - entry.startTime.getTime(),
+        runningMs: Math.max(0, Date.now() - entry.startTime.getTime()),
+        lastHeartbeatMs: Math.max(0, Date.now() - entry.lastHeartbeat.getTime()),
+        processId: entry.processId,
       })),
     };
   }
@@ -909,12 +984,19 @@ export class SubtaskExecutionEngine {
         return { success: false, message: '该组已在执行中', tasksFound: tasks.length };
       }
 
+      // 🔴 P0 修复：记录 processId，确保只释放自己持有的锁
+      const lockEntry = SubtaskExecutionEngine.executingGroups.get(commandResultId);
+      const processId = lockEntry?.processId;
+
       try {
         // 处理任务
-        await this.processGroup(tasks);
+        await this.processGroup(tasks, processId);
       } finally {
-        // 🔒 释放组级锁
-        SubtaskExecutionEngine.releaseGroupLock(commandResultId);
+        // 🔒 释放组级锁（P0 安全检查：只释放自己持有的锁）
+        const currentEntry = SubtaskExecutionEngine.executingGroups.get(commandResultId);
+        if (currentEntry && currentEntry.processId === processId) {
+          SubtaskExecutionEngine.releaseGroupLock(commandResultId);
+        }
       }
 
       console.log('[SubtaskEngine] 特定任务执行完成');
@@ -1035,6 +1117,7 @@ export class SubtaskExecutionEngine {
   /**
    * 🔴 组级加锁执行：获取组级锁 → 执行 → 释放锁
    * 每个组独立获取和释放锁，互不影响
+   * 🔴 P0 修复：记录 processId，执行过程中持续刷新心跳
    */
   private async executeGroupWithLock(
     groupId: string,
@@ -1046,19 +1129,34 @@ export class SubtaskExecutionEngine {
       return;
     }
 
+    // 🔴 P0 修复：获取当前执行的 processId，后续心跳刷新需要验证
+    const lockEntry = SubtaskExecutionEngine.executingGroups.get(groupId);
+    const processId = lockEntry?.processId;
+
     try {
       console.log('[SubtaskEngine] 🔒 获取组级锁，开始处理分组:', {
         command_result_id: groupId,
         tasks_count: tasks.length,
+        processId,
       });
-      await this.processGroup(tasks);
+      await this.processGroup(tasks, processId);
     } catch (error) {
       console.error(`[SubtaskEngine] 组 ${groupId} 执行失败:`, error);
       throw error;
     } finally {
       // 🔒 无论成功失败，释放组级锁
-      SubtaskExecutionEngine.releaseGroupLock(groupId);
-      console.log('[SubtaskEngine] 🔒 释放组级锁:', groupId);
+      // 🔴 P0 安全检查：只释放自己持有的锁（通过 processId 验证）
+      const currentEntry = SubtaskExecutionEngine.executingGroups.get(groupId);
+      if (currentEntry && currentEntry.processId === processId) {
+        SubtaskExecutionEngine.releaseGroupLock(groupId);
+        console.log('[SubtaskEngine] 🔒 释放组级锁:', groupId);
+      } else {
+        console.warn('[SubtaskEngine] 🔒 跳过释放组级锁（已不属于当前执行）:', {
+          groupId,
+          expectedProcessId: processId,
+          currentProcessId: currentEntry?.processId,
+        });
+      }
     }
   }
 
@@ -1110,8 +1208,11 @@ export class SubtaskExecutionEngine {
     return groups;
   }
 
-  private async processGroup(tasks: typeof agentSubTasks.$inferSelect[]) {
+  private async processGroup(tasks: typeof agentSubTasks.$inferSelect[], processId?: string) {
     const groupId = tasks[0]?.commandResultId;
+
+    // 🔴 P0 修复：进入 processGroup 时刷新心跳
+    SubtaskExecutionEngine.refreshGroupHeartbeat(groupId, processId);
 
     console.log('[SubtaskEngine] ========== 开始处理分组 ==========', {
       command_result_id: groupId,
@@ -1167,7 +1268,9 @@ export class SubtaskExecutionEngine {
     });
 
     // processOrderIndexTasks 内部会检查 waiting_user 等状态并做对应处理
-    await this.processOrderIndexTasks(targetOrderIndex, targetTasks, allTasksInGroup);
+    // 🔴 P0 修复：执行核心逻辑前刷新心跳
+    SubtaskExecutionEngine.refreshGroupHeartbeat(groupId, processId);
+    await this.processOrderIndexTasks(targetOrderIndex, targetTasks, allTasksInGroup, processId);
 
     console.log('[SubtaskEngine] ========== 分组处理完成 ==========', {
       command_result_id: groupId,
@@ -1226,11 +1329,13 @@ export class SubtaskExecutionEngine {
   /**
    * 🔴 新增：处理单个 order_index 的任务
    * 提取出独立方法，便于前序任务处理
+   * 🔴 P0 修复：新增 processId 参数，用于心跳刷新时验证执行身份
    */
   private async processOrderIndexTasks(
     orderIndex: number,
     currentStepTasks: typeof agentSubTasks.$inferSelect[],
-    allTasks: typeof agentSubTasks.$inferSelect[]
+    allTasks: typeof agentSubTasks.$inferSelect[],
+    processId?: string
   ) {
     const groupId = currentStepTasks[0]?.commandResultId;
 
@@ -3193,6 +3298,8 @@ export class SubtaskExecutionEngine {
         });
         
         // 执行 MCP
+        // 🔴 P0 修复：MCP 执行前刷新心跳（MCP 可能执行较长时间）
+        SubtaskExecutionEngine.refreshGroupHeartbeat(task.commandResultId);
         mcpSuccess = await this.executeMcpWithRetry(
           task,
           mcpDecision,
@@ -3204,6 +3311,8 @@ export class SubtaskExecutionEngine {
           1,
           initialExecutionContext.priorStepOutput
         );
+        // 🔴 P0 修复：MCP 执行后刷新心跳
+        SubtaskExecutionEngine.refreshGroupHeartbeat(task.commandResultId);
         
         console.log('zhangjinglu  executeAgentTExecutorWorkflow end [await this.executeMcpWithRetry]', {
           executionId: executionId,
@@ -8348,6 +8457,9 @@ ${userFeedbackText}
       console.log('[执行Agent调用] [阶段3/4] 调用 LLM');
       console.log('[执行Agent调用] LLM调用开始时间:', getCurrentBeijingTime().toISOString());
       
+      // 🔴 P0 修复：LLM 调用前刷新心跳（LLM 可能执行 60-180s，确保锁不被超时清理）
+      SubtaskExecutionEngine.refreshGroupHeartbeat(task.commandResultId);
+      
       const llmStartAt = getCurrentBeijingTime();
       // 🔴🔴🔴 写作 Agent + deai-optimizer 超时修复：
       // doubao-seed-2-0-pro-260215 模型正常响应 65-80 秒，60s 超时必然失败
@@ -8361,6 +8473,9 @@ ${userFeedbackText}
         { workspaceId: task.workspaceId || undefined, timeout: _llmTimeout, commandResultId: task.commandResultId }
       );
       const llmEndAt = getCurrentBeijingTime();
+      
+      // 🔴 P0 修复：LLM 调用后刷新心跳（标记进程仍然活跃）
+      SubtaskExecutionEngine.refreshGroupHeartbeat(task.commandResultId);
       
       console.log('[执行Agent调用] [阶段3/4] ✅ LLM调用完成:', {
         llm_call_duration_ms: llmEndAt.getTime() - llmStartAt.getTime(),
@@ -8823,6 +8938,8 @@ ${agentBDecision ?
     try {
       // 🔴 写作 Agent + deai-optimizer 超时修复：reExecution 路径也需要更长超时
       const _reExecTimeout = (isWritingAgent(task.fromParentsExecutor) || task.fromParentsExecutor === 'deai-optimizer') ? 180000 : 60000;
+      // 🔴 P0 修复：reExecution LLM 调用前刷新心跳
+      SubtaskExecutionEngine.refreshGroupHeartbeat(task.commandResultId);
       const response = await callLLM(
         task.fromParentsExecutor,
         '继续执行任务',
@@ -8830,6 +8947,8 @@ ${agentBDecision ?
         prompt,
         { workspaceId: task.workspaceId || undefined, timeout: _reExecTimeout, commandResultId: task.commandResultId }
       );
+      // 🔴 P0 修复：reExecution LLM 调用后刷新心跳
+      SubtaskExecutionEngine.refreshGroupHeartbeat(task.commandResultId);
 
       // ========== 🔴 记录执行 Agent 交互（正常情况） ==========
       console.log('[SubtaskEngine] 🔴 记录执行 Agent 交互（正常返回）');
@@ -10025,6 +10144,8 @@ ${resultData.executionSummary}
     });
 
     try {
+      // 🔴 P0 修复：Agent B LLM 调用前刷新心跳
+      SubtaskExecutionEngine.refreshGroupHeartbeat(task.commandResultId);
       const response = await callLLM(
         'agent B',
         '标准化决策',
@@ -10036,6 +10157,9 @@ ${resultData.executionSummary}
           commandResultId: task.commandResultId,
         }
       );
+
+      // 🔴 P0 修复：Agent B LLM 调用后刷新心跳
+      SubtaskExecutionEngine.refreshGroupHeartbeat(task.commandResultId);
 
       console.log('[SubtaskEngine] 🔴🔴🔴 Agent B 原始返回（完整）:', response);
       console.log('[SubtaskEngine] 🔴🔴🔴 Agent B 原始返回长度:', response.length, '字符');
@@ -11783,6 +11907,8 @@ ${contentToUse}
     
     try {
       console.log('[SubtaskEngine] [command_result_id=' + task.commandResultId + '] ========== 开始调用 Agent T LLM ==========');
+      // 🔴 P0 修复：Agent T LLM 调用前刷新心跳
+      SubtaskExecutionEngine.refreshGroupHeartbeat(task.commandResultId);
       const response = await callLLM(
         'agent T',
         '技术专家',
@@ -11795,6 +11921,8 @@ ${contentToUse}
         }
       );
       
+      // 🔴 P0 修复：Agent T LLM 调用后刷新心跳
+      SubtaskExecutionEngine.refreshGroupHeartbeat(task.commandResultId);
       // 🔴🔴🔴 调试：把原始响应写入日志文件（完整内容）
       const fs = require('fs');
       const debugLogPath = '/app/work/logs/bypass/agent-t-raw-response.log';
@@ -11950,6 +12078,8 @@ ${currentTaskText}
       const llmStartAt = getCurrentBeijingTime();
       const systemPrompt = loadFeaturePrompt('precedent-selector-system-prompt');
       
+      // 🔴 P0 修复：选择器 LLM 调用前刷新心跳
+      SubtaskExecutionEngine.refreshGroupHeartbeat(task.commandResultId);
       const selectorResponse = await callLLM(
         task.fromParentsExecutor,
         '前序信息选择',

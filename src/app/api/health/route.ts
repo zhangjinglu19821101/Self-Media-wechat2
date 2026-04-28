@@ -222,16 +222,24 @@ export async function GET(request: NextRequest) {
         commandResultId: g.commandResultId,
         startTime: g.startTime.toISOString(),
         runningMs: g.runningMs,
+        lastHeartbeatMs: g.lastHeartbeatMs,
+        processId: g.processId,
       })),
       executionStartTime: engineStatus.startTime?.toISOString() ?? null,
       runningDurationMs: engineStatus.runningDurationMs,
     };
   } catch (error) {
+    // 🔴 P1 修复：使用引擎常量而非硬编码
+    let fallbackMaxParallel = 5;
+    try {
+      const { SubtaskExecutionEngine } = await import('@/lib/services/subtask-execution-engine');
+      fallbackMaxParallel = SubtaskExecutionEngine.MAX_PARALLEL_GROUPS;
+    } catch {}
     result.checks.engine = {
       status: 'degraded',
       isExecuting: false,
       executingGroups: 0,
-      maxParallelGroups: 5,
+      maxParallelGroups: fallbackMaxParallel,
       groupDetails: [],
       executionStartTime: null,
       runningDurationMs: null,
