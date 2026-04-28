@@ -13,6 +13,7 @@
 
 import { db } from '@/lib/db';
 import { industryCaseLibrary, caseUsageLog, CASE_SYSTEM_WORKSPACE_ID } from '@/lib/db/schema';
+import type { NewIndustryCase, IndustryCase } from '@/lib/db/schema';
 import { eq, and, or, desc, inArray, sql } from 'drizzle-orm';
 import { readFileSync, existsSync } from 'fs';
 import { join } from 'path';
@@ -398,15 +399,13 @@ export async function searchCases(params: CaseSearchParams): Promise<CaseMatchRe
   // 构建查询条件
   const conditions: any[] = [];
   
-  // 🔥 可见性过滤：用户私有案例 + 系统预置案例
-  if (workspaceId) {
-    conditions.push(
-      or(
-        eq(industryCaseLibrary.workspaceId, workspaceId),           // 用户私有
-        eq(industryCaseLibrary.workspaceId, CASE_SYSTEM_WORKSPACE_ID)    // 系统预置
-      )!
-    );
-  }
+  // 🔥 可见性过滤：用户私有案例 + 系统预置案例（始终执行，与素材库保持一致）
+  conditions.push(
+    or(
+      eq(industryCaseLibrary.workspaceId, workspaceId || 'default-workspace'),  // 用户私有
+      eq(industryCaseLibrary.workspaceId, CASE_SYSTEM_WORKSPACE_ID)             // 系统预置
+    )!
+  );
   
   if (industry) {
     conditions.push(eq(industryCaseLibrary.industry, industry));
@@ -548,15 +547,13 @@ export async function getCasesByIds(caseIds: string[], workspaceId?: string): Pr
     inArray(industryCaseLibrary.id, caseIds)
   ];
   
-  // 🔥 可见性过滤：用户私有案例 + 系统预置案例
-  if (workspaceId) {
-    conditions.push(
-      or(
-        eq(industryCaseLibrary.workspaceId, workspaceId),           // 用户私有
-        eq(industryCaseLibrary.workspaceId, CASE_SYSTEM_WORKSPACE_ID)    // 系统预置
-      )!
-    );
-  }
+  // 🔥 可见性过滤：用户私有案例 + 系统预置案例（始终执行）
+  conditions.push(
+    or(
+      eq(industryCaseLibrary.workspaceId, workspaceId || 'default-workspace'),  // 用户私有
+      eq(industryCaseLibrary.workspaceId, CASE_SYSTEM_WORKSPACE_ID)             // 系统预置
+    )!
+  );
   
   const cases = await db
     .select()
@@ -709,18 +706,36 @@ export async function importCases(cases: any[], workspaceId?: string): Promise<{
 
 /**
  * 获取案例统计
+ * 
+ * @param industry 行业筛选
+ * @param workspaceId 工作空间ID（用于可见性过滤）
+ * @returns 统计结果
  */
-export async function getCaseStats(industry?: string): Promise<{
+export async function getCaseStats(
+  industry?: string,
+  workspaceId?: string
+): Promise<{
   total: number;
   byType: Record<string, number>;
   byProduct: Record<string, number>;
 }> {
-  const whereClause = industry 
-    ? eq(industryCaseLibrary.industry, industry)
-    : undefined;
+  // 构建查询条件：行业筛选 + 可见性过滤
+  const conditions: any[] = [];
   
-  const cases = whereClause
-    ? await db.select().from(industryCaseLibrary).where(whereClause)
+  // 🔥 可见性过滤：用户私有案例 + 系统预置案例
+  conditions.push(
+    or(
+      eq(industryCaseLibrary.workspaceId, workspaceId || 'default-workspace'),  // 用户私有
+      eq(industryCaseLibrary.workspaceId, CASE_SYSTEM_WORKSPACE_ID)             // 系统预置
+    )!
+  );
+  
+  if (industry) {
+    conditions.push(eq(industryCaseLibrary.industry, industry));
+  }
+  
+  const cases = conditions.length > 0
+    ? await db.select().from(industryCaseLibrary).where(and(...conditions))
     : await db.select().from(industryCaseLibrary);
   
   const stats = {

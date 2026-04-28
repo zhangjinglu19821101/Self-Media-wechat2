@@ -82,8 +82,8 @@ export async function GET(request: NextRequest) {
       });
     }
     
-    // 获取统计
-    const stats = await industryCaseService.getCaseStats('insurance');
+    // 获取统计（系统预置案例统计）
+    const stats = await industryCaseService.getCaseStats('insurance', 'system');
     
     return NextResponse.json({
       success: true,
