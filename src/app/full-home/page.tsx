@@ -755,10 +755,14 @@ export default function HomePage() {
     }, 500);
   }, []);
 
-  // 🔥 创作引导：预计算去重后的手动搜索结果（避免O(n²)重复filter）
+  // 🔥 创作引导：预计算搜索结果展示列表
+  // 修复：当用户主动搜索时，不去重推荐列表（用户明确搜索的内容应全部展示）
+  // 去重仅在无搜索时合并展示推荐+搜索时才有意义
   const filteredSearchMaterials = useMemo(() => 
-    materialSearchResults.filter((m) => !recommendedMaterials.some((r) => r.id === m.id)),
-    [materialSearchResults, recommendedMaterials]
+    materialSearchQuery.trim()
+      ? materialSearchResults  // 有搜索词：展示全部搜索结果，不去重
+      : materialSearchResults.filter((m) => !recommendedMaterials.some((r) => r.id === m.id)),
+    [materialSearchResults, recommendedMaterials, materialSearchQuery]
   );
 
   // 🔥 情感基调配置（集中管理，避免硬编码）
@@ -1038,7 +1042,7 @@ export default function HomePage() {
     }
     setMaterialSearchLoading(true);
     try {
-      const data: any = await apiGet(`/api/materials?search=${encodeURIComponent(query)}&limit=10`);
+      const data: any = await apiGet(`/api/materials?search=${encodeURIComponent(query)}&pageSize=20`);
       // API 返回 { success: true, data: { list: [...], pagination: {...} } }
       setMaterialSearchResults(Array.isArray(data?.data?.list) ? data.data.list : Array.isArray(data?.data) ? data.data : []);
     } catch (error) {
@@ -3196,7 +3200,7 @@ export default function HomePage() {
                             )}
 
                             {/* 状态B2：搜索无结果 → 显示互联网搜索按钮 */}
-                            {!materialSearchLoading && materialSearchQuery.trim() && filteredSearchMaterials.length === 0 && materialSearchResults.length === 0 && (
+                            {!materialSearchLoading && materialSearchQuery.trim() && filteredSearchMaterials.length === 0 && (
                               <div className="text-center py-4 bg-slate-50/50 rounded-lg border border-dashed border-slate-200">
                                 <p className="text-sm text-slate-400 mb-3">素材库未找到匹配素材</p>
                                 <button
