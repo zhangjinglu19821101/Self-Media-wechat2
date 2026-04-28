@@ -621,7 +621,8 @@ ${currentTaskText}
         task.fromParentsExecutor,
         '前序信息选择',
         systemPrompt,
-        selectorPrompt
+        selectorPrompt,
+        { commandResultId: task.commandResultId }
       );
 
       // 4. 解析选择结果并提取信息

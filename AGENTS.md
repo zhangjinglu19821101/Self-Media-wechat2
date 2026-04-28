@@ -1748,3 +1748,34 @@
      - 适配组只有基础文章真正定稿后才应解锁
      - 删除优于标记（oi=9000 标记为 completed 会干扰兜底逻辑）
    - **验证**: 5 个测试用例全部通过（waiting_user 不解锁 / completed 解锁 / 兜底逻辑正确 / failed 不解锁 / maxOrderIndex 排除虚拟执行器）
+83. **多用户并发执行改造（组级并行）**: 将全局串行锁改为按 commandResultId 组级并行，解决多用户任务互阻塞问题
+   - **问题**: `SubtaskExecutionEngine.isExecuting` 全局锁导致不同用户的任务被串行处理，用户 A 的 insurance-d 执行（60-180秒）会阻塞用户 B、C 的所有任务
+   - **根因**: 3 层串行瓶颈
+     - L1: 全局锁 `isExecuting = true/false` — 整个进程同一时刻只能有 1 个 `execute()` 运行
+     - L2: 分组串行循环 `for...await processGroup` — 不同 commandResultId 的任务被逐个串行处理
+     - L3: 组内 orderIndex 串行 — 同组内多步任务只能一步步执行（业务逻辑需要，不能并行）
+   - **解决方案**: L1 + L2 改为组级并行，L3 保持不变
+     - `isExecuting: boolean` → `executingGroups: Map<string, { startTime: Date }>`，按 commandResultId 隔离
+     - `for...await processGroup` → `Promise.allSettled(executeGroupWithLock)`，不同组并行执行
+     - 最大并行组数 `MAX_PARALLEL_GROUPS = 5`（防止资源耗尽）
+     - 组级超时 `GROUP_EXECUTION_TIMEOUT_MS = 10min`（写作 Agent 最长 180s × 3 次重试）
+   - **LLM 请求去重键改造** (`agent-llm.ts`):
+     - inflight 请求键从 `agentId` 改为 `agentId:commandResultId`
+     - 不同用户的 insurance-d 调用使用不同键，互不取消
+     - 同一用户超时重试仍会取消前一个请求（key 相同）
+   - **修改文件**:
+     - `src/lib/services/subtask-execution-engine.ts`:
+       - 全局锁 → 组级并行锁（`executingGroups` Map + `tryAcquireGroupLock` / `releaseGroupLock`）
+       - `execute()`: 串行循环 → `Promise.allSettled` 并行
+       - 新增 `executeGroupWithLock()` 方法：加锁 → 执行 → 释放锁
+       - `executeSpecificTask()`: 也使用组级锁保护
+       - 5 处 `callLLM` 调用新增 `commandResultId` 参数
+     - `src/lib/agent-llm.ts`:
+       - `registerInflightRequest` / `unregisterInflightRequest` 新增 `commandResultId` 参数
+       - `buildInflightKey()` 构建 `agentId:commandResultId` 格式键
+       - `callLLM` / `callLLMInternal` options 新增 `commandResultId` 字段
+     - `src/lib/services/precedent-info-fetcher.ts`: `callLLM` 新增 `commandResultId`
+     - `src/lib/cron/index.ts`: 移除 `isCurrentlyExecuting()` 跳过逻辑，改为检查并行组数上限
+     - `src/app/api/health/route.ts`: 引擎状态新增 `executingGroups`/`maxParallelGroups`/`groupDetails` 字段
+     - `src/app/api/subtasks/[id]/manual-unblock/route.ts`: 简化触发逻辑，总是调用 `engine.execute()`
+   - **效果**: 3 个用户同时提交任务时，3 个 commandResultId 组并行执行，总耗时从 18-63 分钟降为 6-21 分钟

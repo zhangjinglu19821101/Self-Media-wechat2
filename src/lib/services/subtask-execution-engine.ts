@@ -753,29 +753,77 @@ interface ExecutionContext {
 
 export class SubtaskExecutionEngine {
 
-  // 🔒 进程级执行锁：防止同一进程内并发执行 engine.execute()
-  // 🔴 唯一权威锁：cron 层和其他调用方通过 isCurrentlyExecuting() 委托查询
-  private static isExecuting = false;
-  private static executionStartTime: Date | null = null;
-  private static readonly EXECUTION_TIMEOUT_MS = 5 * 60 * 1000; // 5 分钟超时
+  // 🔒 组级并行锁：按 commandResultId 隔离，不同组可并行执行
+  // 🔴 改造：从全局串行锁升级为组级并行锁，解决多用户任务互阻塞问题
+  private static executingGroups = new Map<string, { startTime: Date }>();
+  private static readonly GROUP_EXECUTION_TIMEOUT_MS = 10 * 60 * 1000; // 10 分钟组级超时（写作 Agent 最长 180s × 3 次重试）
+  private static readonly MAX_PARALLEL_GROUPS = 5; // 最大并行组数（防止资源耗尽）
 
   /**
-   * 🔒 查询引擎是否正在执行（供外部调用方使用）
+   * 🔒 查询引擎是否有任何组正在执行（供外部调用方使用）
    * 包含超时自动释放逻辑
    */
   static isCurrentlyExecuting(): boolean {
-    if (!SubtaskExecutionEngine.isExecuting) {
-      return false;
-    }
-    // 超时强制释放（防止死锁）
-    if (SubtaskExecutionEngine.executionStartTime &&
-        Date.now() - SubtaskExecutionEngine.executionStartTime.getTime() > SubtaskExecutionEngine.EXECUTION_TIMEOUT_MS) {
-      console.warn('[SubtaskEngine] 🔒 引擎执行超时，强制解锁');
-      SubtaskExecutionEngine.isExecuting = false;
-      SubtaskExecutionEngine.executionStartTime = null;
+    SubtaskExecutionEngine.cleanupExpiredGroups();
+    return SubtaskExecutionEngine.executingGroups.size > 0;
+  }
+
+  /**
+   * 🔒 查询指定组是否正在执行
+   */
+  static isGroupExecuting(commandResultId: string): boolean {
+    const entry = SubtaskExecutionEngine.executingGroups.get(commandResultId);
+    if (!entry) return false;
+    // 超时自动释放
+    if (Date.now() - entry.startTime.getTime() > SubtaskExecutionEngine.GROUP_EXECUTION_TIMEOUT_MS) {
+      console.warn(`[SubtaskEngine] 🔒 组 ${commandResultId} 执行超时，强制解锁`);
+      SubtaskExecutionEngine.executingGroups.delete(commandResultId);
       return false;
     }
     return true;
+  }
+
+  /**
+   * 清理超时的组级锁
+   */
+  private static cleanupExpiredGroups(): void {
+    const now = Date.now();
+    for (const [groupId, entry] of SubtaskExecutionEngine.executingGroups) {
+      if (now - entry.startTime.getTime() > SubtaskExecutionEngine.GROUP_EXECUTION_TIMEOUT_MS) {
+        console.warn(`[SubtaskEngine] 🔒 组 ${groupId} 执行超时，强制解锁`);
+        SubtaskExecutionEngine.executingGroups.delete(groupId);
+      }
+    }
+  }
+
+  /**
+   * 🔒 尝试获取组级锁
+   * @returns true 表示获取成功，false 表示该组已有执行在进行
+   */
+  private static tryAcquireGroupLock(commandResultId: string): boolean {
+    // 先清理过期锁
+    SubtaskExecutionEngine.cleanupExpiredGroups();
+    
+    // 检查并行数上限
+    if (SubtaskExecutionEngine.executingGroups.size >= SubtaskExecutionEngine.MAX_PARALLEL_GROUPS) {
+      console.warn(`[SubtaskEngine] 🔒 已达最大并行组数 ${SubtaskExecutionEngine.MAX_PARALLEL_GROUPS}，跳过组 ${commandResultId}`);
+      return false;
+    }
+
+    // 检查该组是否已在执行
+    if (SubtaskExecutionEngine.executingGroups.has(commandResultId)) {
+      return false;
+    }
+
+    SubtaskExecutionEngine.executingGroups.set(commandResultId, { startTime: new Date() });
+    return true;
+  }
+
+  /**
+   * 🔒 释放组级锁
+   */
+  private static releaseGroupLock(commandResultId: string): void {
+    SubtaskExecutionEngine.executingGroups.delete(commandResultId);
   }
 
   /**
@@ -785,13 +833,27 @@ export class SubtaskExecutionEngine {
     isRunning: boolean;
     startTime: Date | null;
     runningDurationMs: number | null;
+    executingGroups: number;
+    maxParallelGroups: number;
+    groupDetails: Array<{ commandResultId: string; startTime: Date; runningMs: number }>;
   } {
+    SubtaskExecutionEngine.cleanupExpiredGroups();
+    const groups = Array.from(SubtaskExecutionEngine.executingGroups.entries());
+    const earliest = groups.length > 0
+      ? groups.reduce((min, [, entry]) => entry.startTime < min ? entry.startTime : min, groups[0][1].startTime)
+      : null;
+    
     return {
-      isRunning: SubtaskExecutionEngine.isExecuting,
-      startTime: SubtaskExecutionEngine.executionStartTime,
-      runningDurationMs: SubtaskExecutionEngine.executionStartTime
-        ? Date.now() - SubtaskExecutionEngine.executionStartTime.getTime()
-        : null,
+      isRunning: groups.length > 0,
+      startTime: earliest,
+      runningDurationMs: earliest ? Date.now() - earliest.getTime() : null,
+      executingGroups: groups.length,
+      maxParallelGroups: SubtaskExecutionEngine.MAX_PARALLEL_GROUPS,
+      groupDetails: groups.map(([commandResultId, entry]) => ({
+        commandResultId,
+        startTime: entry.startTime,
+        runningMs: Date.now() - entry.startTime.getTime(),
+      })),
     };
   }
 
@@ -841,8 +903,19 @@ export class SubtaskExecutionEngine {
         return { success: false, message: '没有找到指定的任务', tasksFound: 0 };
       }
 
-      // 处理任务
-      await this.processGroup(tasks);
+      // 🔒 获取组级锁（防止与主 execute() 并行执行同一组）
+      if (!SubtaskExecutionEngine.tryAcquireGroupLock(commandResultId)) {
+        console.log('[SubtaskEngine] 🔒 该组已在执行中，跳过测试模式执行');
+        return { success: false, message: '该组已在执行中', tasksFound: tasks.length };
+      }
+
+      try {
+        // 处理任务
+        await this.processGroup(tasks);
+      } finally {
+        // 🔒 释放组级锁
+        SubtaskExecutionEngine.releaseGroupLock(commandResultId);
+      }
 
       console.log('[SubtaskEngine] 特定任务执行完成');
       console.log('[SubtaskEngine] 🔴🔴🔴 ========== 特定任务执行结束（成功） ========== 🔴🔴🔴');
@@ -864,19 +937,15 @@ export class SubtaskExecutionEngine {
   }
 
   async execute() {
-    // 🔒 进程级并发控制（单一权威锁）
-    if (SubtaskExecutionEngine.isCurrentlyExecuting()) {
-      console.log('[SubtaskEngine] 🔒 引擎已在执行中，跳过本次调用');
-      return;
-    }
-
-    SubtaskExecutionEngine.isExecuting = true;
-    SubtaskExecutionEngine.executionStartTime = new Date();
+    // 🔒 清理过期锁
+    SubtaskExecutionEngine.cleanupExpiredGroups();
 
     console.log('');
     console.log('[SubtaskEngine] ========== 子任务引擎开始执行 ==========');
     console.log('[SubtaskEngine] 执行信息:', {
       execution_time: new Date().toISOString(),
+      current_executing_groups: SubtaskExecutionEngine.executingGroups.size,
+      max_parallel_groups: SubtaskExecutionEngine.MAX_PARALLEL_GROUPS,
     });
 
     try {
@@ -899,40 +968,97 @@ export class SubtaskExecutionEngine {
 
       if (pendingTasks.length === 0) {
         console.log('[SubtaskEngine] 没有待执行任务，结束');
-        console.log('[SubtaskEngine] 🔴🔴🔴 ========== 子任务引擎执行结束（无任务） ========== 🔴🔴🔴');
+        console.log('[SubtaskEngine] ========== 子任务引擎执行结束（无任务） ==========');
         return;
       }
 
       const groupedTasks = this.groupTasks(pendingTasks);
       console.log('[SubtaskEngine] 分组完成:', {
         total_groups: Object.keys(groupedTasks).length,
-        group_ids: Object.keys(groupedTasks)
+        group_ids: Object.keys(groupedTasks),
+        already_executing: Array.from(SubtaskExecutionEngine.executingGroups.keys()),
       });
 
-      // 🔴 直接使用分组，无需防重（定时任务重复调用问题已在 scheduler.ts 源头修复）
       if (Object.keys(groupedTasks).length === 0) {
         console.log('[SubtaskEngine] 没有待处理的分组，跳过执行');
         console.log('[SubtaskEngine] ========== 子任务引擎执行结束 ==========');
         return;
       }
 
-      for (const [groupId, tasks] of Object.entries(groupedTasks)) {
-        console.log('[SubtaskEngine] 开始处理分组:', {
-          command_result_id: groupId,
-          tasks_count: tasks.length,
-          order_indexes: [...new Set(tasks.map(t => t.orderIndex))].sort((a, b) => a - b).join(', ')
-        });
-        await this.processGroup(tasks);
+      // 🔴🔴🔴 组级并行执行：不同 commandResultId 的任务组可同时执行
+      // 过滤掉已经在执行的组，获取可执行的组
+      const executableGroups = Object.entries(groupedTasks).filter(
+        ([groupId]) => !SubtaskExecutionEngine.isGroupExecuting(groupId)
+      );
+
+      if (executableGroups.length === 0) {
+        console.log('[SubtaskEngine] 所有分组都已在执行中，跳过');
+        return;
       }
 
-      console.log('[SubtaskEngine] 执行完成');
+      console.log('[SubtaskEngine] 🚀 并行执行分组:', {
+        total_groups: Object.keys(groupedTasks).length,
+        already_executing: SubtaskExecutionEngine.executingGroups.size,
+        to_execute: executableGroups.length,
+        groups: executableGroups.map(([groupId, tasks]) => ({
+          command_result_id: groupId,
+          tasks_count: tasks.length,
+          order_indexes: [...new Set(tasks.map(t => t.orderIndex))].sort((a, b) => a - b).join(', '),
+        })),
+      });
+
+      // 并行执行所有可执行的组
+      const groupPromises = executableGroups.map(([groupId, tasks]) =>
+        this.executeGroupWithLock(groupId, tasks)
+      );
+
+      // 等待所有组执行完成（使用 allSettled 确保一个组失败不影响其他组）
+      const results = await Promise.allSettled(groupPromises);
+      
+      // 汇总执行结果
+      const succeeded = results.filter(r => r.status === 'fulfilled').length;
+      const failed = results.filter(r => r.status === 'rejected').length;
+      console.log('[SubtaskEngine] 执行完成:', {
+        total: results.length,
+        succeeded,
+        failed,
+        failed_reasons: results
+          .filter((r): r is PromiseRejectedResult => r.status === 'rejected')
+          .map(r => r.reason?.message || String(r.reason)),
+      });
     } catch (error) {
       console.error('[SubtaskEngine] 执行失败:', error);
       throw error;
+    }
+  }
+
+  /**
+   * 🔴 组级加锁执行：获取组级锁 → 执行 → 释放锁
+   * 每个组独立获取和释放锁，互不影响
+   */
+  private async executeGroupWithLock(
+    groupId: string,
+    tasks: typeof agentSubTasks.$inferSelect[]
+  ): Promise<void> {
+    // 尝试获取组级锁
+    if (!SubtaskExecutionEngine.tryAcquireGroupLock(groupId)) {
+      console.log('[SubtaskEngine] 🔒 组已在执行中或达到并行上限，跳过:', groupId);
+      return;
+    }
+
+    try {
+      console.log('[SubtaskEngine] 🔒 获取组级锁，开始处理分组:', {
+        command_result_id: groupId,
+        tasks_count: tasks.length,
+      });
+      await this.processGroup(tasks);
+    } catch (error) {
+      console.error(`[SubtaskEngine] 组 ${groupId} 执行失败:`, error);
+      throw error;
     } finally {
-      // 🔒 无论成功失败，释放进程级锁
-      SubtaskExecutionEngine.isExecuting = false;
-      SubtaskExecutionEngine.executionStartTime = null;
+      // 🔒 无论成功失败，释放组级锁
+      SubtaskExecutionEngine.releaseGroupLock(groupId);
+      console.log('[SubtaskEngine] 🔒 释放组级锁:', groupId);
     }
   }
 
@@ -8232,7 +8358,7 @@ ${userFeedbackText}
         '直接执行任务',
         agentPrompt,
         fullPrompt,
-        { workspaceId: task.workspaceId || undefined, timeout: _llmTimeout }
+        { workspaceId: task.workspaceId || undefined, timeout: _llmTimeout, commandResultId: task.commandResultId }
       );
       const llmEndAt = getCurrentBeijingTime();
       
@@ -8702,7 +8828,7 @@ ${agentBDecision ?
         '继续执行任务',
         '你是 ' + task.fromParentsExecutor + '，请根据以上信息继续执行任务',
         prompt,
-        { workspaceId: task.workspaceId || undefined, timeout: _reExecTimeout }
+        { workspaceId: task.workspaceId || undefined, timeout: _reExecTimeout, commandResultId: task.commandResultId }
       );
 
       // ========== 🔴 记录执行 Agent 交互（正常情况） ==========
@@ -9907,6 +10033,7 @@ ${resultData.executionSummary}
         {
           timeout: 180000, // 3 分钟超时
           workspaceId: task.workspaceId || undefined,
+          commandResultId: task.commandResultId,
         }
       );
 
@@ -11664,6 +11791,7 @@ ${contentToUse}
         {
           timeout: 180000, // 3 分钟超时
           workspaceId: task.workspaceId || undefined,
+          commandResultId: task.commandResultId,
         }
       );
       
@@ -11827,7 +11955,7 @@ ${currentTaskText}
         '前序信息选择',
         systemPrompt,
         selectorPrompt,
-        { workspaceId: task.workspaceId || undefined }
+        { workspaceId: task.workspaceId || undefined, commandResultId: task.commandResultId }
       );
       
       const llmEndAt = getCurrentBeijingTime();

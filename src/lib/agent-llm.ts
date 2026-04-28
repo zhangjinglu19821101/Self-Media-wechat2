@@ -5,34 +5,44 @@
  * 🔥 集成 Agent 记忆系统，加载历史经验和知识
  */
 
-// 🔴 P0 修复：请求去重守卫 — 防止同一 Agent 的并发 LLM 调用（幽灵请求）
+// 🔴 P0 修复：请求去重守卫 — 防止同一任务的并发 LLM 调用（幽灵请求）
 // 当超时触发重试时，前一个请求可能仍在服务端执行，需要：
-// 1. 记录每个 Agent 正在执行的请求
+// 1. 记录每个任务正在执行的请求
 // 2. 重试前取消前一个请求的 AbortController
-// 3. 避免同一 Agent 同时发出多个 LLM 调用
+// 3. 避免同一任务同时发出多个 LLM 调用
+// 🔴 并行改造：key 从 agentId 改为 agentId:commandResultId，支持不同用户并行调用同一 Agent
 const inflightRequests = new Map<string, {
   abortController: AbortController;
   startedAt: number;
 }>();
 
 /**
+ * 构建 inflight 请求的唯一键
+ * 格式：agentId:commandResultId（如果提供 commandResultId），否则 agentId（向后兼容）
+ */
+function buildInflightKey(agentId: string, commandResultId?: string): string {
+  return commandResultId ? `${agentId}:${commandResultId}` : agentId;
+}
+
+/**
  * 注册正在执行的 LLM 请求
  * @returns AbortController 用于取消请求
  */
-function registerInflightRequest(agentId: string): AbortController {
+function registerInflightRequest(agentId: string, commandResultId?: string): AbortController {
+  const key = buildInflightKey(agentId, commandResultId);
   // 如果有前一个请求，尝试取消它（超时重试场景）
-  const existing = inflightRequests.get(agentId);
+  const existing = inflightRequests.get(key);
   if (existing) {
     try {
       existing.abortController.abort();
-      console.warn(`[LLM Guard] 取消 Agent ${agentId} 的前一个请求（运行 ${Date.now() - existing.startedAt}ms）`);
+      console.warn(`[LLM Guard] 取消 ${key} 的前一个请求（运行 ${Date.now() - existing.startedAt}ms）`);
     } catch {
       // 忽略取消失败
     }
   }
 
   const controller = new AbortController();
-  inflightRequests.set(agentId, {
+  inflightRequests.set(key, {
     abortController: controller,
     startedAt: Date.now(),
   });
@@ -42,8 +52,9 @@ function registerInflightRequest(agentId: string): AbortController {
 /**
  * 注销正在执行的 LLM 请求
  */
-function unregisterInflightRequest(agentId: string): void {
-  inflightRequests.delete(agentId);
+function unregisterInflightRequest(agentId: string, commandResultId?: string): void {
+  const key = buildInflightKey(agentId, commandResultId);
+  inflightRequests.delete(key);
 }
 
 /**
@@ -171,6 +182,7 @@ export async function callLLM(
     timeout?: number; // 新增：超时时间（毫秒）
     workspaceId?: string; // BYOK：传入 workspaceId 以使用用户 API Key
     maxRetries?: number; // 🔴 阶段1：最大重试次数（默认 3）
+    commandResultId?: string; // 🔴 并行改造：传入 commandResultId 实现按组去重，不同组可并行
     /**
      * 🔴 P1 修复：skipCircuitBreaker 仅限内部健康探测使用
      * ⚠️ 业务代码禁止使用此选项！所有 LLM 调用必须经过熔断器保护。
@@ -275,12 +287,14 @@ async function callLLMInternal(
     timeout?: number;
     workspaceId?: string;
     maxRetries?: number;
+    commandResultId?: string; // 🔴 并行改造：按组去重
     /** @internal 仅限健康探测使用 */
     skipCircuitBreaker?: boolean;
   }
 ): Promise<string> {
     // 🔴 P0 修复：注册请求去重守卫，超时重试时自动取消前一个请求
-    const abortController = registerInflightRequest(agentId);
+    // 🔴 并行改造：使用 agentId:commandResultId 作为去重键，不同组可并行
+    const abortController = registerInflightRequest(agentId, options?.commandResultId);
 
     // 🔴 阶段1：降低默认超时 120s → 60s，减少单次调用阻塞引擎的时间
     const temperature = options?.temperature || 0.3;
@@ -447,7 +461,8 @@ async function callLLMInternal(
     throw error;
   } finally {
     // 🔴 P0 修复：无论成功失败，都注销 inflight 请求
-    unregisterInflightRequest(agentId);
+    // 🔴 并行改造：传入 commandResultId 确保正确的组级注销
+    unregisterInflightRequest(agentId, options?.commandResultId);
   }
 }
 

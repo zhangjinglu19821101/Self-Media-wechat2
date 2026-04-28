@@ -189,35 +189,17 @@ export async function POST(
       console.warn('[Manual Unblock] 记录操作日志失败（不影响主流程）:', historyError);
     }
 
-    // 8. 触发引擎执行（带并发安全守卫）
+    // 8. 触发引擎执行（组级并行：总是尝试执行，引擎内部决定哪些组可运行）
     try {
       const { SubtaskExecutionEngine } = await import('@/lib/services/subtask-execution-engine');
 
-      if (SubtaskExecutionEngine.isCurrentlyExecuting()) {
-        // 引擎正在执行其他任务，当前 execute() 会被锁跳过
-        // 注册延迟重试：等当前执行结束后再触发一次，确保新解锁的 pending 任务被拾取
-        console.log('[Manual Unblock] 引擎正在执行中，注册延迟重试');
-        const retryInterval = setInterval(() => {
-          if (!SubtaskExecutionEngine.isCurrentlyExecuting()) {
-            clearInterval(retryInterval);
-            const retryEngine = new SubtaskExecutionEngine();
-            retryEngine.execute().catch((err: unknown) => {
-              console.error('[Manual Unblock] 延迟重试引擎执行失败:', err);
-            });
-            console.log('[Manual Unblock] 延迟重试已触发');
-          }
-        }, 2000); // 每 2 秒检查一次引擎状态
-
-        // 安全兜底：最多等待 30 秒，防止泄漏
-        setTimeout(() => clearInterval(retryInterval), 30000);
-      } else {
-        // 引擎空闲，直接触发
-        const engine = new SubtaskExecutionEngine();
-        engine.execute().catch((err: unknown) => {
-          console.error('[Manual Unblock] 引擎执行失败:', err);
-        });
-        console.log('[Manual Unblock] 引擎已触发执行');
-      }
+      // 引擎使用组级并行锁，不会因已有组在执行而跳过新组
+      // 总是触发执行，让引擎自行决定是否可执行新解锁的任务
+      const engine = new SubtaskExecutionEngine();
+      engine.execute().catch((err: unknown) => {
+        console.error('[Manual Unblock] 引擎执行失败:', err);
+      });
+      console.log('[Manual Unblock] 引擎已触发执行');
     } catch (engineError) {
       console.warn('[Manual Unblock] 触发引擎失败（不影响解锁）:', engineError);
     }

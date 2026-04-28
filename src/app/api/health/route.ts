@@ -68,6 +68,9 @@ interface HealthCheckResult {
     engine?: {
       status: HealthLevel;
       isExecuting: boolean;
+      executingGroups: number;
+      maxParallelGroups: number;
+      groupDetails: Array<{ commandResultId: string; startTime: string; runningMs: number }>;
       executionStartTime: string | null;
       runningDurationMs: number | null;
     };
@@ -213,6 +216,13 @@ export async function GET(request: NextRequest) {
     result.checks.engine = {
       status: 'healthy',
       isExecuting: engineStatus.isRunning,
+      executingGroups: engineStatus.executingGroups,
+      maxParallelGroups: engineStatus.maxParallelGroups,
+      groupDetails: engineStatus.groupDetails.map(g => ({
+        commandResultId: g.commandResultId,
+        startTime: g.startTime.toISOString(),
+        runningMs: g.runningMs,
+      })),
       executionStartTime: engineStatus.startTime?.toISOString() ?? null,
       runningDurationMs: engineStatus.runningDurationMs,
     };
@@ -220,6 +230,9 @@ export async function GET(request: NextRequest) {
     result.checks.engine = {
       status: 'degraded',
       isExecuting: false,
+      executingGroups: 0,
+      maxParallelGroups: 5,
+      groupDetails: [],
       executionStartTime: null,
       runningDurationMs: null,
     };
