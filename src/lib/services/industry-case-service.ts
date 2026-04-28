@@ -49,6 +49,7 @@ export interface CaseMatchResult {
   sceneTags: string[];
   emotionTags: string[];
   relevanceScore: number;      // 相关度分数
+  workspaceId?: string;        // 工作空间ID（区分系统预置 vs 用户私有）
 }
 
 // ============================================================================
@@ -493,6 +494,7 @@ export async function searchCases(params: CaseSearchParams): Promise<CaseMatchRe
       sceneTags: caseItem.sceneTags as string[],
       emotionTags: caseItem.emotionTags as string[],
       relevanceScore,
+      workspaceId: caseItem.workspaceId,  // 🔥 传递 workspaceId，区分系统/用户案例
     };
     
     // 有相关度 → 精确匹配桶；无相关度 → 兜底候选桶
@@ -574,6 +576,7 @@ export async function getCasesByIds(caseIds: string[], workspaceId?: string): Pr
     sceneTags: c.sceneTags as string[],
     emotionTags: c.emotionTags as string[],
     relevanceScore: 100, // 用户手动选择的案例，设为最高相关度
+    workspaceId: c.workspaceId,  // 🔥 传递 workspaceId，区分系统/用户案例
   }));
 }
 
@@ -671,16 +674,21 @@ export async function importCases(cases: any[], workspaceId?: string): Promise<{
   
   for (const caseData of cases) {
     try {
-      // 去重检查：按 caseId + industry 判断是否已存在
+      // 去重检查：按 caseId + industry + workspaceId 判断是否已存在
+      // 不同 workspace 可以有相同 caseId（如用户复制系统案例后修改）
+      const dedupConditions: any[] = [
+        eq(industryCaseLibrary.caseId, caseData.caseId),
+        eq(industryCaseLibrary.industry, caseData.industry),
+      ];
+      // 如果传入了 workspaceId，在同 workspace 内去重；否则全局去重（兼容旧调用）
+      if (workspaceId) {
+        dedupConditions.push(eq(industryCaseLibrary.workspaceId, workspaceId));
+      }
+      
       const existing = await db
         .select({ id: industryCaseLibrary.id })
         .from(industryCaseLibrary)
-        .where(
-          and(
-            eq(industryCaseLibrary.caseId, caseData.caseId),
-            eq(industryCaseLibrary.industry, caseData.industry)
-          )
-        )
+        .where(and(...dedupConditions))
         .limit(1);
       
       if (existing.length > 0) {
@@ -793,35 +801,39 @@ export async function updateCase(
   updates: Partial<Omit<NewIndustryCase, 'id' | 'workspaceId' | 'createdAt'>>,
   workspaceId: string
 ): Promise<IndustryCase | null> {
-  // 🔥 权限校验：只能更新自己的案例
-  const existing = await db
-    .select()
-    .from(industryCaseLibrary)
-    .where(eq(industryCaseLibrary.id, caseId))
-    .limit(1);
-  
-  if (!existing.length) {
-    return null;
-  }
-  
-  // 系统案例不允许修改
-  if (existing[0].workspaceId === CASE_SYSTEM_WORKSPACE_ID) {
-    throw new Error('系统预置案例不允许修改');
-  }
-  
-  // 只能修改自己的案例
-  if (existing[0].workspaceId !== workspaceId) {
-    throw new Error('无权修改此案例');
-  }
-  
+  // 🔥 原子操作：在 UPDATE 的 WHERE 条件中同时校验权限，避免 TOCTOU 竞态
+  // 条件：id 匹配 + workspaceId 匹配（非系统案例）→ 只有自己的案例才能更新
   const [updated] = await db
     .update(industryCaseLibrary)
     .set({
       ...updates,
       updatedAt: new Date(),
     })
-    .where(eq(industryCaseLibrary.id, caseId))
+    .where(
+      and(
+        eq(industryCaseLibrary.id, caseId),
+        eq(industryCaseLibrary.workspaceId, workspaceId),  // 只能更新自己的案例
+        sql`${industryCaseLibrary.workspaceId} != ${CASE_SYSTEM_WORKSPACE_ID}`  // 系统案例不可修改
+      )
+    )
     .returning();
+  
+  if (!updated) {
+    // 区分"不存在"和"无权修改"
+    const existing = await db
+      .select({ workspaceId: industryCaseLibrary.workspaceId })
+      .from(industryCaseLibrary)
+      .where(eq(industryCaseLibrary.id, caseId))
+      .limit(1);
+    
+    if (!existing.length) {
+      return null;  // 案例不存在
+    }
+    if (existing[0].workspaceId === CASE_SYSTEM_WORKSPACE_ID) {
+      throw new Error('系统预置案例不允许修改');
+    }
+    throw new Error('无权修改此案例');
+  }
   
   return updated;
 }
@@ -834,30 +846,34 @@ export async function updateCase(
  * @returns 是否删除成功
  */
 export async function deleteCase(caseId: string, workspaceId: string): Promise<boolean> {
-  // 🔥 权限校验：只能删除自己的案例
-  const existing = await db
-    .select()
-    .from(industryCaseLibrary)
-    .where(eq(industryCaseLibrary.id, caseId))
-    .limit(1);
+  // 🔥 原子操作：在 DELETE 的 WHERE 条件中同时校验权限，避免 TOCTOU 竞态
+  const deleted = await db
+    .delete(industryCaseLibrary)
+    .where(
+      and(
+        eq(industryCaseLibrary.id, caseId),
+        eq(industryCaseLibrary.workspaceId, workspaceId),  // 只能删除自己的案例
+        sql`${industryCaseLibrary.workspaceId} != ${CASE_SYSTEM_WORKSPACE_ID}`  // 系统案例不可删除
+      )
+    )
+    .returning({ id: industryCaseLibrary.id });
   
-  if (!existing.length) {
-    return false;
-  }
-  
-  // 系统案例不允许删除
-  if (existing[0].workspaceId === CASE_SYSTEM_WORKSPACE_ID) {
-    throw new Error('系统预置案例不允许删除');
-  }
-  
-  // 只能删除自己的案例
-  if (existing[0].workspaceId !== workspaceId) {
+  if (deleted.length === 0) {
+    // 区分"不存在"和"无权删除"
+    const existing = await db
+      .select({ workspaceId: industryCaseLibrary.workspaceId })
+      .from(industryCaseLibrary)
+      .where(eq(industryCaseLibrary.id, caseId))
+      .limit(1);
+    
+    if (!existing.length) {
+      return false;  // 案例不存在
+    }
+    if (existing[0].workspaceId === CASE_SYSTEM_WORKSPACE_ID) {
+      throw new Error('系统预置案例不允许删除');
+    }
     throw new Error('无权删除此案例');
   }
-  
-  await db
-    .delete(industryCaseLibrary)
-    .where(eq(industryCaseLibrary.id, caseId));
   
   return true;
 }

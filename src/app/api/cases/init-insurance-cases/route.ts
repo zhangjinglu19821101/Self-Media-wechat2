@@ -68,8 +68,8 @@ export async function GET(request: NextRequest) {
         continue;
       }
       
-      // 导入数据库（含去重）
-      const result = await industryCaseService.importCases(cases);
+      // 导入数据库（含去重），系统预置案例使用 'system' 作为 workspaceId
+      const result = await industryCaseService.importCases(cases, 'system');
       totalSuccess += result.success;
       totalFailed += result.failed;
       totalSkipped += result.skipped;

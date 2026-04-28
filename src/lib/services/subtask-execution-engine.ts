@@ -7911,7 +7911,7 @@ export class SubtaskExecutionEngine {
 
           if (_userCaseIds.length > 0) {
             // 优先：用户手动选择的案例——直接按 ID 查询，不依赖 searchCases 的热门排序
-            const _selectedCases = await industryCaseService.getCasesByIds(_userCaseIds);
+            const _selectedCases = await industryCaseService.getCasesByIds(_userCaseIds, task.workspaceId || undefined);
             if (_selectedCases.length > 0) {
               _industryCasesText = industryCaseService.formatCasesForPrompt(_selectedCases, 'manual');
               console.log('[SubtaskEngine] 📚 用户选择案例:', _selectedCases.length, '条');
