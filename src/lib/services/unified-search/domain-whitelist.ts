@@ -20,14 +20,14 @@ export const DOMAIN_GROUPS: DomainGroup[] = [
   {
     key: 'regulatory',
     label: '监管机构',
-    sites: ['cbirc.gov.cn', 'pbc.gov.cn', 'csrc.gov.cn'],
+    sites: ['www.nfra.gov.cn', 'pbc.gov.cn', 'csrc.gov.cn'],
     description: '国家金融监督管理总局、中国人民银行、证监会',
   },
   {
     key: 'media',
     label: '官方媒体',
-    sites: ['xinhuanet.com', 'people.com.cn', 'cctv.com'],
-    description: '新华网、人民网、央视网',
+    sites: ['xinhuanet.com', 'people.com.cn', 'news.cctv.com'],
+    description: '新华网、人民网、央视新闻',
   },
   {
     key: 'finance',
@@ -38,14 +38,14 @@ export const DOMAIN_GROUPS: DomainGroup[] = [
   {
     key: 'insurance',
     label: '保险行业',
-    sites: ['iachina.cn', 'circ.gov.cn'],
-    description: '中国保险行业协会、原保监会（历史数据）',
+    sites: ['iachina.cn'],
+    description: '中国保险行业协会',
   },
   {
     key: 'law',
     label: '法律法规',
-    sites: ['npc.gov.cn', 'court.gov.cn'],
-    description: '全国人大（法律法规原文）、最高人民法院',
+    sites: ['flk.npc.gov.cn', 'court.gov.cn'],
+    description: '国家法律法规数据库、最高人民法院',
   },
   {
     key: 'knowledge',
