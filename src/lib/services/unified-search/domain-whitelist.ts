@@ -26,19 +26,19 @@ export const DOMAIN_GROUPS: DomainGroup[] = [
   {
     key: 'media',
     label: '官方媒体',
-    sites: ['xinhuanet.com', 'people.com.cn', 'news.cctv.com'],
+    sites: ['www.xinhuanet.com', 'www.people.com.cn', 'news.cctv.com'],
     description: '新华网、人民网、央视新闻',
   },
   {
     key: 'finance',
     label: '财经媒体',
-    sites: ['caixin.com', 'ce.cn', 'jjckb.cn'],
+    sites: ['www.caixin.com', 'www.ce.cn', 'jjckb.cn'],
     description: '财新网、中国经济网、经济参考报',
   },
   {
     key: 'insurance',
     label: '保险行业',
-    sites: ['iachina.cn'],
+    sites: ['www.iachina.cn'],
     description: '中国保险行业协会',
   },
   {
@@ -56,7 +56,7 @@ export const DOMAIN_GROUPS: DomainGroup[] = [
   {
     key: 'data',
     label: '统计数据',
-    sites: ['stats.gov.cn'],
+    sites: ['www.stats.gov.cn'],
     description: '国家统计局',
   },
 ];

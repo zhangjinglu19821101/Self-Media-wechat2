@@ -137,33 +137,58 @@ export class WebSearcher {
     }
 
     // 3. 构建站点列表
-    const sites = getSitesForDomains(domains);
-    console.log(`[WebSearcher] 搜索: "${query}", 站点: ${sites}, 数量: ${limit}`);
+    const sitesStr = getSitesForDomains(domains);
+    const siteList = sitesStr.split(',').map(s => s.trim()).filter(Boolean);
+    console.log(`[WebSearcher] 搜索: "${query}", 站点数: ${siteList.length}, 数量: ${limit}`);
 
-    // 4. 调用 SearchClient
+    // 4. 调用 SearchClient（多站点分别搜索后合并）
     const config = new Config();
     const customHeaders = requestHeaders
       ? HeaderUtils.extractForwardHeaders(requestHeaders)
       : undefined;
     const client = new SearchClient(config, customHeaders);
 
-    const response = await client.advancedSearch(query, {
-      sites,
-      count: limit,
-      needSummary: true,
-      needContent: true,
-      searchType: 'web',
-    });
+    // 并行搜索每个站点（SearchClient sites 参数仅支持单个站点）
+    const searchPromises = siteList.map(site =>
+      client.advancedSearch(query, {
+        sites: site,
+        count: limit, // 每个站点取前 limit 条
+        needSummary: true,
+        needContent: true,
+        searchType: 'web',
+      }).catch(err => {
+        console.warn(`[WebSearcher] 站点 "${site}" 搜索失败:`, err.message);
+        return { web_items: [] };
+      })
+    );
 
-    // 5. 转换结果格式
-    const results: WebSearchResultItem[] = (response.web_items || []).map(item => ({
-      id: item.id || `web-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-      title: item.title || '',
-      snippet: item.snippet || '',
-      url: item.url || '',
-      siteName: item.site_name || '',
-      authLevel: item.auth_info_level ?? 0,
-    }));
+    const responses = await Promise.all(searchPromises);
+
+    // 5. 合并结果并去重（按 URL 去重）
+    const seenUrls = new Set<string>();
+    const allResults: WebSearchResultItem[] = [];
+
+    for (const response of responses) {
+      for (const item of response.web_items || []) {
+        const url = item.url || '';
+        if (!url || seenUrls.has(url)) continue;
+        seenUrls.add(url);
+        allResults.push({
+          id: item.id || `web-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+          title: item.title || '',
+          snippet: item.snippet || '',
+          url,
+          siteName: item.site_name || '',
+          authLevel: item.auth_info_level ?? 0,
+        });
+      }
+    }
+
+    // 按权威度降序排序
+    allResults.sort((a, b) => b.authLevel - a.authLevel);
+
+    // 取前 limit 条
+    const results = allResults.slice(0, limit);
 
     // 6. 写入缓存（LRU 自动淘汰最久未访问条目）
     searchCache.set(cacheKey, { results, createdAt: Date.now() });
