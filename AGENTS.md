@@ -1726,3 +1726,25 @@
      - 修复：从 `max: 1` 改为 `max: 2`，支持并行步骤（如克隆结构）
    - **P2-5 修复（pool stats 类型安全）**:
      - 修复：使用精确类型 `{ pool?: { size?: number } }` 替代 `as any`
+82. **两阶段架构适配组提前解锁 Bug 修复（彻底修复）**: 解决公众号 waiting_user 时同组小红书已经开始执行的问题
+   - **核心 Bug**: `unlockAdaptationGroupsIfNeeded` 中 `isVirtualExecutor` 检查不区分任务状态，`user_preview_edit` 变为 `waiting_user` 时就触发适配组解锁
+   - **根因链路**:
+     1. `markTaskWaitingUser`（第9343行）调用 `unlockAdaptationGroupsIfNeeded`
+     2. `unlockAdaptationGroupsIfNeeded` 第7329行仅检查 `isVirtualExecutor(task.fromParentsExecutor)`，不检查 `task.status`
+     3. `user_preview_edit` 刚变为 `waiting_user` 就被当作定稿点，立即解锁同 multiPlatformGroupId 的所有 blocked 适配任务
+   - **修复1（核心）**: `unlockAdaptationGroupsIfNeeded` 第7329行增加 `task.status === 'completed'` 条件
+     - 修复前：`if (isVirtualExecutor(task.fromParentsExecutor))`
+     - 修复后：`if (isVirtualExecutor(task.fromParentsExecutor) && task.status === 'completed')`
+   - **修复2（调用源）**: `markTaskWaitingUser` 中移除 `unlockAdaptationGroupsIfNeeded` 调用
+     - waiting_user 不应触发解锁，只有 completed 才应触发
+     - unlockAdaptationGroupsIfNeeded 已在 markTaskCompleted 路径中正确调用
+   - **修复3（oi=9000 根除）**: `splitForOutlineConfirmationIfNeeded` 将原任务从"搬到 oi=9000"改为"直接删除"
+     - 删除 `OUTLINE_SPLIT_BASE_ORDER = 9000` 常量
+     - 事务中先记录 step_history，再删除关联 step_history，最后删除原任务
+   - **修复4（兜底逻辑防护）**: `unlockAdaptationGroupsIfNeeded` 和 `healBlockedAdaptationGroups` 的兜底计算增加 `orderIndex < 9000` 过滤
+   - **数据清理**: 删除数据库中 6 条 oi=9000 遗留任务
+   - **设计原则**:
+     - 定稿点 = 用户确认预览（completed），不是等待用户（waiting_user）
+     - 适配组只有基础文章真正定稿后才应解锁
+     - 删除优于标记（oi=9000 标记为 completed 会干扰兜底逻辑）
+   - **验证**: 5 个测试用例全部通过（waiting_user 不解锁 / completed 解锁 / 兜底逻辑正确 / failed 不解锁 / maxOrderIndex 排除虚拟执行器）

@@ -1837,7 +1837,10 @@ export class SubtaskExecutionEngine {
       task_title: task.taskTitle,
     });
 
-    const OUTLINE_SPLIT_BASE_ORDER = 9000; // 原任务搬到的位置（区别于 AUTO_SPLIT 的 1000）
+    // OUTLINE_SPLIT_BASE_ORDER 已废弃：原任务不再搬到 9000，而是直接删除
+    // 旧逻辑将原任务设为 oi=9000 + status=completed，会导致：
+    // 1. unlockAdaptationGroupsIfNeeded 兜底计算 maxOrderIndex=9000，错误判定定稿点
+    // 2. 遗留垃圾数据干扰 processGroup 的 orderIndex 遍历
     const baseOrderIndex = task.orderIndex;
 
     try {
@@ -1857,45 +1860,53 @@ export class SubtaskExecutionEngine {
 
         console.log('[SubtaskEngine] 📋 [Phase3] 受影响任务数:', affectedTasks.length);
 
-        // 2. 将原任务标记为已拆分
-        await tx
-          .update(agentSubTasks)
-          .set({
-            orderIndex: OUTLINE_SPLIT_BASE_ORDER,
-            status: 'completed',
-            resultText: '【大纲确认拆分】原任务已拆分为"生成大纲"+"生成全文"两个子任务',
-            resultData: {
-              ...(typeof task.resultData === 'object' ? task.resultData : {}),
-              isOutlineSplit: true,
-              outlineSplitInfo: {
-                originalOrderIndex: baseOrderIndex,
-                createdAt: new Date().toISOString(),
-              },
-            } as any,
-            updatedAt: getCurrentBeijingTime(),
-          })
-          .where(eq(agentSubTasks.id, task.id));
-        console.log('[SubtaskEngine] 📋 [Phase3] 原任务已标记为大纲拆分');
+        // 2. 直接删除原任务（不再搬到 9000）
+        // 先记录原任务信息到 step_history，然后删除
+        await tx.insert(agentSubTasksStepHistory).values({
+          commandResultId: task.commandResultId,
+          stepNo: baseOrderIndex,
+          interactType: 'system',
+          interactUser: 'system',
+          interactContent: {
+            action: 'OUTLINE_CONFIRMATION_SPLIT',
+            reason: `${task.fromParentsExecutor} 创作任务自动拆分为大纲+全文双子任务，原任务已删除`,
+            originalTaskId: task.id,
+            originalTaskTitle: task.taskTitle,
+            originalOrderIndex: baseOrderIndex,
+            timestamp: new Date().toISOString(),
+          } as any,
+        });
 
-        // 3. 后续任务 order_index +1 顺延（因为原任务移到 9000，只新增了 1 个任务位置）
-        // 原任务移走后，子任务A 占原位置，子任务B 占 +1 位置，所以后续任务只需 +1
+        // 删除原任务的 step_history（避免孤儿记录）
+        await tx
+          .delete(agentSubTasksStepHistory)
+          .where(
+            and(
+              eq(agentSubTasksStepHistory.commandResultId, task.commandResultId as any),
+              eq(agentSubTasksStepHistory.interactUser, task.id)
+            )
+          );
+
+        // 删除原任务
+        await tx
+          .delete(agentSubTasks)
+          .where(eq(agentSubTasks.id, task.id));
+        console.log('[SubtaskEngine] 📋 [Phase3] 原任务已删除（不再搬到 9000）:', { taskId: task.id, orderIndex: baseOrderIndex });
+
+        // 3. 后续任务 order_index +1 顺延（原任务已删除，子任务A 占原位置，子任务B 占 +1 位置）
         const tasksToMove = affectedTasks.filter(
           (t) => t.id !== task.id && t.orderIndex > baseOrderIndex
         );
 
         for (const taskToMove of tasksToMove.reverse()) {
           const oldOrderIndex = taskToMove.orderIndex;
-          const newOrderIndex = oldOrderIndex + 1;  // 🔥 修复：+1 而非 +2
+          const newOrderIndex = oldOrderIndex + 1;
           
-          // 更新 agent_sub_tasks 的 orderIndex
           await tx
             .update(agentSubTasks)
             .set({ orderIndex: newOrderIndex })
             .where(eq(agentSubTasks.id, taskToMove.id));
           
-          // 同步更新 step_history 的 stepNo（保持数据一致性）
-          // 注意：此处更新可能影响同一 stepNo 的多条历史记录
-          // TODO: P0 问题待优化 - step_history 应通过 taskId 关联而非 stepNo
           await tx
             .update(agentSubTasksStepHistory)
             .set({ stepNo: newOrderIndex })
@@ -1987,15 +1998,16 @@ export class SubtaskExecutionEngine {
           full_article_order: baseOrderIndex + 1,
         });
 
-        // 6. 记录拆分操作到历史
+        // 6. 记录拆分操作到历史（stepNo 用 baseOrderIndex，不再用 9000）
+        // 注意：已在步骤 2 中插入了删除原任务的 step_history 记录，此处记录创建双子任务的操作
         await tx.insert(agentSubTasksStepHistory).values({
           commandResultId: task.commandResultId,
-          stepNo: OUTLINE_SPLIT_BASE_ORDER,
+          stepNo: baseOrderIndex,
           interactType: 'system',
           interactUser: 'system',
           interactContent: {
-            action: 'OUTLINE_CONFIRMATION_SPLIT',
-            reason: `${inheritedExecutor} 创作任务自动拆分为大纲+全文双子任务`,
+            action: 'OUTLINE_CONFIRMATION_SPLIT_CREATED',
+            reason: `已创建大纲+全文双子任务（原任务已删除）`,
             originalTaskId: task.id,
             createdTasks: [
               { id: outlineTask[0]?.id, role: 'outline_generation', title: outlineTask[0]?.taskTitle },
@@ -7313,13 +7325,16 @@ export class SubtaskExecutionEngine {
       // 后续步骤（合规校验、合规整改、上传）只是打磨发布，不影响适配
       let isFinalizationPoint = false;
 
-      // 🔥 核心判断：触发任务是 user_preview_edit 虚拟执行器 → 即为定稿点
-      if (isVirtualExecutor(task.fromParentsExecutor)) {
+      // 🔥 核心判断：触发任务是 user_preview_edit 虚拟执行器 + 已完成 → 即为定稿点
+      // ⚠️ 关键：必须是 completed 状态才算定稿点！
+      // waiting_user 表示用户尚未确认，文章内容可能还会修改，不能解锁适配组
+      if (isVirtualExecutor(task.fromParentsExecutor) && task.status === 'completed') {
         isFinalizationPoint = true;
-        console.log('[SubtaskEngine] 🔥🔥🔥 预览修改节点确认，视为定稿点，触发适配组解锁', {
+        console.log('[SubtaskEngine] 🔥🔥🔥 预览修改节点已确认（completed），视为定稿点，触发适配组解锁', {
           taskId: task.id,
           orderIndex: task.orderIndex,
           executor: task.fromParentsExecutor,
+          status: task.status,
           multiPlatformGroupId,
         });
       } else {
@@ -7335,7 +7350,7 @@ export class SubtaskExecutionEngine {
               )
             );
           const writingOrderIndices = baseArticleTasks
-            .filter(t => t.orderIndex !== null && t.orderIndex >= 2 && !isVirtualExecutor(t.fromParentsExecutor))
+            .filter(t => t.orderIndex !== null && t.orderIndex >= 2 && t.orderIndex < 9000 && !isVirtualExecutor(t.fromParentsExecutor))
             .map(t => t.orderIndex);
           const maxWritingOrderIndex = writingOrderIndices.length > 0
             ? Math.max(...writingOrderIndices)
@@ -7532,7 +7547,7 @@ export class SubtaskExecutionEngine {
         } else {
           // 兜底：没有预览修改节点或未完成，检查基础文章组是否所有任务都已完成
           const nonVirtualTasks = baseArticleTasks.filter(
-            t => t.orderIndex !== null && t.orderIndex >= 2 && !isVirtualExecutor(t.fromParentsExecutor)
+            t => t.orderIndex !== null && t.orderIndex >= 2 && t.orderIndex < 9000 && !isVirtualExecutor(t.fromParentsExecutor)
           );
           const maxOrderIndex = nonVirtualTasks.length > 0
             ? Math.max(...nonVirtualTasks.map(t => t.orderIndex))
@@ -9328,9 +9343,10 @@ ${agentBDecision ?
     });
     console.log('[SubtaskEngine] ✅✅✅ ========== 保存完成 ==========');
 
-    // 🔥🔥🔥 两阶段架构：虚拟执行器变为 waiting_user 时也可能到达定稿点
-    // 例如 user_preview_edit 是组内最后一个非虚拟执行器之后的任务，需要触发解锁
-    await this.unlockAdaptationGroupsIfNeeded(updatedTask || task);
+    // 🔥🔥🔥 两阶段架构：waiting_user 不触发解锁！
+    // 只有用户确认预览（completed）时才解锁适配组
+    // waiting_user = 用户尚未确认，文章内容可能还会修改，不能解锁适配组
+    // unlockAdaptationGroupsIfNeeded 已在 markTaskCompleted 路径中调用（user_preview_edit → completed）
   }
 
   /**
