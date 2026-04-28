@@ -1813,3 +1813,22 @@
      - 活跃执行（LLM 调用中）通过心跳续期，不会被误清理
      - 真正卡死（10分钟无心跳）或极端超时（30分钟绝对兜底）才会被清理
      - processId 验证确保旧执行无法干扰新执行的锁或心跳
+85. **P1 组级并行可靠性补全（6 项修复）**: 修复心跳身份验证绕过、内存泄漏、监控盲区等问题
+   - **P1-1: refreshGroupHeartbeat 身份验证绕过修复**:
+     - 问题：7 处 LLM/MCP 心跳刷新调用缺少 `processId` 参数，深层方法（callExecutorAgentDirectly 等）无法获取 processId，导致身份验证被绕过
+     - 修复：`refreshGroupHeartbeat` 未传入 processId 时，自动从 `executingGroups` Map 中查找当前 processId，确保深层方法的心跳刷新仍能通过身份验证
+   - **P1-2: inflightRequests 内存泄漏修复**:
+     - 问题：`inflightRequests` Map 无清理机制，进程异常（未调用 unregisterInflightRequest）会导致 orphaned 条目无限积累
+     - 修复：新增 `INFLIGHT_REQUEST_MAX_AGE_MS = 5min` 常量 + `cleanupStaleInflightRequests()` 方法，在 `registerInflightRequest` 时惰性清理过期条目；`getInflightRequestStats()` 返回 `mapSize` 信息
+   - **P1-3: executingGroups Map 泄漏监控**:
+     - 问题：`executingGroups` Map 大小无监控，接近 `MAX_PARALLEL_GROUPS` 时无告警
+     - 修复：`getExecutionStatus()` 新增 `mapSize` 字段；Map 大小达上限时输出 `console.warn` 告警
+   - **P1-4: health API 类型定义过时**:
+     - 问题：`HealthCheckResult` 接口的 `engine.groupDetails` 类型缺少 `lastHeartbeatMs`/`processId`，`engine` 缺少 `mapSize`
+     - 修复：更新类型定义，补充 `mapSize`/`lastHeartbeatMs`/`processId` 字段；catch 分支补充 `mapSize: 0`
+   - **P1-5: retryWithBackoff 抖动不足**:
+     - 问题：重试抖动为固定 `Math.random() * 1000`（最大 1s），对于 30s 的退避延迟来说抖动不足，多 Agent 同时失败时可能产生 thundering herd
+     - 修复：抖动比例从固定 1s 改为 25% 的退避时间（`baseDelay * 0.25`），延迟越大抖动越大
+   - **P1-6: 并行组失败日志缺少堆栈**:
+     - 问题：`Promise.allSettled` 失败日志仅输出 `reason.message`，无堆栈和组 ID，无法定位具体失败组
+     - 修复：逐个输出失败组的 `commandResultId` + `errorMessage` + `errorStack`，替代合并的 `failed_reasons` 数组

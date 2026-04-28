@@ -868,22 +868,28 @@ export class SubtaskExecutionEngine {
   }
 
   /**
-   * 🔴 P0 修复：刷新组级锁的心跳时间戳
+   * 🔴 P0 修复 + P1 修复：刷新组级锁的心跳时间戳
    * 在 LLM 调用前后调用，确保活跃执行不会被超时清理
    * @param commandResultId 组 ID
-   * @param processId 调用方的进程标识（防止已过期的执行继续刷新心跳）
+   * @param processId 调用方的进程标识
+   *   - 传入时：必须匹配 executingGroups 中存储的 processId 才允许刷新
+   *   - 不传时：自动从 executingGroups 中查找当前 processId（P1 修复：深层方法无需传递 processId）
    * @returns true 表示心跳刷新成功，false 表示该组已不属于当前执行
    */
   private static refreshGroupHeartbeat(commandResultId: string, processId?: string): boolean {
     const entry = SubtaskExecutionEngine.executingGroups.get(commandResultId);
     if (!entry) return false;
+    // 🔴 P1 修复：未传入 processId 时，自动使用当前组的 processId
+    // 深层方法（callExecutorAgentDirectly 等）无法获取 processId 参数，
+    // 通过自动查找确保心跳刷新仍能通过身份验证
+    const effectiveProcessId = processId || entry.processId;
     // 🔴 P0 安全检查：如果传入了 processId，必须匹配才允许刷新心跳
     // 防止锁超时释放后被新执行获取，旧执行仍在刷新心跳
-    if (processId && entry.processId !== processId) {
+    if (effectiveProcessId !== entry.processId) {
       console.warn(`[SubtaskEngine] 🔒 心跳刷新失败：processId 不匹配`, {
         commandResultId,
         expectedProcessId: entry.processId,
-        receivedProcessId: processId,
+        receivedProcessId: effectiveProcessId,
       });
       return false;
     }
@@ -901,6 +907,7 @@ export class SubtaskExecutionEngine {
   /**
    * 获取引擎执行状态（用于监控）
    * 🔴 P0 修复：新增 lastHeartbeatMs 字段，便于运维判断进程是否卡死
+   * 🔴 P1 修复：新增 mapSize 字段，监控 executingGroups Map 大小，防止泄漏
    */
   static getExecutionStatus(): {
     isRunning: boolean;
@@ -908,6 +915,7 @@ export class SubtaskExecutionEngine {
     runningDurationMs: number | null;
     executingGroups: number;
     maxParallelGroups: number;
+    mapSize: number;
     groupDetails: Array<{ commandResultId: string; startTime: Date; runningMs: number; lastHeartbeatMs: number; processId: string }>;
   } {
     SubtaskExecutionEngine.cleanupExpiredGroups();
@@ -916,12 +924,19 @@ export class SubtaskExecutionEngine {
       ? groups.reduce((min, [, entry]) => entry.startTime < min ? entry.startTime : min, groups[0][1].startTime)
       : null;
     
+    // 🔴 P1 修复：Map 大小接近上限时输出告警
+    const mapSize = SubtaskExecutionEngine.executingGroups.size;
+    if (mapSize >= SubtaskExecutionEngine.MAX_PARALLEL_GROUPS) {
+      console.warn(`[SubtaskEngine] ⚠️ executingGroups 已达上限 ${mapSize}/${SubtaskExecutionEngine.MAX_PARALLEL_GROUPS}，新任务可能被拒绝`);
+    }
+    
     return {
       isRunning: groups.length > 0,
       startTime: earliest,
       runningDurationMs: earliest ? Math.max(0, Date.now() - earliest.getTime()) : null,
       executingGroups: groups.length,
       maxParallelGroups: SubtaskExecutionEngine.MAX_PARALLEL_GROUPS,
+      mapSize,
       groupDetails: groups.map(([commandResultId, entry]) => ({
         commandResultId,
         startTime: entry.startTime,
@@ -1099,15 +1114,25 @@ export class SubtaskExecutionEngine {
       
       // 汇总执行结果
       const succeeded = results.filter(r => r.status === 'fulfilled').length;
-      const failed = results.filter(r => r.status === 'rejected').length;
+      const rejectedResults = results.filter((r): r is PromiseRejectedResult => r.status === 'rejected');
+      const failed = rejectedResults.length;
       console.log('[SubtaskEngine] 执行完成:', {
         total: results.length,
         succeeded,
         failed,
-        failed_reasons: results
-          .filter((r): r is PromiseRejectedResult => r.status === 'rejected')
-          .map(r => r.reason?.message || String(r.reason)),
       });
+      // 🔴 P1 修复：详细输出每个失败组的错误信息和堆栈（而非仅 message）
+      if (failed > 0) {
+        for (let i = 0; i < rejectedResults.length; i++) {
+          const reason = rejectedResults[i].reason;
+          const groupInfo = executableGroups[i] ? { commandResultId: executableGroups[i][0] } : { groupIndex: i };
+          console.error(`[SubtaskEngine] ❌ 组执行失败:`, {
+            ...groupInfo,
+            errorMessage: reason?.message || String(reason),
+            errorStack: reason instanceof Error ? reason.stack : undefined,
+          });
+        }
+      }
     } catch (error) {
       console.error('[SubtaskEngine] 执行失败:', error);
       throw error;

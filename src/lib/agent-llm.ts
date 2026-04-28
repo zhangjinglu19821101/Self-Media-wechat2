@@ -11,10 +11,35 @@
 // 2. 重试前取消前一个请求的 AbortController
 // 3. 避免同一任务同时发出多个 LLM 调用
 // 🔴 并行改造：key 从 agentId 改为 agentId:commandResultId，支持不同用户并行调用同一 Agent
+// 🔴 P1 修复：增加超时清理机制，防止 orphaned 条目导致内存泄漏
 const inflightRequests = new Map<string, {
   abortController: AbortController;
   startedAt: number;
 }>();
+
+// 🔴 P1 修复：inflight 请求最大存活时间（5 分钟，远超任何 LLM 调用超时）
+// 超过此时间的条目会被自动清理，防止进程异常导致 orphaned 条目泄漏
+const INFLIGHT_REQUEST_MAX_AGE_MS = 5 * 60 * 1000;
+
+/**
+ * 🔴 P1 修复：清理超时的 inflight 请求
+ * 防止异常情况（如未调用 unregisterInflightRequest）导致 Map 无限增长
+ */
+function cleanupStaleInflightRequests(): void {
+  const now = Date.now();
+  for (const [key, req] of inflightRequests) {
+    const age = now - req.startedAt;
+    if (age > INFLIGHT_REQUEST_MAX_AGE_MS) {
+      try {
+        req.abortController.abort();
+      } catch {
+        // 忽略取消失败
+      }
+      console.warn(`[LLM Guard] 清理超时 inflight 请求: ${key}（运行 ${Math.round(age / 1000)}s）`);
+      inflightRequests.delete(key);
+    }
+  }
+}
 
 /**
  * 构建 inflight 请求的唯一键
@@ -29,6 +54,9 @@ function buildInflightKey(agentId: string, commandResultId?: string): string {
  * @returns AbortController 用于取消请求
  */
 function registerInflightRequest(agentId: string, commandResultId?: string): AbortController {
+  // 🔴 P1 修复：注册前先清理过期条目（惰性清理，避免额外定时器）
+  cleanupStaleInflightRequests();
+
   const key = buildInflightKey(agentId, commandResultId);
   // 如果有前一个请求，尝试取消它（超时重试场景）
   const existing = inflightRequests.get(key);
@@ -59,13 +87,19 @@ function unregisterInflightRequest(agentId: string, commandResultId?: string): v
 
 /**
  * 获取当前正在执行的请求统计（用于健康检查）
+ * 🔴 P1 修复：返回结果增加 Map 大小信息
  */
-export function getInflightRequestStats(): Record<string, { runningMs: number }> {
-  const stats: Record<string, { runningMs: number }> = {};
+export function getInflightRequestStats(): Record<string, { runningMs: number; mapSize: number }> {
+  cleanupStaleInflightRequests();
+  const stats: Record<string, { runningMs: number; mapSize: number }> = {};
   const now = Date.now();
   const entries = Array.from(inflightRequests.entries());
-  for (const [agentId, req] of entries) {
-    stats[agentId] = { runningMs: now - req.startedAt };
+  for (const [key, req] of entries) {
+    stats[key] = { runningMs: now - req.startedAt, mapSize: inflightRequests.size };
+  }
+  // 如果 Map 为空，返回大小信息
+  if (entries.length === 0) {
+    stats['_meta'] = { runningMs: 0, mapSize: 0 };
   }
   return stats;
 }

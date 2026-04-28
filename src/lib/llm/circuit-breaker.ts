@@ -300,8 +300,10 @@ export async function retryWithBackoff<T>(
       }
 
       // 计算退避延迟：base * 2^attempt + 随机抖动
-      const jitter = Math.random() * 1000;
-      const delay = Math.min(cfg.baseDelayMs * Math.pow(2, attempt) + jitter, cfg.maxDelayMs);
+      // 🔴 P1 修复：增加抖动比例（从固定 1s 改为 25% 的退避时间），避免 thundering herd
+      const baseDelay = cfg.baseDelayMs * Math.pow(2, attempt);
+      const jitter = Math.random() * baseDelay * 0.25; // 25% 随机抖动
+      const delay = Math.min(baseDelay + jitter, cfg.maxDelayMs);
 
       console.warn(
         `[LLM Retry] 第 ${attempt + 1}/${cfg.maxRetries} 次重试，` +

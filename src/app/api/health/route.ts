@@ -70,7 +70,8 @@ interface HealthCheckResult {
       isExecuting: boolean;
       executingGroups: number;
       maxParallelGroups: number;
-      groupDetails: Array<{ commandResultId: string; startTime: string; runningMs: number }>;
+      mapSize: number;
+      groupDetails: Array<{ commandResultId: string; startTime: string; runningMs: number; lastHeartbeatMs: number; processId: string }>;
       executionStartTime: string | null;
       runningDurationMs: number | null;
     };
@@ -218,6 +219,7 @@ export async function GET(request: NextRequest) {
       isExecuting: engineStatus.isRunning,
       executingGroups: engineStatus.executingGroups,
       maxParallelGroups: engineStatus.maxParallelGroups,
+      mapSize: engineStatus.mapSize,
       groupDetails: engineStatus.groupDetails.map(g => ({
         commandResultId: g.commandResultId,
         startTime: g.startTime.toISOString(),
@@ -240,6 +242,7 @@ export async function GET(request: NextRequest) {
       isExecuting: false,
       executingGroups: 0,
       maxParallelGroups: fallbackMaxParallel,
+      mapSize: 0,
       groupDetails: [],
       executionStartTime: null,
       runningDurationMs: null,
