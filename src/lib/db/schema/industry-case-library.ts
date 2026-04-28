@@ -7,9 +7,16 @@
  * 2. 结构化字段：便于AI精准匹配
  * 3. 标签系统：多维度检索（险种/人群/场景/情绪）
  * 4. 向量预留：支持后续语义检索升级
+ * 
+ * 可见性规则：
+ * - workspace_id = 'system' → 系统预置案例，所有用户可见
+ * - workspace_id = 其他 → 用户私有案例，仅自己可见
  */
 
-import { pgTable, text, timestamp, jsonb, uuid, integer, numeric, index, boolean } from 'drizzle-orm/pg-core';
+import { pgTable, text, timestamp, jsonb, uuid, integer, index, boolean } from 'drizzle-orm/pg-core';
+
+/** 系统预置案例的 workspaceId */
+export const CASE_SYSTEM_WORKSPACE_ID = 'system';
 
 /**
  * 行业类型枚举
@@ -81,7 +88,7 @@ export const industryCaseLibrary = pgTable('industry_case_library', {
   status: text('status').notNull().default('active'),
   
   // === 工作空间归属 ===
-  workspaceId: text('workspace_id'),
+  workspaceId: text('workspace_id').notNull().default('system'),  // 'system' = 系统预置，其他 = 用户私有
   
   // === 时间戳 ===
   createdAt: timestamp('created_at').notNull().defaultNow(),

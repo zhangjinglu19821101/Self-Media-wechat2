@@ -7926,7 +7926,9 @@ export class SubtaskExecutionEngine {
             if (_caseInstruction.length > 5) {
               const _matchedCases = await industryCaseService.recommendCases(
                 _caseInstruction,
-                task.fromParentsExecutor === 'insurance-xiaohongshu' ? 'xiaohongshu' : undefined
+                task.fromParentsExecutor === 'insurance-xiaohongshu' ? 'xiaohongshu' : undefined,
+                5,
+                task.workspaceId || undefined  // 🔥 传递 workspaceId 用于可见性过滤
               );
               if (_matchedCases.length > 0) {
                 _industryCasesText = industryCaseService.formatCasesForPrompt(_matchedCases, 'auto');

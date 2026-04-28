@@ -5,10 +5,14 @@
  * 1. 解析 MD 案例文件，提取结构化数据
  * 2. 按险种/人群/场景检索案例
  * 3. 记录案例使用情况
+ * 
+ * 可见性规则：
+ * - workspace_id = 'system' → 系统预置案例，所有用户可见
+ * - workspace_id = 其他 → 用户私有案例，仅自己可见
  */
 
 import { db } from '@/lib/db';
-import { industryCaseLibrary, caseUsageLog } from '@/lib/db/schema';
+import { industryCaseLibrary, caseUsageLog, CASE_SYSTEM_WORKSPACE_ID } from '@/lib/db/schema';
 import { eq, and, or, desc, inArray, sql } from 'drizzle-orm';
 import { readFileSync, existsSync } from 'fs';
 import { join } from 'path';
@@ -18,13 +22,14 @@ import { join } from 'path';
 // ============================================================================
 
 export interface CaseSearchParams {
-  industry?: string;           // 行业类型
-  caseType?: string;           // 案例类型
-  productTags?: string[];      // 产品标签（险种）
-  crowdTags?: string[];        // 人群标签
-  sceneTags?: string[];        // 场景标签
-  emotionTags?: string[];      // 情绪标签
-  keywords?: string;           // 关键词搜索
+  workspaceId?: string;         // 工作空间ID（用于可见性过滤）
+  industry?: string;            // 行业类型
+  caseType?: string;            // 案例类型
+  productTags?: string[];       // 产品标签（险种）
+  crowdTags?: string[];         // 人群标签
+  sceneTags?: string[];         // 场景标签
+  emotionTags?: string[];       // 情绪标签
+  keywords?: string;            // 关键词搜索
   limit?: number;
   offset?: number;
 }
@@ -380,14 +385,28 @@ function extractSource(complianceNote: string): string {
 /**
  * 检索匹配的案例
  * 
+ * 可见性规则：
+ * - 用户私有案例（workspace_id = 用户ID）
+ * - 系统预置案例（workspace_id = 'system'）
+ * 
  * @param params 搜索参数
  * @returns 匹配的案例列表
  */
 export async function searchCases(params: CaseSearchParams): Promise<CaseMatchResult[]> {
-  const { industry, caseType, productTags, crowdTags, sceneTags, keywords, limit = 5, offset = 0 } = params;
+  const { workspaceId, industry, caseType, productTags, crowdTags, sceneTags, keywords, limit = 5, offset = 0 } = params;
   
   // 构建查询条件
   const conditions: any[] = [];
+  
+  // 🔥 可见性过滤：用户私有案例 + 系统预置案例
+  if (workspaceId) {
+    conditions.push(
+      or(
+        eq(industryCaseLibrary.workspaceId, workspaceId),           // 用户私有
+        eq(industryCaseLibrary.workspaceId, CASE_SYSTEM_WORKSPACE_ID)    // 系统预置
+      )!
+    );
+  }
   
   if (industry) {
     conditions.push(eq(industryCaseLibrary.industry, industry));
@@ -514,16 +533,35 @@ export async function searchCases(params: CaseSearchParams): Promise<CaseMatchRe
  * 
  * 用于执行引擎获取用户手动选择的案例，直接按 ID 查询，不走 searchCases 的相关度排序逻辑。
  * 
+ * 可见性规则：
+ * - 用户只能获取自己的私有案例 + 系统预置案例
+ * 
  * @param caseIds 案例 ID 数组
+ * @param workspaceId 工作空间ID（用于可见性过滤）
  * @returns 匹配的案例列表
  */
-export async function getCasesByIds(caseIds: string[]): Promise<CaseMatchResult[]> {
+export async function getCasesByIds(caseIds: string[], workspaceId?: string): Promise<CaseMatchResult[]> {
   if (caseIds.length === 0) return [];
+  
+  // 构建查询条件：ID 匹配 + 可见性过滤
+  const conditions: any[] = [
+    inArray(industryCaseLibrary.id, caseIds)
+  ];
+  
+  // 🔥 可见性过滤：用户私有案例 + 系统预置案例
+  if (workspaceId) {
+    conditions.push(
+      or(
+        eq(industryCaseLibrary.workspaceId, workspaceId),           // 用户私有
+        eq(industryCaseLibrary.workspaceId, CASE_SYSTEM_WORKSPACE_ID)    // 系统预置
+      )!
+    );
+  }
   
   const cases = await db
     .select()
     .from(industryCaseLibrary)
-    .where(inArray(industryCaseLibrary.id, caseIds));
+    .where(and(...conditions));
   
   return cases.map(c => ({
     id: c.id,
@@ -547,9 +585,11 @@ export async function getCasesByIds(caseIds: string[]): Promise<CaseMatchResult[
  * 
  * @param instruction 用户指令
  * @param platform 发布平台
+ * @param limit 返回数量
+ * @param workspaceId 工作空间ID（用于可见性过滤）
  * @returns 推荐的案例列表
  */
-export async function recommendCases(instruction: string, platform?: string, limit = 5): Promise<CaseMatchResult[]> {
+export async function recommendCases(instruction: string, platform?: string, limit = 5, workspaceId?: string): Promise<CaseMatchResult[]> {
   // 从指令中提取关键词
   const productTags = extractTags(instruction, []);
   const crowdTags = extractCrowdTags(instruction);
@@ -557,6 +597,7 @@ export async function recommendCases(instruction: string, platform?: string, lim
   
   // 根据平台调整权重
   const searchParams: CaseSearchParams = {
+    workspaceId,  // 🔥 传递 workspaceId
     industry: 'insurance',
     productTags,
     crowdTags,
@@ -701,6 +742,111 @@ export async function getCaseStats(industry?: string): Promise<{
   return stats;
 }
 
+/**
+ * 创建用户自定义案例
+ * 
+ * @param caseData 案例数据
+ * @param workspaceId 工作空间ID（必须提供，用于可见性隔离）
+ * @returns 创建的案例
+ */
+export async function createCase(
+  caseData: Omit<NewIndustryCase, 'id' | 'workspaceId' | 'createdAt' | 'updatedAt' | 'useCount'>,
+  workspaceId: string
+): Promise<IndustryCase> {
+  const [newCase] = await db
+    .insert(industryCaseLibrary)
+    .values({
+      ...caseData,
+      workspaceId,  // 🔥 用户私有案例
+      useCount: 0,
+    })
+    .returning();
+  
+  return newCase;
+}
+
+/**
+ * 更新案例
+ * 
+ * @param caseId 案例ID
+ * @param updates 更新数据
+ * @param workspaceId 工作空间ID（用于权限校验）
+ * @returns 更新后的案例
+ */
+export async function updateCase(
+  caseId: string,
+  updates: Partial<Omit<NewIndustryCase, 'id' | 'workspaceId' | 'createdAt'>>,
+  workspaceId: string
+): Promise<IndustryCase | null> {
+  // 🔥 权限校验：只能更新自己的案例
+  const existing = await db
+    .select()
+    .from(industryCaseLibrary)
+    .where(eq(industryCaseLibrary.id, caseId))
+    .limit(1);
+  
+  if (!existing.length) {
+    return null;
+  }
+  
+  // 系统案例不允许修改
+  if (existing[0].workspaceId === CASE_SYSTEM_WORKSPACE_ID) {
+    throw new Error('系统预置案例不允许修改');
+  }
+  
+  // 只能修改自己的案例
+  if (existing[0].workspaceId !== workspaceId) {
+    throw new Error('无权修改此案例');
+  }
+  
+  const [updated] = await db
+    .update(industryCaseLibrary)
+    .set({
+      ...updates,
+      updatedAt: new Date(),
+    })
+    .where(eq(industryCaseLibrary.id, caseId))
+    .returning();
+  
+  return updated;
+}
+
+/**
+ * 删除案例
+ * 
+ * @param caseId 案例ID
+ * @param workspaceId 工作空间ID（用于权限校验）
+ * @returns 是否删除成功
+ */
+export async function deleteCase(caseId: string, workspaceId: string): Promise<boolean> {
+  // 🔥 权限校验：只能删除自己的案例
+  const existing = await db
+    .select()
+    .from(industryCaseLibrary)
+    .where(eq(industryCaseLibrary.id, caseId))
+    .limit(1);
+  
+  if (!existing.length) {
+    return false;
+  }
+  
+  // 系统案例不允许删除
+  if (existing[0].workspaceId === CASE_SYSTEM_WORKSPACE_ID) {
+    throw new Error('系统预置案例不允许删除');
+  }
+  
+  // 只能删除自己的案例
+  if (existing[0].workspaceId !== workspaceId) {
+    throw new Error('无权删除此案例');
+  }
+  
+  await db
+    .delete(industryCaseLibrary)
+    .where(eq(industryCaseLibrary.id, caseId));
+  
+  return true;
+}
+
 // 导出单例
 export const industryCaseService = {
   parseInsuranceCaseFile,
@@ -710,4 +856,7 @@ export const industryCaseService = {
   importCases,
   getCaseStats,
   getCasesByIds,
+  createCase,      // 🔥 新增：创建用户案例
+  updateCase,      // 🔥 新增：更新用户案例
+  deleteCase,      // 🔥 新增：删除用户案例
 };
