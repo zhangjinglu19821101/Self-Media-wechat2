@@ -1022,7 +1022,9 @@ export default function HomePage() {
       setRecommendedCases([]);
       setSuggestedOpinions([]);
       setSelectedMaterialIds([]);
+      setSelectedMaterials([]);
       setSelectedCaseIds([]);
+      setSelectedCases([]);
       setCoreOpinion('');
       setEmotionTone('');
       clearCreationGuideDraft(tempSessionId);
@@ -1166,10 +1168,12 @@ export default function HomePage() {
       return;
     }
     // 🔥 关键：指令变化时先清空已选择的素材/案例/核心观点/情感基调（防止旧数据残留）
-    setSelectedMaterialIds(prev => prev.length > 0 ? [] : prev);
-    setSelectedCaseIds(prev => prev.length > 0 ? [] : prev);
-    setCoreOpinion(prev => prev ? '' : prev);
-    setEmotionTone(prev => prev ? '' : prev);
+    setSelectedMaterialIds([]);
+    setSelectedMaterials([]);
+    setSelectedCaseIds([]);
+    setSelectedCases([]);
+    setCoreOpinion('');
+    setEmotionTone('');
     const timer = setTimeout(() => {
       handleRecommendMaterials(true);
     }, 800);
