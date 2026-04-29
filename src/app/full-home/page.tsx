@@ -1148,15 +1148,26 @@ export default function HomePage() {
   }, [mainInstruction]);
 
   // 🔥 自动推荐：指令变化后 800ms 自动触发素材推荐
-  // P1-10: 不再需要 eslint-disable，handleRecommendMaterials 是 useCallback 依赖
+  // 核心逻辑：指令变化 → 清空已选择数据 → 推荐新数据
   useEffect(() => {
     if (!mainInstruction.trim() || mainInstruction.trim().length < 4) {
       // P2: 指令清空时重置推荐状态
       setAutoRecommendFetched(false);
+      setAutoCaseRecommendFetched(false);
+      setAutoOpinionFetched(false);
       setRecommendedMaterials([]);
       setRecommendedSnippets([]);
+      setRecommendedCases([]);
+      setSuggestedOpinions([]);
+      setSelectedMaterialIds([]);
+      setSelectedCaseIds([]);
+      setCoreOpinion('');
       return;
     }
+    // 🔥 关键：指令变化时先清空已选择的素材/案例/核心观点（防止旧数据残留）
+    setSelectedMaterialIds(prev => prev.length > 0 ? [] : prev);
+    setSelectedCaseIds(prev => prev.length > 0 ? [] : prev);
+    setCoreOpinion(prev => prev ? '' : prev);
     const timer = setTimeout(() => {
       handleRecommendMaterials(true);
     }, 800);
