@@ -1024,6 +1024,7 @@ export default function HomePage() {
       setSelectedMaterialIds([]);
       setSelectedCaseIds([]);
       setCoreOpinion('');
+      setEmotionTone('');
       clearCreationGuideDraft(tempSessionId);
       
       setGuideCardsCollapsed(true); // 拆解完成后自动折叠创作引导区，让流程图更早可见
@@ -1164,10 +1165,11 @@ export default function HomePage() {
       setCoreOpinion('');
       return;
     }
-    // 🔥 关键：指令变化时先清空已选择的素材/案例/核心观点（防止旧数据残留）
+    // 🔥 关键：指令变化时先清空已选择的素材/案例/核心观点/情感基调（防止旧数据残留）
     setSelectedMaterialIds(prev => prev.length > 0 ? [] : prev);
     setSelectedCaseIds(prev => prev.length > 0 ? [] : prev);
     setCoreOpinion(prev => prev ? '' : prev);
+    setEmotionTone(prev => prev ? '' : prev);
     const timer = setTimeout(() => {
       handleRecommendMaterials(true);
     }, 800);
