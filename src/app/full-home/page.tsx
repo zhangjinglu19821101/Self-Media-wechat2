@@ -209,6 +209,8 @@ interface FormSnapshot {
     densityStyle?: string;
   } | null;
   selectedStructureId: string;
+  hasSplitResult: boolean;
+  subTasks: SubTask[];
   savedAt: number;
 }
 
@@ -636,6 +638,9 @@ export default function HomePage() {
         const structure = STRUCTURE_TEMPLATES.find(s => s.id === snapshot.selectedStructureId);
         if (structure) setSelectedStructure(structure);
       }
+      // 🔥 恢复拆解状态和子任务，确保刷新后创作引导区可见
+      if (snapshot.hasSplitResult) setHasSplitResult(true);
+      if (snapshot.subTasks?.length) setSubTasks(snapshot.subTasks);
       formSnapshotRestored.current = true;
       toast.success('已恢复您之前填写的内容');
     }
@@ -662,6 +667,8 @@ export default function HomePage() {
       selectedAccountIds,
       selectedContentTemplate,
       selectedStructureId: selectedStructure.id,
+      hasSplitResult,
+      subTasks,
       savedAt: Date.now(),
     });
   }, [mainInstruction, coreOpinion, emotionTone, selectedMaterialIds, selectedCaseIds, selectedAccountIds, selectedContentTemplate, selectedStructure]);
@@ -1029,8 +1036,17 @@ export default function HomePage() {
       setEmotionTone('');
       clearCreationGuideDraft(tempSessionId);
       
-      setGuideCardsCollapsed(true); // 拆解完成后自动折叠创作引导区，让流程图更早可见
+      // 拆解完成后保持创作引导区展开，方便用户立即查看推荐
       toast.success(`✅ AI 成功拆解出 ${newSubTasks.length} 个子任务`);
+      
+      // 🔥 清空后重新触发素材/案例/核心观点自动推荐
+      // 原因：mainInstruction 此时未变化，自动推荐useEffect不会重新触发
+      // 延迟1秒执行：确保1) React状态更新已提交 2) 如果有pending的useEffect防抖定时器，会先触发并被AbortController取消
+      setTimeout(() => {
+        handleRecommendMaterials(true);
+        handleRecommendCases(true);
+        handleSuggestOpinions(true);
+      }, 1000);
       
     } catch (error: any) {
       if (checkApiKeyMissing(error)) return;
@@ -1150,6 +1166,11 @@ export default function HomePage() {
     }
   }, [mainInstruction]);
 
+  // 🔥 追踪上一次指令值：区分"初始化恢复"和"用户主动改指令"
+  // 从空值→非空值 = 初始化恢复，不清空核心观点/情感基调
+  // 从非空→不同非空 = 用户改指令，清空核心观点/情感基调
+  const prevInstructionRef = useRef('');
+
   // 🔥 自动推荐：指令变化后 800ms 自动触发素材推荐
   // 核心逻辑：指令变化 → 清空已选择数据 → 推荐新数据
   useEffect(() => {
@@ -1165,20 +1186,50 @@ export default function HomePage() {
       setSelectedMaterialIds([]);
       setSelectedCaseIds([]);
       setCoreOpinion('');
+      prevInstructionRef.current = '';
       return;
     }
-    // 🔥 关键：指令变化时先清空已选择的素材/案例/核心观点/情感基调（防止旧数据残留）
-    setSelectedMaterialIds([]);
-    setSelectedMaterials([]);
-    setSelectedCaseIds([]);
-    setSelectedCases([]);
-    setCoreOpinion('');
-    setEmotionTone('');
+
+    const prevInstruction = prevInstructionRef.current;
+    prevInstructionRef.current = mainInstruction;
+
+    // 🔥 区分场景：只有用户主动改指令（非空→不同非空）才清空核心观点/情感基调
+    // 初始化恢复（空→非空）不清空，保留用户之前的选择
+    const isUserChangingInstruction = prevInstruction.trim() && prevInstruction.trim() !== mainInstruction.trim();
+    if (isUserChangingInstruction) {
+      setSelectedMaterialIds([]);
+      setSelectedMaterials([]);
+      setSelectedCaseIds([]);
+      setSelectedCases([]);
+      setCoreOpinion('');
+      setEmotionTone('');
+    }
+
     const timer = setTimeout(() => {
       handleRecommendMaterials(true);
     }, 800);
     return () => clearTimeout(timer);
   }, [mainInstruction, handleRecommendMaterials]);
+
+  // 🔥 页面刷新恢复：从推荐结果中重建 selectedMaterials / selectedCases
+  // 快照只保存了 ID 列表，对象数组需要从推荐数据中匹配重建
+  useEffect(() => {
+    if (selectedMaterialIds.length > 0 && selectedMaterials.length === 0 && recommendedMaterials.length > 0) {
+      const matched = selectedMaterialIds
+        .map(id => recommendedMaterials.find(m => m.id === id))
+        .filter((m): m is MaterialItem => m != null);
+      if (matched.length > 0) setSelectedMaterials(matched);
+    }
+  }, [selectedMaterialIds, recommendedMaterials]);
+
+  useEffect(() => {
+    if (selectedCaseIds.length > 0 && selectedCases.length === 0 && recommendedCases.length > 0) {
+      const matched = selectedCaseIds
+        .map(id => recommendedCases.find(c => c.id === id))
+        .filter((c): c is CaseItem => c != null);
+      if (matched.length > 0) setSelectedCases(matched);
+    }
+  }, [selectedCaseIds, recommendedCases]);
 
   // 🔥 互联网搜索：搜索权威站点的保险相关信息
   // P1-2: AbortController 竞态取消 + P1-6: workspaceId 空值保护
