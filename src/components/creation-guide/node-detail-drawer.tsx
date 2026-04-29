@@ -150,6 +150,11 @@ export function NodeDetailPanel({
       toast.warning('流程至少需要保留一个节点');
       return;
     }
+    // 🔥 禁止删除第一个节点：第一个节点是分析节点，删除后写作Agent将缺少前序输入
+    if (nodeIndex === 0) {
+      toast.warning('第一个节点不可删除，它是后续节点的必要输入');
+      return;
+    }
     onDelete(task.id);
     toast.success('节点已删除');
   };
@@ -287,8 +292,12 @@ export function NodeDetailPanel({
                 variant="outline"
                 size="sm"
                 onClick={handleDelete}
-                disabled={totalNodes <= 1}
-                className="h-9 px-3 border-red-200 text-red-600 hover:text-red-700 hover:bg-red-50 hover:border-red-300 transition-colors"
+                disabled={totalNodes <= 1 || nodeIndex === 0}
+                className={`h-9 px-3 transition-colors ${
+                  nodeIndex === 0
+                    ? 'border-slate-100 text-slate-300 cursor-not-allowed'
+                    : 'border-red-200 text-red-600 hover:text-red-700 hover:bg-red-50 hover:border-red-300'
+                }`}
               >
                 <Trash2 className="w-4 h-4 mr-1.5" />
                 删除

@@ -183,6 +183,7 @@ interface CaseItem {
 
 // 🔥 创作引导持久化数据类型
 interface CreationGuideDraft {
+  mainInstruction: string; // 🔥 指令校验：防止恢复错误指令的草稿
   coreOpinion: string;
   emotionTone: string;
   selectedMaterialIds: string[];
@@ -316,6 +317,10 @@ function loadCreationGuideDraft(sessionId: string | null): CreationGuideDraft | 
         ? [draft.selectedAccountId]
         : [];
     }
+    // 🔥 版本兼容：旧草稿缺少 mainInstruction 字段
+    if (!draft.mainInstruction) {
+      draft.mainInstruction = '';
+    }
 
     // 静默升级到当前版本
     draft.version = CURRENT_DRAFT_VERSION;
@@ -409,6 +414,7 @@ export default function HomePage() {
   
   // 🔥 新增：重复任务确认相关
   const [showDuplicateDialog, setShowDuplicateDialog] = useState(false);
+  const [guideCardsCollapsed, setGuideCardsCollapsed] = useState(false); // 创作引导大卡片折叠状态
   const submitLockRef = useRef(false);
   const duplicateConfirmResolveRef = useRef<((confirmed: boolean) => void) | null>(null);
   
@@ -456,6 +462,8 @@ export default function HomePage() {
   const [loadingRecommendedMaterials, setLoadingRecommendedMaterials] = useState(false);
   const [recommendedSnippets, setRecommendedSnippets] = useState<RecommendedSnippet[]>([]);
   const [autoRecommendFetched, setAutoRecommendFetched] = useState(false);
+  const [autoCaseRecommendFetched, setAutoCaseRecommendFetched] = useState(false);
+  const [autoOpinionFetched, setAutoOpinionFetched] = useState(false);
 
   // 🔥 互联网搜索相关状态
   const [webSearchResults, setWebSearchResults] = useState<any[]>([]);
@@ -557,9 +565,19 @@ export default function HomePage() {
     if (hasSplitResult) {
       const draft = loadCreationGuideDraft(tempSessionId);
       if (draft) {
-        setCoreOpinion(draft.coreOpinion || '');
+        // 🔥 指令匹配校验：如果草稿的指令与当前指令不一致，不恢复核心观点和素材选择
+        const instructionMatch = draft.mainInstruction && mainInstruction &&
+          draft.mainInstruction.trim() === mainInstruction.trim();
+        if (instructionMatch) {
+          setCoreOpinion(draft.coreOpinion || '');
+          setSelectedMaterialIds(draft.selectedMaterialIds || []);
+        } else {
+          // 指令不匹配，清空旧草稿的核心观点和素材
+          setCoreOpinion('');
+          setSelectedMaterialIds([]);
+          console.info('[CreationGuide] 草稿指令不匹配，跳过恢复核心观点和素材');
+        }
         setEmotionTone(draft.emotionTone || '理性客观'); // 默认值：理性客观
-        setSelectedMaterialIds(draft.selectedMaterialIds || []);
         // 🔥 多平台发布：优先使用 selectedAccountIds，兼容旧草稿的 selectedAccountId
         if (draft.selectedAccountIds && draft.selectedAccountIds.length > 0) {
           setSelectedAccountIds(draft.selectedAccountIds);
@@ -568,7 +586,9 @@ export default function HomePage() {
           setSelectedAccountIds([draft.selectedAccountId]);
           setSelectedAccountId(draft.selectedAccountId);
         }
-        toast.success('已自动恢复你的创作引导内容');
+        if (instructionMatch) {
+          toast.success('已自动恢复你的创作引导内容');
+        }
       }
     }
   }, [hasSplitResult, tempSessionId]);
@@ -587,13 +607,14 @@ export default function HomePage() {
   useEffect(() => {
     if (!hasSplitResult) return; // 只有AI拆解后才保存
     saveCreationGuideDraft(tempSessionId, {
+      mainInstruction, // 🔥 保存指令用于校验，防止恢复错误草稿
       coreOpinion,
       emotionTone,
       selectedMaterialIds,
       selectedAccountId, // 兼容字段
       selectedAccountIds, // 🔥 多平台发布：保存账号多选列表
     });
-  }, [coreOpinion, emotionTone, selectedMaterialIds, selectedAccountId, selectedAccountIds, hasSplitResult, tempSessionId]);
+  }, [mainInstruction, coreOpinion, emotionTone, selectedMaterialIds, selectedAccountId, selectedAccountIds, hasSplitResult, tempSessionId]);
 
   // 🔥🔥 表单快照：从 sessionStorage 恢复（API Key 跳转后返回时）
   const formSnapshotRestored = useRef(false);
@@ -995,6 +1016,17 @@ export default function HomePage() {
 
       setSubTasks(newSubTasks);
       setHasSplitResult(true);
+      
+      // 🔥 重新拆解时清空所有推荐数据，防止旧指令的推荐残留
+      setRecommendedMaterials([]);
+      setRecommendedCases([]);
+      setSuggestedOpinions([]);
+      setSelectedMaterialIds([]);
+      setSelectedCaseIds([]);
+      setCoreOpinion('');
+      clearCreationGuideDraft(tempSessionId);
+      
+      setGuideCardsCollapsed(true); // 拆解完成后自动折叠创作引导区，让流程图更早可见
       toast.success(`✅ AI 成功拆解出 ${newSubTasks.length} 个子任务`);
       
     } catch (error: any) {
@@ -1017,22 +1049,22 @@ export default function HomePage() {
   };
 
   // 🔥 创作引导：AI 生成建议观点
-  const handleSuggestOpinions = async () => {
+  const handleSuggestOpinions = useCallback(async (silent = false) => {
     if (!mainInstruction.trim()) {
-      toast.error('请先输入任务指令');
+      if (!silent) toast.error('请先输入任务指令');
       return;
     }
     setLoadingSuggestedOpinions(true);
     try {
       const data: any = await apiPost('/api/agents/b/suggest-opinion', { instruction: mainInstruction });
       setSuggestedOpinions(data.opinions || []);
-      toast.success(`生成了 ${data.opinions?.length || 0} 个建议观点`);
+      if (!silent) toast.success(`生成了 ${data.opinions?.length || 0} 个建议观点`);
     } catch (error: any) {
-      toast.error(`生成建议观点失败: ${error.message}`);
+      if (!silent) toast.error(`生成建议观点失败: ${error.message}`);
     } finally {
       setLoadingSuggestedOpinions(false);
     }
-  };
+  }, [mainInstruction]);
 
   // 🔥 创作引导：搜索素材
   const handleSearchMaterials = async (query: string) => {
@@ -1285,10 +1317,10 @@ export default function HomePage() {
     };
   }, []);
 
-  // 🔥 行业案例：推荐相关案例
-  const handleRecommendCases = async () => {
+  // 🔥 行业案例：推荐相关案例（silent=true 时自动推荐，不弹 toast）
+  const handleRecommendCases = useCallback(async (silent = false) => {
     if (!mainInstruction.trim()) {
-      toast.error('请先输入任务指令');
+      if (!silent) toast.error('请先输入任务指令');
       return;
     }
     setLoadingRecommendedCases(true);
@@ -1297,18 +1329,20 @@ export default function HomePage() {
       const cases: CaseItem[] = data?.data?.cases || [];
       setRecommendedCases(cases);
       setHasSearchedCases(true);
-      if (cases.length > 0) {
-        toast.success(`推荐了 ${cases.length} 条相关案例`);
-      } else {
-        toast.info('暂无匹配案例，当前案例库未覆盖该险种');
+      if (!silent) {
+        if (cases.length > 0) {
+          toast.success(`推荐了 ${cases.length} 条相关案例`);
+        } else {
+          toast.info('暂无匹配案例，当前案例库未覆盖该险种');
+        }
       }
     } catch (error) {
       console.error('推荐案例失败:', error);
-      toast.error('推荐案例失败');
+      if (!silent) toast.error('推荐案例失败');
     } finally {
       setLoadingRecommendedCases(false);
     }
-  };
+  }, [mainInstruction]);
 
   // 🔥 行业案例：选择/取消选择
   const toggleCaseSelection = (caseItem: CaseItem) => {
@@ -1321,6 +1355,32 @@ export default function HomePage() {
       setSelectedCases(prev => [...prev, caseItem]);
     }
   };
+
+  // 🔥 自动推荐案例：指令变化后 800ms 自动触发案例推荐
+  useEffect(() => {
+    if (!mainInstruction.trim() || mainInstruction.trim().length < 4) {
+      setAutoCaseRecommendFetched(false);
+      setRecommendedCases([]);
+      return;
+    }
+    const timer = setTimeout(() => {
+      handleRecommendCases(true);
+    }, 800);
+    return () => clearTimeout(timer);
+  }, [mainInstruction, handleRecommendCases]);
+
+  // 🔥 自动推荐核心观点：指令变化后 800ms 自动触发观点推荐
+  useEffect(() => {
+    if (!mainInstruction.trim() || mainInstruction.trim().length < 4) {
+      setAutoOpinionFetched(false);
+      setSuggestedOpinions([]);
+      return;
+    }
+    const timer = setTimeout(() => {
+      handleSuggestOpinions(true);
+    }, 800);
+    return () => clearTimeout(timer);
+  }, [mainInstruction, handleSuggestOpinions]);
 
   // 🔥 信息速记：加载列表
   const loadSnippetList = useCallback(async () => {
@@ -2352,26 +2412,59 @@ export default function HomePage() {
             </TooltipProvider>
             {hasSplitResult && (
               <div className="space-y-3">
-                <div className="text-sm text-green-600 font-medium flex items-center gap-2">
-                  ✅ AI 拆解完成！你可以编辑和确认下面的子任务
+                {/* 折叠/展开头部 */}
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-3 flex-wrap">
+                    <div className="text-sm text-green-600 font-medium flex items-center gap-2">
+                      ✅ AI 拆解完成！
+                    </div>
+                    {detectedDomain && (
+                      <div className="text-sm text-blue-600 font-medium flex items-center gap-2">
+                        🎯 领域：<span className="font-bold">{detectedDomain}</span>
+                      </div>
+                    )}
+                    {/* 创作引导折叠预览 */}
+                    {guideCardsCollapsed && (
+                      <div className="text-xs text-slate-500 flex items-center gap-1">
+                        <span>•</span>
+                        <span>{selectedMaterialIds.length}个素材</span>
+                        <span>•</span>
+                        <span>{selectedCaseIds.length}个案例</span>
+                        <span>•</span>
+                        <span>{selectedAccountIds.length}个平台</span>
+                      </div>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setGuideCardsCollapsed(!guideCardsCollapsed)}
+                      className="text-xs text-slate-500 hover:text-slate-700 h-7 px-2"
+                    >
+                      {guideCardsCollapsed ? '展开编辑' : '收起'}
+                      <ChevronDown className={`w-3.5 h-3.5 ml-1 transition-transform ${guideCardsCollapsed ? '' : 'rotate-180'}`} />
+                    </Button>
+                  </div>
                 </div>
-                {detectedDomain && (
-                  <div className="text-sm text-blue-600 font-medium flex items-center gap-2">
-                    🎯 识别到的领域：<span className="font-bold">{detectedDomain}</span>
-                  </div>
-                )}
-                <Button 
-                  variant="outline" 
-                  size="sm" 
-                  onClick={() => setShowPrompt(!showPrompt)}
-                  className="text-xs"
-                >
-                  {showPrompt ? '📕 隐藏提示词' : '📖 查看完整提示词'}
-                </Button>
-                {showPrompt && fullPrompt && (
-                  <div className="bg-gray-50 p-4 rounded-lg border text-xs font-mono overflow-auto max-h-96">
-                    <pre className="whitespace-pre-wrap">{fullPrompt}</pre>
-                  </div>
+
+                {/* 展开状态显示详情 */}
+                {!guideCardsCollapsed && (
+                  <>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setShowPrompt(!showPrompt)}
+                      className="text-xs"
+                    >
+                      {showPrompt ? '📕 隐藏提示词' : '📖 查看完整提示词'}
+                    </Button>
+                    {showPrompt && fullPrompt && (
+                      <div className="bg-gray-50 p-4 rounded-lg border text-xs font-mono overflow-auto max-h-96">
+                        <pre className="whitespace-pre-wrap">{fullPrompt}</pre>
+                      </div>
+                    )}
+                  </>
                 )}
               </div>
             )}
@@ -3021,7 +3114,7 @@ export default function HomePage() {
                               <span className="text-sm font-medium text-slate-700">输入你的核心观点</span>
                               <span className="text-xs text-slate-400">insurance-d 会将此作为文章灵魂</span>
                             </div>
-                            <Button variant="ghost" size="sm" onClick={handleSuggestOpinions} disabled={loadingSuggestedOpinions || !mainInstruction.trim()} className="h-8 px-3 text-xs text-indigo-500 hover:text-indigo-700">
+                            <Button variant="ghost" size="sm" onClick={() => handleSuggestOpinions(false)} disabled={loadingSuggestedOpinions || !mainInstruction.trim()} className="h-8 px-3 text-xs text-indigo-500 hover:text-indigo-700">
                               {loadingSuggestedOpinions ? <Loader2 className="w-3.5 h-3.5 animate-spin mr-1.5" /> : <Sparkles className="w-3.5 h-3.5 mr-1.5" />}
                               AI帮我想
                             </Button>
@@ -3535,7 +3628,7 @@ export default function HomePage() {
                               <span className="text-sm font-medium text-slate-700">选择行业案例</span>
                               <span className="text-xs text-slate-400">增强文章说服力和真实感</span>
                             </div>
-                            <Button variant="ghost" size="sm" onClick={handleRecommendCases} disabled={loadingRecommendedCases || !mainInstruction.trim()} className="h-8 px-3 text-xs text-emerald-600 hover:text-emerald-700">
+                            <Button variant="ghost" size="sm" onClick={() => handleRecommendCases(false)} disabled={loadingRecommendedCases || !mainInstruction.trim()} className="h-8 px-3 text-xs text-emerald-600 hover:text-emerald-700">
                               {loadingRecommendedCases ? <Loader2 className="w-3.5 h-3.5 animate-spin mr-1.5" /> : <Sparkles className="w-3.5 h-3.5 mr-1.5" />}
                               推荐案例
                             </Button>

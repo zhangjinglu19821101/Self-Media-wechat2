@@ -17,6 +17,8 @@ import type { NewIndustryCase, IndustryCase } from '@/lib/db/schema';
 import { eq, and, or, desc, inArray, sql } from 'drizzle-orm';
 import { readFileSync, existsSync } from 'fs';
 import { join } from 'path';
+import { getLLMClient } from '@/lib/agent-llm';
+import type { Message } from 'coze-coding-dev-sdk';
 
 // ============================================================================
 // 类型定义
@@ -226,19 +228,21 @@ function extractTags(text: string, additionalKeywords: string[]): string[] {
     '财产险', '企业财产险', '家庭财产险', '家财险',
     // 责任险类
     '雇主责任险', '公众责任险', '职业责任险',
+    // 储蓄险类（储蓄/理财/增值类保险）
+    '储蓄险', '少儿储蓄险', '教育储蓄', '理财险', '增额寿', '增额终身寿险', '增额终身寿', '年金险', '年金', '养老年金', '教育金', '教育年金', '少儿年金',
     // 其他
     '车险', '农业保险', '碳保险', '宠物保险', '定制保险', '旅行险', '航意险'
   ];
   
   // 同义词映射：长词 → 关联的短词标签（用于扩大匹配范围）
   const synonymMap: Record<string, string[]> = {
-    '增额终身寿险': ['寿险', '终身寿险', '增额寿'],
+    '增额终身寿险': ['寿险', '终身寿险', '增额寿', '储蓄险'],
     '终身寿险': ['寿险'],
     '定期寿险': ['寿险'],
     '增额寿': ['寿险'],
     '定额寿险': ['寿险'],
-    '养老年金': ['年金险', '年金'],
-    '教育金': ['年金险'],
+    '养老年金': ['年金险', '年金', '储蓄险'],
+    '教育金': ['年金险', '储蓄险'],
     '百万医疗险': ['医疗险'],
     '意外伤害险': ['意外险'],
     '意外医疗': ['意外险', '医疗险'],
@@ -250,6 +254,13 @@ function extractTags(text: string, additionalKeywords: string[]): string[] {
     '家庭财产险': ['财产险'],
     '家财险': ['财产险'],
     '雇主责任险': ['财产险'],
+    // 储蓄险类同义词
+    '储蓄险': ['理财险', '增额寿', '增额终身寿险'],
+    '少儿储蓄险': ['储蓄险', '教育金', '教育年金'],
+    '教育储蓄': ['储蓄险', '教育金', '年金险'],
+    '理财险': ['储蓄险', '增额寿'],
+    '增额终身寿': ['寿险', '终身寿险', '增额寿', '储蓄险'],
+    '教育年金': ['年金险', '教育金', '储蓄险'],
   };
   
   // 合并关键词，按长度降序排列（长词优先匹配）
@@ -308,7 +319,8 @@ function tokenizeChineseText(text: string): string[] {
     '意外险', '意外伤害险', '意外医疗',
     '重疾险', '重大疾病险', '大病险', '医疗险', '百万医疗险', '住院医疗', '门诊医疗',
     '寿险', '终身寿险', '定期寿险', '增额寿', '增额终身寿险', '定额寿险',
-    '年金险', '年金', '养老年金', '教育金',
+    '年金险', '年金', '养老年金', '教育金', '教育年金', '少儿年金',
+    '储蓄险', '少儿储蓄险', '教育储蓄', '理财险', '增额终身寿',
     '财产险', '企业财产险', '家庭财产险', '家财险',
     '雇主责任险', '公众责任险', '职业责任险',
     '车险', '农业保险', '碳保险', '宠物保险', '定制保险', '旅行险', '航意险',
@@ -423,10 +435,19 @@ export async function searchCases(params: CaseSearchParams): Promise<CaseMatchRe
     query = query.where(and(...conditions)) as any;
   }
   
-  // 获取更多结果用于相关度排序
-  const allCases = await query
+  // 🔥 过滤空壳案例：只有标题但没有实际内容（protagonist/background/result 全空）的案例不参与推荐
+  const allCasesRaw = await query
     .orderBy(desc(industryCaseLibrary.useCount))
     .limit(100); // 获取最多100条用于相关度计算
+
+  const allCases = allCasesRaw.filter(c =>
+    ((c.protagonist && c.protagonist.trim()) ||
+    (c.background && c.background.trim()) ||
+    (c.result && c.result.trim()) ||
+    (c.insuranceAction && c.insuranceAction.trim()))
+    // 🔥 过滤"待人工确认"标签的案例，不参与搜索推荐
+    && !(c.productTags as string[])?.includes('待人工确认')
+  );
   
   // 分桶收集：精确匹配 vs 无关案例（兜底候选）
   const matchedResults: CaseMatchResult[] = [];
@@ -667,20 +688,94 @@ export function formatCasesForPrompt(cases: CaseMatchResult[], mode: 'manual' | 
  * @param workspaceId 工作空间ID
  * @returns 导入结果
  */
-export async function importCases(cases: any[], workspaceId?: string): Promise<{ success: number; failed: number; skipped: number }> {
+// ============================================================================
+// LLM 自动标签补全
+// ============================================================================
+
+/**
+ * 调用 LLM 为案例自动生成标签
+ * 当关键词提取不出标签时，使用 LLM 分析案例内容生成精准标签
+ */
+async function generateTagsWithLLM(caseData: any): Promise<{
+  productTags: string[];
+  crowdTags: string[];
+  emotionTags: string[];
+}> {
+  const defaultResult = { productTags: [], crowdTags: [], emotionTags: [] };
+  
+  try {
+    const llmClient = getLLMClient();
+    
+    const caseContent = [
+      caseData.title ? `标题：${caseData.title}` : '',
+      caseData.applicableProducts ? `适用险种：${caseData.applicableProducts}` : '',
+      caseData.protagonist ? `人物：${caseData.protagonist}` : '',
+      caseData.background ? `背景：${caseData.background}` : '',
+      caseData.insuranceAction ? `保险方案：${caseData.insuranceAction}` : '',
+      caseData.result ? `结果：${caseData.result}` : '',
+    ].filter(Boolean).join('\n');
+
+    const messages: Message[] = [
+      {
+        role: 'system',
+        content: `你是一个保险行业标签专家。根据案例内容，生成精准的分类标签。
+
+输出格式为 JSON，包含三个字段：
+- productTags: 产品/险种标签（如：重疾险、医疗险、意外险、储蓄险、少儿储蓄险、增额终身寿险、年金险、教育金、养老年金、万能险、寿险、企业财产险等）
+- crowdTags: 人群标签（如：少儿、中年家庭、高净值人群、企业主、老年人、新婚家庭等）
+- emotionTags: 情感标签（如：焦虑、恐惧、安心、温馨、紧迫、后悔、释然等）
+
+要求：
+1. 标签要精准，不要泛泛的标签如"保险"
+2. 每个类别2-5个标签
+3. 只输出 JSON，不要其他文字`,
+      },
+      {
+        role: 'user',
+        content: caseContent,
+      },
+    ];
+
+    const response = await llmClient.invoke(messages, { temperature: 0.3 });
+    
+    // 解析 LLM 返回的 JSON
+    const content = response.content.trim();
+    const jsonMatch = content.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) {
+      console.warn('[CaseImport] LLM 标签生成返回非 JSON:', content.substring(0, 100));
+      return defaultResult;
+    }
+    
+    const parsed = JSON.parse(jsonMatch[0]);
+    return {
+      productTags: Array.isArray(parsed.productTags) ? parsed.productTags : [],
+      crowdTags: Array.isArray(parsed.crowdTags) ? parsed.crowdTags : [],
+      emotionTags: Array.isArray(parsed.emotionTags) ? parsed.emotionTags : [],
+    };
+  } catch (error) {
+    console.error('[CaseImport] LLM 标签生成失败:', error instanceof Error ? error.message : String(error));
+    return defaultResult;
+  }
+}
+
+export async function importCases(cases: any[], workspaceId?: string): Promise<{
+  success: number;
+  failed: number;
+  skipped: number;
+  autoTaggedCases: string[]; // LLM 自动补全标签的案例标题列表
+}> {
   let success = 0;
   let failed = 0;
   let skipped = 0;
+  const autoTaggedCases: string[] = [];
   
   for (const caseData of cases) {
     try {
       // 去重检查：按 caseId + industry + workspaceId 判断是否已存在
-      // 不同 workspace 可以有相同 caseId（如用户复制系统案例后修改）
       const dedupConditions: any[] = [
         eq(industryCaseLibrary.caseId, caseData.caseId),
         eq(industryCaseLibrary.industry, caseData.industry),
       ];
-      // 如果传入了 workspaceId，在同 workspace 内去重；否则全局去重（兼容旧调用）
       if (workspaceId) {
         dedupConditions.push(eq(industryCaseLibrary.workspaceId, workspaceId));
       }
@@ -696,6 +791,78 @@ export async function importCases(cases: any[], workspaceId?: string): Promise<{
         continue;
       }
       
+      // 🔥 标签自动补全策略：
+      // 1. 先用关键词提取（快、免费）
+      // 2. 如果关键词提取为空，调用 LLM 生成（慢、准、有成本）
+      // 3. LLM 生成的标签标记 autoGeneratedTags
+      const needsAutoTag = (
+        (!caseData.productTags || caseData.productTags.length === 0) ||
+        (!caseData.crowdTags || caseData.crowdTags.length === 0) ||
+        (!caseData.emotionTags || caseData.emotionTags.length === 0)
+      );
+      
+      if (needsAutoTag) {
+        // 第1步：先尝试关键词提取
+        if (!caseData.productTags || caseData.productTags.length === 0) {
+          const contentText = [caseData.title || '', caseData.applicableProducts || '', caseData.background || '', caseData.result || ''].join(' ');
+          caseData.productTags = extractTags(contentText, []);
+        }
+        if (!caseData.crowdTags || caseData.crowdTags.length === 0) {
+          const contentText = [caseData.protagonist || '', caseData.background || ''].join(' ');
+          caseData.crowdTags = extractCrowdTags(contentText);
+        }
+        if (!caseData.emotionTags || caseData.emotionTags.length === 0) {
+          const contentText = [caseData.title || '', caseData.background || '', caseData.result || ''].join(' ');
+          caseData.emotionTags = extractEmotionTags(contentText);
+        }
+        
+        // 第2步：关键词仍提取不出 → 调用 LLM
+        const stillEmpty = (
+          (!caseData.productTags || caseData.productTags.length === 0) ||
+          (!caseData.crowdTags || caseData.crowdTags.length === 0) ||
+          (!caseData.emotionTags || caseData.emotionTags.length === 0)
+        );
+        
+        if (stillEmpty) {
+          console.log(`[CaseImport] 关键词提取标签为空，调用 LLM 补全: ${caseData.title}`);
+          const llmTags = await generateTagsWithLLM(caseData);
+          
+          if (llmTags.productTags.length > 0 && (!caseData.productTags || caseData.productTags.length === 0)) {
+            caseData.productTags = llmTags.productTags;
+          }
+          if (llmTags.crowdTags.length > 0 && (!caseData.crowdTags || caseData.crowdTags.length === 0)) {
+            caseData.crowdTags = llmTags.crowdTags;
+          }
+          if (llmTags.emotionTags.length > 0 && (!caseData.emotionTags || caseData.emotionTags.length === 0)) {
+            caseData.emotionTags = llmTags.emotionTags;
+          }
+          
+          // LLM 补全后仍有空标签 → 打上"待人工确认"标记，该案例不会被搜索推荐
+          const stillEmptyAfterLLM = (
+            (!caseData.productTags || caseData.productTags.length === 0) ||
+            (!caseData.crowdTags || caseData.crowdTags.length === 0) ||
+            (!caseData.emotionTags || caseData.emotionTags.length === 0)
+          );
+          if (stillEmptyAfterLLM) {
+            if (!caseData.productTags || caseData.productTags.length === 0) {
+              caseData.productTags = ['待人工确认'];
+            }
+            if (!caseData.crowdTags || caseData.crowdTags.length === 0) {
+              caseData.crowdTags = ['待人工确认'];
+            }
+            if (!caseData.emotionTags || caseData.emotionTags.length === 0) {
+              caseData.emotionTags = ['待人工确认'];
+            }
+            console.warn(`[CaseImport] LLM 标签补全仍不完整，标记为"待人工确认": ${caseData.title}`);
+          }
+          
+          // 标记为 LLM 自动生成的标签
+          caseData.metadata = { ...caseData.metadata, autoGeneratedTags: true };
+          autoTaggedCases.push(caseData.title || caseData.caseId);
+          console.log(`[CaseImport] LLM 自动补全标签: ${caseData.title} → productTags: ${JSON.stringify(caseData.productTags)}, crowdTags: ${JSON.stringify(caseData.crowdTags)}`);
+        }
+      }
+      
       await db.insert(industryCaseLibrary).values({
         ...caseData,
         workspaceId,
@@ -708,8 +875,13 @@ export async function importCases(cases: any[], workspaceId?: string): Promise<{
     }
   }
   
+  if (autoTaggedCases.length > 0) {
+    console.log(`[CaseImport] ⚠️ 以下 ${autoTaggedCases.length} 个案例标签为 LLM 自动生成，建议人工确认：`);
+    autoTaggedCases.forEach(title => console.log(`  - ${title}`));
+  }
+  
   console.log(`[CaseImport] 导入完成: 成功 ${success}, 跳过(已存在) ${skipped}, 失败 ${failed}`);
-  return { success, failed, skipped };
+  return { success, failed, skipped, autoTaggedCases };
 }
 
 /**

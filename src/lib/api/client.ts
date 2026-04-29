@@ -350,6 +350,7 @@ export function checkApiKeyMissing(data: unknown): boolean {
 /** 带认证和 workspace 的 fetch POST */
 export async function apiPost<T = unknown>(url: string, body?: unknown, options?: {
   headers?: HeadersInit;
+  signal?: AbortSignal;
 }): Promise<T> {
   const makeRequest = () => {
     const headers = buildHeaders(options?.headers) as Record<string, string>;
@@ -358,6 +359,7 @@ export async function apiPost<T = unknown>(url: string, body?: unknown, options?
       method: 'POST',
       headers,
       body: body !== undefined ? JSON.stringify(body) : undefined,
+      signal: options?.signal,
     });
   };
 

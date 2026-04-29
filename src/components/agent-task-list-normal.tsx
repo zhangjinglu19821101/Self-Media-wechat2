@@ -12,7 +12,7 @@ import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Textarea } from '@/components/ui/textarea';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { CheckCircle2, Clock, AlertTriangle, ChevronRight, ChevronDown, ChevronUp, Calendar, ListTodo, UserCheck, MessageSquare, Terminal, Send, Loader2, RefreshCw, Filter, XCircle, Users, Eye, Rocket, Folder, FileText, PenTool, ShieldCheck, Cpu, Sparkles, ChevronDownIcon, Bot, BookOpen, Lock, Layers } from 'lucide-react';
+import { CheckCircle2, Clock, AlertTriangle, ChevronRight, ChevronDown, ChevronUp, Calendar, ListTodo, UserCheck, MessageSquare, Terminal, Send, Loader2, RefreshCw, Filter, XCircle, Users, Eye, Rocket, Folder, FileText, PenTool, ShieldCheck, Cpu, Sparkles, ChevronDownIcon, Bot, BookOpen, Lock, Layers, AlertCircle } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toast } from 'sonner';
 import Link from 'next/link';
@@ -1706,6 +1706,7 @@ export function AgentTaskListNormal({ agentId, showPanel, onTogglePanel }: Agent
                         const completedCount = group.subTasks.filter(t => t.status === 'completed').length;
                         const totalCount = group.subTasks.length;
                         const blockedCount = group.subTasks.filter(t => t.status === 'blocked').length;
+                        const waitingUserCount = group.subTasks.filter(t => t.status === 'waiting_user').length;
                         const taskDate = getLocalDate(group.createdAt);
                         const timeStr = taskDate.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false });
                         const isAllDone = completedCount === totalCount;
@@ -1714,6 +1715,7 @@ export function AgentTaskListNormal({ agentId, showPanel, onTogglePanel }: Agent
                         const isBaseArticle = group.phase === 'base_article';
                         const isAdaptation = group.phase === 'platform_adaptation';
                         const hasBlocked = blockedCount > 0;
+                        const hasWaitingUser = waitingUserCount > 0;
 
                         // 状态配色（适配组有独特风格）
                         const cardBg = isAllDone
@@ -1817,6 +1819,7 @@ export function AgentTaskListNormal({ agentId, showPanel, onTogglePanel }: Agent
                                   }`}>
                                     {completedCount}/{totalCount}
                                     {hasBlocked && <span className="text-amber-500 ml-1">({blockedCount}等待)</span>}
+                                    {hasWaitingUser && !hasBlocked && <span className="text-violet-500 ml-1">({waitingUserCount}待处理)</span>}
                                   </span>
                                 </div>
                               </div>
@@ -1831,6 +1834,21 @@ export function AgentTaskListNormal({ agentId, showPanel, onTogglePanel }: Agent
                                 <div className="flex items-center gap-1.5 bg-gradient-to-r from-amber-500 to-orange-500 text-white px-3 py-1 rounded-full">
                                   <Lock className="w-3.5 h-3.5" />
                                   <span className="text-xs font-bold">等待定稿</span>
+                                </div>
+                              ) : hasWaitingUser ? (
+                                <div className="flex items-center gap-1.5 bg-gradient-to-r from-violet-500 to-purple-500 text-white px-3 py-1 rounded-full cursor-pointer hover:from-violet-600 hover:to-purple-600 transition-colors"
+                                  onClick={() => {
+                                    const newExpanded = new Set(expandedTasks);
+                                    if (newExpanded.has(group.commandResultId)) {
+                                      newExpanded.delete(group.commandResultId);
+                                    } else {
+                                      newExpanded.add(group.commandResultId);
+                                    }
+                                    setExpandedTasks(newExpanded);
+                                  }}
+                                  title="点击查看需要处理的步骤">
+                                  <AlertCircle className="w-3.5 h-3.5" />
+                                  <span className="text-xs font-bold">等待处理</span>
                                 </div>
                               ) : (
                                 <div className="flex items-center gap-1.5 bg-slate-100 text-slate-600 px-3 py-1 rounded-full">

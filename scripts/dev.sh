@@ -6,17 +6,16 @@
 
 set -Eeuo pipefail
 
-COZE_WORKSPACE_PATH="${COZE_WORKSPACE_PATH:-$(pwd)}"
+# 硬编码项目目录（确保在任何环境下都正确）
+export COZE_WORKSPACE_PATH="/workspace/projects/ai-venture"
 cd "${COZE_WORKSPACE_PATH}"
 
 # 加载开发环境变量（如果存在）
 if [ -f ".env.local" ]; then
     echo "[dev.sh] 加载 .env.local 开发环境配置"
-    # 使用 source 加载，支持带空格的值
-    set -a  # 自动导出所有变量
+    set -a
     source .env.local
     set +a
-    echo "[dev.sh] COZE_PROJECT_ENV=${COZE_PROJECT_ENV}"
 fi
 
 # 设置开发环境变量
@@ -56,8 +55,26 @@ echo "[dev.sh] 端口: ${PORT}"
 echo "[dev.sh] 环境: ${NODE_ENV}"
 echo "[dev.sh] 数据库: ${DATABASE_URL:+已配置}"
 
-# 清理端口占用（5000 端口被残留进程占用时自动 kill）
-kill_port_if_listening ${PORT}
+# 清理端口占用（仅在非 coze dev 模式下清理，避免杀掉 coze 管理的进程）
+if [[ -z "${COZE_DEV_MODE:-}" ]]; then
+    kill_port_if_listening ${PORT}
+else
+    echo "[dev.sh] coze dev 模式，跳过端口清理"
+fi
+
+# 再次确保在正确的项目目录
+cd "${COZE_WORKSPACE_PATH}"
+echo "[dev.sh] 工作目录: $(pwd)"
+
+# 检查 node_modules 是否存在，不存在则自动安装依赖
+if [[ ! -d "node_modules" ]]; then
+    echo "[dev.sh] node_modules 不存在，正在安装依赖..."
+    pnpm install --frozen-lockfile 2>/dev/null || pnpm install
+    echo "[dev.sh] 依赖安装完成"
+else
+    echo "[dev.sh] node_modules 已存在，跳过安装"
+fi
 
 # 启动 Next.js 开发服务器（带热更新）
-pnpm next dev --port ${PORT} -H 0.0.0.0
+# 使用 nohup + 长期运行方式，避免后台进程被系统终止
+exec pnpm next dev --port ${PORT} -H 0.0.0.0

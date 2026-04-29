@@ -43,9 +43,9 @@ export const CRON_JOBS = {
   // 每 2 分钟执行 in_progress 子任务（使用新的 SubtaskExecutionEngine）
   EXECUTE_IN_PROGRESS_SUBTASKS: {
     name: 'execute-in-progress-subtasks',
-    schedule: '*/2 * * * *', // 每 2 分钟执行一次（符合设计文档）
+    schedule: '*/1 * * * *', // 每 1 分钟基础调度 + 30 秒 offset 补充调度（详见 startCronJob 中的 setInterval）
     endpoint: '/api/cron/execute-in-progress-subtasks',
-    description: '执行 in_progress 状态的子任务',
+    description: '执行 in_progress 状态的子任务（30 秒间隔）',
   },
   // 每天 0 点 1 分监控超时任务
   MONITOR_SUBTASKS_TIMEOUT: {
@@ -154,6 +154,24 @@ export function startCronJob(jobKey: keyof typeof CRON_JOBS): boolean {
     task.start();
     activeTasks.set(jobKey, task);
 
+    // 🔴 30 秒间隔优化：为 EXECUTE_IN_PROGRESS_SUBTASKS 添加 offset 补充调度
+    // node-cron 最小粒度为 1 分钟，通过在每分钟第 30 秒额外触发一次，实现 30 秒间隔
+    // 安全保障：endpointLocks 内存锁防止重叠执行，groupLock 防止同组重复
+    if (jobKey === 'EXECUTE_IN_PROGRESS_SUBTASKS') {
+      const offsetInterval = setInterval(() => {
+        console.log(`🔄 执行补充调度: ${job.name} (30s offset)`);
+        callEndpoint(job.endpoint);
+      }, 60_000); // 每 60 秒触发
+      // 首次延迟 30 秒启动，确保与 cron 整分钟调度错开
+      setTimeout(() => {
+        console.log(`🔄 首次补充调度启动: ${job.name} (30s offset)`);
+        callEndpoint(job.endpoint);
+        // 后续每 60 秒执行（与 cron 的整分钟调度交错，等效 30 秒间隔）
+      }, 30_000);
+      // 存储_interval ID 以便停止
+      (activeTasks as Map<string, any>).set(`${jobKey}_offset`, offsetInterval);
+    }
+
     console.log(`✅ 定时任务已启动: ${job.name}`);
     console.log(`   - 调度: ${job.schedule}`);
     console.log(`   - 端点: ${job.endpoint}`);
@@ -179,6 +197,14 @@ export function stopCronJob(jobKey: keyof typeof CRON_JOBS): boolean {
 
   task.stop();
   activeTasks.delete(jobKey);
+
+  // 🔴 清理 offset 补充调度的 setInterval
+  const offsetKey = `${jobKey}_offset`;
+  const offsetInterval = activeTasks.get(offsetKey);
+  if (offsetInterval) {
+    clearInterval(offsetInterval);
+    activeTasks.delete(offsetKey);
+  }
 
   console.log(`✅ 定时任务已停止: ${CRON_JOBS[jobKey].name}`);
 

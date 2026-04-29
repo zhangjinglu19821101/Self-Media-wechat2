@@ -46,6 +46,7 @@ interface TaskStats {
   completed: number;
   failed: number;
   critical: number;
+  waiting_user: number;
 }
 
 interface AgentTaskListProps {

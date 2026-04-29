@@ -140,6 +140,13 @@ export function StructureFlowSection({
       return;
     }
     
+    // 🔥 禁止删除第一个节点：第一个节点是分析节点，删除后写作Agent将缺少前序输入
+    const targetNode = flowNodes.find(n => n.id === nodeId);
+    if (targetNode && targetNode.orderIndex === 1) {
+      toast.warning('第一个节点不可删除，它是后续节点的必要输入');
+      return;
+    }
+    
     const updatedNodes = deleteNodeAndAutoConnect(flowNodes, nodeId);
     updateNodes(updatedNodes);
     toast.success('节点已删除，流程已自动衔接');
@@ -292,8 +299,13 @@ export function StructureFlowSection({
                             <button
                               type="button"
                               onClick={() => handleDeleteNode(node.id)}
-                              className="p-1.5 rounded-md text-slate-500 hover:bg-red-50 hover:text-red-600 transition-colors"
-                              title="删除"
+                              disabled={node.orderIndex === 1}
+                              className={`p-1.5 rounded-md transition-colors ${
+                                node.orderIndex === 1
+                                  ? 'text-slate-300 cursor-not-allowed'
+                                  : 'text-slate-500 hover:bg-red-50 hover:text-red-600'
+                              }`}
+                              title={node.orderIndex === 1 ? '第一个节点不可删除' : '删除'}
                             >
                               <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
