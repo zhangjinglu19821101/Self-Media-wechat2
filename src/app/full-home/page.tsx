@@ -651,11 +651,48 @@ export default function HomePage() {
   useEffect(() => {
     if (isInitialMount.current) {
       isInitialMount.current = false;
+      // 🔍 DEBUG: 检查快照恢复
+      const snapshot = loadFormSnapshot();
+      console.log('[Snapshot] Initial mount, loading snapshot:', {
+        hasSnapshot: !!snapshot,
+        hasSplitResult: snapshot?.hasSplitResult,
+        subTasksLength: snapshot?.subTasks?.length,
+        mainInstruction: snapshot?.mainInstruction?.slice(0, 50),
+        savedAt: snapshot?.savedAt ? new Date(snapshot.savedAt).toLocaleTimeString() : null,
+      });
+      if (snapshot) {
+        const needsRestore = !snapshot.mainInstruction || snapshot.mainInstruction === mainInstruction;
+        console.log('[Snapshot] needsRestore:', needsRestore, '| current mainInstruction:', mainInstruction?.slice(0, 50));
+        if (needsRestore) {
+          setHasSplitResult(snapshot.hasSplitResult ?? false);
+          setSubTasks(snapshot.subTasks ?? []);
+          setMainInstruction(snapshot.mainInstruction || '');
+          setCoreOpinion(snapshot.coreOpinion || '');
+          setEmotionTone(snapshot.emotionTone || '');
+          setSelectedMaterialIds(snapshot.selectedMaterialIds || []);
+          setSelectedCaseIds(snapshot.selectedCaseIds || []);
+          setSelectedAccountIds(snapshot.selectedAccountIds || []);
+          setSelectedContentTemplate(snapshot.selectedContentTemplate || '');
+          if (snapshot.selectedStructureId) {
+            const saved = STRUCTURE_TEMPLATES.find(s => s.id === snapshot.selectedStructureId);
+            if (saved) setSelectedStructure(saved);
+          }
+        } else {
+          console.log('[Snapshot] 指令不匹配，清除过期快照');
+          clearFormSnapshot();
+        }
+      }
       return; // 首次渲染跳过（等待恢复完成）
     }
-    // 只在有实质内容时保存
+    // 如果 formSnapshot useEffect 已恢复过快照（subTasks 有内容），跳过本次保存（避免用初始值覆盖已恢复的 hasSplitResult/subTasks）
+    if (formSnapshotRestored.current && subTasks?.length > 0) {
+      console.log('[Snapshot] formSnapshot已恢复 subTasks=' + subTasks?.length + '，跳过本次保存');
+      return;
+    }
+    // 🔍 DEBUG: 保存快照
     const hasContent = mainInstruction || coreOpinion || selectedMaterialIds.length > 0
       || selectedAccountIds.length > 0 || selectedContentTemplate;
+    console.log('[Snapshot] Saving, hasSplitResult:', hasSplitResult, 'subTasks:', subTasks?.length, 'hasContent:', hasContent);
     if (!hasContent) return;
 
     saveFormSnapshot({
@@ -671,7 +708,7 @@ export default function HomePage() {
       subTasks,
       savedAt: Date.now(),
     });
-  }, [mainInstruction, coreOpinion, emotionTone, selectedMaterialIds, selectedCaseIds, selectedAccountIds, selectedContentTemplate, selectedStructure]);
+  }, [mainInstruction, coreOpinion, emotionTone, selectedMaterialIds, selectedCaseIds, selectedAccountIds, selectedContentTemplate, selectedStructure, hasSplitResult, subTasks]);
 
   // 🔥 获取账号列表（AI拆解后自动加载）
   useEffect(() => {
