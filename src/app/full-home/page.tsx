@@ -617,8 +617,8 @@ export default function HomePage() {
       // 🔥 严重问题 3.2 修复：同步更新 prevInstructionRef，防止恢复被误判为"用户改指令"
       prevInstructionRef.current = snapshot.mainInstruction;
     }
-    if (snapshot.coreOpinion) setCoreOpinion(snapshot.coreOpinion);
-    if (snapshot.emotionTone) setEmotionTone(snapshot.emotionTone);
+    if (typeof snapshot.coreOpinion === 'string') setCoreOpinion(snapshot.coreOpinion);
+    if (typeof snapshot.emotionTone === 'string') setEmotionTone(snapshot.emotionTone);
     if (snapshot.selectedMaterialIds?.length) {
       setSelectedMaterialIds(snapshot.selectedMaterialIds);
       // 🔥 恢复已选素材：转换为完整对象，content 字段通过推荐列表重新匹配获取
