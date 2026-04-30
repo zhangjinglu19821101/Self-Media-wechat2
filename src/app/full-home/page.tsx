@@ -438,6 +438,9 @@ export default function HomePage() {
   const submitLockRef = useRef(false);
   const duplicateConfirmResolveRef = useRef<((confirmed: boolean) => void) | null>(null);
   
+  // 🔥 修复：标记正在恢复快照，防止 useEffect 清空刚恢复的 platformSubTaskGroups
+  const isRestoringSnapshotRef = useRef(false);
+  
   // 🔥 新增：确认创建子任务弹框相关
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
   const confirmCreateResolveRef = useRef<((confirmed: boolean) => void) | null>(null);
@@ -647,7 +650,12 @@ export default function HomePage() {
     // 🔥 恢复提交表单字段
     if (snapshot.taskTitle) setTaskTitle(snapshot.taskTitle);
     if (snapshot.executionDate) setExecutionDate(snapshot.executionDate);
-    if (snapshot.platformSubTaskGroups?.length) setPlatformSubTaskGroups(snapshot.platformSubTaskGroups);
+    // 🔥 修复：恢复 platformSubTaskGroups 前设置标志，防止被 useEffect 清空
+    if (snapshot.platformSubTaskGroups?.length) {
+      isRestoringSnapshotRef.current = true;
+      setPlatformSubTaskGroups(snapshot.platformSubTaskGroups);
+      platformSubTaskGroupsRef.current = snapshot.platformSubTaskGroups;
+    }
     // 🔥 恢复拆解状态，确保刷新后创作引导区可见
     if (snapshot.hasSplitResult) setHasSplitResult(true);
     if (snapshot.subTasks?.length) setSubTasks(snapshot.subTasks);
@@ -669,6 +677,7 @@ export default function HomePage() {
       snapshotRestoredRef.current = false;
       skipAutoSaveCountRef.current = 0;
       skipAutoRecommendCountRef.current = 0;
+      isRestoringSnapshotRef.current = false;
     };
   }, []); // 空数组：仅挂载时执行一次
 
@@ -730,6 +739,12 @@ export default function HomePage() {
   // 🔥 当账号选择变化且已有AI拆解结果时，用流程模板初始化按平台分组的子任务
   // 注意：AI拆解结果仅用于展示，真正创建任务时使用固定流程模板
   useEffect(() => {
+    // 🔥 修复：正在恢复快照时跳过，防止清空刚恢复的 platformSubTaskGroups
+    if (isRestoringSnapshotRef.current) {
+      isRestoringSnapshotRef.current = false; // 重置标志
+      return;
+    }
+    
     if (!hasSplitResult || selectedAccountIds.length === 0 || accountConfigs.length === 0) {
       // 没选账号时清空平台分组，回退到 AI 原始结果
       setPlatformSubTaskGroups([]);
