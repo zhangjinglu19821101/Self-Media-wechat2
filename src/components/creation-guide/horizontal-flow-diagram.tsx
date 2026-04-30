@@ -244,7 +244,7 @@ export function HorizontalFlowDiagram({
 
       {/* 横向流程图节点 */}
       <div className="relative">
-        <div className="flex items-center justify-start md:justify-center py-5 overflow-x-auto pl-4 scrollbar-thin scrollbar-thumb-slate-300 scrollbar-track-transparent">
+        <div className="flex items-center justify-start md:justify-center py-5 overflow-x-auto pl-8 scrollbar-thin scrollbar-thumb-slate-300 scrollbar-track-transparent">
           {displayTasks.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-8 text-slate-400">
               <div className="w-12 h-12 rounded-full bg-slate-100 flex items-center justify-center mb-3">
