@@ -719,7 +719,6 @@ export default function HomePage() {
 
   // 🔥🔥 自动保存：监听所有关键状态变化，保存到 sessionStorage
   useEffect(() => {
-    if (!formSnapshotRestored.current) return; // 页面刚加载时等待 formSnapshot useEffect 完成
     // 有内容才保存
     if (!mainInstruction) return;
     saveFormSnapshot({
