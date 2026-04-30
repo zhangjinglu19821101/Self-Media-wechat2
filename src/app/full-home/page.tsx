@@ -201,6 +201,8 @@ interface FormSnapshot {
   coreOpinion: string;
   emotionTone: string;
   selectedMaterialIds: string[];
+  // 🔥 保存已选素材对象，刷新后无需重新匹配推荐结果
+  selectedMaterials: MaterialItem[];
   selectedAccountIds: string[];
   selectedContentTemplate: {
     id: string;
@@ -258,6 +260,8 @@ function loadFormSnapshot(): FormSnapshot | null {
         coreOpinion: snapshot.coreOpinion || '',
         emotionTone: snapshot.emotionTone || '',
         selectedMaterialIds: snapshot.selectedMaterialIds || [],
+        // 🔥 恢复已选素材对象，刷新后无需重新匹配推荐结果
+        selectedMaterials: snapshot.selectedMaterials || [],
         selectedAccountIds: (snapshot as any).selectedAccountIds || [],
         selectedContentTemplate: snapshot.selectedContentTemplate || null,
         selectedStructureId: snapshot.selectedStructureId || '',
@@ -543,6 +547,7 @@ export default function HomePage() {
   const prevInstructionRef = useRef('');
   const snapshotRestoredRef = useRef(false);        // 标记是否已完成快照恢复（防止 Strict Mode 双执行）
   const skipAutoSaveCountRef = useRef(0);          // 跳过 AutoSave 的次数（恢复后跳过 1 次）
+  const skipAutoRecommendCountRef = useRef(0);     // 🔥 跳过 AutoRecommend 清理的次数（恢复后跳过 1 次，防止清空已恢复的状态）
 
   // 🔥 恢复：仅在首次挂载时执行一次
   useEffect(() => {
@@ -554,6 +559,8 @@ export default function HomePage() {
 
     // 跳过恢复后的第 1 次 AutoSave（等 React 批处理完成）
     skipAutoSaveCountRef.current = 1;
+    // 🔥 跳过恢复后的第 1 次 AutoRecommend 清理（防止清空刚恢复的状态）
+    skipAutoRecommendCountRef.current = 1;
 
     // 恢复所有字段
     if (snapshot.mainInstruction) {
@@ -563,7 +570,13 @@ export default function HomePage() {
     }
     if (snapshot.coreOpinion) setCoreOpinion(snapshot.coreOpinion);
     if (snapshot.emotionTone) setEmotionTone(snapshot.emotionTone);
-    if (snapshot.selectedMaterialIds?.length) setSelectedMaterialIds(snapshot.selectedMaterialIds);
+    if (snapshot.selectedMaterialIds?.length) {
+      setSelectedMaterialIds(snapshot.selectedMaterialIds);
+      // 🔥 优先使用快照中保存的 selectedMaterials 对象，无需重新匹配推荐结果
+      if (snapshot.selectedMaterials?.length) {
+        setSelectedMaterials(snapshot.selectedMaterials);
+      }
+    }
     if (snapshot.selectedAccountIds?.length) {
       setSelectedAccountIds(snapshot.selectedAccountIds);
       setSelectedAccountId(snapshot.selectedAccountIds[0]);
@@ -604,6 +617,8 @@ export default function HomePage() {
       coreOpinion,
       emotionTone,
       selectedMaterialIds,
+      // 🔥 保存已选素材对象，刷新后无需重新匹配推荐结果
+      selectedMaterials,
       selectedAccountIds,
       selectedContentTemplate,
       selectedStructureId: selectedStructure?.id || '',
@@ -614,7 +629,7 @@ export default function HomePage() {
       selectedCases: selectedCases.map(toCaseItemSnapshot),
       savedAt: Date.now(),
     });
-  }, [mainInstruction, coreOpinion, emotionTone, selectedMaterialIds, selectedAccountIds, selectedContentTemplate, selectedStructure, hasSplitResult, subTasks, recommendedCases, selectedCases]);
+  }, [mainInstruction, coreOpinion, emotionTone, selectedMaterialIds, selectedMaterials, selectedAccountIds, selectedContentTemplate, selectedStructure, hasSplitResult, subTasks, recommendedCases, selectedCases]);
 
   // 🔥 获取账号列表（AI拆解后自动加载）
   useEffect(() => {
@@ -1117,7 +1132,12 @@ export default function HomePage() {
 
   // 🔥 自动推荐：指令变化后 800ms 自动触发素材推荐
   // 核心逻辑：指令变化 → 清空已选择数据 → 推荐新数据
+  // 保护：恢复期间跳过，避免清空刚恢复的状态
   useEffect(() => {
+    if (skipAutoRecommendCountRef.current > 0) {
+      skipAutoRecommendCountRef.current--;
+      return; // 🔥 跳过恢复后的第 1 次触发
+    }
     if (!mainInstruction.trim() || mainInstruction.trim().length < 4) {
       // P2: 指令清空时重置推荐状态
       setAutoRecommendFetched(false);
