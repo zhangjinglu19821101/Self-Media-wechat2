@@ -1059,8 +1059,8 @@ export default function HomePage() {
       if (result.systemPrompt) {
         setFullPrompt(result.systemPrompt);
       }
-      // 自动填充任务标题
-      if (result.generatedTaskTitle && !taskTitle) {
+      // 自动填充任务标题（仅当前面未提取到时才使用 AI 返回的标题）
+      if (result.generatedTaskTitle && !finalTaskTitle) {
         setTaskTitle(result.generatedTaskTitle);
       }
       
@@ -2122,9 +2122,6 @@ export default function HomePage() {
 
       toast.success(`✅ 成功创建 ${result.data.insertedCount} 个子任务`);
       
-      // 提交成功后清除 localStorage 草稿
-      // 🔥 严重问题 3.1 修复：重新拆解时清空 FormSnapshot，防止旧数据被恢复
-      clearFormSnapshot();
       // 提交成功后清除 sessionStorage 表单快照
       clearFormSnapshot();
       
