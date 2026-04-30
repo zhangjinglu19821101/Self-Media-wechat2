@@ -1117,6 +1117,9 @@ export default function HomePage() {
     if (isSplitting) {
       return 'AI 正在拆解中...';
     }
+    if (!taskTitle.trim()) {
+      return '请先添加任务标题（格式：主题《xxx》）';
+    }
     return null;
   };
 
@@ -2496,7 +2499,7 @@ export default function HomePage() {
                 <TooltipTrigger asChild>
                   <Button
                     onClick={handleAISplit}
-                    disabled={isSplitting || !mainInstruction.trim()}
+                    disabled={!!getAISplitDisabledReason()}
                     className="w-full bg-gradient-to-r from-blue-600 to-sky-600 hover:from-blue-700 hover:to-sky-700 shadow-lg shadow-blue-200/50 h-11 text-base"
                   >
                     {isSplitting ? (
