@@ -404,6 +404,13 @@ export default function HomePage() {
   const [taskTitle, setTaskTitle] = useState('');
   const [taskDescription, setTaskDescription] = useState('');
   const [executionDate, setExecutionDate] = useState('');
+  const [urlTemplateId, setUrlTemplateId] = useState<string | null>(null);
+
+  // 🔥 客户端读取 URL 参数（避免 SSR/Client hydration 不一致）
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    setUrlTemplateId(params.get('contentTemplateId'));
+  }, []);
   
   // 🔥 平台分组 ref：供 useEffect 读取最新值，避免将 platformSubTaskGroups 加入依赖导致循环
   const platformSubTaskGroupsRef = useRef<PlatformSubTaskGroup[]>([]);
@@ -2841,8 +2848,7 @@ export default function HomePage() {
                     if (!hasXiaohongshuAccount) return null;
 
                     // 从 URL 读取 contentTemplateId 参数（从 style-init 的"立即使用"按钮跳转过来）
-                    const urlParams = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
-                    const urlTemplateId = urlParams?.get('contentTemplateId');
+                    // 注意：避免 typeof window 判断导致 SSR/Client hydration 不一致，统一在 useEffect 中读取
 
                     return (
                       <div className="bg-white rounded-3xl border border-slate-200 shadow-lg overflow-hidden">
