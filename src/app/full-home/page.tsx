@@ -1033,16 +1033,15 @@ export default function HomePage() {
       return;
     }
 
-    // 🔥 校验任务标题：如果未填写，提示用户添加
-    if (!taskTitle.trim()) {
-      // 尝试从指令中提取主题
+    // 🔥 任务标题：如果未填写，自动从指令提取
+    let finalTaskTitle = taskTitle.trim();
+    if (!finalTaskTitle) {
       const match = mainInstruction.match(/主题[《"<『]([^》"』]+)[》"』]/);
       if (match) {
-        setTaskTitle(`主题《${match[1]}》`);
+        finalTaskTitle = `主题《${match[1]}》`;
+        setTaskTitle(finalTaskTitle);
       } else {
-        toast.error('请先添加任务标题，格式参考：主题《存款，是放在银行大额存单还是保险的增额寿》', {
-          duration: 5000,
-        });
+        toast.error('请先填写任务标题（格式：主题《xxx》），上方输入框可编辑', { duration: 5000 });
         return;
       }
     }
@@ -2480,6 +2479,20 @@ export default function HomePage() {
               <h3 className="font-semibold text-xl text-slate-800">
                 AI 智能拆解
               </h3>
+            </div>
+            {/* 🔥 任务标题输入框 */}
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-slate-700 flex items-center gap-2">
+                <FileText className="w-4 h-4 text-blue-500" />
+                任务标题
+                <span className="text-xs text-slate-400 font-normal">（必填，格式：主题《xxx》）</span>
+              </label>
+              <Input
+                value={taskTitle}
+                onChange={(e) => setTaskTitle(e.target.value)}
+                placeholder="例如：主题《存款，是放在银行大额存单还是保险的增额寿》"
+                className="border-blue-200 focus:ring-blue-500 focus:border-blue-500 bg-white/70"
+              />
             </div>
             <div className="space-y-3">
               <label className="text-sm font-medium text-slate-700 flex items-center gap-2">
