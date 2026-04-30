@@ -1033,6 +1033,20 @@ export default function HomePage() {
       return;
     }
 
+    // 🔥 校验任务标题：如果未填写，提示用户添加
+    if (!taskTitle.trim()) {
+      // 尝试从指令中提取主题
+      const match = mainInstruction.match(/主题[《"<『]([^》"』]+)[》"』]/);
+      if (match) {
+        setTaskTitle(`主题《${match[1]}》`);
+      } else {
+        toast.error('请先添加任务标题，格式参考：主题《存款，是放在银行大额存单还是保险的增额寿》', {
+          duration: 5000,
+        });
+        return;
+      }
+    }
+
     setIsSplitting(true);
     try {
       const result: AISplitResponse = await apiPost('/api/agents/b/ai-split', { instruction: mainInstruction });
@@ -2129,42 +2143,27 @@ export default function HomePage() {
     submitLockRef.current = false;
     setIsSubmitting(false);
     toast.success('🔄 提交按钮已重置，请重新尝试');
-    console.log('🔄 手动重置提交锁');
   };
 
   // 🔥 主提交函数
   const handleSubmit = async () => {
     // 1. 立即加锁，防止重复点击
-    // 立即输出所有关键字段值，便于排查
-    console.log('========== 提交流程开始 ==========');
-    console.log('taskTitle:', JSON.stringify(taskTitle));
-    console.log('executionDate:', executionDate);
-    console.log('platformSubTaskGroups.length:', platformSubTaskGroups.length);
-    console.log('platformSubTaskGroups:', JSON.stringify(platformSubTaskGroups, null, 2));
-    console.log('subTasks.length:', subTasks?.length);
-    console.log('selectedMaterials.length:', selectedMaterials?.length);
-    console.log('selectedCases.length:', selectedCases?.length);
-    console.log('========== 字段值输出完毕 ==========');
-    console.log('检查1 submitLockRef.current=', submitLockRef.current);
     if (submitLockRef.current) {
       toast.warning('正在创建中，请勿重复点击。如果卡住了，点击按钮旁的重置图标');
       return;
     }
 
     // 2. 强制字段约束验证
-    console.log('检查2 taskTitle.trim()=', taskTitle.trim(), '空=', !taskTitle.trim());
     if (!taskTitle.trim()) {
       toast.error('请填写任务标题');
       return;
     }
     
-    console.log('检查3 executionDate=', executionDate, '空=', !executionDate);
     if (!executionDate) {
       toast.error('请选择执行日期');
       return;
     }
 
-    console.log('检查4 platformSubTaskGroups.length=', platformSubTaskGroups.length, '为0=', platformSubTaskGroups.length === 0);
     if (platformSubTaskGroups.length === 0) {
       toast.error('请先配置发布账号');
       return;
@@ -2175,12 +2174,9 @@ export default function HomePage() {
     setIsSubmitting(true);
     
     try {
-      console.log('🚀 开始提交任务...');
-      
       // 4. 先显示确认创建弹框
       const confirmedCreate = await showConfirmCreateDialog();
       if (!confirmedCreate) {
-        console.log('❌ 用户取消确认创建');
         return; // 用户取消，不提交
       }
 
@@ -2189,21 +2185,16 @@ export default function HomePage() {
       if (hasDuplicate) {
         const confirmed = await showDuplicateConfirmDialog();
         if (!confirmed) {
-          console.log('❌ 用户取消重复确认');
           return; // 用户取消，不提交
         }
       }
 
       // 6. 用户确认后，提交到服务器
-      console.log('📤 提交到服务器...');
       await submitToServer();
-      console.log('✅ 任务提交成功');
       
     } catch (error: any) {
-      console.error('❌ 提交失败:', error);
       // 错误已经在 submitToServer 中处理了
     } finally {
-      console.log('🔄 最终清理：重置提交锁');
       setIsSubmitting(false);
       submitLockRef.current = false;
     }
@@ -4175,21 +4166,7 @@ export default function HomePage() {
                 <TooltipTrigger asChild>
                   <Button
                     onClick={handleSubmit}
-                    disabled={(() => {
-                      const disabled = isSubmitting || submitLockRef.current || !taskTitle.trim() || !executionDate || platformSubTaskGroups.length === 0;
-                      if (!(window as any)._submitDisabledLogged) {
-                        (window as any)._submitDisabledLogged = true;
-                        console.log('========== 按钮禁用状态 ==========');
-                        console.log('isSubmitting:', isSubmitting);
-                        console.log('submitLockRef.current:', submitLockRef.current);
-                        console.log('!taskTitle.trim():', !taskTitle.trim(), '| taskTitle:', JSON.stringify(taskTitle));
-                        console.log('!executionDate:', !executionDate, '| executionDate:', executionDate);
-                        console.log('platformSubTaskGroups.length === 0:', platformSubTaskGroups.length === 0, '| length:', platformSubTaskGroups.length);
-                        console.log('最终 disabled:', disabled);
-                        console.log('========== 按钮禁用状态结束 ==========');
-                      }
-                      return disabled;
-                    })()}
+                    disabled={isSubmitting || submitLockRef.current || !taskTitle.trim() || !executionDate || platformSubTaskGroups.length === 0}
                     className="w-full md:w-auto"
                   >
                     {isSubmitting ? (
