@@ -669,6 +669,7 @@ export default function HomePage() {
   // 🔥 从指令自动提取任务标题 + 默认执行日期
   useEffect(() => {
     // 任务标题：从 mainInstruction 提取 "主题《xxx》" 或使用前50字
+    // 仅在 taskTitle 为空时自动提取，已填写则保留用户输入
     if (mainInstruction && !taskTitle) {
       const match = mainInstruction.match(/主题[《"<『]([^》"』]+)[》"』]/);
       const title = match ? `主题《${match[1]}》` : mainInstruction.slice(0, 50);
@@ -678,7 +679,7 @@ export default function HomePage() {
     if (!executionDate) {
       setExecutionDate(new Date().toISOString().split('T')[0]);
     }
-  }, [mainInstruction]); // 仅在 mainInstruction 变化时检查，避免无限循环
+  }, [mainInstruction, taskTitle]);
 
   // 🔥 自动保存：监听所有状态变化，有内容就保存（debounce 已内置）
   useEffect(() => {
@@ -1033,17 +1034,17 @@ export default function HomePage() {
       return;
     }
 
-    // 🔥 任务标题：如果未填写，自动从指令提取
+    // 🔥 任务标题：如果未填写，自动从指令提取（永不阻断用户操作）
     let finalTaskTitle = taskTitle.trim();
     if (!finalTaskTitle) {
       const match = mainInstruction.match(/主题[《"<『]([^》"』]+)[》"』]/);
       if (match) {
         finalTaskTitle = `主题《${match[1]}》`;
-        setTaskTitle(finalTaskTitle);
       } else {
-        toast.error('请先填写任务标题（格式：主题《xxx》），上方输入框可编辑', { duration: 5000 });
-        return;
+        finalTaskTitle = mainInstruction.slice(0, 50).trim();
       }
+      setTaskTitle(finalTaskTitle);
+      toast.info(`已自动提取任务标题：「${finalTaskTitle}」，可在上方输入框修改`, { duration: 4000 });
     }
 
     setIsSplitting(true);
@@ -1108,16 +1109,13 @@ export default function HomePage() {
     }
   };
 
-  // 🔥 获取 AI 智能拆解按钮的禁用原因
+  // 🔥 获取 AI 智能拆解按钮的禁用原因（仅检查指令和拆解状态，taskTitle在handleAISplit内自动提取）
   const getAISplitDisabledReason = () => {
     if (!mainInstruction.trim()) {
       return '请输入主任务指令';
     }
     if (isSplitting) {
       return 'AI 正在拆解中...';
-    }
-    if (!taskTitle.trim()) {
-      return '请先添加任务标题（格式：主题《xxx》）';
     }
     return null;
   };
