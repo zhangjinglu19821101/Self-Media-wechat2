@@ -181,25 +181,26 @@ interface CaseItem {
   relevanceScore: number;
 }
 
-// 🔥 创作引导持久化数据类型
-interface CreationGuideDraft {
-  mainInstruction: string; // 🔥 指令校验：防止恢复错误指令的草稿
-  coreOpinion: string;
-  emotionTone: string;
-  selectedMaterialIds: string[];
-  selectedAccountId: string; // 兼容旧草稿：发布账号ID
-  selectedAccountIds: string[]; // 🔥 多平台发布：选中的账号ID列表
-  savedAt: number;
-  version: number;
+// 🔥🔥 表单快照类型（用于页面刷新后恢复全部表单数据）
+// 统一持久化机制：废弃 CreationGuideDraft（localStorage），全部使用 FormSnapshot（sessionStorage）
+
+const FORM_SNAPSHOT_VERSION = 1; // v1: 初始版本，统一持久化
+const FORM_SNAPSHOT_KEY = 'fullHome_formSnapshot';
+
+// 🔥 精简案例快照类型：只保存必要字段，减少 sessionStorage 容量占用
+interface CaseItemSnapshot {
+  id: string;
+  title: string;
+  productTags: string[];
+  relevanceScore: number;
 }
 
-// 🔥🔥 表单快照类型（用于 API Key 跳转后恢复全部表单数据）
 interface FormSnapshot {
+  version: number; // 版本号，用于向后兼容和迁移
   mainInstruction: string;
   coreOpinion: string;
   emotionTone: string;
   selectedMaterialIds: string[];
-  selectedCaseIds: string[];
   selectedAccountIds: string[];
   selectedContentTemplate: {
     id: string;
@@ -211,34 +212,115 @@ interface FormSnapshot {
   selectedStructureId: string;
   hasSplitResult: boolean;
   subTasks: SubTask[];
-  recommendedCases: CaseItem[]; // 推荐案例列表（刷新后恢复）
-  selectedCases: CaseItem[]; // 🔥 已选案例对象数组（刷新后直接恢复，无需匹配）
+  // 🔥 只保存精简的案例快照，避免 sessionStorage 容量超限
+  recommendedCases: CaseItemSnapshot[];
+  selectedCases: CaseItemSnapshot[];
   savedAt: number;
 }
 
-const FORM_SNAPSHOT_KEY = 'fullHome_formSnapshot';
-
-function saveFormSnapshot(snapshot: FormSnapshot) {
-  try {
-    sessionStorage.setItem(FORM_SNAPSHOT_KEY, JSON.stringify(snapshot));
-  } catch { /* sessionStorage 不可用时忽略 */ }
+// 🔥 debounce 工具函数（防抖动）
+function debounce<T extends (...args: any[]) => any>(
+  func: T,
+  wait: number
+): (...args: Parameters<T>) => void {
+  let timeout: NodeJS.Timeout | null = null;
+  return (...args: Parameters<T>) => {
+    if (timeout) clearTimeout(timeout);
+    timeout = setTimeout(() => func(...args), wait);
+  };
 }
 
+// 🔥 保存表单快照到 sessionStorage（防抖版，防止高频触发）
+const saveFormSnapshot = debounce((snapshot: FormSnapshot) => {
+  if (typeof window === 'undefined') return;
+  try {
+    sessionStorage.setItem(FORM_SNAPSHOT_KEY, JSON.stringify(snapshot));
+  } catch (error) {
+    console.warn('[FormSnapshot] 保存快照失败:', error);
+  }
+}, 300);
+
+// 🔥 从 sessionStorage 加载表单快照（含版本迁移）
 function loadFormSnapshot(): FormSnapshot | null {
+  if (typeof window === 'undefined') return null;
   try {
     const raw = sessionStorage.getItem(FORM_SNAPSHOT_KEY);
     if (!raw) return null;
     const snapshot = JSON.parse(raw) as FormSnapshot;
+
+    // 🔥 版本兼容迁移：v0/v1 缺少 version 字段
+    if (!snapshot.version) {
+      // 旧快照迁移：v0 没有 selectedAccountId（现在统一用 selectedAccountIds）
+      // 旧快照有 selectedCaseIds 而无 selectedCases 时，需要特殊处理
+      const migrated: FormSnapshot = {
+        version: FORM_SNAPSHOT_VERSION,
+        mainInstruction: snapshot.mainInstruction || '',
+        coreOpinion: snapshot.coreOpinion || '',
+        emotionTone: snapshot.emotionTone || '',
+        selectedMaterialIds: snapshot.selectedMaterialIds || [],
+        selectedAccountIds: (snapshot as any).selectedAccountIds || [],
+        selectedContentTemplate: snapshot.selectedContentTemplate || null,
+        selectedStructureId: snapshot.selectedStructureId || '',
+        hasSplitResult: snapshot.hasSplitResult || false,
+        subTasks: snapshot.subTasks || [],
+        recommendedCases: (snapshot.recommendedCases || []).map(toCaseItemSnapshot),
+        // 🔥 关键迁移：如果有 selectedCaseIds 但无 selectedCases，尝试从 recommendedCases 匹配
+        selectedCases: (snapshot.selectedCases || []).length > 0
+          ? (snapshot.selectedCases || []).map(toCaseItemSnapshot)
+          : ((snapshot as any).selectedCaseIds?.length > 0 && snapshot.recommendedCases?.length > 0)
+            ? snapshot.recommendedCases
+                .filter((c: CaseItem) => (snapshot as any).selectedCaseIds.includes(c.id))
+                .map(toCaseItemSnapshot)
+            : [],
+        savedAt: snapshot.savedAt || Date.now(),
+      };
+      sessionStorage.setItem(FORM_SNAPSHOT_KEY, JSON.stringify(migrated));
+      return migrated;
+    }
+
     // 超过 1 小时的快照视为过期
     if (Date.now() - snapshot.savedAt > 60 * 60 * 1000) {
       sessionStorage.removeItem(FORM_SNAPSHOT_KEY);
       return null;
     }
     return snapshot;
-  } catch { return null; }
+  } catch (error) {
+    console.warn('[FormSnapshot] 加载快照失败:', error);
+    return null;
+  }
+}
+
+// 🔥 案例对象转为精简快照（只保留必要字段，减少存储体积）
+function toCaseItemSnapshot(item: CaseItem | CaseItemSnapshot): CaseItemSnapshot {
+  return {
+    id: item.id,
+    title: item.title,
+    productTags: (item as CaseItem).productTags || (item as CaseItemSnapshot).productTags || [],
+    relevanceScore: (item as CaseItem).relevanceScore || (item as CaseItemSnapshot).relevanceScore || 0,
+  };
+}
+
+// 🔥 精简快照还原为完整案例对象（恢复时使用，补充缺失字段）
+function toFullCaseItem(snapshot: CaseItemSnapshot): CaseItem {
+  return {
+    id: snapshot.id,
+    title: snapshot.title,
+    protagonist: '',
+    background: '',
+    insuranceAction: '',
+    result: '',
+    applicableProducts: [],
+    applicableScenarios: [],
+    productTags: snapshot.productTags || [],
+    crowdTags: [],
+    sceneTags: [],
+    emotionTags: [],
+    relevanceScore: snapshot.relevanceScore || 0,
+  };
 }
 
 function clearFormSnapshot() {
+  if (typeof window === 'undefined') return;
   try {
     sessionStorage.removeItem(FORM_SNAPSHOT_KEY);
   } catch { /* ignore */ }
@@ -262,129 +344,6 @@ interface InfoSnippet {
   materialId: string | null;
   status: string;
   createdAt: string;
-}
-
-// localStorage Key 前缀
-const STORAGE_KEY_PREFIX = 'creationGuide_draft_';
-const CURRENT_DRAFT_VERSION = 3; // v3: 支持 platformGuideOverrides 按平台区分
-
-// 🔥 debounce 工具函数（防抖动）
-function debounce<T extends (...args: any[]) => any>(
-  func: T,
-  wait: number
-): (...args: Parameters<T>) => void {
-  let timeout: NodeJS.Timeout | null = null;
-  return (...args: Parameters<T>) => {
-    if (timeout) clearTimeout(timeout);
-    timeout = setTimeout(() => func(...args), wait);
-  };
-}
-
-// 🔥 生成创作引导的 localStorage Key
-function getCreationGuideStorageKey(sessionId: string | null): string {
-  return `${STORAGE_KEY_PREFIX}${sessionId || 'default'}`;
-}
-
-// 🔥 保存创作引导草稿到 localStorage（防抖版）
-const saveCreationGuideDraft = debounce((
-  sessionId: string | null,
-  data: Omit<CreationGuideDraft, 'savedAt' | 'version'>
-) => {
-  if (typeof window === 'undefined') return;
-  try {
-    const key = getCreationGuideStorageKey(sessionId);
-    const draft: CreationGuideDraft = {
-      ...data,
-      savedAt: Date.now(),
-      version: CURRENT_DRAFT_VERSION,
-    };
-    localStorage.setItem(key, JSON.stringify(draft));
-    // 同时清理超过7天的旧草稿
-    cleanupOldDrafts();
-  } catch (error) {
-    console.warn('[CreationGuide] 保存草稿失败:', error);
-  }
-}, 500);
-
-// 🔥 从 localStorage 加载创作引导草稿
-function loadCreationGuideDraft(sessionId: string | null): CreationGuideDraft | null {
-  if (typeof window === 'undefined') return null;
-  try {
-    const key = getCreationGuideStorageKey(sessionId);
-    const raw = localStorage.getItem(key);
-    if (!raw) return null;
-    const draft = JSON.parse(raw) as CreationGuideDraft;
-
-    // 🔥 版本兼容：v1 缺少 selectedAccountIds 字段，自动升级
-    if (draft.version === 1 && !draft.selectedAccountIds) {
-      draft.selectedAccountIds = draft.selectedAccountId
-        ? [draft.selectedAccountId]
-        : [];
-    }
-    // 🔥 版本兼容：旧草稿缺少 mainInstruction 字段
-    if (!draft.mainInstruction) {
-      draft.mainInstruction = '';
-    }
-
-    // 静默升级到当前版本
-    draft.version = CURRENT_DRAFT_VERSION;
-    try {
-      localStorage.setItem(key, JSON.stringify(draft));
-    } catch { /* ignore write failure */ }
-
-    // 校验版本和过期时间（7天）
-    if (draft.version !== CURRENT_DRAFT_VERSION) {
-      localStorage.removeItem(key);
-      return null;
-    }
-    if (Date.now() - draft.savedAt > 7 * 24 * 60 * 60 * 1000) {
-      localStorage.removeItem(key);
-      return null;
-    }
-    return draft;
-  } catch (error) {
-    console.warn('[CreationGuide] 加载草稿失败:', error);
-    return null;
-  }
-}
-
-// 🔥 清除创作引导草稿
-function clearCreationGuideDraft(sessionId: string | null) {
-  if (typeof window === 'undefined') return;
-  try {
-    const key = getCreationGuideStorageKey(sessionId);
-    localStorage.removeItem(key);
-  } catch (error) {
-    console.warn('[CreationGuide] 清除草稿失败:', error);
-  }
-}
-
-// 🔥 清理超过7天的旧草稿
-function cleanupOldDrafts() {
-  if (typeof window === 'undefined') return;
-  try {
-    const cutoffTime = Date.now() - 7 * 24 * 60 * 60 * 1000;
-    const keysToRemove: string[] = [];
-    for (let i = 0; i < localStorage.length; i++) {
-      const key = localStorage.key(i);
-      if (key?.startsWith(STORAGE_KEY_PREFIX)) {
-        const raw = localStorage.getItem(key);
-        if (raw) {
-          try {
-            const draft = JSON.parse(raw);
-            if (draft.savedAt && draft.savedAt < cutoffTime) {
-              keysToRemove.push(key);
-            }
-          } catch {
-            keysToRemove.push(key); // 格式错误的旧数据也清理
-          }
-        }
-      }
-    }
-    keysToRemove.forEach(k => localStorage.removeItem(k));
-  } catch (error) {
-    console.warn('[CreationGuide] 清理旧草稿失败:', error);
-  }
 }
 
 export default function HomePage() {
@@ -564,39 +523,6 @@ export default function HomePage() {
   const [snippetTypeFilter, setSnippetTypeFilter] = useState('all');
   const [snippetStatusFilter, setSnippetStatusFilter] = useState('all');
   
-  // 🔥 创作引导：从 localStorage 加载草稿（仅在客户端）
-  useEffect(() => {
-    if (hasSplitResult) {
-      const draft = loadCreationGuideDraft(tempSessionId);
-      if (draft) {
-        // 🔥 指令匹配校验：如果草稿的指令与当前指令不一致，不恢复核心观点和素材选择
-        const instructionMatch = draft.mainInstruction && mainInstruction &&
-          draft.mainInstruction.trim() === mainInstruction.trim();
-        if (instructionMatch) {
-          setCoreOpinion(draft.coreOpinion || '');
-          setSelectedMaterialIds(draft.selectedMaterialIds || []);
-        } else {
-          // 指令不匹配，清空旧草稿的核心观点和素材
-          setCoreOpinion('');
-          setSelectedMaterialIds([]);
-          console.info('[CreationGuide] 草稿指令不匹配，跳过恢复核心观点和素材');
-        }
-        setEmotionTone(draft.emotionTone || '理性客观'); // 默认值：理性客观
-        // 🔥 多平台发布：优先使用 selectedAccountIds，兼容旧草稿的 selectedAccountId
-        if (draft.selectedAccountIds && draft.selectedAccountIds.length > 0) {
-          setSelectedAccountIds(draft.selectedAccountIds);
-          setSelectedAccountId(draft.selectedAccountIds[0]); // 兼容字段
-        } else if (draft.selectedAccountId) {
-          setSelectedAccountIds([draft.selectedAccountId]);
-          setSelectedAccountId(draft.selectedAccountId);
-        }
-        if (instructionMatch) {
-          toast.success('已自动恢复你的创作引导内容');
-        }
-      }
-    }
-  }, [hasSplitResult, tempSessionId]);
-
   // 🔥 新增：检查是否是超级管理员
   useEffect(() => {
     fetch('/api/auth/session')
@@ -607,26 +533,16 @@ export default function HomePage() {
       .catch(() => {});
   }, []);
 
-  // 🔥 创作引导：监听变化，debounce 保存到 localStorage
-  useEffect(() => {
-    if (!hasSplitResult) return; // 只有AI拆解后才保存
-    saveCreationGuideDraft(tempSessionId, {
-      mainInstruction, // 🔥 保存指令用于校验，防止恢复错误草稿
-      coreOpinion,
-      emotionTone,
-      selectedMaterialIds,
-      selectedAccountId, // 兼容字段
-      selectedAccountIds, // 🔥 多平台发布：保存账号多选列表
-    });
-  }, [mainInstruction, coreOpinion, emotionTone, selectedMaterialIds, selectedAccountId, selectedAccountIds, hasSplitResult, tempSessionId]);
+  // ========== 表单快照：恢复 & 自动保存（统一持久化，废弃 CreationGuideDraft） ==========
+  // 架构原则：
+  // 1. Restore（空依赖数组）：仅挂载时从 sessionStorage 恢复一次
+  // 2. AutoSave（防抖 + skipAutoSaveCountRef）：监听状态变化保存，跳过恢复后的首次触发
+  // 3. prevInstructionRef 在 Restore 时同步更新，防止恢复被误判为"用户改指令"
 
-  // ========== 表单快照：恢复 & 自动保存 ==========
-  // 简化为两个完全分离的 useEffect，彻底消除竞态：
-  // 1. Restore（空依赖数组）：仅在组件挂载时从 sessionStorage 恢复一次
-  // 2. AutoSave（状态依赖）：监听所有状态变化，有内容就保存
-
-  const snapshotRestoredRef = useRef(false);      // 标记是否已完成快照恢复
-  const isRestoringRef = useRef(false);            // 标记是否处于恢复过程中（用于跳过恢复触发的 AutoSave）
+  // 🔥 prevInstructionRef：区分"初始化恢复"和"用户改指令"，需在 Restore useEffect 之前声明
+  const prevInstructionRef = useRef('');
+  const snapshotRestoredRef = useRef(false);        // 标记是否已完成快照恢复（防止 Strict Mode 双执行）
+  const skipAutoSaveCountRef = useRef(0);          // 跳过 AutoSave 的次数（恢复后跳过 1 次）
 
   // 🔥 恢复：仅在首次挂载时执行一次
   useEffect(() => {
@@ -636,15 +552,18 @@ export default function HomePage() {
     const snapshot = loadFormSnapshot();
     if (!snapshot) return;
 
-    // 标记正在恢复，后续 AutoSave 跳过（避免恢复的空状态覆盖已有快照）
-    isRestoringRef.current = true;
+    // 跳过恢复后的第 1 次 AutoSave（等 React 批处理完成）
+    skipAutoSaveCountRef.current = 1;
 
     // 恢复所有字段
-    if (snapshot.mainInstruction) setMainInstruction(snapshot.mainInstruction);
+    if (snapshot.mainInstruction) {
+      setMainInstruction(snapshot.mainInstruction);
+      // 🔥 严重问题 3.2 修复：同步更新 prevInstructionRef，防止恢复被误判为"用户改指令"
+      prevInstructionRef.current = snapshot.mainInstruction;
+    }
     if (snapshot.coreOpinion) setCoreOpinion(snapshot.coreOpinion);
     if (snapshot.emotionTone) setEmotionTone(snapshot.emotionTone);
     if (snapshot.selectedMaterialIds?.length) setSelectedMaterialIds(snapshot.selectedMaterialIds);
-    if (snapshot.selectedCaseIds?.length) setSelectedCaseIds(snapshot.selectedCaseIds);
     if (snapshot.selectedAccountIds?.length) {
       setSelectedAccountIds(snapshot.selectedAccountIds);
       setSelectedAccountId(snapshot.selectedAccountIds[0]);
@@ -657,48 +576,45 @@ export default function HomePage() {
     // 🔥 恢复拆解状态，确保刷新后创作引导区可见
     if (snapshot.hasSplitResult) setHasSplitResult(true);
     if (snapshot.subTasks?.length) setSubTasks(snapshot.subTasks);
-    // 🔥 恢复推荐案例列表
+    // 🔥 恢复推荐案例列表（CaseItemSnapshot[] → CaseItem[]）
     if (snapshot.recommendedCases?.length) {
-      setRecommendedCases(snapshot.recommendedCases);
+      setRecommendedCases(snapshot.recommendedCases.map(toFullCaseItem));
     }
-    // 🔥 恢复已选案例：优先使用已保存的 selectedCases（无需依赖 recommendedCases）
+    // 🔥 恢复已选案例：直接使用 selectedCases（CaseItemSnapshot[] → CaseItem[]）
     if (snapshot.selectedCases?.length) {
-      setSelectedCases(snapshot.selectedCases);
-      // 同时恢复 selectedCaseIds（确保一致性）
-      const ids = snapshot.selectedCases.map(c => c.id);
-      setSelectedCaseIds(ids);
-    } else if (snapshot.selectedCaseIds?.length && snapshot.recommendedCases?.length) {
-      // 兼容旧快照：从 recommendedCases 匹配
-      const matched = snapshot.recommendedCases.filter(c => snapshot.selectedCaseIds.includes(c.id));
-      if (matched.length) setSelectedCases(matched);
+      const fullCases = snapshot.selectedCases.map(toFullCaseItem);
+      setSelectedCases(fullCases);
+      // 从 selectedCases 推导 selectedCaseIds（消除冗余字段）
+      setSelectedCaseIds(fullCases.map(c => c.id));
     }
 
     toast.success('已恢复您之前填写的内容');
-
-    // 恢复完成后，允许 AutoSave 正常触发
-    isRestoringRef.current = false;
   }, []); // 空数组：仅挂载时执行一次
 
-  // 🔥 自动保存：监听所有状态变化，有内容就保存
+  // 🔥 自动保存：监听所有状态变化，有内容就保存（debounce 已内置）
   useEffect(() => {
     if (!mainInstruction) return; // 没有内容不保存
-    if (isRestoringRef.current) return; // 正在恢复时不保存（防止空状态覆盖快照）
+    if (skipAutoSaveCountRef.current > 0) {
+      skipAutoSaveCountRef.current--;
+      return; // 🔥 跳过恢复后的第 1 次触发，避免空状态覆盖已有快照
+    }
     saveFormSnapshot({
+      version: FORM_SNAPSHOT_VERSION,
       mainInstruction,
       coreOpinion,
       emotionTone,
       selectedMaterialIds,
-      selectedCaseIds,
       selectedAccountIds,
       selectedContentTemplate,
       selectedStructureId: selectedStructure?.id || '',
       hasSplitResult,
       subTasks,
-      recommendedCases,
-      selectedCases, // 🔥 保存已选案例对象数组
+      // 🔥 保存精简的案例快照，减少 sessionStorage 容量占用
+      recommendedCases: recommendedCases.map(toCaseItemSnapshot),
+      selectedCases: selectedCases.map(toCaseItemSnapshot),
       savedAt: Date.now(),
     });
-  }, [mainInstruction, coreOpinion, emotionTone, selectedMaterialIds, selectedCaseIds, selectedAccountIds, selectedContentTemplate, selectedStructure, hasSplitResult, subTasks, recommendedCases, selectedCases]);
+  }, [mainInstruction, coreOpinion, emotionTone, selectedMaterialIds, selectedAccountIds, selectedContentTemplate, selectedStructure, hasSplitResult, subTasks, recommendedCases, selectedCases]);
 
   // 🔥 获取账号列表（AI拆解后自动加载）
   useEffect(() => {
@@ -1061,7 +977,8 @@ export default function HomePage() {
       setSelectedCases([]);
       setCoreOpinion('');
       setEmotionTone('');
-      clearCreationGuideDraft(tempSessionId);
+      // 🔥 严重问题 3.1 修复：重新拆解时清空 FormSnapshot，防止旧数据被恢复
+      clearFormSnapshot();
       
       // 拆解完成后保持创作引导区展开，方便用户立即查看推荐
       toast.success(`✅ AI 成功拆解出 ${newSubTasks.length} 个子任务`);
@@ -1196,7 +1113,7 @@ export default function HomePage() {
   // 🔥 追踪上一次指令值：区分"初始化恢复"和"用户主动改指令"
   // 从空值→非空值 = 初始化恢复，不清空核心观点/情感基调
   // 从非空→不同非空 = 用户改指令，清空核心观点/情感基调
-  const prevInstructionRef = useRef('');
+  // 注：prevInstructionRef 在 Restore useEffect 之前声明，避免时序问题
 
   // 🔥 自动推荐：指令变化后 800ms 自动触发素材推荐
   // 核心逻辑：指令变化 → 清空已选择数据 → 推荐新数据
@@ -2091,7 +2008,8 @@ export default function HomePage() {
       toast.success(`✅ 成功创建 ${result.data.insertedCount} 个子任务`);
       
       // 提交成功后清除 localStorage 草稿
-      clearCreationGuideDraft(tempSessionId);
+      // 🔥 严重问题 3.1 修复：重新拆解时清空 FormSnapshot，防止旧数据被恢复
+      clearFormSnapshot();
       // 提交成功后清除 sessionStorage 表单快照
       clearFormSnapshot();
       
