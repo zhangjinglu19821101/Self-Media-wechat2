@@ -4145,7 +4145,21 @@ export default function HomePage() {
                 <TooltipTrigger asChild>
                   <Button
                     onClick={handleSubmit}
-                    disabled={isSubmitting || submitLockRef.current || !taskTitle.trim() || !executionDate || platformSubTaskGroups.length === 0}
+                    disabled={(() => {
+                      const disabled = isSubmitting || submitLockRef.current || !taskTitle.trim() || !executionDate || platformSubTaskGroups.length === 0;
+                      if (!(window as any)._submitDisabledLogged) {
+                        (window as any)._submitDisabledLogged = true;
+                        console.log('========== 按钮禁用状态 ==========');
+                        console.log('isSubmitting:', isSubmitting);
+                        console.log('submitLockRef.current:', submitLockRef.current);
+                        console.log('!taskTitle.trim():', !taskTitle.trim(), '| taskTitle:', JSON.stringify(taskTitle));
+                        console.log('!executionDate:', !executionDate, '| executionDate:', executionDate);
+                        console.log('platformSubTaskGroups.length === 0:', platformSubTaskGroups.length === 0, '| length:', platformSubTaskGroups.length);
+                        console.log('最终 disabled:', disabled);
+                        console.log('========== 按钮禁用状态结束 ==========');
+                      }
+                      return disabled;
+                    })()}
                     className="w-full md:w-auto"
                   >
                     {isSubmitting ? (
