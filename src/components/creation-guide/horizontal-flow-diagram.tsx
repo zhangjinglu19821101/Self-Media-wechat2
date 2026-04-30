@@ -129,7 +129,7 @@ function FlowNode({ task, index, total, isSelected, onClick }: FlowNodeProps) {
         {/* 图标节点 */}
         <div
           className={`
-            w-14 h-14 rounded-xl flex items-center justify-center
+            w-10 h-10 rounded-lg flex items-center justify-center
             transition-all duration-300 ease-out
             ${isSelected
               ? `${colors.bg} ring-4 ${colors.ring} ring-offset-2 shadow-lg shadow-${colors.bg.replace('bg-', '')}/30`
