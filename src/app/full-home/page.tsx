@@ -211,7 +211,8 @@ interface FormSnapshot {
   selectedStructureId: string;
   hasSplitResult: boolean;
   subTasks: SubTask[];
-  recommendedCases: CaseItem[]; // 🔥 推荐案例列表（刷新后恢复）
+  recommendedCases: CaseItem[]; // 推荐案例列表（刷新后恢复）
+  selectedCases: CaseItem[]; // 🔥 已选案例对象数组（刷新后直接恢复，无需匹配）
   savedAt: number;
 }
 
@@ -659,10 +660,17 @@ export default function HomePage() {
     // 🔥 恢复推荐案例列表
     if (snapshot.recommendedCases?.length) {
       setRecommendedCases(snapshot.recommendedCases);
-      if (snapshot.selectedCaseIds?.length) {
-        const matched = snapshot.recommendedCases.filter(c => snapshot.selectedCaseIds.includes(c.id));
-        if (matched.length) setSelectedCases(matched);
-      }
+    }
+    // 🔥 恢复已选案例：优先使用已保存的 selectedCases（无需依赖 recommendedCases）
+    if (snapshot.selectedCases?.length) {
+      setSelectedCases(snapshot.selectedCases);
+      // 同时恢复 selectedCaseIds（确保一致性）
+      const ids = snapshot.selectedCases.map(c => c.id);
+      setSelectedCaseIds(ids);
+    } else if (snapshot.selectedCaseIds?.length && snapshot.recommendedCases?.length) {
+      // 兼容旧快照：从 recommendedCases 匹配
+      const matched = snapshot.recommendedCases.filter(c => snapshot.selectedCaseIds.includes(c.id));
+      if (matched.length) setSelectedCases(matched);
     }
 
     toast.success('已恢复您之前填写的内容');
@@ -687,9 +695,10 @@ export default function HomePage() {
       hasSplitResult,
       subTasks,
       recommendedCases,
+      selectedCases, // 🔥 保存已选案例对象数组
       savedAt: Date.now(),
     });
-  }, [mainInstruction, coreOpinion, emotionTone, selectedMaterialIds, selectedCaseIds, selectedAccountIds, selectedContentTemplate, selectedStructure, hasSplitResult, subTasks, recommendedCases]);
+  }, [mainInstruction, coreOpinion, emotionTone, selectedMaterialIds, selectedCaseIds, selectedAccountIds, selectedContentTemplate, selectedStructure, hasSplitResult, subTasks, recommendedCases, selectedCases]);
 
   // 🔥 获取账号列表（AI拆解后自动加载）
   useEffect(() => {
