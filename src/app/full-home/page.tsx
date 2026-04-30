@@ -181,10 +181,21 @@ interface CaseItem {
   relevanceScore: number;
 }
 
+// 🔥🔥🔥 精简素材快照类型：只保存必要字段，大幅减少 sessionStorage 容量占用
+// content（正文内容）不保存，刷新后通过 selectedMaterialIds + 推荐列表重新匹配
+interface MaterialItemSnapshot {
+  id: string;
+  title: string;
+  type: string;
+  topicTags: string[];
+  sceneTags: string[];
+  emotionTags: string[];
+}
+
 // 🔥🔥 表单快照类型（用于页面刷新后恢复全部表单数据）
 // 统一持久化机制：废弃 CreationGuideDraft（localStorage），全部使用 FormSnapshot（sessionStorage）
 
-const FORM_SNAPSHOT_VERSION = 1; // v1: 初始版本，统一持久化
+const FORM_SNAPSHOT_VERSION = 1; // v1: 初始版本，统一持久化 + 精简快照
 const FORM_SNAPSHOT_KEY = 'fullHome_formSnapshot';
 
 // 🔥 精简案例快照类型：只保存必要字段，减少 sessionStorage 容量占用
@@ -201,8 +212,8 @@ interface FormSnapshot {
   coreOpinion: string;
   emotionTone: string;
   selectedMaterialIds: string[];
-  // 🔥 保存已选素材对象，刷新后无需重新匹配推荐结果
-  selectedMaterials: MaterialItem[];
+  // 🔥 保存精简的素材快照，避免 content（大字段）撑爆 sessionStorage
+  selectedMaterials: MaterialItemSnapshot[];
   selectedAccountIds: string[];
   selectedContentTemplate: {
     id: string;
@@ -260,8 +271,10 @@ function loadFormSnapshot(): FormSnapshot | null {
         coreOpinion: snapshot.coreOpinion || '',
         emotionTone: snapshot.emotionTone || '',
         selectedMaterialIds: snapshot.selectedMaterialIds || [],
-        // 🔥 恢复已选素材对象，刷新后无需重新匹配推荐结果
-        selectedMaterials: snapshot.selectedMaterials || [],
+        // 🔥 迁移已选素材：v0 可能保存完整 MaterialItem[]，统一转为精简快照
+        selectedMaterials: (snapshot.selectedMaterials || []).length > 0
+          ? (snapshot.selectedMaterials as (MaterialItem | MaterialItemSnapshot)[]).map(toMaterialItemSnapshot)
+          : [],
         selectedAccountIds: (snapshot as any).selectedAccountIds || [],
         selectedContentTemplate: snapshot.selectedContentTemplate || null,
         selectedStructureId: snapshot.selectedStructureId || '',
@@ -269,12 +282,11 @@ function loadFormSnapshot(): FormSnapshot | null {
         subTasks: snapshot.subTasks || [],
         recommendedCases: (snapshot.recommendedCases || []).map(toCaseItemSnapshot),
         // 🔥 关键迁移：如果有 selectedCaseIds 但无 selectedCases，尝试从 recommendedCases 匹配
+        // 注意：v0 的 recommendedCases/selectedCases 可能是 CaseItem[]（完整对象），toCaseItemSnapshot 兼容两种输入
         selectedCases: (snapshot.selectedCases || []).length > 0
-          ? (snapshot.selectedCases || []).map(toCaseItemSnapshot)
+          ? (snapshot.selectedCases as (CaseItem | CaseItemSnapshot)[]).map(toCaseItemSnapshot)
           : ((snapshot as any).selectedCaseIds?.length > 0 && snapshot.recommendedCases?.length > 0)
-            ? snapshot.recommendedCases
-                .filter((c: CaseItem) => (snapshot as any).selectedCaseIds.includes(c.id))
-                .map(toCaseItemSnapshot)
+            ? (snapshot.recommendedCases as (CaseItem | CaseItemSnapshot)[]).filter((c) => (snapshot as any).selectedCaseIds.includes(c.id)).map(toCaseItemSnapshot)
             : [],
         savedAt: snapshot.savedAt || Date.now(),
       };
@@ -320,6 +332,36 @@ function toFullCaseItem(snapshot: CaseItemSnapshot): CaseItem {
     sceneTags: [],
     emotionTags: [],
     relevanceScore: snapshot.relevanceScore || 0,
+  };
+}
+
+// 🔥 素材对象转为精简快照（只保留必要字段，移除 content 等大字段）
+function toMaterialItemSnapshot(item: MaterialItem | MaterialItemSnapshot): MaterialItemSnapshot {
+  return {
+    id: item.id,
+    title: item.title,
+    type: item.type,
+    topicTags: item.topicTags || [],
+    sceneTags: item.sceneTags || [],
+    emotionTags: item.emotionTags || [],
+  };
+}
+
+// 🔥 精简快照还原为完整素材对象（恢复时使用，content 字段通过推荐列表重新匹配获取）
+function toFullMaterialItem(snapshot: MaterialItemSnapshot, fallback?: MaterialItem): MaterialItem {
+  return {
+    id: snapshot.id,
+    title: snapshot.title,
+    type: snapshot.type,
+    content: fallback?.content || '',
+    sourceDesc: fallback?.sourceDesc,
+    topicTags: snapshot.topicTags || [],
+    sceneTags: snapshot.sceneTags || [],
+    emotionTags: snapshot.emotionTags || [],
+    useCount: fallback?.useCount,
+    matchLevel: fallback?.matchLevel,
+    keywordHitCount: fallback?.keywordHitCount,
+    tagHitCount: fallback?.tagHitCount,
   };
 }
 
@@ -572,9 +614,11 @@ export default function HomePage() {
     if (snapshot.emotionTone) setEmotionTone(snapshot.emotionTone);
     if (snapshot.selectedMaterialIds?.length) {
       setSelectedMaterialIds(snapshot.selectedMaterialIds);
-      // 🔥 优先使用快照中保存的 selectedMaterials 对象，无需重新匹配推荐结果
+      // 🔥 恢复已选素材：转换为完整对象，content 字段通过推荐列表重新匹配获取
       if (snapshot.selectedMaterials?.length) {
-        setSelectedMaterials(snapshot.selectedMaterials);
+        // 🔥 content 字段不存储在快照中，刷新后需要用户重新选择或由推荐系统补充
+        const fullMaterials = snapshot.selectedMaterials.map(s => toFullMaterialItem(s));
+        setSelectedMaterials(fullMaterials);
       }
     }
     if (snapshot.selectedAccountIds?.length) {
@@ -602,6 +646,12 @@ export default function HomePage() {
     }
 
     toast.success('已恢复您之前填写的内容');
+    // 🔥 中等问题 3 修复：cleanup 重置所有 refs，防止 Strict Mode 卸载重挂后无法恢复
+    return () => {
+      snapshotRestoredRef.current = false;
+      skipAutoSaveCountRef.current = 0;
+      skipAutoRecommendCountRef.current = 0;
+    };
   }, []); // 空数组：仅挂载时执行一次
 
   // 🔥 自动保存：监听所有状态变化，有内容就保存（debounce 已内置）
@@ -617,8 +667,8 @@ export default function HomePage() {
       coreOpinion,
       emotionTone,
       selectedMaterialIds,
-      // 🔥 保存已选素材对象，刷新后无需重新匹配推荐结果
-      selectedMaterials,
+      // 🔥 保存精简的素材快照（移除 content 等大字段），刷新后通过推荐列表重新获取正文
+      selectedMaterials: selectedMaterials.map(toMaterialItemSnapshot),
       selectedAccountIds,
       selectedContentTemplate,
       selectedStructureId: selectedStructure?.id || '',
