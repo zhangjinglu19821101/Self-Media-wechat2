@@ -228,6 +228,10 @@ interface FormSnapshot {
   // 🔥 只保存精简的案例快照，避免 sessionStorage 容量超限
   recommendedCases: CaseItemSnapshot[];
   selectedCases: CaseItemSnapshot[];
+  // 提交表单字段
+  taskTitle: string;
+  executionDate: string;
+  platformSubTaskGroups: PlatformSubTaskGroup[];
   savedAt: number;
 }
 
@@ -288,6 +292,10 @@ function loadFormSnapshot(): FormSnapshot | null {
           : ((snapshot as any).selectedCaseIds?.length > 0 && snapshot.recommendedCases?.length > 0)
             ? (snapshot.recommendedCases as (CaseItem | CaseItemSnapshot)[]).filter((c) => (snapshot as any).selectedCaseIds.includes(c.id)).map(toCaseItemSnapshot)
             : [],
+        // 提交表单字段
+        taskTitle: snapshot.taskTitle || '',
+        executionDate: snapshot.executionDate || '',
+        platformSubTaskGroups: snapshot.platformSubTaskGroups || [],
         savedAt: snapshot.savedAt || Date.now(),
       };
       sessionStorage.setItem(FORM_SNAPSHOT_KEY, JSON.stringify(migrated));
@@ -630,6 +638,10 @@ export default function HomePage() {
       const structure = STRUCTURE_TEMPLATES.find(s => s.id === snapshot.selectedStructureId);
       if (structure) setSelectedStructure(structure);
     }
+    // 🔥 恢复提交表单字段
+    if (snapshot.taskTitle) setTaskTitle(snapshot.taskTitle);
+    if (snapshot.executionDate) setExecutionDate(snapshot.executionDate);
+    if (snapshot.platformSubTaskGroups?.length) setPlatformSubTaskGroups(snapshot.platformSubTaskGroups);
     // 🔥 恢复拆解状态，确保刷新后创作引导区可见
     if (snapshot.hasSplitResult) setHasSplitResult(true);
     if (snapshot.subTasks?.length) setSubTasks(snapshot.subTasks);
@@ -677,9 +689,13 @@ export default function HomePage() {
       // 🔥 保存精简的案例快照，减少 sessionStorage 容量占用
       recommendedCases: recommendedCases.map(toCaseItemSnapshot),
       selectedCases: selectedCases.map(toCaseItemSnapshot),
+      // 提交表单字段
+      taskTitle,
+      executionDate,
+      platformSubTaskGroups,
       savedAt: Date.now(),
     });
-  }, [mainInstruction, coreOpinion, emotionTone, selectedMaterialIds, selectedMaterials, selectedAccountIds, selectedContentTemplate, selectedStructure, hasSplitResult, subTasks, recommendedCases, selectedCases]);
+  }, [mainInstruction, coreOpinion, emotionTone, selectedMaterialIds, selectedMaterials, selectedAccountIds, selectedContentTemplate, selectedStructure, hasSplitResult, subTasks, recommendedCases, selectedCases, taskTitle, executionDate, platformSubTaskGroups]);
 
   // 🔥 获取账号列表（AI拆解后自动加载）
   useEffect(() => {
