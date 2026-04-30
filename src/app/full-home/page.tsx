@@ -622,10 +622,13 @@ export default function HomePage() {
   // 🔥🔥 表单快照：从 sessionStorage 恢复（API Key 跳转后返回时）
   const formSnapshotRestored = useRef(false);
   const recommendedCasesRestoredFromSnapshot = useRef(false); // 🔥 标记推荐案例是否从快照恢复
+  const isRestoringRef = useRef(false); // 🔥 标记是否正在恢复快照（用于阻止自动保存覆盖恢复的快照）
+
   useEffect(() => {
     if (formSnapshotRestored.current) return; // 避免重复恢复
     const snapshot = loadFormSnapshot();
     if (snapshot) {
+      isRestoringRef.current = true; // 标记恢复开始，阻止 auto-save useEffect 覆盖
       if (snapshot.mainInstruction) setMainInstruction(snapshot.mainInstruction);
       if (snapshot.coreOpinion) setCoreOpinion(snapshot.coreOpinion);
       if (snapshot.emotionTone) setEmotionTone(snapshot.emotionTone);
@@ -656,20 +659,18 @@ export default function HomePage() {
       formSnapshotRestored.current = true;
       toast.success('已恢复您之前填写的内容');
 
-      // 🔥 重要：用 microtask 等 React 批处理完成后再保存快照
-      // 原因：setRecommendedCases 等状态更新被批处理，microtask 在批处理完成后执行，
-      // 确保能读取到最新的 recommendedCases 等状态值（而非初始空值）
-      const isRestoring = true;
-      queueMicrotask(() => {
-        if (!isRestoring) return; // Strict Mode cleanup 时 isRestoring 被设为 false，跳过保存
+      // 🔥 重要：用 setTimeout 等 React 批处理完成后再保存快照
+      // 使用 isRestoringRef 而不是局部变量，避免 Strict Mode cleanup 问题
+      const timer = setTimeout(() => {
+        if (!isRestoringRef.current) return; // cleanup 已执行，跳过
         saveFormSnapshot({
           hasSplitResult,
           subTasks,
           mainInstruction,
           coreOpinion,
           emotionTone,
-          recommendedMaterials: [], // 素材不持久化（太大）
-          recommendedSnippets: [],   // 片段不持久化
+          recommendedMaterials: [],
+          recommendedSnippets: [],
           selectedMaterialIds,
           selectedCaseIds,
           selectedAccountIds,
@@ -677,7 +678,11 @@ export default function HomePage() {
           selectedStructureId: selectedStructure?.id || '',
           recommendedCases: recommendedCasesRestoredFromSnapshot.current ? (snapshot?.recommendedCases || []) : [],
         });
-      });
+      }, 0);
+      return () => {
+        clearTimeout(timer);
+        isRestoringRef.current = false; // cleanup 时标记恢复结束
+      };
     }
   }, []);
 
