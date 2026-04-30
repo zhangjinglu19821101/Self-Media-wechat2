@@ -123,7 +123,8 @@ const COMPLIANCE_REQUIRED_AGENTS = new Set([
 
 export class PromptAssemblerService {
   private fixedBasePrompts: Map<string, string> = new Map();
-  private complianceRules: string | null = null; // 🔥 合规规则缓存
+  // 🔥 合规规则缓存（P1-2: 使用 Promise 缓存避免并发竞态）
+  private complianceRulesPromise: Promise<string> | null = null;
 
   /**
    * 加载固定基础提示词
@@ -163,27 +164,50 @@ export class PromptAssemblerService {
       this.fixedBasePrompts.delete(executorType);
     } else {
       this.fixedBasePrompts.clear();
+      // 🔥 同时刷新合规规则缓存（P1-1）
+      this.invalidateComplianceRulesCache();
     }
+  }
+
+  /**
+   * 🔥 强制刷新合规规则缓存（P1-1: 供外部调用，规则更新后无需重启服务）
+   */
+  invalidateComplianceRulesCache(): void {
+    this.complianceRulesPromise = null;
   }
 
   /**
    * 🔥 加载合规规则（所有保险创作 Agent 共用）
    * 
-   * 从 insurance-compliance-rules.md 文件读取，缓存到内存
+   * 从 insurance-compliance-rules.md 文件读取，使用 Promise 缓存避免并发竞态（P1-2）
+   * 生产环境加载失败直接抛出错误，避免静默降级导致合规规则缺失（P1-3）
    */
   private async loadComplianceRules(): Promise<string> {
-    if (this.complianceRules) {
-      return this.complianceRules;
+    // P1-2: 使用 Promise 缓存，并发请求共享同一个 Promise，避免重复加载
+    if (this.complianceRulesPromise) {
+      return this.complianceRulesPromise;
     }
 
+    this.complianceRulesPromise = this._loadComplianceRulesOnce();
+    return this.complianceRulesPromise;
+  }
+
+  /**
+   * 合规规则实际加载逻辑（仅执行一次）
+   */
+  private async _loadComplianceRulesOnce(): Promise<string> {
     const complianceFilePath = path.join(process.cwd(), COMPLIANCE_RULES_FILE);
     try {
       const content = await readFile(complianceFilePath, 'utf-8');
-      this.complianceRules = content;
       return content;
     } catch (error) {
       console.error('[PromptAssembler] 加载合规规则文件失败:', error);
-      // 返回空的合规规则（不影响其他功能）
+      // P1-3: 生产环境不允许静默降级，合规规则缺失会导致创作内容无合规约束
+      if (process.env.COZE_PROJECT_ENV === 'PROD') {
+        throw new Error('合规规则文件加载失败，生产环境不允许静默降级');
+      }
+      // 非生产环境降级返回空字符串（开发/测试）
+      console.warn('[PromptAssembler] 非生产环境，合规规则降级为空');
       return '';
     }
   }
