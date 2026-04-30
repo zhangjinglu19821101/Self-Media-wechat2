@@ -2105,22 +2105,36 @@ export default function HomePage() {
   // 🔥 主提交函数
   const handleSubmit = async () => {
     // 1. 立即加锁，防止重复点击
+    // 立即输出所有关键字段值，便于排查
+    console.log('========== 提交流程开始 ==========');
+    console.log('taskTitle:', JSON.stringify(taskTitle));
+    console.log('executionDate:', executionDate);
+    console.log('platformSubTaskGroups.length:', platformSubTaskGroups.length);
+    console.log('platformSubTaskGroups:', JSON.stringify(platformSubTaskGroups, null, 2));
+    console.log('subTasks.length:', subTasks?.length);
+    console.log('selectedMaterials.length:', selectedMaterials?.length);
+    console.log('selectedCases.length:', selectedCases?.length);
+    console.log('========== 字段值输出完毕 ==========');
+    console.log('检查1 submitLockRef.current=', submitLockRef.current);
     if (submitLockRef.current) {
       toast.warning('正在创建中，请勿重复点击。如果卡住了，点击按钮旁的重置图标');
       return;
     }
 
     // 2. 强制字段约束验证
+    console.log('检查2 taskTitle.trim()=', taskTitle.trim(), '空=', !taskTitle.trim());
     if (!taskTitle.trim()) {
       toast.error('请填写任务标题');
       return;
     }
     
+    console.log('检查3 executionDate=', executionDate, '空=', !executionDate);
     if (!executionDate) {
       toast.error('请选择执行日期');
       return;
     }
 
+    console.log('检查4 platformSubTaskGroups.length=', platformSubTaskGroups.length, '为0=', platformSubTaskGroups.length === 0);
     if (platformSubTaskGroups.length === 0) {
       toast.error('请先配置发布账号');
       return;
