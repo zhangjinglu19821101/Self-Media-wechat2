@@ -408,10 +408,6 @@ export default function HomePage() {
   // 🔥 平台分组 ref：供 useEffect 读取最新值，避免将 platformSubTaskGroups 加入依赖导致循环
   const platformSubTaskGroupsRef = useRef<PlatformSubTaskGroup[]>([]);
   
-  // 在客户端设置初始日期，避免 hydration 错误
-  useEffect(() => {
-    setExecutionDate(new Date().toISOString().split('T')[0]);
-  }, []);
   const [mainInstruction, setMainInstruction] = useState('');
   const [subTasks, setSubTasks] = useState<SubTask[]>([
     { id: '1', title: '', description: '', executor: 'B', orderIndex: 1 },
@@ -598,6 +594,7 @@ export default function HomePage() {
   const snapshotRestoredRef = useRef(false);        // 标记是否已完成快照恢复（防止 Strict Mode 双执行）
   const skipAutoSaveCountRef = useRef(0);          // 跳过 AutoSave 的次数（恢复后跳过 1 次）
   const skipAutoRecommendCountRef = useRef(0);     // 🔥 跳过 AutoRecommend 清理的次数（恢复后跳过 1 次，防止清空已恢复的状态）
+  const autoExtractedRef = useRef(false);          // 🔥 taskTitle 自动提取标记，防止重复提取
 
   // 🔥 恢复：仅在首次挂载时执行一次
   useEffect(() => {
@@ -611,6 +608,8 @@ export default function HomePage() {
     skipAutoSaveCountRef.current = 1;
     // 🔥 跳过恢复后的第 1 次 AutoRecommend 清理（防止清空刚恢复的状态）
     skipAutoRecommendCountRef.current = 1;
+    // 🔥 恢复了 taskTitle，不需要自动提取
+    autoExtractedRef.current = true;
 
     // 恢复所有字段
     if (snapshot.mainInstruction) {
@@ -666,11 +665,13 @@ export default function HomePage() {
     };
   }, []); // 空数组：仅挂载时执行一次
 
-  // 🔥 从指令自动提取任务标题 + 默认执行日期
+  // 🔥 从指令自动提取任务标题 + 默认执行日期（仅提取一次）
   useEffect(() => {
+    if (autoExtractedRef.current) return; // 只提取一次，防止 taskTitle 变化导致循环
+    if (!mainInstruction) return;
+    autoExtractedRef.current = true;
     // 任务标题：从 mainInstruction 提取 "主题《xxx》" 或使用前50字
-    // 仅在 taskTitle 为空时自动提取，已填写则保留用户输入
-    if (mainInstruction && !taskTitle) {
+    if (!taskTitle) {
       const match = mainInstruction.match(/主题[《"<『]([^》"』]+)[》"』]/);
       const title = match ? `主题《${match[1]}》` : mainInstruction.slice(0, 50);
       setTaskTitle(title);
@@ -679,7 +680,7 @@ export default function HomePage() {
     if (!executionDate) {
       setExecutionDate(new Date().toISOString().split('T')[0]);
     }
-  }, [mainInstruction, taskTitle]);
+  }, [mainInstruction]);
 
   // 🔥 自动保存：监听所有状态变化，有内容就保存（debounce 已内置）
   useEffect(() => {
