@@ -111,6 +111,7 @@ function FlowNode({ task, index, total, isSelected, onClick }: FlowNodeProps) {
   const icon = EXECUTOR_ICONS[task.executor] || EXECUTOR_ICONS['default'];
   const colors = EXECUTOR_COLORS[task.executor] || EXECUTOR_COLORS['default'];
   const arrowLabel = ARROW_LABELS[task.executor] || ARROW_LABELS['default'];
+  const isFirstNode = index === 0; // 起始节点不可删除
 
   return (
     <div className="flex items-center">
@@ -118,22 +119,39 @@ function FlowNode({ task, index, total, isSelected, onClick }: FlowNodeProps) {
       <button
         type="button"
         onClick={onClick}
-        aria-label={`步骤 ${index + 1}: ${task.title || '未命名'}`}
+        aria-label={`步骤 ${index + 1}: ${task.title || '未命名'}${isFirstNode ? '（起始节点，不可删除）' : ''}`}
         aria-pressed={isSelected}
+        title={isFirstNode ? '起始节点，系统自动创建，不可删除' : task.title}
         className={`
-          group flex flex-col items-center cursor-pointer transition-all duration-300 ease-out
+          group relative flex flex-col items-center cursor-pointer transition-all duration-300 ease-out
           ${isSelected ? 'scale-110' : 'hover:scale-105'}
           focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-blue-400
         `}
       >
+        {/* 起始节点锁定标识 */}
+        {isFirstNode && (
+          <div className="absolute -top-2 -right-2 z-10">
+            <div className="w-5 h-5 rounded-full bg-slate-700 text-white flex items-center justify-center shadow-sm">
+              <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+                <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+              </svg>
+            </div>
+          </div>
+        )}
+
         {/* 图标节点 */}
         <div
           className={`
             w-10 h-10 rounded-lg flex items-center justify-center
             transition-all duration-300 ease-out
-            ${isSelected
-              ? `${colors.bg} ring-4 ${colors.ring} ring-offset-2 shadow-lg shadow-${colors.bg.replace('bg-', '')}/30`
-              : `${colors.bg} ${colors.hover} shadow-md hover:shadow-lg`
+            ${isFirstNode
+              ? isSelected
+                ? `${colors.bg} ring-4 ${colors.ring} ring-offset-2 shadow-lg`
+                : `${colors.bg} ring-2 ring-slate-200 shadow-md`
+              : isSelected
+                ? `${colors.bg} ring-4 ${colors.ring} ring-offset-2 shadow-lg shadow-${colors.bg.replace('bg-', '')}/30`
+                : `${colors.bg} ${colors.hover} shadow-md hover:shadow-lg`
             }
           `}
         >
