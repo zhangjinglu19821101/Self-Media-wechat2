@@ -677,7 +677,9 @@ export default function HomePage() {
       snapshotRestoredRef.current = false;
       skipAutoSaveCountRef.current = 0;
       skipAutoRecommendCountRef.current = 0;
-      isRestoringSnapshotRef.current = false;
+      // 🔥 注意：不重置 isRestoringSnapshotRef！
+      // Strict Mode 下 cleanup 会重置 refs，但第二次挂载时 useEffect 仍需要此标志
+      // isRestoringSnapshotRef 在第744行被消费后自动重置为 false
     };
   }, []); // 空数组：仅挂载时执行一次
 
