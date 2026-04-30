@@ -61,18 +61,28 @@ export interface UserExclusiveRule {
 /**
  * 风格复刻规则（需求文档 3.3.1 风格资产）
  *
- * 4 类风格规则：
+ * 通用文字风格规则：
  * 1. tone — 语气与句式习惯
  * 2. vocabulary — 高频词 / 禁用词
  * 3. logic — 思维逻辑和论证方式
  * 4. emotion — 情感基调
+ *
+ * 小红书/短视频平台特有规则：
+ * 5. title_pattern — 标题套路
+ * 6. emoji_usage — emoji 使用
+ * 7. visual_layout — 图文排版
+ * 8. card_style — 卡片风格
+ * 9. image_structure — 图文结构
+ * 10. color_scheme — 配色方案
  */
 export interface StyleRule {
   id: string;
-  ruleType: 'tone' | 'vocabulary' | 'logic' | 'emotion';
+  ruleType: 'tone' | 'vocabulary' | 'logic' | 'emotion' 
+    | 'title_pattern' | 'emoji_usage' | 'visual_layout' | 'card_style' | 'image_structure' | 'color_scheme';
   ruleContent: string;
   sampleExtract?: string; // 从样本中提取的示例
   confidence: number; // 0-1，置信度
+  priority?: number; // 优先级（1 = 最高优先级，默认为 2）
   isActive: boolean;
   createdAt: Date;
   updatedAt: Date;
