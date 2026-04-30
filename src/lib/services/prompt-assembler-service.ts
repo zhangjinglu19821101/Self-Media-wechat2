@@ -108,10 +108,22 @@ const PROMPT_FILE_MAP: Record<string, string> = {
 
 const DEFAULT_EXECUTOR_TYPE = 'insurance-d';
 
+// 🔥 合规规则文件路径（所有保险创作 Agent 共用）
+const COMPLIANCE_RULES_FILE = 'src/lib/agents/prompts/insurance-compliance-rules.md';
+
+// ========== 需要注入合规规则的 Agent 类型列表 ==========
+const COMPLIANCE_REQUIRED_AGENTS = new Set([
+  'insurance-d',
+  'insurance-xiaohongshu',
+  'insurance-zhihu',
+  'insurance-toutiao',
+]);
+
 // ========== 提示词拼接服务 ==========
 
 export class PromptAssemblerService {
   private fixedBasePrompts: Map<string, string> = new Map();
+  private complianceRules: string | null = null; // 🔥 合规规则缓存
 
   /**
    * 加载固定基础提示词
@@ -153,6 +165,30 @@ export class PromptAssemblerService {
       this.fixedBasePrompts.clear();
     }
   }
+
+  /**
+   * 🔥 加载合规规则（所有保险创作 Agent 共用）
+   * 
+   * 从 insurance-compliance-rules.md 文件读取，缓存到内存
+   */
+  private async loadComplianceRules(): Promise<string> {
+    if (this.complianceRules) {
+      return this.complianceRules;
+    }
+
+    const complianceFilePath = path.join(process.cwd(), COMPLIANCE_RULES_FILE);
+    try {
+      const content = await readFile(complianceFilePath, 'utf-8');
+      this.complianceRules = content;
+      return content;
+    } catch (error) {
+      console.error('[PromptAssembler] 加载合规规则文件失败:', error);
+      // 返回空的合规规则（不影响其他功能）
+      return '';
+    }
+  }
+
+
 
   /**
    * 兜底固定提示词（文件加载失败时使用）
@@ -548,30 +584,38 @@ export class PromptAssemblerService {
    * 组装最终提示词
    * 
    * 拼接规则（3.2.3）：
-   * 最终提示词 = 固定基础提示词 + 用户专属动态规则 + 本次创作需求
+   * 最终提示词 = 固定基础提示词 + 🔥合规规则（保险创作Agent） + 用户专属动态规则 + 本次创作需求
    */
   async assemblePrompt(options: PromptAssemblyOptions = {}): Promise<AssembledPrompt> {
     // 🔥 行业案例由执行引擎按需检索后以预格式化文本传入（industryCases）
     // 不在此处触发数据库查询，遵循"格式化函数无副作用"原则
 
+    const resolvedExecutorType = options.executorType || DEFAULT_EXECUTOR_TYPE;
+    const needsComplianceRules = COMPLIANCE_REQUIRED_AGENTS.has(resolvedExecutorType);
+
     const [
       fixedBasePrompt,
+      complianceRulesText,
       { userExclusiveRules, styleRules, sampleArticles, availableMaterials }
     ] = await Promise.all([
       this.loadFixedBasePrompt(options.executorType),
+      // 🔥 仅对保险创作 Agent 加载合规规则
+      needsComplianceRules ? this.loadComplianceRules() : Promise.resolve(''),
       // 🔥 Phase 5.5: 传递 templateId 给数字资产服务
       digitalAssetService.getDigitalAssetsForPrompt(options.workspaceId, options.templateId),
     ]);
 
     // 格式化各部分
+    const complianceRulesSection = needsComplianceRules ? complianceRulesText : '';
     const userExclusiveRulesSection = this.formatUserExclusiveRules(userExclusiveRules);
     const styleRulesSection = this.formatStyleRules(styleRules);
     const currentTaskText = this.formatCurrentTask(options, availableMaterials);
 
     // M4: 拼接顺序对齐需求文档 3.2.3
-    // 最终提示词 = 固定基础提示词 + 用户专属动态规则 + 本次创作需求
+    // 最终提示词 = 固定基础提示词 + 🔥合规规则（保险创作Agent） + 用户专属动态规则 + 本次创作需求
     const fullPrompt = [
       fixedBasePrompt,
+      complianceRulesSection, // 🔥 合规规则注入（在固定基础提示词之后、用户专属规则之前）
       '\n---\n\n',
       userExclusiveRulesSection.formattedText,
       '\n---\n\n',
