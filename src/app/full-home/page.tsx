@@ -666,6 +666,20 @@ export default function HomePage() {
     };
   }, []); // 空数组：仅挂载时执行一次
 
+  // 🔥 从指令自动提取任务标题 + 默认执行日期
+  useEffect(() => {
+    // 任务标题：从 mainInstruction 提取 "主题《xxx》" 或使用前50字
+    if (mainInstruction && !taskTitle) {
+      const match = mainInstruction.match(/主题[《"<『]([^》"』]+)[》"』]/);
+      const title = match ? `主题《${match[1]}》` : mainInstruction.slice(0, 50);
+      setTaskTitle(title);
+    }
+    // 执行日期：默认当天
+    if (!executionDate) {
+      setExecutionDate(new Date().toISOString().split('T')[0]);
+    }
+  }, [mainInstruction]); // 仅在 mainInstruction 变化时检查，避免无限循环
+
   // 🔥 自动保存：监听所有状态变化，有内容就保存（debounce 已内置）
   useEffect(() => {
     if (!mainInstruction) return; // 没有内容不保存
