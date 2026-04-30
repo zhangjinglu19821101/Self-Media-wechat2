@@ -619,108 +619,62 @@ export default function HomePage() {
     });
   }, [mainInstruction, coreOpinion, emotionTone, selectedMaterialIds, selectedAccountId, selectedAccountIds, hasSplitResult, tempSessionId]);
 
-  // 🔥🔥 表单快照：从 sessionStorage 恢复（API Key 跳转后返回时）
-  const formSnapshotRestored = useRef(false);
-  const recommendedCasesRestoredFromSnapshot = useRef(false); // 🔥 标记推荐案例是否从快照恢复
-  const isRestoringRef = useRef(false); // 🔥 标记是否正在恢复快照（用于阻止自动保存覆盖恢复的快照）
+  // ========== 表单快照：恢复 & 自动保存 ==========
+  // 简化为两个完全分离的 useEffect，彻底消除竞态：
+  // 1. Restore（空依赖数组）：仅在组件挂载时从 sessionStorage 恢复一次
+  // 2. AutoSave（状态依赖）：监听所有状态变化，有内容就保存
 
+  const snapshotRestoredRef = useRef(false);      // 标记是否已完成快照恢复
+  const isRestoringRef = useRef(false);            // 标记是否处于恢复过程中（用于跳过恢复触发的 AutoSave）
+
+  // 🔥 恢复：仅在首次挂载时执行一次
   useEffect(() => {
-    if (formSnapshotRestored.current) return; // 避免重复恢复
-    const snapshot = loadFormSnapshot();
-    if (snapshot) {
-      isRestoringRef.current = true; // 标记恢复开始，阻止 auto-save useEffect 覆盖
-      if (snapshot.mainInstruction) setMainInstruction(snapshot.mainInstruction);
-      if (snapshot.coreOpinion) setCoreOpinion(snapshot.coreOpinion);
-      if (snapshot.emotionTone) setEmotionTone(snapshot.emotionTone);
-      if (snapshot.selectedMaterialIds?.length) setSelectedMaterialIds(snapshot.selectedMaterialIds);
-      if (snapshot.selectedCaseIds?.length) setSelectedCaseIds(snapshot.selectedCaseIds);
-      if (snapshot.selectedAccountIds?.length) {
-        setSelectedAccountIds(snapshot.selectedAccountIds);
-        setSelectedAccountId(snapshot.selectedAccountIds[0]); // 兼容字段
-      }
-      if (snapshot.selectedContentTemplate) setSelectedContentTemplate(snapshot.selectedContentTemplate);
-      if (snapshot.selectedStructureId) {
-        const structure = STRUCTURE_TEMPLATES.find(s => s.id === snapshot.selectedStructureId);
-        if (structure) setSelectedStructure(structure);
-      }
-      // 🔥 恢复拆解状态和子任务，确保刷新后创作引导区可见
-      if (snapshot.hasSplitResult) setHasSplitResult(true);
-      if (snapshot.subTasks?.length) setSubTasks(snapshot.subTasks);
-      // 🔥 恢复推荐案例列表（用于刷新后重建已选案例）
-      if (snapshot.recommendedCases?.length) {
-        setRecommendedCases(snapshot.recommendedCases);
-        // 从推荐列表中匹配已选案例的对象
-        if (snapshot.selectedCaseIds?.length) {
-          const matched = snapshot.recommendedCases.filter(c => snapshot.selectedCaseIds.includes(c.id));
-          if (matched.length) setSelectedCases(matched);
-        }
-        recommendedCasesRestoredFromSnapshot.current = true; // 🔥 标记已从快照恢复
-      }
-      formSnapshotRestored.current = true;
-      toast.success('已恢复您之前填写的内容');
-
-      // 🔥 重要：用 setTimeout 等 React 批处理完成后再保存快照
-      // 使用 isRestoringRef 而不是局部变量，避免 Strict Mode cleanup 问题
-      const timer = setTimeout(() => {
-        if (!isRestoringRef.current) return; // cleanup 已执行，跳过
-        saveFormSnapshot({
-          hasSplitResult,
-          subTasks,
-          mainInstruction,
-          coreOpinion,
-          emotionTone,
-          recommendedMaterials: [],
-          recommendedSnippets: [],
-          selectedMaterialIds,
-          selectedCaseIds,
-          selectedAccountIds,
-          selectedContentTemplate,
-          selectedStructureId: selectedStructure?.id || '',
-          recommendedCases: recommendedCasesRestoredFromSnapshot.current ? (snapshot?.recommendedCases || []) : [],
-        });
-      }, 0);
-      return () => {
-        clearTimeout(timer);
-        isRestoringRef.current = false; // cleanup 时标记恢复结束
-      };
-    }
-  }, []);
-
-  // 🔥🔥 表单快照：监听变化，自动保存到 sessionStorage（用于跳转恢复）
-  // 核心原则：所有保存和恢复都在 formSnapshot useEffect 中完成，避免 combo useEffect 的竞态
-  useEffect(() => {
-    if (formSnapshotRestored.current) return; // 避免重复恢复（formSnapshot useEffect 已处理）
+    if (snapshotRestoredRef.current) return; // 防止 Strict Mode 双执行时重复恢复
+    snapshotRestoredRef.current = true;
 
     const snapshot = loadFormSnapshot();
-    if (snapshot) {
-      // 恢复前检查：只有快照指令为空或与当前指令相同才恢复
-      // 如果快照指令与当前指令不同，说明是旧快照，清除它
-      const needsRestore = !snapshot.mainInstruction || snapshot.mainInstruction === mainInstruction;
-      if (needsRestore) {
-        setHasSplitResult(snapshot.hasSplitResult ?? false);
-        setSubTasks(snapshot.subTasks ?? []);
-        setMainInstruction(snapshot.mainInstruction || '');
-        setCoreOpinion(snapshot.coreOpinion || '');
-        setEmotionTone(snapshot.emotionTone || '');
-        setSelectedMaterialIds(snapshot.selectedMaterialIds || []);
-        setSelectedCaseIds(snapshot.selectedCaseIds || []);
-        setSelectedAccountIds(snapshot.selectedAccountIds || []);
-        setSelectedContentTemplate(snapshot.selectedContentTemplate || '');
-        if (snapshot.selectedStructureId) {
-          const saved = STRUCTURE_TEMPLATES.find(s => s.id === snapshot.selectedStructureId);
-          if (saved) setSelectedStructure(saved);
-        }
-        toast.success('已恢复您之前填写的内容');
-      } else {
-        clearFormSnapshot();
+    if (!snapshot) return;
+
+    // 标记正在恢复，后续 AutoSave 跳过（避免恢复的空状态覆盖已有快照）
+    isRestoringRef.current = true;
+
+    // 恢复所有字段
+    if (snapshot.mainInstruction) setMainInstruction(snapshot.mainInstruction);
+    if (snapshot.coreOpinion) setCoreOpinion(snapshot.coreOpinion);
+    if (snapshot.emotionTone) setEmotionTone(snapshot.emotionTone);
+    if (snapshot.selectedMaterialIds?.length) setSelectedMaterialIds(snapshot.selectedMaterialIds);
+    if (snapshot.selectedCaseIds?.length) setSelectedCaseIds(snapshot.selectedCaseIds);
+    if (snapshot.selectedAccountIds?.length) {
+      setSelectedAccountIds(snapshot.selectedAccountIds);
+      setSelectedAccountId(snapshot.selectedAccountIds[0]);
+    }
+    if (snapshot.selectedContentTemplate) setSelectedContentTemplate(snapshot.selectedContentTemplate);
+    if (snapshot.selectedStructureId) {
+      const structure = STRUCTURE_TEMPLATES.find(s => s.id === snapshot.selectedStructureId);
+      if (structure) setSelectedStructure(structure);
+    }
+    // 🔥 恢复拆解状态，确保刷新后创作引导区可见
+    if (snapshot.hasSplitResult) setHasSplitResult(true);
+    if (snapshot.subTasks?.length) setSubTasks(snapshot.subTasks);
+    // 🔥 恢复推荐案例列表
+    if (snapshot.recommendedCases?.length) {
+      setRecommendedCases(snapshot.recommendedCases);
+      if (snapshot.selectedCaseIds?.length) {
+        const matched = snapshot.recommendedCases.filter(c => snapshot.selectedCaseIds.includes(c.id));
+        if (matched.length) setSelectedCases(matched);
       }
     }
-  }, []);
 
-  // 🔥🔥 自动保存：监听所有关键状态变化，保存到 sessionStorage
+    toast.success('已恢复您之前填写的内容');
+
+    // 恢复完成后，允许 AutoSave 正常触发
+    isRestoringRef.current = false;
+  }, []); // 空数组：仅挂载时执行一次
+
+  // 🔥 自动保存：监听所有状态变化，有内容就保存
   useEffect(() => {
-    // 有内容才保存
-    if (!mainInstruction) return;
+    if (!mainInstruction) return; // 没有内容不保存
+    if (isRestoringRef.current) return; // 正在恢复时不保存（防止空状态覆盖快照）
     saveFormSnapshot({
       mainInstruction,
       coreOpinion,
@@ -729,7 +683,7 @@ export default function HomePage() {
       selectedCaseIds,
       selectedAccountIds,
       selectedContentTemplate,
-      selectedStructureId: selectedStructure.id,
+      selectedStructureId: selectedStructure?.id || '',
       hasSplitResult,
       subTasks,
       recommendedCases,
