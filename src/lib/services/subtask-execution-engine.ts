@@ -5038,6 +5038,7 @@ export class SubtaskExecutionEngine {
     }> = [];
     
     try {
+      console.log('[buildExecutionContext] 🔴 开始获取前序任务结果, task.orderIndex=' + task.orderIndex + ', commandResultId=' + task.commandResultId);
       if (task.orderIndex > 1) {
         // 🔴 先查询所有子任务（只查一次）
         const allSubTasks = await db
@@ -5046,10 +5047,11 @@ export class SubtaskExecutionEngine {
           .where(eq(agentSubTasks.commandResultId, task.commandResultId))
           .orderBy(agentSubTasks.orderIndex);
         
-        console.log('[SubtaskEngine] [command_result_id=' + task.commandResultId + '] 🔴 找到子任务总数:', allSubTasks.length);
-        console.log('[SubtaskEngine] [command_result_id=' + task.commandResultId + '] 🔴 子任务列表:', allSubTasks.map(t => ({
+        console.log('[buildExecutionContext] 🔴 找到子任务总数:', allSubTasks.length);
+        console.log('[buildExecutionContext] 🔴 子任务列表:', allSubTasks.map(t => ({
           orderIndex: t.orderIndex,
           title: t.taskTitle,
+          status: t.status,
           hasResultText: !!t.resultText,
           resultTextLength: t.resultText?.length || 0
         })));
@@ -5067,9 +5069,18 @@ export class SubtaskExecutionEngine {
         // ========== 1. 获取所有前序任务的执行结果 ==========
         // 🔴🔴🔴 【重构】不再"查找"，而是获取所有前序任务结果，让 LLM 自己判断
         // priorTaskResults 已在 try 块外定义，这里直接填充
+        console.log('[buildExecutionContext] 🔴 开始循环获取前序任务, task.orderIndex=' + task.orderIndex + ', 循环范围: 1 到 ' + (task.orderIndex - 1));
         
         for (let idx = 1; idx < task.orderIndex; idx++) {
+          console.log('[buildExecutionContext] 🔴 循环 idx=' + idx + ', 查找 orderIndex=' + idx + ' 的任务...');
           const priorTask = allSubTasks.find(t => t.orderIndex === idx);
+          console.log('[buildExecutionContext] 🔴 找到 priorTask:', priorTask ? {
+            orderIndex: priorTask.orderIndex,
+            title: priorTask.taskTitle,
+            status: priorTask.status,
+            hasResultText: !!priorTask.resultText,
+            resultTextLength: priorTask.resultText?.length || 0
+          } : 'null');
           if (priorTask) {
             // 🔴 修复：result_text 为空时，从 result_data 中提取纯文本兜底
             let priorResultText = priorTask.resultText || '';
