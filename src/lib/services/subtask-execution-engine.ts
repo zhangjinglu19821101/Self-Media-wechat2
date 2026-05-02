@@ -401,12 +401,26 @@ function convertExecutorDirectToAgentResult(
   
   // 🔴🔴🔴 P0-1 修复：将 briefResponse/selfEvaluation/executionSummary 传递到顶层
   // 前端从 step_history 的 responseContent 中提取这些字段，必须存在于顶层
-  const briefResponse = typeof directResult.briefResponse === 'string'
+  // 🔴🔴🔴 【修复】当 isCompleted=false 时，如果 LLM 没有返回这两个字段，提供兜底值
+  let briefResponse = typeof directResult.briefResponse === 'string'
     ? directResult.briefResponse
     : undefined;
-  const selfEvaluation = typeof directResult.selfEvaluation === 'string'
+  let selfEvaluation = typeof directResult.selfEvaluation === 'string'
     ? directResult.selfEvaluation
     : undefined;
+  
+  // 🔴🔴🔴 【关键修复】当任务未完成时，提供默认的 briefResponse 和 selfEvaluation
+  if (!isTaskDown) {
+    if (!briefResponse) {
+      briefResponse = originalResult || '任务未能完成';
+    }
+    if (!selfEvaluation) {
+      selfEvaluation = suggestions 
+        ? `任务未完成：${suggestions}` 
+        : '任务未能完成，具体原因请查看执行结论';
+    }
+  }
+  
   const executionSummaryFromDirect = structuredResult?.executionSummary
     ? { ...structuredResult.executionSummary }
     : undefined;
@@ -8660,7 +8674,10 @@ ${userFeedbackText}
           output: parsed.output,
           // 🔴🔴🔴 新增：支持 mcpParams 字段（场景2核心）
           needsMcpSupport: parsed.needsMcpSupport,
-          mcpParams: parsed.mcpParams
+          mcpParams: parsed.mcpParams,
+          // 🔴🔴🔴 P0-1 修复：提取 briefResponse 和 selfEvaluation 字段
+          briefResponse: parsed.briefResponse,
+          selfEvaluation: parsed.selfEvaluation
         };
         
         // 🔴🔴🔴 新增：支持 v2 格式（isCompleted）
@@ -8734,7 +8751,10 @@ ${userFeedbackText}
             output: parsed.output,
             // 🔴🔴🔴 新增：支持 mcpParams 字段（场景2核心）
             needsMcpSupport: parsed.needsMcpSupport,
-            mcpParams: parsed.mcpParams
+            mcpParams: parsed.mcpParams,
+            // 🔴🔴🔴 P0-1 修复：提取 briefResponse 和 selfEvaluation 字段
+            briefResponse: parsed.briefResponse,
+            selfEvaluation: parsed.selfEvaluation
           };
           
           // 🔴🔴🔴 新增：支持 v2 格式（isCompleted）
@@ -10942,18 +10962,7 @@ ${resultData.executionSummary}
       // 执行 Agent 的响应：去掉冗余的大文本内容
       const structuredResult = executorResponse?.executorOutput?.structuredResult;
       
-      // 🔴 修复：为 briefRequest 和 briefResponse 提供兜底值
-      // 如果 LLM 没有返回这些字段，从其他字段提取
-      const briefRequest = structuredResult?.briefRequest 
-        ?? executorResponse?.executorOutput?.taskInstruction?.substring(0, 200)
-        ?? structuredResult?.originalInstruction?.description?.substring(0, 200);
-      
-      const briefResponse = structuredResult?.briefResponse
-        ?? structuredResult?.selfEvaluation
-        ?? executorResponse?.executorOutput?.result?.substring(0, 200)
-        ?? executorResponse?.executorOutput?.suggestion;
-      
-      // 🔴🔴🔴 修复：提取 result 字段，支持多种路径
+      // 🔴🔴🔴 修复：先提取 result 字段，因为 briefResponse 需要用它做兜底
       // insurance-d 可能返回的 result 位置：
       // 1. executorResponse.result
       // 2. executorResponse.resultSummary
@@ -10996,6 +11005,31 @@ ${resultData.executionSummary}
         }
       }
       
+      // 🔴 修复：为 briefRequest 和 briefResponse 提供兜底值
+      // 如果 LLM 没有返回这些字段，从其他字段提取
+      const briefRequest = structuredResult?.briefRequest 
+        ?? executorResponse?.executorOutput?.taskInstruction?.substring(0, 200)
+        ?? structuredResult?.originalInstruction?.description?.substring(0, 200);
+      
+      // 🔴🔴🔴 【关键修复】selfEvaluation 兜底逻辑
+      // 🔴 修复：无论 isTaskDown 是 true 还是 false，都应该有默认值
+      const selfEvaluation = structuredResult?.selfEvaluation
+        ?? structuredResult?.briefResponse  // 尝试从 briefResponse 兜底
+        ?? (executorResponse.isTaskDown === false 
+            ? `任务未能完成：${extractedResult || '原因未知'}。需要检查任务要求或提供更多信息。` 
+            : `任务已完成：${extractedResult?.substring(0, 100) || '执行成功'}。`);  // 🔴 修复：isTaskDown=true 时也要有默认值
+      
+      // 🔴🔴🔴 【关键修复】briefResponse 兜底逻辑
+      // 🔴 修复：无论 isTaskDown 是 true 还是 false，都应该有默认值
+      const briefResponse = structuredResult?.briefResponse
+        ?? structuredResult?.selfEvaluation
+        ?? executorResponse?.executorOutput?.result?.substring(0, 200)
+        ?? executorResponse?.executorOutput?.suggestion
+        ?? extractedResult?.substring(0, 200)
+        ?? (executorResponse.isTaskDown === false 
+            ? '任务未能完成，请查看详情' 
+            : '任务已完成，请查看结果');  // 🔴 修复：isTaskDown=true 时也要有默认值
+      
       storedResponseContent = executorResponse
         ? {
             // 🔴🔴🔴 支持 v2 格式 isCompleted 和 result 字段
@@ -11017,7 +11051,7 @@ ${resultData.executionSummary}
               : executorResponse.resultSummary,
             // 保留结构化信息但不存储大文本
             executionSummary: structuredResult?.executionSummary,
-            selfEvaluation: structuredResult?.selfEvaluation,
+            selfEvaluation: selfEvaluation ? selfEvaluation.substring(0, 200) + '...' : undefined,
             briefRequest: briefRequest ? briefRequest.substring(0, 200) + '...' : undefined,
             briefResponse: briefResponse ? briefResponse.substring(0, 200) + '...' : undefined,
             // 标记是否有完整内容（便于调试）
