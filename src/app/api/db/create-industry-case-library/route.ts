@@ -31,6 +31,7 @@ export async function GET(request: NextRequest) {
         
         -- 结构化内容
         applicable_products JSONB DEFAULT '[]'::jsonb,
+        event_full_story TEXT,
         protagonist TEXT,
         background TEXT NOT NULL,
         insurance_action TEXT,
@@ -79,6 +80,7 @@ export async function GET(request: NextRequest) {
     await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_case_product_tags ON industry_case_library USING gin(product_tags)`);
     await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_case_crowd_tags ON industry_case_library USING gin(crowd_tags)`);
     await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_case_scene_tags ON industry_case_library USING gin(scene_tags)`);
+    await db.execute(sql`CREATE UNIQUE INDEX IF NOT EXISTS idx_case_case_id_unique ON industry_case_library(case_id)`);
     console.log('[DB Migration] industry_case_library 索引创建成功');
 
     // 创建 case_usage_log 表

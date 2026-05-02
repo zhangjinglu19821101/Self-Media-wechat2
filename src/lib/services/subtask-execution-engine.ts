@@ -8600,6 +8600,7 @@ ${userFeedbackText}
     
     console.log('');
     console.log('  [响应解析追踪] ──────────────────────────────────────────────');
+    console.log('  [响应解析] 🔄 代码版本: 2026-05-01-v3 (兜底逻辑已启用)');
     console.log('  [响应解析] 开始解析LLM响应');
     console.log('  [响应解析] 响应基础信息:', {
       response_length: response.length,
@@ -8664,6 +8665,12 @@ ${userFeedbackText}
             } else if (parsed.reason) {
               result.suggestion = parsed.reason;
               console.log('  [响应解析] v2 格式：isCompleted=false，reason=' + parsed.reason);
+            } else {
+              // 🔴🔴🔴 【新增】兜底：当 isCompleted=false 但没有 result/reason 时，自动填充默认原因
+              // 代码版本: 2026-05-01-v3
+              result.result = '【执行结论】任务未能完成，LLM未返回具体原因';
+              result.suggestion = '任务未能完成，LLM未返回具体原因，请检查提示词或重试';
+              console.log('  [响应解析] ⚠️ [v3-兜底] isCompleted=false 但没有 result/reason，已自动填充默认原因');
             }
           }
         }
@@ -8727,6 +8734,12 @@ ${userFeedbackText}
                 result.suggestion = parsed.result;
               } else if (parsed.reason) {
                 result.suggestion = parsed.reason;
+              } else {
+                // 🔴🔴🔴 【新增】兜底：当 isCompleted=false 但没有 result/reason 时，自动填充默认原因
+                // 代码版本: 2026-05-01-v3
+                result.result = '【执行结论】任务未能完成，LLM未返回具体原因';
+                result.suggestion = '任务未能完成，LLM未返回具体原因，请检查提示词或重试';
+                console.log('  [响应解析] ⚠️ [v3-兜底-原方法] isCompleted=false 但没有 result/reason，已自动填充默认原因');
               }
             }
           }

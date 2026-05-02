@@ -54,6 +54,7 @@ export const industryCaseLibrary = pgTable('industry_case_library', {
   
   // === 结构化内容 ===
   applicableProducts: jsonb('applicable_products').$type<string[]>().default([]),  // 适用产品/险种
+  eventFullStory: text('event_full_story'),          // 事件完整原版经过（LLM搜索概括）
   protagonist: text('protagonist'),                  // 人物/主体（如：刘敏，28岁，上海某互联网公司上班族）
   background: text('background').notNull(),          // 核心背景（风险场景描述）
   insuranceAction: text('insurance_action'),         // 保险动作（投保方案）
@@ -100,6 +101,7 @@ export const industryCaseLibrary = pgTable('industry_case_library', {
   statusIdx: index('idx_case_status').on(table.status),
   workspaceIdIdx: index('idx_case_workspace_id').on(table.workspaceId),
   useCountIdx: index('idx_case_use_count').on(table.useCount),
+  caseIdUniqueIdx: index('idx_case_case_id_unique').on(table.caseId),  // caseId 唯一索引，防止重复插入
   // GIN索引：支持JSONB数组查询
   productTagsIdx: index('idx_case_product_tags').using('gin', table.productTags),
   crowdTagsIdx: index('idx_case_crowd_tags').using('gin', table.crowdTags),

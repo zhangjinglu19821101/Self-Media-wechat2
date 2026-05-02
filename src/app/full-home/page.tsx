@@ -582,6 +582,42 @@ export default function HomePage() {
   const [snippetSearchQuery, setSnippetSearchQuery] = useState('');
   const [snippetTypeFilter, setSnippetTypeFilter] = useState('all');
   const [snippetStatusFilter, setSnippetStatusFilter] = useState('all');
+
+  // 🔥 速记转案例相关状态
+  const [showCaseConversionDialog, setShowCaseConversionDialog] = useState(false);
+  const [convertingSnippetId, setConvertingSnippetId] = useState<string | null>(null);
+  const [caseExtracting, setCaseExtracting] = useState(false);
+  const [caseSaving, setCaseSaving] = useState(false);
+  const [caseSearching, setCaseSearching] = useState(false);  // 搜索补充进行中
+  const [caseExtractionResult, setCaseExtractionResult] = useState<{
+    snippetId: string;
+    snippetTitle: string | null;
+    title: string;
+    eventFullStory: string;
+    background: string;
+    insuranceAction: string;
+    result: string;
+    productTags: string[];
+    protagonist: string;
+    crowdTags: string[];
+    emotionTags: string[];
+    caseType: 'positive' | 'warning' | 'milestone';
+    industry: string;
+    searchPerformed: boolean;
+    searchPending: boolean;
+    searchSummary: string | null;
+  } | null>(null);
+  const [caseEditForm, setCaseEditForm] = useState<{
+    title: string;
+    eventFullStory: string;
+    background: string;
+    insuranceAction: string;
+    result: string;
+    productTags: string;
+  }>({ title: '', eventFullStory: '', background: '', insuranceAction: '', result: '', productTags: '' });
+  const caseDialogActiveRef = useRef(false);  // 跟踪对话框是否活跃，防止关闭后搜索回调污染状态
+  const caseExtractionTimeoutRef = useRef<NodeJS.Timeout | null>(null);  // 提取超时计时器
+  const [caseExtractionElapsed, setCaseExtractionElapsed] = useState(0);  // 提取已用时间（秒）
   
   // 🔥 新增：检查是否是超级管理员
   useEffect(() => {
@@ -1900,6 +1936,179 @@ export default function HomePage() {
     } catch (error: any) {
       console.error('[InfoSnippets] 选为素材失败:', error);
       toast.error(error?.message || '操作失败');
+    }
+  };
+
+  // 🔥 速记转案例：提取结构化信息
+  const handleConvertSnippetToCase = async (snippet: InfoSnippet) => {
+    try {
+      setConvertingSnippetId(snippet.id);
+      setCaseExtracting(true);
+      setCaseExtractionElapsed(0);  // 重置计时
+      setShowCaseConversionDialog(true);
+      caseDialogActiveRef.current = true;  // 标记对话框活跃
+
+      // 启动超时计时器（60秒超时）
+      const TIMEOUT_SECONDS = 60;
+      caseExtractionTimeoutRef.current = setInterval(() => {
+        setCaseExtractionElapsed(prev => {
+          const next = prev + 1;
+          if (next >= TIMEOUT_SECONDS) {
+            // 超时处理
+            clearInterval(caseExtractionTimeoutRef.current!);
+            caseExtractionTimeoutRef.current = null;
+            setCaseExtracting(false);
+            caseDialogActiveRef.current = false;
+            toast.error('提取超时，请重试');
+            setShowCaseConversionDialog(false);
+          }
+          return next;
+        });
+      }, 1000);
+
+      // Step 1: 仅 LLM 提取，尽快返回展示
+      const result: any = await apiPost(`/api/info-snippets/${snippet.id}/extract-case`);
+
+      // 清除超时计时器
+      if (caseExtractionTimeoutRef.current) {
+        clearInterval(caseExtractionTimeoutRef.current);
+        caseExtractionTimeoutRef.current = null;
+      }
+
+      // 对话框已关闭（超时或用户取消），丢弃结果
+      if (!caseDialogActiveRef.current) return;
+
+      if (result.success && result.data) {
+        const data = result.data;
+        setCaseExtractionResult(data);
+        setCaseEditForm({
+          title: data.title || '',
+          eventFullStory: data.eventFullStory || '',
+          background: data.background || '',
+          insuranceAction: data.insuranceAction || '',
+          result: data.result || '',
+          productTags: (data.productTags || []).join('、'),
+        });
+
+        // Step 2: 如果需要搜索补充，异步执行（不阻塞用户编辑）
+        if (data.searchPending) {
+          setCaseSearching(true);
+          // 不 await，让搜索在后台进行
+          searchSupplementForCase(snippet.id, data);
+        }
+      } else {
+        toast.error(result.error || '案例提取失败');
+        setShowCaseConversionDialog(false);
+        caseDialogActiveRef.current = false;
+      }
+    } catch (error: any) {
+      console.error('[InfoSnippets] 案例提取失败:', error);
+      // 清除超时计时器
+      if (caseExtractionTimeoutRef.current) {
+        clearInterval(caseExtractionTimeoutRef.current);
+        caseExtractionTimeoutRef.current = null;
+      }
+      toast.error(error?.message || '案例提取失败');
+      setShowCaseConversionDialog(false);
+      caseDialogActiveRef.current = false;
+    } finally {
+      setCaseExtracting(false);
+    }
+  };
+
+  // 🔥 速记转案例：取消提取
+  const handleCancelCaseExtraction = () => {
+    // 清除超时计时器
+    if (caseExtractionTimeoutRef.current) {
+      clearInterval(caseExtractionTimeoutRef.current);
+      caseExtractionTimeoutRef.current = null;
+    }
+    caseDialogActiveRef.current = false;
+    setCaseExtracting(false);
+    setShowCaseConversionDialog(false);
+    toast.info('已取消提取');
+  };
+
+  // 🔥 速记转案例：异步搜索补充（Step 2，不阻塞用户编辑）
+  const searchSupplementForCase = async (snippetId: string, extractionResult: any) => {
+    try {
+      const supplementResult: any = await apiPost(
+        `/api/info-snippets/${snippetId}/extract-case/search-supplement`,
+        { extractionResult }
+      );
+
+      // 对话框已关闭，丢弃搜索结果，避免污染状态
+      if (!caseDialogActiveRef.current) return;
+
+      if (supplementResult.success && supplementResult.data?.supplemented) {
+        // 搜索补充成功，更新 eventFullStory
+        setCaseExtractionResult(prev => prev ? {
+          ...prev,
+          eventFullStory: supplementResult.data.eventFullStory,
+          searchPerformed: true,
+          searchPending: false,
+          searchSummary: supplementResult.data.searchSummary,
+        } : prev);
+
+        // 仅在用户尚未手动编辑 eventFullStory 时自动更新表单
+        setCaseEditForm(prev => {
+          // 如果用户已经修改了 eventFullStory，不覆盖
+          const originalStory = extractionResult.eventFullStory || '';
+          if (prev.eventFullStory !== originalStory) {
+            return prev; // 用户已手动编辑，不覆盖
+          }
+          return { ...prev, eventFullStory: supplementResult.data.eventFullStory };
+        });
+
+        toast.success('已搜索互联网补充事件详情');
+      }
+    } catch (error: any) {
+      console.warn('[InfoSnippets] 搜索补充失败:', error);
+      // 搜索补充失败不影响用户操作，静默处理
+    } finally {
+      setCaseSearching(false);
+      setCaseExtractionResult(prev => prev ? { ...prev, searchPending: false } : prev);
+    }
+  };
+
+  // 🔥 速记转案例：确认保存
+  const handleConfirmSaveCase = async () => {
+    if (!caseExtractionResult) return;
+
+    try {
+      setCaseSaving(true);
+
+      const result: any = await apiPost('/api/cases/create', {
+        snippetId: caseExtractionResult.snippetId,
+        title: caseEditForm.title.trim(),
+        eventFullStory: caseEditForm.eventFullStory.trim(),
+        background: caseEditForm.background.trim(),
+        insuranceAction: caseEditForm.insuranceAction.trim(),
+        result: caseEditForm.result.trim(),
+        productTags: caseEditForm.productTags.split(/[、,，\s]+/).filter(Boolean),
+        protagonist: caseExtractionResult.protagonist,
+        crowdTags: caseExtractionResult.crowdTags,
+        emotionTags: caseExtractionResult.emotionTags,
+        caseType: caseExtractionResult.caseType,
+        industry: caseExtractionResult.industry,
+      });
+
+      if (result.success) {
+        toast.success(`案例「${caseEditForm.title}」已创建成功`);
+        caseDialogActiveRef.current = false;
+        setShowCaseConversionDialog(false);
+        setCaseExtractionResult(null);
+        setConvertingSnippetId(null);
+        setCaseSearching(false);
+        setCaseEditForm({ title: '', eventFullStory: '', background: '', insuranceAction: '', result: '', productTags: '' });
+      } else {
+        toast.error(result.error || '案例创建失败');
+      }
+    } catch (error: any) {
+      console.error('[InfoSnippets] 案例保存失败:', error);
+      toast.error(error?.message || '案例保存失败');
+    } finally {
+      setCaseSaving(false);
     }
   };
 
@@ -4696,6 +4905,284 @@ export default function HomePage() {
         </TooltipProvider>
       )}
 
+      {/* 🔥 速记转案例确认对话框 */}
+      <Dialog open={showCaseConversionDialog} onOpenChange={(open) => {
+        if (!open && !caseExtracting && !caseSaving) {
+          // 清理超时计时器
+          if (caseExtractionTimeoutRef.current) {
+            clearInterval(caseExtractionTimeoutRef.current);
+            caseExtractionTimeoutRef.current = null;
+          }
+          caseDialogActiveRef.current = false;  // 标记对话框已关闭，阻止搜索回调污染
+          setShowCaseConversionDialog(false);
+          setCaseExtractionResult(null);
+          setConvertingSnippetId(null);
+          setCaseSearching(false);
+          setCaseExtractionElapsed(0);
+          setCaseEditForm({ title: '', eventFullStory: '', background: '', insuranceAction: '', result: '', productTags: '' });
+        }
+      }}>
+        <DialogContent className="sm:max-w-[640px] max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Briefcase className="h-5 w-5 text-amber-500" />
+              速记转案例
+            </DialogTitle>
+            <DialogDescription>
+              {caseExtracting
+                ? 'AI 正在从速记中提取案例信息...'
+                : caseExtractionResult
+                  ? '请确认提取的案例信息，可修改后确认入库'
+                  : '准备提取...'}
+            </DialogDescription>
+          </DialogHeader>
+
+          {caseExtracting ? (
+            <div className="flex flex-col items-center justify-center py-12 gap-4">
+              <div className="relative">
+                <Loader2 className="h-12 w-12 animate-spin text-amber-500" />
+                <Briefcase className="h-5 w-5 text-amber-400 absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2" />
+              </div>
+              <div className="text-center">
+                <p className="text-sm font-medium text-slate-700">AI 正在提取案例信息</p>
+                <p className="text-xs text-slate-500 mt-1">
+                  自动识别结构化字段，通常 5-10 秒
+                  {caseExtractionElapsed > 0 && (
+                    <span className="ml-2 text-amber-600">({caseExtractionElapsed}s / 60s)</span>
+                  )}
+                </p>
+              </div>
+              {/* 取消按钮 */}
+              <button
+                onClick={handleCancelCaseExtraction}
+                className="text-xs text-slate-500 hover:text-slate-700 hover:bg-slate-100 px-3 py-1.5 rounded-md transition-colors"
+              >
+                取消提取
+              </button>
+            </div>
+          ) : caseExtractionResult ? (
+            <div className="space-y-4">
+              {/* 案例类型标识 */}
+              <div className="flex items-center gap-2">
+                <Badge className={`${
+                  caseExtractionResult.caseType === 'positive' ? 'bg-green-100 text-green-700' :
+                  caseExtractionResult.caseType === 'warning' ? 'bg-amber-100 text-amber-700' :
+                  'bg-blue-100 text-blue-700'
+                }`}>
+                  {caseExtractionResult.caseType === 'positive' ? '正面案例' :
+                   caseExtractionResult.caseType === 'warning' ? '反面警示' : '行业里程碑'}
+                </Badge>
+                {caseExtractionResult.searchPerformed && (
+                  <Badge className="bg-teal-50 text-teal-700 border border-teal-200">
+                    <Globe className="h-3 w-3 mr-1" />
+                    已搜索补充
+                  </Badge>
+                )}
+              </div>
+
+              {/* 标题 */}
+              <div>
+                <Label className="text-xs text-slate-500 mb-1 block">案例标题 *</Label>
+                <Input
+                  value={caseEditForm.title}
+                  onChange={(e) => setCaseEditForm(prev => ({ ...prev, title: e.target.value }))}
+                  className="h-9 text-sm"
+                  placeholder="案例标题"
+                />
+              </div>
+
+              {/* 事件完整原版经过 */}
+              <div>
+                <div className="flex items-center gap-1.5 mb-1">
+                  <Label className="text-xs text-slate-500">事件完整经过</Label>
+                  {caseSearching && (
+                    <span className="text-[10px] text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded flex items-center gap-1">
+                      <Loader2 className="h-2.5 w-2.5 animate-spin" />
+                      搜索补充中...
+                    </span>
+                  )}
+                  {caseExtractionResult.searchPerformed && !caseSearching && (
+                    <span className="text-[10px] text-teal-600 bg-teal-50 px-1.5 py-0.5 rounded">AI 搜索概括</span>
+                  )}
+                </div>
+                <Textarea
+                  value={caseEditForm.eventFullStory}
+                  onChange={(e) => setCaseEditForm(prev => ({ ...prev, eventFullStory: e.target.value }))}
+                  rows={4}
+                  className="text-sm resize-y"
+                  placeholder="事件完整经过描述"
+                />
+                {caseSearching && (
+                  <p className="text-[10px] text-amber-500 mt-1">正在搜索互联网补充事件详情，您可以先编辑其他字段</p>
+                )}
+              </div>
+
+              {/* 背景 */}
+              <div>
+                <Label className="text-xs text-slate-500 mb-1 block">核心背景 *</Label>
+                <Textarea
+                  value={caseEditForm.background}
+                  onChange={(e) => setCaseEditForm(prev => ({ ...prev, background: e.target.value }))}
+                  rows={3}
+                  className="text-sm resize-y"
+                  placeholder="风险场景描述"
+                />
+              </div>
+
+              {/* 保险行动 */}
+              <div>
+                <Label className="text-xs text-slate-500 mb-1 block">保险动作</Label>
+                <Textarea
+                  value={caseEditForm.insuranceAction}
+                  onChange={(e) => setCaseEditForm(prev => ({ ...prev, insuranceAction: e.target.value }))}
+                  rows={2}
+                  className="text-sm resize-y"
+                  placeholder="投保方案或保险相关行为"
+                />
+              </div>
+
+              {/* 结果 */}
+              <div>
+                <Label className="text-xs text-slate-500 mb-1 block">结果详情 *</Label>
+                <Textarea
+                  value={caseEditForm.result}
+                  onChange={(e) => setCaseEditForm(prev => ({ ...prev, result: e.target.value }))}
+                  rows={2}
+                  className="text-sm resize-y"
+                  placeholder="理赔结果或事件结局"
+                />
+              </div>
+
+              {/* 产品标签（Tag Input 优化） */}
+              <div>
+                <Label className="text-xs text-slate-500 mb-1.5 block">产品标签</Label>
+                <div className="flex flex-wrap gap-1.5 mb-2">
+                  {/* 已有标签展示 */}
+                  {caseEditForm.productTags.split(/[、,，\s]+/).filter(Boolean).map((tag, i) => (
+                    <Badge
+                      key={i}
+                      className="bg-amber-50 text-amber-700 hover:bg-amber-100 cursor-pointer group flex items-center gap-1 pr-1"
+                      onClick={() => {
+                        const tags = caseEditForm.productTags.split(/[、,，\s]+/).filter(Boolean);
+                        tags.splice(i, 1);
+                        setCaseEditForm(prev => ({ ...prev, productTags: tags.join('、') }));
+                      }}
+                    >
+                      {tag}
+                      <X className="h-3 w-3 opacity-50 group-hover:opacity-100" />
+                    </Badge>
+                  ))}
+                </div>
+                {/* 输入框 + 快捷标签 */}
+                <div className="flex gap-2">
+                  <Input
+                    value={caseEditForm.productTags}
+                    onChange={(e) => setCaseEditForm(prev => ({ ...prev, productTags: e.target.value }))}
+                    className="h-8 text-sm flex-1"
+                    placeholder="输入标签后回车，或点击下方快捷标签"
+                  />
+                </div>
+                {/* 快捷标签选择 */}
+                <div className="flex flex-wrap gap-1 mt-2">
+                  {['意外险', '重疾险', '医疗险', '寿险', '年金险', '增额终身寿', '教育金', '养老金'].map((preset) => {
+                    const currentTags = caseEditForm.productTags.split(/[、,，\s]+/).filter(Boolean);
+                    const isSelected = currentTags.includes(preset);
+                    return (
+                      <button
+                        key={preset}
+                        type="button"
+                        onClick={() => {
+                          const tags = caseEditForm.productTags.split(/[、,，\s]+/).filter(Boolean);
+                          if (isSelected) {
+                            // 移除
+                            const newTags = tags.filter(t => t !== preset);
+                            setCaseEditForm(prev => ({ ...prev, productTags: newTags.join('、') }));
+                          } else {
+                            // 添加
+                            tags.push(preset);
+                            setCaseEditForm(prev => ({ ...prev, productTags: tags.join('、') }));
+                          }
+                        }}
+                        className={`text-[10px] px-2 py-0.5 rounded-full border transition-colors ${
+                          isSelected
+                            ? 'bg-amber-50 border-amber-200 text-amber-700'
+                            : 'bg-slate-50 border-slate-200 text-slate-500 hover:bg-slate-100'
+                        }`}
+                      >
+                        {isSelected ? '✓ ' : ''}{preset}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* 隐藏字段展示（折叠） */}
+              <details className="group">
+                <summary className="text-xs text-slate-400 cursor-pointer hover:text-slate-600 flex items-center gap-1">
+                  <ChevronDown className="h-3 w-3 transition-transform group-open:rotate-180" />
+                  AI 自动提取的标签（不需修改）
+                </summary>
+                <div className="mt-2 space-y-2 pl-4 border-l-2 border-slate-100">
+                  {caseExtractionResult.protagonist && (
+                    <div className="flex items-center gap-2 text-xs">
+                      <span className="text-slate-500">主人公：</span>
+                      <span className="text-slate-700">{caseExtractionResult.protagonist}</span>
+                    </div>
+                  )}
+                  {caseExtractionResult.crowdTags.length > 0 && (
+                    <div className="flex items-center gap-2 text-xs flex-wrap">
+                      <span className="text-slate-500">人群标签：</span>
+                      {caseExtractionResult.crowdTags.map((tag, i) => (
+                        <Badge key={i} className="bg-slate-100 text-slate-600 px-1.5 py-0.5 text-[10px]">{tag}</Badge>
+                      ))}
+                    </div>
+                  )}
+                  {caseExtractionResult.emotionTags.length > 0 && (
+                    <div className="flex items-center gap-2 text-xs flex-wrap">
+                      <span className="text-slate-500">情绪标签：</span>
+                      {caseExtractionResult.emotionTags.map((tag, i) => (
+                        <Badge key={i} className="bg-slate-100 text-slate-600 px-1.5 py-0.5 text-[10px]">{tag}</Badge>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </details>
+            </div>
+          ) : null}
+
+          {caseExtractionResult && (
+            <DialogFooter className="gap-2">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  caseDialogActiveRef.current = false;  // 标记对话框已关闭
+                  setShowCaseConversionDialog(false);
+                  setCaseExtractionResult(null);
+                  setConvertingSnippetId(null);
+                  setCaseSearching(false);
+                  setCaseEditForm({ title: '', eventFullStory: '', background: '', insuranceAction: '', result: '', productTags: '' });
+                }}
+                disabled={caseSaving}
+                className="h-9"
+              >
+                取消
+              </Button>
+              <Button
+                onClick={handleConfirmSaveCase}
+                disabled={caseSaving || !caseEditForm.title.trim() || !caseEditForm.background.trim() || !caseEditForm.result.trim()}
+                className="h-9 bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-600 hover:to-orange-700 text-white"
+              >
+                {caseSaving ? (
+                  <><Loader2 className="mr-2 h-4 w-4 animate-spin" />保存中...</>
+                ) : (
+                  <><Check className="mr-2 h-4 w-4" />确认入库</>
+                )}
+              </Button>
+            </DialogFooter>
+          )}
+        </DialogContent>
+      </Dialog>
+
       {/* 🔥 信息速记浮动按钮 - 对话框打开时隐藏 */}
       {!showCreateReminderDialog && (
         <TooltipProvider>
@@ -5566,6 +6053,35 @@ export default function HomePage() {
                           </div>
 
                           <div className="flex items-center gap-1 shrink-0">
+                            {/* 转为案例按钮 — 所有分类均可转换，非 real_case 给出提示 */}
+                            <TooltipProvider>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <button
+                                    onClick={() => handleConvertSnippetToCase(snippet)}
+                                    disabled={caseExtracting && convertingSnippetId === snippet.id}
+                                    className={`h-7 px-2 rounded-md flex items-center justify-center text-xs font-medium gap-1 transition-colors disabled:opacity-50 ${
+                                      snippetCategories.includes('real_case')
+                                        ? 'bg-amber-50 text-amber-600 border border-amber-200 hover:bg-amber-100 hover:text-amber-700'
+                                        : 'bg-slate-50 text-slate-500 border border-slate-200 hover:bg-slate-100 hover:text-slate-600'
+                                    }`}
+                                  >
+                                    {caseExtracting && convertingSnippetId === snippet.id ? (
+                                      <Loader2 className="h-3 w-3 animate-spin" />
+                                    ) : (
+                                      <Briefcase className="h-3 w-3" />
+                                    )}
+                                    转案例
+                                  </button>
+                                </TooltipTrigger>
+                                <TooltipContent>
+                                  {snippetCategories.includes('real_case')
+                                    ? <p>将此速记转化为行业案例</p>
+                                    : <p>该速记未被识别为真实案例，转换效果可能不佳</p>
+                                  }
+                                </TooltipContent>
+                              </Tooltip>
+                            </TooltipProvider>
                             {/* 选为素材按钮 */}
                             <TooltipProvider>
                               <Tooltip>

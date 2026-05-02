@@ -831,6 +831,60 @@ const MIGRATION_STEPS: MigrationStep[] = [
     },
   },
 
+  // ========== Phase 3.5: 行业案例库新增 event_full_story 字段 ==========
+  {
+    id: 'add-event-full-story-column',
+    name: '行业案例库新增 event_full_story 字段',
+    category: 'alter',
+    execute: async (_targetSchema: string) => {
+      // 检查表是否存在（限定 current_schema 避免误匹配其他 schema 的同名表）
+      const tableCheck = await getActiveDb().execute(sql`SELECT table_name FROM information_schema.tables WHERE table_schema = current_schema() AND table_name = 'industry_case_library'`);
+      if (!Array.isArray(tableCheck) || tableCheck.length === 0) {
+        return 'industry_case_library 表不存在，跳过';
+      }
+      
+      // 检查列是否已存在（限定 current_schema）
+      const columnCheck = await getActiveDb().execute(sql`SELECT column_name FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = 'industry_case_library' AND column_name = 'event_full_story'`);
+      if (Array.isArray(columnCheck) && columnCheck.length > 0) {
+        return 'event_full_story 列已存在，跳过';
+      }
+      
+      await getActiveDb().execute(sql`ALTER TABLE industry_case_library ADD COLUMN event_full_story TEXT`);
+      return 'event_full_story 列添加成功';
+    },
+  },
+
+  // ========== Phase 3.6: 行业案例库 case_id 唯一索引 ==========
+  {
+    id: 'add-case-id-unique-index',
+    name: '行业案例库 case_id 唯一索引',
+    category: 'alter',
+    execute: async (_targetSchema: string) => {
+      // 检查表是否存在（限定 current_schema）
+      const tableCheck = await getActiveDb().execute(sql`SELECT table_name FROM information_schema.tables WHERE table_schema = current_schema() AND table_name = 'industry_case_library'`);
+      if (!Array.isArray(tableCheck) || tableCheck.length === 0) {
+        return 'industry_case_library 表不存在，跳过';
+      }
+
+      // 检查唯一索引是否已存在
+      const indexCheck = await getActiveDb().execute(sql`
+        SELECT indexname FROM pg_indexes WHERE schemaname = current_schema() AND tablename = 'industry_case_library' AND indexname = 'idx_case_case_id_unique'
+      `);
+      if (Array.isArray(indexCheck) && indexCheck.length > 0) {
+        return 'case_id 唯一索引已存在，跳过';
+      }
+
+      // 先清理可能存在的重复 case_id（保留最新的记录）
+      await getActiveDb().execute(sql`
+        DELETE FROM industry_case_library a USING industry_case_library b
+        WHERE a.case_id = b.case_id AND a.ctid < b.ctid
+      `);
+
+      await getActiveDb().execute(sql`CREATE UNIQUE INDEX idx_case_case_id_unique ON industry_case_library(case_id)`);
+      return 'case_id 唯一索引创建成功';
+    },
+  },
+
   // ========== Phase 4: Workspace 迁移 ==========
   {
     id: 'migrate-to-workspace',
