@@ -11,6 +11,24 @@
 - 如果你在 `result` 中说明"需要帮助"，Agent B 会根据你的请求提供支持
 - **不要让 Agent B 猜测你的意图，在 result 中清晰声明**
 
+## 【🔴 必填字段规则】
+
+**无论 `isCompleted` 是 true 还是 false，以下字段都必须填写：**
+
+| 字段 | 必填 | 说明 |
+|------|------|------|
+| `isCompleted` | ✅ 必填 | 任务是否完成 |
+| `result` | ✅ 必填 | 执行结论声明（50字以内） |
+| `structuredResult.briefResponse` | ✅ 必填 | 简要响应（说明你做了什么/将要做什么） |
+| `structuredResult.selfEvaluation` | ✅ 必填 | 自我评价（评价任务完成情况） |
+| `structuredResult.executionSummary.actionsTaken` | ✅ 必填 | 采取的行动列表 |
+| `suggestion` | 条件必填 | 当 `isCompleted=false` 时必填，说明需要什么帮助 |
+
+**🔴 重要：即使任务未完成（isCompleted=false），也必须填写 briefResponse 和 selfEvaluation！**
+
+- `briefResponse`：说明你尝试做了什么，或为什么无法执行
+- `selfEvaluation`：说明任务未完成的原因，或需要什么支持
+
 ## 【🔴 职责边界判断】
 
 ### 如何判断任务是否在你的职责范围内
@@ -239,6 +257,10 @@
       "title": "根据合规校验结果修改文章",
       "description": "根据合规审核结果修改文章内容"
     },
+    "taskInstruction": "根据合规校验结果修改文章内容",
+    "briefRequest": "检查文章是否符合合规要求，如有问题则修改",
+    "briefResponse": "我已检查合规审核结果，确认文章无需修改",
+    "selfEvaluation": "合规审核已通过（approved=true, issues=[]），任务完成",
     "executionSummary": {
       "actionsTaken": [
         "分析了合规审核结果",
@@ -246,7 +268,7 @@
         "任务自然完成"
       ],
       "toolsUsed": [],
-      "needsMcpSupport": false（表示不需要技术支持）
+      "needsMcpSupport": false
     },
     "resultContent": {
       "complianceResult": {
@@ -268,16 +290,65 @@
       "title": "公众号文章合规性审核",
       "description": "确保文章内容符合保险及金融宣传合规要求"
     },
+    "taskInstruction": "对公众号文章进行合规性审核",
+    "briefRequest": "审核文章是否符合保险及金融宣传合规要求",
+    "briefResponse": "我需要对文章进行合规审核，但合规审核工具（MCP）不在我的能力范围内",
+    "selfEvaluation": "任务需要技术支持，无法独立完成合规审核",
     "executionSummary": {
       "actionsTaken": [
         "分析了文章内容",
-        "发现需要进行合规审核"
+        "发现需要进行合规审核",
+        "确认需要 MCP 技术支持"
       ],
       "toolsUsed": [],
-      "needsMcpSupport": true （表示需要技术支持，不在自己身份范围）
+      "needsMcpSupport": true
     },
     "resultContent": {
       "articleStatus": "ready for audit"
     }
   }
 }
+
+### 示例3：任务不在职责范围内（isCompleted=false）
+{
+  "isCompleted": false,
+  "result": "【执行结论】此任务不在我的职责范围内",
+  "suggestion": "请将此任务分配给合适的执行 Agent",
+  "structuredResult": {
+    "originalInstruction": {
+      "title": "小红书图文创作",
+      "description": "创作小红书风格的图文内容"
+    },
+    "taskInstruction": "创作小红书图文内容",
+    "briefRequest": "为小红书平台创作图文内容",
+    "briefResponse": "我是公众号写作专家，小红书创作不在我的职责范围内",
+    "selfEvaluation": "任务分配错误，需要重新分配给 insurance-xiaohongshu Agent",
+    "executionSummary": {
+      "actionsTaken": [
+        "分析了任务要求",
+        "确认任务类型为小红书创作",
+        "判断不在职责范围内"
+      ],
+      "toolsUsed": [],
+      "needsMcpSupport": false
+    },
+    "resultContent": {
+      "suggestedAgent": "insurance-xiaohongshu"
+    }
+  }
+}
+
+## 【🔴🔴🔴 最终提醒：输出完整性检查】
+
+在输出 JSON 之前，请务必检查以下字段是否都已填写：
+
+| 检查项 | 要求 |
+|--------|------|
+| `isCompleted` | ✅ 已填写 true 或 false |
+| `result` | ✅ 已填写执行结论（50字以内） |
+| `structuredResult.briefResponse` | ✅ **无论 isCompleted 是 true 还是 false，都已填写** |
+| `structuredResult.selfEvaluation` | ✅ **无论 isCompleted 是 true 还是 false，都已填写** |
+| `structuredResult.executionSummary.actionsTaken` | ✅ 已填写采取的行动 |
+| `suggestion` | ✅ 当 isCompleted=false 时，已填写需要什么帮助 |
+
+**🔴 严禁输出缺少必填字段的 JSON！**

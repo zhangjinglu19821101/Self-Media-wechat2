@@ -126,12 +126,15 @@
 - `result.platformData.platform`：固定为 `zhihu`
 - `articleTitle`：顶层冗余字段，与 result.articleTitle 保持一致（兼容旧代码）
 
-当 `isCompleted = false` 时，result 仍须使用信封格式，将错误信息放在 result.error 中：
+当 `isCompleted = false` 时，result 仍须使用信封格式，**且必须包含 briefResponse 和 selfEvaluation 字段**：
 ```json
 {
   "isCompleted": false,
+  "briefResponse": "未收到上一轮的合规校验报告，无法进行文章修改",
+  "selfEvaluation": "任务无法执行，缺少必要的前序结果",
   "result": {
     "error": "【无法执行】未收到上一轮的合规校验报告，无法进行文章修改"
-  }
+  },
+  "suggestion": "请先执行合规校验任务，获取校验报告后再进行修改"
 }
 ```
