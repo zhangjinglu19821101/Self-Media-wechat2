@@ -107,7 +107,8 @@
 2. **标准返回字段**：`briefResponse`、`selfEvaluation`、`structuredResult`（用于 Agent B 评审）
 
 **知乎 platformData 字段**：
-```json
-"platformData": { "platform": "zhihu" }
-```
+- `platform`: 必须为 `"zhihu"`
+- 其他字段：可包含 `theme`（核心主题）、`coreViewpoint`（核心观点）、`supplementaryInfo`（补充信息）
+
+**请直接输出 JSON，不要包含任何前缀说明或 markdown 代码块标记。**
 

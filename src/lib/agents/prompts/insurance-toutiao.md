@@ -105,7 +105,8 @@
 2. **标准返回字段**：`briefResponse`、`selfEvaluation`、`structuredResult`（用于 Agent B 评审）
 
 **头条/抖音/微博 platformData 字段**：
-```json
-"platformData": { "platform": "douyin" }
-```
+- `platform`: 必须为 `"douyin"` 或 `"toutiao"` 或 `"weibo"`
+- 其他字段：可包含 `category`（文章分类）、`tags`（关键词标签）、`source`（信息来源）
+
+**请直接输出 JSON，不要包含任何前缀说明或 markdown 代码块标记。**
 
