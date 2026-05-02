@@ -11,7 +11,6 @@ import { getAllFlowTemplates } from '@/lib/agents/flow-templates';
  * 参考速记转案例的产品标签提取逻辑，按关键词长度降序匹配，避免短词误匹配
  */
 function extractProductTags(instruction: string): string[] {
-<<<<<<< HEAD
   // 预设产品标签列表（与前端快捷标签按钮完全一致）
   const presetTags = [
     '意外险', '重疾险', '医疗险', '寿险', '年金险', 
@@ -47,27 +46,10 @@ function extractProductTags(instruction: string): string[] {
     '家族信托': '信托',
     '保险金信托': '信托',
   };
-=======
-  // 保险产品关键词（按长度降序排列，优先匹配长词）
-  const productKeywords = [
-    '增额终身寿险', '增额终身寿', '增额寿',
-    '意外伤害险', '意外医疗', '意外险',
-    '重大疾病险', '大病险', '重疾险',
-    '百万医疗险', '住院医疗', '门诊医疗', '医疗险',
-    '定期寿险', '定额寿险', '终身寿险', '寿险',
-    '教育年金', '养老年金', '少儿年金', '年金险', '年金',
-    '少儿储蓄险', '教育储蓄', '储蓄险', '理财险',
-    '分红险', '万能险', '投连险', '两全险',
-    '惠民保', '医保', '社保', '公积金',
-    '信托', '家族信托', '保险金信托',
-    '存款', '大额存单',
-  ].sort((a, b) => b.length - a.length);
->>>>>>> aadd8e8d (feat: 速记转案例功能多轮优化 - 案例详情样式/产品标签/排序/任务标题提取)
 
   const tags: string[] = [];
   const lowerInstruction = instruction.toLowerCase();
   
-<<<<<<< HEAD
   // 先匹配变体词，归一化为预设标签
   for (const [variant, normalized] of Object.entries(variantMapping)) {
     if (lowerInstruction.includes(variant.toLowerCase()) && !tags.includes(normalized)) {
@@ -79,11 +61,6 @@ function extractProductTags(instruction: string): string[] {
   for (const preset of presetTags) {
     if (lowerInstruction.includes(preset.toLowerCase()) && !tags.includes(preset)) {
       tags.push(preset);
-=======
-  for (const keyword of productKeywords) {
-    if (lowerInstruction.includes(keyword.toLowerCase()) && !tags.includes(keyword)) {
-      tags.push(keyword);
->>>>>>> aadd8e8d (feat: 速记转案例功能多轮优化 - 案例详情样式/产品标签/排序/任务标题提取)
     }
   }
   
