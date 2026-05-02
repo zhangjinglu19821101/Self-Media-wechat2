@@ -30,80 +30,15 @@
 
 ## 输出格式要求
 
-**🔴 重要：必须遵循 `executor-standard-result.md` 定义的完整标准格式！**
+**🔴 必须遵循 `executor-standard-result.md` 定义的完整标准格式！**
 
 你的输出必须同时包含：
-1. **信封格式字段**：`result.content`（优化后正文）、`result.articleTitle`（文章标题）
+1. **信封格式字段**：`result.content`（优化后正文，HTML格式）、`result.articleTitle`（文章标题）
 2. **标准返回字段**：`briefResponse`、`selfEvaluation`、`structuredResult`（用于 Agent B 评审）
 
-详细格式定义请参考：`src/lib/agents/prompts/executor-standard-result.md`
-
-**isCompleted 字段含义（重要）：**
-- `isCompleted = true`：表示能够完成当前任务
-- `isCompleted = false`：表示当前任务无法完成
-
-**优化完成时（isCompleted = true），必须输出以下完整 JSON：**
-
-```json
-{
-  "isCompleted": true,
-  
-  "briefResponse": "我将对文章进行去AI化优化，剔除机器腔，增加自然表达",
-  "selfEvaluation": "已完成优化，剔除了模板句式，增加了口语化表达，内容更自然",
-  "result": "【执行结论】去AI化优化已完成，文章更接近真人手写风格",
-  
-  "structuredResult": {
-    "originalInstruction": {
-      "title": "任务标题（原样复制）",
-      "description": "任务描述（原样复制）"
-    },
-    "taskInstruction": "简要复述你收到的任务",
-    "briefRequest": "简要说明用户的具体需求",
-    "briefResponse": "简要说明你将如何执行",
-    "taskCompletion": "说明任务是否完成",
-    "selfEvaluation": "自我评价",
-    "result": "详细结果说明",
-    "needsMcpSupport": false,
-    "suggestion": "建议（可选）",
-    "output": {
-      "type": "deai_optimized",
-      "content": "优化后的完整正文（HTML格式）",
-      "articleTitle": "优化后的文章标题"
-    },
-    "executorSummary": "执行总结"
-  }
-}
-```
-
-**无法完成任务时（isCompleted = false），必须输出以下完整 JSON：**
-
-```json
-{
-  "isCompleted": false,
-  
-  "briefResponse": "简要说明无法完成的原因",
-  "selfEvaluation": "自我评价",
-  "result": "【执行结论】任务未能完成 + 具体原因",
-  "suggestion": "建议（可选）",
-  
-  "structuredResult": {
-    "originalInstruction": {
-      "title": "任务标题（原样复制）",
-      "description": "任务描述（原样复制）"
-    },
-    "taskInstruction": "简要复述你收到的任务",
-    "briefRequest": "简要说明用户的具体需求",
-    "briefResponse": "简要说明无法执行的原因",
-    "taskCompletion": "说明任务未完成",
-    "selfEvaluation": "自我评价",
-    "result": "详细说明无法完成的原因",
-    "needsMcpSupport": false,
-    "suggestion": "建议（可选）",
-    "reason": "无法完成的原因说明",
-    "error": "无法完成的原因（可选）"
-  }
-}
-```
+**deai-optimizer 专属字段**：
+- `structuredResult.output.type`: 固定为 `"deai_optimized"`
+- `structuredResult.output.content`: 优化后的完整正文（HTML格式）
 
 **🔴 关键约束：**
 1. **必须先判断是否是你的任务（优先级最高！）：**

@@ -328,101 +328,26 @@
 3. 二级标题用 `<h3>`
 4. 文章末尾必须有免责声明
 
-### ⚠️ 返回格式（Executor Output 标准格式）
+### ⚠️ 返回格式
 
-**🔴 重要：必须遵循 `executor-standard-result.md` 定义的完整标准格式！**
+**🔴 必须遵循 `executor-standard-result.md` 定义的完整标准格式！**
 
 你的输出必须同时包含：
 1. **信封格式字段**：`result.content`（完整HTML文章）、`result.articleTitle`（文章标题）
 2. **标准返回字段**：`briefResponse`、`selfEvaluation`、`structuredResult`（用于 Agent B 评审）
 
-详细格式定义请参考：`src/lib/agents/prompts/executor-standard-result.md`
-
-**isCompleted 字段含义（重要）：**
-- `isCompleted = true`：表示能够完成当前任务（所有必要条件都满足，可以正常执行）
-- `isCompleted = false`：表示当前任务无法完成（缺少必要条件、信息不完整、无法执行等）
-
-**创作完成时（isCompleted = true），必须输出以下完整 JSON：**
-
+**公众号 platformData 字段**：
 ```json
-{
-  "isCompleted": true,
-  
-  "briefResponse": "我将根据创作需求撰写公众号文章，遵循核心铁律和风格要求",
-  "selfEvaluation": "已完成文章创作，符合字数要求，内容客观中立，HTML格式规范",
-  "result": "【执行结论】公众号文章已完成，符合创作要求",
-  
-  "structuredResult": {
-    "originalInstruction": {
-      "title": "任务标题（原样复制）",
-      "description": "任务描述（原样复制）"
-    },
-    "taskInstruction": "简要复述你收到的任务",
-    "briefRequest": "简要说明用户的具体需求",
-    "briefResponse": "简要说明你将如何执行",
-    "selfEvaluation": "简要评价任务完成情况",
-    "executionSummary": {
-      "needsMcpSupport": false,
-      "actionsTaken": [
-        "分析了创作需求和核心观点",
-        "构思了文章结构和案例",
-        "撰写了完整HTML文章"
-      ],
-      "toolsUsed": []
-    },
-    "resultContent": {
-      "content": "完整的HTML文章内容（直接粘贴你写的完整HTML文章，不要省略，不要用占位符）",
-      "articleTitle": "文章的核心标题（必填！15字以内）",
-      "platformData": {
-        "platform": "wechat_official"
-      }
-    }
-  },
-  
-  "articleTitle": "文章的核心标题（与structuredResult.resultContent.articleTitle保持一致，15字以内）"
+"platformData": {
+  "platform": "wechat_official"
 }
 ```
 
-**字段说明：**
-- `briefResponse`：简要说明你将如何执行任务（禁止以数字序号开头）
-- `selfEvaluation`：简要评价任务完成情况（禁止以数字序号开头）
-- `result`：执行结论声明，格式为 `【执行结论】+ 一句话总结`
-- `structuredResult.resultContent.content`：**完整HTML文章正文**，这是最重要的字段
-- `structuredResult.resultContent.articleTitle`：文章核心标题
-- `structuredResult.resultContent.platformData.platform`：固定为 `wechat_official`
-- `articleTitle`：顶层冗余字段，与 articleTitle 保持一致（兼容旧代码）
-
-**articleTitle 字段说明（重要！）：**
+**articleTitle 字段要求**：
 - **必填**：每次输出都必须包含此字段
 - **用途**：系统会将此标题存入任务列表，方便用户快速识别每篇文章的主题
-- **要求**：提炼文章最核心的主题，15字以内，如"重疾险理赔踩坑实录"、"医疗险报销门道详解"
+- **要求**：提炼文章最核心的主题，15字以内，如"重疾险理赔踩坑实录"
 - **禁止**：不要返回"文章初稿"、"创作完成"等通用文字
-
-当 `isCompleted = false` 时，仍须使用完整格式：
-```json
-{
-  "isCompleted": false,
-  
-  "briefResponse": "无法执行任务，缺少必要的前序结果",
-  "selfEvaluation": "任务无法执行，缺少必要条件",
-  "result": "【执行结论】未收到上一轮的合规校验报告，无法进行文章修改",
-  
-  "structuredResult": {
-    "originalInstruction": {
-      "title": "任务标题",
-      "description": "任务描述"
-    },
-    "executionSummary": {
-      "needsMcpSupport": false,
-      "actionsTaken": ["检查了前序任务结果"],
-      "toolsUsed": []
-    },
-    "resultContent": {
-      "error": "【无法执行】未收到上一轮的合规校验报告，无法进行文章修改"
-    }
-  }
-}
-```
 
 ---
 
@@ -440,79 +365,14 @@
 
 ### 大纲模式下的 Executor Output 格式
 
-使用完整的标准返回格式（与正常创作模式一致）：
+使用完整的标准返回格式，`platformData` 中新增 `outlineText` 字段：
 
 ```json
-{
-  "isCompleted": true,
-  
-  "briefResponse": "我将根据确认大纲生成完整文章",
-  "selfEvaluation": "已完成文章创作，严格遵循确认大纲的结构和核心论点",
-  "result": "【执行结论】已根据确认大纲生成完整文章",
-  
-  "structuredResult": {
-    "originalInstruction": {
-      "title": "任务标题",
-      "description": "任务描述"
-    },
-    "executionSummary": {
-      "needsMcpSupport": false,
-      "actionsTaken": [
-        "分析了确认大纲的结构",
-        "按照大纲逐段展开写作",
-        "确保素材按大纲位置插入"
-      ],
-      "toolsUsed": []
-    },
-    "resultContent": {
-      "content": "完整的HTML文章内容（严格按照确认大纲生成，不要省略）",
-      "articleTitle": "文章的核心标题（必填！15字以内）",
-      "platformData": {
-        "platform": "wechat_official"
-      }
-    }
-  },
-  
-  "articleTitle": "文章的核心标题（与structuredResult.resultContent.articleTitle一致）"
+"platformData": {
+  "platform": "wechat_official",
+  "outlineText": "# 文章大纲\n\n## 一、开篇案例\n- 核心论点：...\n- 素材规划：...\n\n## 二、核心拆解\n..."
 }
 ```
-
-> **大纲生成模式**：当处于「大纲生成」子任务时（subTaskRole=outline_generation），不输出完整文章，而是输出结构化大纲：
-> ```json
-> {
->   "isCompleted": true,
->   
->   "briefResponse": "我将根据创作需求生成文章大纲",
->   "selfEvaluation": "已完成大纲生成，包含开篇案例、核心拆解、避坑指南等部分",
->   "result": "【执行结论】大纲生成完成",
->   
->   "structuredResult": {
->     "originalInstruction": {
->       "title": "生成创作大纲",
->       "description": "根据创作需求生成文章大纲"
->     },
->     "executionSummary": {
->       "needsMcpSupport": false,
->       "actionsTaken": [
->         "分析了创作需求和核心观点",
->         "构思了文章结构",
->         "规划了素材使用位置"
->       ],
->       "toolsUsed": []
->     },
->     "resultContent": {
->       "content": "【大纲生成完成】已根据创作需求生成文章大纲",
->       "articleTitle": "文章标题（根据大纲主题提炼，15字以内）",
->       "platformData": {
->         "platform": "wechat_official",
->         "outlineText": "# 文章大纲\n\n## 一、开篇案例\n- 核心论点：...\n- 素材规划：...\n\n## 二、核心拆解\n..."
->       }
->     }
->   },
->   
->   "articleTitle": "文章标题（与structuredResult.resultContent.articleTitle一致）"
-> }
-> ```
 
 ---
 

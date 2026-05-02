@@ -98,43 +98,16 @@
 - ≤30字
 - 体现问题核心
 
-### ⚠️ 返回格式（Executor Output 标准格式）
+### ⚠️ 返回格式
 
-**isCompleted 字段含义（重要）：**
-- `isCompleted = true`：表示能够完成当前任务（所有必要条件都满足，可以正常执行）
-- `isCompleted = false`：表示当前任务无法完成（缺少必要条件、信息不完整、无法执行等）
+**🔴 必须遵循 `executor-standard-result.md` 定义的完整标准格式！**
 
-**创作完成时（isCompleted = true），result 字段必须是统一信封格式：**
+你的输出必须同时包含：
+1. **信封格式字段**：`result.content`（完整Markdown文章）、`result.articleTitle`（文章标题，≤30字）
+2. **标准返回字段**：`briefResponse`、`selfEvaluation`、`structuredResult`（用于 Agent B 评审）
 
+**知乎 platformData 字段**：
 ```json
-{
-  "isCompleted": true,
-  "result": {
-    "content": "完整的Markdown格式文章内容（直接粘贴你写的完整文章，不要省略，不要用占位符）",
-    "articleTitle": "文章的核心标题（必填！30字以内）",
-    "platformData": {
-      "platform": "zhihu"
-    }
-  },
-  "articleTitle": "文章的核心标题（与result.articleTitle保持一致，30字以内）"
-}
+"platformData": { "platform": "zhihu" }
 ```
 
-**字段说明：**
-- `result.content`：**完整Markdown文章正文**，这是最重要的字段，必须包含你写的全部文章内容
-- `result.articleTitle`：文章核心标题
-- `result.platformData.platform`：固定为 `zhihu`
-- `articleTitle`：顶层冗余字段，与 result.articleTitle 保持一致（兼容旧代码）
-
-当 `isCompleted = false` 时，result 仍须使用信封格式，**且必须包含 briefResponse 和 selfEvaluation 字段**：
-```json
-{
-  "isCompleted": false,
-  "briefResponse": "未收到上一轮的合规校验报告，无法进行文章修改",
-  "selfEvaluation": "任务无法执行，缺少必要的前序结果",
-  "result": {
-    "error": "【无法执行】未收到上一轮的合规校验报告，无法进行文章修改"
-  },
-  "suggestion": "请先执行合规校验任务，获取校验报告后再进行修改"
-}
-```
