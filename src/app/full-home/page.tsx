@@ -1114,18 +1114,17 @@ export default function HomePage() {
       return;
     }
 
-    // 🔥 任务标题：如果未填写，自动从指令提取（永不阻断用户操作）
-    let finalTaskTitle = taskTitle.trim();
-    if (!finalTaskTitle) {
-      const match = mainInstruction.match(/主题[《"<『]([^》"』]+)[》"』]/);
-      if (match) {
-        finalTaskTitle = `主题《${match[1]}》`;
-      } else {
-        finalTaskTitle = mainInstruction.slice(0, 50).trim();
-      }
-      setTaskTitle(finalTaskTitle);
-      toast.info(`已自动提取任务标题：「${finalTaskTitle}」，可在上方输入框修改`, { duration: 4000 });
+    // 🔥 任务标题：点击 AI 智能拆解时，强制从指令重新提取（尊重用户最新的指令内容）
+    let finalTaskTitle = '';
+    const match = mainInstruction.match(/主题[《"<『]([^》"』]+)[》"』]/);
+    if (match) {
+      finalTaskTitle = `主题《${match[1]}》`;
+    } else {
+      finalTaskTitle = mainInstruction.slice(0, 50).trim();
     }
+    setTaskTitle(finalTaskTitle);
+    userManuallyEditedTitleRef.current = false; // 重置手动修改标记，允许后续自动更新
+    toast.info(`已自动提取任务标题：「${finalTaskTitle}」`, { duration: 3000 });
 
     setIsSplitting(true);
     try {

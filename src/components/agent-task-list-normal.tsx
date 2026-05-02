@@ -12,7 +12,7 @@ import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Textarea } from '@/components/ui/textarea';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { CheckCircle2, Clock, AlertTriangle, ChevronRight, ChevronDown, ChevronUp, Calendar, ListTodo, UserCheck, MessageSquare, Terminal, Send, Loader2, RefreshCw, Filter, XCircle, Users, Eye, Rocket, Folder, FileText, PenTool, ShieldCheck, Cpu, Sparkles, ChevronDownIcon, Bot, BookOpen, Lock, Layers, AlertCircle } from 'lucide-react';
+import { CheckCircle2, Clock, AlertTriangle, ChevronRight, ChevronDown, ChevronUp, Calendar, ListTodo, UserCheck, MessageSquare, Terminal, Send, Loader2, RefreshCw, Filter, XCircle, Users, Eye, Rocket, Folder, FileText, PenTool, ShieldCheck, Cpu, Sparkles, ChevronDownIcon, Bot, BookOpen, Lock, Layers, AlertCircle, Info } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toast } from 'sonner';
 import Link from 'next/link';
@@ -1459,6 +1459,43 @@ export function AgentTaskListNormal({ agentId, showPanel, onTogglePanel }: Agent
     };
   };
 
+  // 🔴 新增：从 stepHistory 中提取"不执行原因"（waiting_user 状态下展示）
+  const getNotCompletedReason = (stepHistory: StepHistory[]) => {
+    if (!stepHistory || stepHistory.length === 0) return null;
+    
+    // 从最新的 Agent B 交互记录中提取 notCompletedReason
+    const lastAgentBStep = [...stepHistory].reverse().find(step => {
+      const interactUser = step.interactUser?.toLowerCase();
+      return interactUser === 'agent b' || interactUser === 'b';
+    });
+
+    if (!lastAgentBStep) return null;
+
+    const content = lastAgentBStep.interactContent;
+    
+    // 支持多种格式提取 notCompletedReason
+    const notCompletedReason = content?.notCompletedReason || 
+                               content?.response?.notCompletedReason ||
+                               content?.decision?.notCompletedReason;
+    
+    // 提取 decisionBasis（判断依据）
+    const decisionBasis = content?.decisionBasis ||
+                          content?.response?.decisionBasis ||
+                          content?.decision?.decisionBasis;
+    
+    // 提取 decisionType
+    const decisionType = content?.decisionType ||
+                         content?.response?.decisionType ||
+                         content?.decision?.type ||
+                         content?.type;
+
+    return {
+      notCompletedReason,
+      decisionBasis,
+      decisionType,
+    };
+  };
+
   // 处理状态筛选点击
   const handleStatusFilterClick = (status: StatusFilter) => {
     setStatusFilter(status);
@@ -2421,6 +2458,39 @@ export function AgentTaskListNormal({ agentId, showPanel, onTogglePanel }: Agent
                             )}
                             {displayTask.status === 'waiting_user' ? '用户处理' : '重新处理'}
                           </h4>
+                          
+                          {/* 🔴 新增：展示"不执行原因" */}
+                          {displayTask.status === 'waiting_user' && taskDetail?.stepHistory && (() => {
+                            const notCompletedInfo = getNotCompletedReason(taskDetail.stepHistory);
+                            if (!notCompletedInfo) return null;
+                            
+                            return (
+                              <div className="bg-purple-50 border border-purple-200 rounded-lg p-4 mb-4">
+                                <div className="flex items-start gap-3">
+                                  <Info className="w-5 h-5 text-purple-600 flex-shrink-0 mt-0.5" />
+                                  <div className="text-sm text-purple-800 space-y-2">
+                                    <p className="font-medium text-purple-900">任务未完成原因</p>
+                                    {notCompletedInfo.notCompletedReason && (
+                                      <div className="bg-white/50 rounded px-3 py-2 border border-purple-100">
+                                        <span className="font-semibold text-purple-700">原因：</span>
+                                        <span>{notCompletedInfo.notCompletedReason}</span>
+                                      </div>
+                                    )}
+                                    {notCompletedInfo.decisionBasis && (
+                                      <div className="text-purple-600 text-xs">
+                                        <span className="font-medium">判断依据：</span>
+                                        <span className="ml-1">{notCompletedInfo.decisionBasis.substring(0, 200)}{notCompletedInfo.decisionBasis.length > 200 ? '...' : ''}</span>
+                                      </div>
+                                    )}
+                                    {!notCompletedInfo.notCompletedReason && !notCompletedInfo.decisionBasis && (
+                                      <p className="text-purple-600">等待用户输入或确认后继续执行</p>
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          })()}
+                          
                           <div className="space-y-4">
                             {/* 🔥 新增：执行者选择器 */}
                             <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
