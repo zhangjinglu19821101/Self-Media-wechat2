@@ -3626,6 +3626,9 @@ export class SubtaskExecutionEngine {
             isCompleted: false,
             isNeedMcp: false,
             isTaskDown: false,
+            // 🔴🔴🔴 【修复】新增 briefResponse 和 selfEvaluation，让用户知道发生了什么
+            briefResponse: `任务执行出错：${error instanceof Error ? error.message : String(error)}`,
+            selfEvaluation: `Agent T 执行失败，原因：${error instanceof Error ? error.message : String(error)}。需要检查错误类型并决定后续操作。`,
             problem: error instanceof Error ? error.message : String(error),
             executorOutput: {
               error: error instanceof Error ? error.message : String(error),
@@ -3909,18 +3912,24 @@ export class SubtaskExecutionEngine {
         // 4. success === false
         if ('error' in parsed || 'errorType' in parsed || 'errorMessage' in parsed || parsed.success === false) {
           console.log('[SubtaskEngine] [command_result_id=' + task.commandResultId + '] ⚠️  检测到错误对象（之前执行失败），标记为失败');
-          // 错误对象 → 转换为 ExecutorAgentResult（标记为失败）
+          // 🔴🔴🔴 【修复】错误对象 → 转换为 ExecutorAgentResult，必须初始化 briefResponse 和 selfEvaluation
+          const errorMessage = parsed.errorMessage || parsed.error || parsed.message || '未知错误';
           executorResult = {
             isCompleted: false,
             isNeedMcp: false,
             isTaskDown: false,
+            // 🔴 新增：briefResponse - 简短响应，让用户知道发生了什么
+            briefResponse: `任务未能执行：${errorMessage}`,
+            // 🔴 新增：selfEvaluation - 自我评价，说明失败原因
+            selfEvaluation: `执行失败，原因：${errorMessage}。需要检查任务参数或重试。`,
+            problem: errorMessage,
             executorOutput: {
-              result: `执行失败：${parsed.errorMessage || parsed.error || parsed.message || '未知错误'}`,
+              result: `执行失败：${errorMessage}`,
               output: '',
-              suggestions: ''
+              suggestions: '请检查任务参数是否正确，或联系技术支持'
             }
           };
-          console.log('[SubtaskEngine] [command_result_id=' + task.commandResultId + '] ✅ 错误对象处理完成');
+          console.log('[SubtaskEngine] [command_result_id=' + task.commandResultId + '] ✅ 错误对象处理完成（已初始化 briefResponse 和 selfEvaluation）');
         }
         // 检查是否是 ExecutorAgentResult 类型（有 isNeedMcp 字段）
         else if ('isNeedMcp' in parsed && 'isTaskDown' in parsed) {
@@ -4864,6 +4873,9 @@ export class SubtaskExecutionEngine {
     const safeExecutorResult = executorResult ?? {
       isNeedMcp: false,
       isTaskDown: false,
+      // 🔴🔴🔴 【修复】新增 briefResponse 和 selfEvaluation，让用户知道发生了什么
+      briefResponse: '任务未能正常执行，执行结果为空',
+      selfEvaluation: '执行结果为空，可能是任务初始化失败或执行过程中发生未捕获异常',
       resultData: undefined
     };
     
