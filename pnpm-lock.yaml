@@ -175,8 +175,8 @@ importers:
         specifier: 16.1.1
         version: 16.1.1(@babel/core@7.29.0)(react-dom@19.2.3(react@19.2.3))(react@19.2.3)
       next-auth:
-        specifier: 5.0.0-beta.30
-        version: 5.0.0-beta.30(next@16.1.1(@babel/core@7.29.0)(react-dom@19.2.3(react@19.2.3))(react@19.2.3))(react@19.2.3)
+        specifier: 5.0.0-beta.31
+        version: 5.0.0-beta.31(next@16.1.1(@babel/core@7.29.0)(react-dom@19.2.3(react@19.2.3))(react@19.2.3))(react@19.2.3)
       next-themes:
         specifier: ^0.4.6
         version: 0.4.6(react-dom@19.2.3(react@19.2.3))(react@19.2.3)
@@ -296,6 +296,20 @@ packages:
       '@simplewebauthn/browser': ^9.0.1
       '@simplewebauthn/server': ^9.0.2
       nodemailer: ^6.8.0
+    peerDependenciesMeta:
+      '@simplewebauthn/browser':
+        optional: true
+      '@simplewebauthn/server':
+        optional: true
+      nodemailer:
+        optional: true
+
+  '@auth/core@0.41.2':
+    resolution: {integrity: sha512-Hx5MNBxN2fJTbJKGUKAA0wca43D0Akl3TvufY54Gn8lop7F+34vU1zA1pn0vQfIoVuLIrpfc2nkyjwIaPJMW7w==}
+    peerDependencies:
+      '@simplewebauthn/browser': ^9.0.1
+      '@simplewebauthn/server': ^9.0.2
+      nodemailer: ^7.0.7
     peerDependenciesMeta:
       '@simplewebauthn/browser':
         optional: true
@@ -4380,8 +4394,8 @@ packages:
     resolution: {integrity: sha512-8Ofs/AUQh8MaEcrlq5xOX0CQ9ypTF5dl78mjlMNfOK08fzpgTHQRQPBxcPlEtIw0yRpws+Zo/3r+5WRby7u3Gg==}
     engines: {node: '>= 0.6'}
 
-  next-auth@5.0.0-beta.30:
-    resolution: {integrity: sha512-+c51gquM3F6nMVmoAusRJ7RIoY0K4Ts9HCCwyy/BRoe4mp3msZpOzYMyb5LAYc1wSo74PMQkGDcaghIO7W6Xjg==}
+  next-auth@5.0.0-beta.31:
+    resolution: {integrity: sha512-1OBgCKPzo+S7UWWMp3xgvGvIJ0OpV7B3vR4ZDRqD9a4Ch+OT6dakLXG9ivhtmIWVa71nTSXattOHyCg8sNi8/Q==}
     peerDependencies:
       '@simplewebauthn/browser': ^9.0.1
       '@simplewebauthn/server': ^9.0.2
@@ -5532,6 +5546,14 @@ snapshots:
   '@alloc/quick-lru@5.2.0': {}
 
   '@auth/core@0.41.0':
+    dependencies:
+      '@panva/hkdf': 1.2.1
+      jose: 6.2.2
+      oauth4webapi: 3.8.5
+      preact: 10.24.3
+      preact-render-to-string: 6.5.11(preact@10.24.3)
+
+  '@auth/core@0.41.2':
     dependencies:
       '@panva/hkdf': 1.2.1
       jose: 6.2.2
@@ -9955,9 +9977,9 @@ snapshots:
 
   negotiator@1.0.0: {}
 
-  next-auth@5.0.0-beta.30(next@16.1.1(@babel/core@7.29.0)(react-dom@19.2.3(react@19.2.3))(react@19.2.3))(react@19.2.3):
+  next-auth@5.0.0-beta.31(next@16.1.1(@babel/core@7.29.0)(react-dom@19.2.3(react@19.2.3))(react@19.2.3))(react@19.2.3):
     dependencies:
-      '@auth/core': 0.41.0
+      '@auth/core': 0.41.2
       next: 16.1.1(@babel/core@7.29.0)(react-dom@19.2.3(react@19.2.3))(react@19.2.3)
       react: 19.2.3
 

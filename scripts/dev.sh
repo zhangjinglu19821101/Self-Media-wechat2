@@ -6,8 +6,8 @@
 
 set -Eeuo pipefail
 
-# 硬编码项目目录（确保在任何环境下都正确）
-export COZE_WORKSPACE_PATH="/workspace/projects/ai-venture"
+# 设置工作目录（支持环境变量覆盖）
+export COZE_WORKSPACE_PATH="${COZE_WORKSPACE_PATH:-/workspace/projects}"
 cd "${COZE_WORKSPACE_PATH}"
 
 # 加载开发环境变量（如果存在）
@@ -27,6 +27,17 @@ echo "[dev.sh] 启动开发服务器..."
 echo "[dev.sh] 端口: ${PORT}"
 echo "[dev.sh] 环境: ${NODE_ENV}"
 echo "[dev.sh] 数据库: ${DATABASE_URL:+已配置}"
+
+# 清理端口占用函数
+kill_port_if_listening() {
+    local port=$1
+    local pid=$(ss -lptn "sport = :$port" 2>/dev/null | grep -oP 'pid=\K[0-9]+' | head -1)
+    if [[ -n "$pid" ]]; then
+        echo "[dev.sh] 清理端口 $port 上的进程 $pid"
+        kill "$pid" 2>/dev/null || true
+        sleep 1
+    fi
+}
 
 # 清理端口占用（仅在非 coze dev 模式下清理，避免杀掉 coze 管理的进程）
 if [[ -z "${COZE_DEV_MODE:-}" ]]; then
