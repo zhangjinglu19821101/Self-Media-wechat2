@@ -378,13 +378,12 @@ type StatusFilter = 'all' | 'pending' | 'in_progress' | 'completed' | 'failed' |
  * 导致用户点击后跳转到错误的发布页面（内容是确认信息而非完整文章）。
  */
 function isPreviewEditTask(task: Task): boolean {
-  if (task.executor === 'user_preview_edit') return true;
-  // 🔴 兼容旧数据：旧流程模板中预览修改节点的 executor 是写作 Agent
-  // 通过标题关键词识别（必须覆盖所有状态，否则 completed 状态会误匹配写作 Agent 按钮分支）
-  if (task.taskTitle.includes('预览修改') || task.taskTitle.includes('预览终稿')) {
-    return true;
-  }
-  return false;
+  // 🔴 调试日志
+  const result = task.executor === 'user_preview_edit' || 
+    task.taskTitle?.includes('预览修改') || 
+    task.taskTitle?.includes('预览终稿');
+  console.log(`[isPreviewEditTask] taskId=${task.id}, executor=${task.executor}, taskTitle=${task.taskTitle}, result=${result}`);
+  return result;
 }
 
 /**
@@ -1867,6 +1866,7 @@ export function AgentTaskListNormal({ agentId, showPanel, onTogglePanel }: Agent
                                     const StatusIcon = statusInfo.icon;
                                     const isCompleted = task.status === 'completed';
                                     const isBlocked = task.status === 'blocked';
+                                    const isWaitingUser = task.status === 'waiting_user';
 
                                     return (
                                       <div
@@ -1876,6 +1876,8 @@ export function AgentTaskListNormal({ agentId, showPanel, onTogglePanel }: Agent
                                             ? 'bg-emerald-50/60 border-emerald-100 hover:bg-emerald-50'
                                             : isBlocked
                                             ? 'bg-amber-50/60 border-amber-100 hover:bg-amber-50'
+                                            : isWaitingUser
+                                            ? 'bg-blue-50/60 border-blue-300 hover:bg-blue-50 ring-2 ring-blue-200/50'
                                             : 'bg-white border-slate-100 hover:bg-slate-50 hover:border-slate-200'
                                         }`}
                                         onClick={(e) => {
@@ -1895,6 +1897,8 @@ export function AgentTaskListNormal({ agentId, showPanel, onTogglePanel }: Agent
                                             ? 'bg-gradient-to-br from-emerald-400 to-emerald-500 text-white shadow-sm shadow-emerald-200'
                                             : isBlocked
                                             ? 'bg-gradient-to-br from-amber-300 to-amber-400 text-white'
+                                            : isWaitingUser
+                                            ? 'bg-gradient-to-br from-blue-400 to-blue-500 text-white shadow-sm shadow-blue-200'
                                             : 'bg-slate-100 text-slate-600'
                                         }`}>
                                           {task.orderIndex}
@@ -1902,16 +1906,16 @@ export function AgentTaskListNormal({ agentId, showPanel, onTogglePanel }: Agent
 
                                         {/* 状态图标 */}
                                         <div className={`w-7 h-7 rounded-xl flex items-center justify-center flex-shrink-0 ${
-                                          isCompleted ? 'bg-emerald-100' : isBlocked ? 'bg-amber-100' : 'bg-slate-100'
+                                          isCompleted ? 'bg-emerald-100' : isBlocked ? 'bg-amber-100' : isWaitingUser ? 'bg-blue-100' : 'bg-slate-100'
                                         }`}>
                                           <StatusIcon className={`w-4 h-4 ${
-                                            isCompleted ? 'text-emerald-500' : statusInfo.color
+                                            isCompleted ? 'text-emerald-500' : isWaitingUser ? 'text-blue-500' : statusInfo.color
                                           }`} />
                                         </div>
 
                                         {/* 标题 */}
                                         <span className={`flex-1 text-sm font-medium truncate ${
-                                          isCompleted ? 'text-emerald-700' : isBlocked ? 'text-amber-700' : 'text-slate-700'
+                                          isCompleted ? 'text-emerald-700' : isBlocked ? 'text-amber-700' : isWaitingUser ? 'text-blue-700' : 'text-slate-700'
                                         }`}>
                                           {task.taskTitle || `子任务 #${task.orderIndex}`}
                                         </span>
@@ -1922,6 +1926,8 @@ export function AgentTaskListNormal({ agentId, showPanel, onTogglePanel }: Agent
                                           className={`text-xs px-2 py-0.5 font-semibold ${
                                             isCompleted
                                               ? 'bg-emerald-100 text-emerald-700 border-emerald-200'
+                                              : isWaitingUser
+                                              ? 'bg-blue-100 text-blue-700 border-blue-300'
                                               : `${statusInfo.bgColor} ${statusInfo.color}`
                                           }`}
                                         >
@@ -2390,26 +2396,30 @@ export function AgentTaskListNormal({ agentId, showPanel, onTogglePanel }: Agent
                       })()}
 
                       {/* 用户处理输入框 - waiting_user 和 failed 状态都显示 */}
-                      {(displayTask.status === 'waiting_user' || displayTask.status === 'failed') && (
-                        <div className="border-t border-gray-200 pt-6 mt-6">
-                          {/* 🔴 虚拟执行器：预览修改节点使用专用编辑器 */}
-                          {/* 🔴 P1-1 修复：failed 状态也显示预览编辑器 */}
-                          {isPreviewEditTask(displayTask) && 
-                           (displayTask.status === 'waiting_user' || displayTask.status === 'failed') ? (
-                            <PreviewEditSection
-                              taskId={displayTask.id}
-                              platform={getPreviewPlatform(displayTask, tasks)}
-                              commandResultId={displayTask.commandResultId}
-                              onComplete={async (result) => {
-                                // 🔴 P0-1 修复：显式传入 commandResultId
-                                await submitPreviewEditDecision(
-                                  displayTask.id, 
-                                  displayTask.commandResultId, 
-                                  result
-                                );
-                              }}
-                            />
-                          ) : (
+                      {(() => {
+                        const isWaitingOrFailed = displayTask.status === 'waiting_user' || displayTask.status === 'failed';
+                        const isPreview = isPreviewEditTask(displayTask);
+                        console.log(`[用户处理输入框] displayTask.status=${displayTask.status}, isWaitingOrFailed=${isWaitingOrFailed}, isPreview=${isPreview}`);
+                        console.log(`[用户处理输入框] displayTask=`, JSON.stringify({ id: displayTask.id, status: displayTask.status, executor: displayTask.executor, taskTitle: displayTask.taskTitle }));
+                        return isWaitingOrFailed && (
+                          <div className="border-t border-gray-200 pt-6 mt-6">
+                            {/* 🔴 虚拟执行器：预览修改节点使用专用编辑器 */}
+                            {/* 🔴 P1-1 修复：failed 状态也显示预览编辑器 */}
+                            {isPreview ? (
+                              <PreviewEditSection
+                                taskId={displayTask.id}
+                                platform={getPreviewPlatform(displayTask, tasks)}
+                                commandResultId={displayTask.commandResultId}
+                                onComplete={async (result) => {
+                                  // 🔴 P0-1 修复：显式传入 commandResultId
+                                  await submitPreviewEditDecision(
+                                    displayTask.id, 
+                                    displayTask.commandResultId, 
+                                    result
+                                  );
+                                }}
+                              />
+                            ) : (
                           <>
                           <h4 className={`font-semibold mb-4 flex items-center gap-2 ${
                             displayTask.status === 'waiting_user' ? 'text-purple-900' : 'text-red-900'
@@ -2502,12 +2512,13 @@ export function AgentTaskListNormal({ agentId, showPanel, onTogglePanel }: Agent
                             </div>
                           </div>
                           </>
-                          )}
-                        </div>
-                      )}
-                    </TabsContent>
+                        )}
+                      </div>
+                    );
+                  })()}
+                </TabsContent>
 
-                    <TabsContent value="history" className="mt-0">
+                <TabsContent value="history" className="mt-0">
                       {!taskDetail?.stepHistory || taskDetail.stepHistory.length === 0 ? (
                         <div className="text-center py-12 text-gray-500">
                           <MessageSquare className="w-12 h-12 mx-auto text-gray-300 mb-2" />
