@@ -11,27 +11,56 @@ import { getAllFlowTemplates } from '@/lib/agents/flow-templates';
  * 参考速记转案例的产品标签提取逻辑，按关键词长度降序匹配，避免短词误匹配
  */
 function extractProductTags(instruction: string): string[] {
-  // 保险产品关键词（按长度降序排列，优先匹配长词）
-  const productKeywords = [
-    '增额终身寿险', '增额终身寿', '增额寿',
-    '意外伤害险', '意外医疗', '意外险',
-    '重大疾病险', '大病险', '重疾险',
-    '百万医疗险', '住院医疗', '门诊医疗', '医疗险',
-    '定期寿险', '定额寿险', '终身寿险', '寿险',
-    '教育年金', '养老年金', '少儿年金', '年金险', '年金',
-    '少儿储蓄险', '教育储蓄', '储蓄险', '理财险',
-    '分红险', '万能险', '投连险', '两全险',
-    '惠民保', '医保', '社保', '公积金',
-    '信托', '家族信托', '保险金信托',
-    '存款', '大额存单',
-  ].sort((a, b) => b.length - a.length);
+  // 预设产品标签列表（与前端快捷标签按钮完全一致）
+  const presetTags = [
+    '意外险', '重疾险', '医疗险', '寿险', '年金险', 
+    '增额终身寿', '教育金', '养老金', '信托', '财产险', '雇主责任险'
+  ];
+
+  // 变体词映射：变体词 -> 归一化的预设标签
+  const variantMapping: Record<string, string> = {
+    // 增额终身寿
+    '增额终身寿险': '增额终身寿',
+    '增额寿': '增额终身寿',
+    // 意外险
+    '意外伤害险': '意外险',
+    '意外医疗': '意外险',
+    // 重疾险
+    '重大疾病险': '重疾险',
+    '大病险': '重疾险',
+    // 医疗险
+    '百万医疗险': '医疗险',
+    '住院医疗': '医疗险',
+    '门诊医疗': '医疗险',
+    // 寿险
+    '定期寿险': '寿险',
+    '终身寿险': '寿险',
+    '定额寿险': '寿险',
+    // 年金险
+    '年金': '年金险',
+    // 教育金
+    '教育年金': '教育金',
+    // 养老金
+    '养老年金': '养老金',
+    // 信托
+    '家族信托': '信托',
+    '保险金信托': '信托',
+  };
 
   const tags: string[] = [];
   const lowerInstruction = instruction.toLowerCase();
   
-  for (const keyword of productKeywords) {
-    if (lowerInstruction.includes(keyword.toLowerCase()) && !tags.includes(keyword)) {
-      tags.push(keyword);
+  // 先匹配变体词，归一化为预设标签
+  for (const [variant, normalized] of Object.entries(variantMapping)) {
+    if (lowerInstruction.includes(variant.toLowerCase()) && !tags.includes(normalized)) {
+      tags.push(normalized);
+    }
+  }
+  
+  // 再匹配预设标签本身
+  for (const preset of presetTags) {
+    if (lowerInstruction.includes(preset.toLowerCase()) && !tags.includes(preset)) {
+      tags.push(preset);
     }
   }
   
