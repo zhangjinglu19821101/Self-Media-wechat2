@@ -53,9 +53,11 @@ export async function GET(request: NextRequest) {
     console.log(`📋 任务内容: ${commandResult.taskName || commandResult.commandContent?.substring(0, 100)}...`);
 
     // 2. 调用 splitTaskForAgent
-    const subTasks = await splitTaskForAgent(agentId, commandResult);
+    const splitResult = await splitTaskForAgent(agentId, commandResult);
+    const subTasks = splitResult.subTasks;
+    const productTags = splitResult.productTags;
 
-    console.log(`✅ 拆分完成，共 ${subTasks.length} 个子任务`);
+    console.log(`✅ 拆分完成，共 ${subTasks.length} 个子任务，产品标签: ${productTags.join(', ')}`);
 
     // 3. 分析关键子任务
     const criticalTasks = subTasks.filter((t) => t.isCritical);
@@ -82,6 +84,7 @@ export async function GET(request: NextRequest) {
         agentId,
         commandResultId: commandResult.id,
         commandResultName: commandResult.taskName,
+        productTags,
         totalSubTasks: subTasks.length,
         criticalSubTasks: criticalTasks.length,
         nonCriticalSubTasks: nonCriticalTasks.length,

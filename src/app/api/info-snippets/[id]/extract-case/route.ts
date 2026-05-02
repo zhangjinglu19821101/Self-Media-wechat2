@@ -41,7 +41,7 @@ export async function POST(
     }
 
     // Step 1: 仅 LLM 提取，不含搜索（搜索由前端异步调用 Step 2）
-    const extractionResult = await extractCaseFromSnippet(rawContent, customHeaders);
+    const extractionResult = await extractCaseFromSnippet(rawContent, snippet.title, customHeaders);
 
     return NextResponse.json({
       success: true,

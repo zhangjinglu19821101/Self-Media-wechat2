@@ -31,6 +31,7 @@ interface SplitResult {
   totalDeliverables?: string;
   timeFrame?: string;
   summary?: string;
+  productTags?: string[]; // 🔥 新增：产品标签
   subtasks?: SubTask[];
   subTasks?: SubTask[];
 }
@@ -196,6 +197,31 @@ export function SplitResultConfirmDialog({
                       </div>
                     </div>
                   )}
+
+                  {/* 🔥 新增：产品标签识别结果 */}
+                  <div className="bg-green-50 dark:bg-green-950 p-4 rounded-lg border border-green-200 dark:border-green-800">
+                    <h4 className="text-sm font-semibold text-gray-900 dark:text-gray-100 mb-3">
+                      🏷️ 识别到的产品标签
+                    </h4>
+                    {splitResult?.productTags && splitResult.productTags.length > 0 ? (
+                      <>
+                        <div className="flex flex-wrap gap-2">
+                          {splitResult.productTags.map((tag, index) => (
+                            <Badge key={index} variant="secondary" className="bg-orange-100 text-orange-800 hover:bg-orange-200 dark:bg-orange-900 dark:text-orange-200">
+                              {tag}
+                            </Badge>
+                          ))}
+                        </div>
+                        <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                          💡 系统已自动识别产品标签，确认后将用于案例推荐匹配
+                        </p>
+                      </>
+                    ) : (
+                      <p className="text-sm text-gray-500 dark:text-gray-400">
+                        暂未识别到产品标签，可手动补充或在任务内容中明确产品类型
+                      </p>
+                    )}
+                  </div>
 
                   {/* 拆解结果总览 */}
                   <div className="bg-blue-50 dark:bg-blue-950 p-4 rounded-lg">

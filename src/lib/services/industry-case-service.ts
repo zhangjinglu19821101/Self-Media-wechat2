@@ -40,6 +40,8 @@ export interface CaseSearchParams {
 export interface CaseMatchResult {
   id: string;
   title: string;
+  caseType: string;            // 案例类型：positive/warning/milestone
+  eventFullStory: string;      // 事件完整原版经过
   protagonist: string;
   background: string;
   insuranceAction: string;
@@ -51,7 +53,9 @@ export interface CaseMatchResult {
   sceneTags: string[];
   emotionTags: string[];
   relevanceScore: number;      // 相关度分数
+  productTagMatchCount: number; // 🔥 产品标签匹配数（最高优先级排序依据）
   workspaceId?: string;        // 工作空间ID（区分系统预置 vs 用户私有）
+  createdAt?: Date;            // 创建时间（用于排序：最新优先）
 }
 
 // ============================================================================
@@ -410,8 +414,12 @@ function tokenizeChineseText(text: string): string[] {
         }
       }
       if (!matched) {
-        // 无匹配：跳过一个字符
-        // 但把单个有意义的中文字也作为 token（如"好"、"贵"等）
+        // 无匹配：将当前字符作为单字 token，并跳过
+        // 这样"蛮好人生"会被分词为 ["蛮", "好", "人", "生"]
+        const char = remaining[0];
+        if (/[一-龥]/.test(char)) {
+          tokens.push(char);
+        }
         remaining = remaining.slice(1);
       }
     }
@@ -513,13 +521,15 @@ export async function searchCases(params: CaseSearchParams): Promise<CaseMatchRe
   
   for (const caseItem of allCases) {
     let relevanceScore = 0;
+    let productTagMatchCount = 0;  // 🔥 产品标签匹配数（最高优先级排序依据）
     
-    // 产品标签匹配
+    // 产品标签匹配（权重最高）
     if (productTags && productTags.length > 0) {
       const matchedProducts = productTags.filter(tag => 
         (caseItem.productTags as string[]).includes(tag)
       );
-      relevanceScore += matchedProducts.length * 3;
+      productTagMatchCount = matchedProducts.length;
+      relevanceScore += matchedProducts.length * 100;  // 🔥 权重提高到100，确保最高优先级
     }
     
     // 人群标签匹配
@@ -527,7 +537,7 @@ export async function searchCases(params: CaseSearchParams): Promise<CaseMatchRe
       const matchedCrowds = crowdTags.filter(tag => 
         (caseItem.crowdTags as string[]).includes(tag)
       );
-      relevanceScore += matchedCrowds.length * 2;
+      relevanceScore += matchedCrowds.length * 10;
     }
     
     // 场景标签匹配
@@ -535,7 +545,7 @@ export async function searchCases(params: CaseSearchParams): Promise<CaseMatchRe
       const matchedScenes = sceneTags.filter(tag => 
         (caseItem.sceneTags as string[]).includes(tag)
       );
-      relevanceScore += matchedScenes.length * 2;
+      relevanceScore += matchedScenes.length * 10;
     }
     
     // 关键词搜索（在标题、背景、结果、产品标签中搜索）
@@ -554,14 +564,31 @@ export async function searchCases(params: CaseSearchParams): Promise<CaseMatchRe
         }
         // 在产品标签中搜索（权重更高）
         if (productTagsText.includes(keyword)) {
-          relevanceScore += 2;
+          relevanceScore += 5;
         }
       }
     }
-    
+
+    // 🔥 标题关键词匹配（额外加分，弥补产品标签匹配不足）
+    const titleLower = caseItem.title.toLowerCase();
+    const titleKeywordList = tokenizeChineseText(keywords.toLowerCase());
+    for (const keyword of titleKeywordList) {
+      if (!keyword || keyword.length < 2) continue;  // 忽略单字
+      if (titleLower.includes(keyword)) {
+        relevanceScore += 50;  // 标题命中关键词，高分
+      }
+    }
+
+    // 🔥 用户案例额外加分（同一匹配数下，用户案例优先）
+    if (caseItem.workspaceId !== 'system') {
+      relevanceScore += 200;  // 用户案例加权
+    }
+
     const caseResult: CaseMatchResult = {
       id: caseItem.id,
       title: caseItem.title,
+      caseType: caseItem.caseType || 'positive',
+      eventFullStory: caseItem.eventFullStory || '',
       protagonist: caseItem.protagonist || '',
       background: caseItem.background,
       insuranceAction: caseItem.insuranceAction || '',
@@ -573,7 +600,9 @@ export async function searchCases(params: CaseSearchParams): Promise<CaseMatchRe
       sceneTags: caseItem.sceneTags as string[],
       emotionTags: caseItem.emotionTags as string[],
       relevanceScore,
-      workspaceId: caseItem.workspaceId,  // 🔥 传递 workspaceId，区分系统/用户案例
+      productTagMatchCount,
+      workspaceId: caseItem.workspaceId,
+      createdAt: caseItem.createdAt,
     };
     
     // 有相关度 → 精确匹配桶；无相关度 → 兜底候选桶
@@ -584,8 +613,11 @@ export async function searchCases(params: CaseSearchParams): Promise<CaseMatchRe
     }
   }
   
-  // 精确匹配按相关度降序
-  matchedResults.sort((a, b) => b.relevanceScore - a.relevanceScore);
+  // 🔥 排序：按综合得分降序（产品标签匹配*100 + 标题匹配*50 + 用户案例+200 + 时间新+50）
+  // 所有权重已合并到 relevanceScore 中，直接按总分排序
+  matchedResults.sort((a, b) => {
+    return b.relevanceScore - a.relevanceScore;
+  });
   
   // 兜底策略：仅在有关键词/标签搜索条件时才用热门案例补充
   // 如果用户没有提供任何搜索条件，允许返回热门案例
@@ -644,6 +676,8 @@ export async function getCasesByIds(caseIds: string[], workspaceId?: string): Pr
   return cases.map(c => ({
     id: c.id,
     title: c.title,
+    caseType: c.caseType || 'positive',
+    eventFullStory: c.eventFullStory || '',
     protagonist: c.protagonist || '',
     background: c.background,
     insuranceAction: c.insuranceAction || '',
@@ -655,6 +689,7 @@ export async function getCasesByIds(caseIds: string[], workspaceId?: string): Pr
     sceneTags: c.sceneTags as string[],
     emotionTags: c.emotionTags as string[],
     relevanceScore: 100, // 用户手动选择的案例，设为最高相关度
+    productTagMatchCount: 0,  // 手动选择不涉及产品标签匹配
     workspaceId: c.workspaceId,  // 🔥 传递 workspaceId，区分系统/用户案例
   }));
 }

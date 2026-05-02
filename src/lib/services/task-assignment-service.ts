@@ -466,8 +466,10 @@ export async function insuranceDSplitTask(commandResultId: string) {
 
     // 调用任务拆解函数
     console.log(`🤖 调用 splitTaskForAgent 拆解任务...`);
-    const subTasks = await splitTaskForAgent('insurance-d', commandResult);
-    console.log(`✅ insurance-d 拆解完成，子任务数量: ${subTasks.length}`);
+    const splitResult = await splitTaskForAgent('insurance-d', commandResult);
+    const subTasks = splitResult.subTasks;
+    const productTags = splitResult.productTags;
+    console.log(`✅ insurance-d 拆解完成，子任务数量: ${subTasks.length}，产品标签: ${productTags.join(', ')}`);
 
     // 🔥 注意：不立即插入子任务到数据库，等待用户弹框确认后才插入
     // 子任务数据通过通知传递给用户，用户确认后调用 /api/agent-sub-tasks/confirm-split 接口插入
@@ -493,6 +495,7 @@ export async function insuranceDSplitTask(commandResultId: string) {
         retryStatus: 'pending_review', // 🔥 保持 retry_status = pending_review
         metadata: {
           ...(commandResult.metadata || {}),
+          productTags: productTags, // 🔥 新增：产品标签
           splitCompletedAt: new Date().toISOString(), // 🔥 记录拆解完成时间
           lastSplitAt: new Date().toISOString(), // 🔥 记录最后一次拆解时间
           // 🔥 清除临时标记
@@ -507,6 +510,7 @@ export async function insuranceDSplitTask(commandResultId: string) {
     
     // 🔥 构建统一的拆解结果格式，确保与 Agent B 一致
     const splitResultData = {
+      productTags: productTags, // 🔥 新增：产品标签
       subTasks: subTasks.map(st => ({
         taskTitle: st.title,  // 统一字段名
         title: st.title,  // 支持两种写法
@@ -1250,7 +1254,7 @@ JSON 格式如下：
 
         // 🔥 步骤7：调用 LLM 一次性拆解该分组的所有任务
         console.log(`   🤖 调用 LLM 批量拆解 ${groupTasks.length} 个任务...`);
-        const flatSubTasks = await splitTaskForAgent('insurance-d', {
+        const batchSplitResult = await splitTaskForAgent('insurance-d', {
           id: `batch-${date}-${executor}-${Date.now()}`,
           taskId: `batch-${date}-${executor}`,
           taskTitle: `批量拆解 ${groupTasks.length} 个任务 (${date}, ${executor})`,
@@ -1260,7 +1264,9 @@ JSON 格式如下：
           deliverables: groupTasks.map(t => t.deliverables).join('; '),
         });
         
-        console.log(`   ✅ LLM 返回 ${flatSubTasks.length} 个扁平子任务`);
+        const flatSubTasks = batchSplitResult.subTasks;
+        const batchProductTags = batchSplitResult.productTags;
+        console.log(`   ✅ LLM 返回 ${flatSubTasks.length} 个扁平子任务，产品标签: ${batchProductTags.join(', ')}`);
 
         // 🔥 步骤10：将扁平化的子任务平均分配给该分组的各个任务
         console.log(`   📦 分配子任务给 ${groupTasks.length} 个任务...`);

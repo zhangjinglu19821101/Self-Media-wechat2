@@ -20,13 +20,15 @@ import { join } from 'path';
  */
 export interface CaseExtractionResult {
   // 展示字段（6个）
-  title: string;
+  title: string;               // 展示标题 = 速记原始标题
   eventFullStory: string;
   background: string;
   insuranceAction: string;
   result: string;
   productTags: string[];
   // 后台字段（不展示）
+  llmExtractedTitle: string;   // LLM 提炼的标题（用于搜索关键词构造，比速记标题更精准）
+  searchKeywords: string;      // LLM 从原文提取的搜索关键词（基于原始内容，不受匿名化影响）
   protagonist: string;
   crowdTags: string[];
   emotionTags: string[];
@@ -52,21 +54,23 @@ export interface SearchSupplementResult {
  * 开发环境禁用缓存，支持热更新；生产环境启用缓存，提升性能
  */
 let cachedPrompt: string | null = null;
-let promptLoadTime: number = 0;  // 上次加载时间（用于检测文件变更）
-const PROMPT_CACHE_TTL = 60000;  // 缓存有效期 60 秒（开发环境用）
+let cachedSearchPrompt: string | null = null;
+let promptLoadTime: number = 0;              // 上次加载时间（用于检测文件变更）
+let searchPromptLoadTime: number = 0;        // 搜索概括提示词加载时间
+const PROMPT_CACHE_TTL = 60000;              // 缓存有效期 60 秒（开发环境用）
 
 /**
  * 清除提示词缓存（可用于手动刷新）
  */
 export function clearPromptCache(): void {
   cachedPrompt = null;
+  cachedSearchPrompt = null;
   promptLoadTime = 0;
+  searchPromptLoadTime = 0;
 }
 
 /**
- * 加载提示词文件
- * - 生产环境：使用缓存，仅首次加载
- * - 开发环境：检查 TTL，超时后重新加载（支持热更新）
+ * 加载速记转案例提取提示词
  */
 function loadPrompt(): string {
   const isDev = process.env.NODE_ENV === 'development';
@@ -92,12 +96,47 @@ function loadPrompt(): string {
   promptLoadTime = now;
 
   if (isDev) {
-    console.log(`✅ [snippet-to-case] 开发环境热更新提示词，长度: ${cachedPrompt.length} 字符`);
+    console.log(`✅ [snippet-to-case.md] 开发环境热更新提示词，长度: ${cachedPrompt.length} 字符`);
   } else {
-    console.log(`✅ [snippet-to-case] 加载提示词文件，长度: ${cachedPrompt.length} 字符`);
+    console.log(`✅ [snippet-to-case.md] 加载提示词文件，长度: ${cachedPrompt.length} 字符`);
   }
 
   return cachedPrompt;
+}
+
+/**
+ * 加载搜索概括提示词
+ */
+function loadSearchSummarizePrompt(): string {
+  const isDev = process.env.NODE_ENV === 'development';
+  const now = Date.now();
+
+  // 生产环境：使用缓存
+  if (!isDev && cachedSearchPrompt) {
+    return cachedSearchPrompt;
+  }
+
+  // 开发环境：检查缓存是否过期（支持热更新）
+  if (isDev && cachedSearchPrompt && (now - searchPromptLoadTime) < PROMPT_CACHE_TTL) {
+    return cachedSearchPrompt;
+  }
+
+  const promptPath = join(process.cwd(), 'src', 'lib', 'agents', 'prompts', 'search-summarize-event.md');
+
+  if (!existsSync(promptPath)) {
+    throw new Error('提示词文件不存在: ' + promptPath);
+  }
+
+  cachedSearchPrompt = readFileSync(promptPath, 'utf-8');
+  searchPromptLoadTime = now;
+
+  if (isDev) {
+    console.log(`✅ [search-summarize-event.md] 开发环境热更新提示词，长度: ${cachedSearchPrompt.length} 字符`);
+  } else {
+    console.log(`✅ [search-summarize-event.md] 加载提示词文件，长度: ${cachedSearchPrompt.length} 字符`);
+  }
+
+  return cachedSearchPrompt;
 }
 
 /**
@@ -106,6 +145,7 @@ function loadPrompt(): string {
  */
 export async function extractCaseFromSnippet(
   rawContent: string,
+  snippetTitle: string,
   customHeaders?: Record<string, string>
 ): Promise<CaseExtractionResult> {
   const config = new Config();
@@ -126,6 +166,10 @@ export async function extractCaseFromSnippet(
 
     const result = parseCaseExtractionResponse(response.content);
 
+    // 保存 LLM 提炼的标题（用于搜索关键词构造），再用速记标题覆盖展示标题
+    result.llmExtractedTitle = result.title;
+    result.title = snippetTitle;
+
     // 标记是否需要搜索补充（前端据此决定是否调用 Step 2）
     const needsSearch = shouldSearchForMoreInfo(rawContent, result);
     result.searchPerformed = false;
@@ -134,7 +178,7 @@ export async function extractCaseFromSnippet(
     return result;
   } catch (error) {
     console.error('[extractCaseFromSnippet] LLM 调用失败:', error);
-    return buildFallbackCaseExtraction(rawContent);
+    return buildFallbackCaseExtraction(rawContent, snippetTitle);
   }
 }
 
@@ -196,8 +240,8 @@ export async function searchAndSupplementEventStory(
  * 3. 新增人名模式识别
  */
 function shouldSearchForMoreInfo(rawContent: string, result: CaseExtractionResult): boolean {
-  // 如果事件经过已经比较完整（>200字），不需要搜索
-  if (result.eventFullStory.length > 200) {
+  // 如果事件经过已经比较完整（≥260字），不需要搜索
+  if (result.eventFullStory.length >= 260) {
     return false;
   }
 
@@ -219,38 +263,35 @@ function shouldSearchForMoreInfo(rawContent: string, result: CaseExtractionResul
 }
 
 /**
- * 从 LLM 提取结果构造精准的搜索关键词
- * 
- * 策略：优先使用 title（最精炼的概括），辅以 protagonist 提供主体线索，
- * 避免使用口语化原文导致搜索结果偏离
+ * 构造搜索关键词
+ * 优先使用 LLM 从原文提取的 searchKeywords（基于原始内容、不受匿名化影响）
+ * 逐步降级：searchKeywords → llmExtractedTitle → 原文核心句
  */
 function buildSearchQuery(extractionResult: CaseExtractionResult, rawContent: string): string {
-  const parts: string[] = [];
-
-  // 1. 标题是最精炼的概括，优先使用
-  if (extractionResult.title) {
-    parts.push(extractionResult.title);
+  // 1. 最优：LLM 从原文提取的搜索关键词（基于原始实名信息，不受合规匿名化影响）
+  if (extractionResult.searchKeywords && extractionResult.searchKeywords.trim().length >= 4) {
+    const keywords = extractionResult.searchKeywords.trim();
+    console.log(`[buildSearchQuery] 使用 LLM 搜索关键词: "${keywords}"`);
+    return keywords;
   }
 
-  // 2. 主人公提供主体线索（注意：已被匿名化处理，如"某企业主张先生"）
-  if (extractionResult.protagonist) {
-    parts.push(extractionResult.protagonist);
+  // 2. 次优：LLM 提炼的标题（虽可能被部分匿名化，但通常仍包含关键事件信息）
+  const searchTitle = extractionResult.llmExtractedTitle || extractionResult.title;
+  if (searchTitle && searchTitle.trim().length >= 4) {
+    console.log(`[buildSearchQuery] 降级使用 LLM 提炼标题: "${searchTitle}"`);
+    return searchTitle.trim();
   }
 
-  // 3. 如果标题+主人公还不够具体，从原文提取年份和地名
-  if (parts.join(' ').length < 15) {
-    const yearMatch = rawContent.match(/\d{4}年/);
-    if (yearMatch) parts.push(yearMatch[0]);
-
-    // 使用常量城市列表匹配
-    const cityMatch = rawContent.match(new RegExp(`(${SEARCHABLE_CITIES})`));
-    if (cityMatch) parts.push(cityMatch[0]);
-  }
-
-  const query = parts.join(' ').replace(/\s+/g, ' ').trim();
-  // 兜底：如果构造的 query 仍为空，使用原文前40字
-  return query || rawContent.slice(0, 40).replace(/\n/g, ' ').trim();
+  // 3. 兜底：提取原文中第一个完整句子的核心部分（去掉口语化前缀）
+  const cleanContent = rawContent
+    .replace(/^(听说|据说|今天|刚才|刚才看到|刚刚|有人|有个|网上|朋友圈|群里)\S{0,4}[，,：:]?\s*/,'')
+    .replace(/\n/g, ' ')
+    .trim();
+  const firstSentence = cleanContent.match(/[^。！？]+[。！？]/)?.[0] || cleanContent.slice(0, 50);
+  console.log(`[buildSearchQuery] 兜底使用原文核心句: "${firstSentence}"`);
+  return firstSentence;
 }
+
 
 /**
  * Web 搜索并概括事件
@@ -266,31 +307,46 @@ async function searchAndSummarizeEvent(
   // 从 LLM 提取结果构造精准搜索关键词（C1 修复：不再截取原文前80字）
   const searchQuery = buildSearchQuery(extractionResult, rawContent);
 
+  console.log(`[searchAndSummarizeEvent] ========== 搜索调试开始 ==========`);
+  console.log(`[searchAndSummarizeEvent] 原始信息: "${rawContent.slice(0, 100)}${rawContent.length > 100 ? '...' : ''}"`);
+  console.log(`[searchAndSummarizeEvent] 提取结果: title="${extractionResult.title}", llmExtractedTitle="${extractionResult.llmExtractedTitle}", searchKeywords="${extractionResult.searchKeywords}", protagonist="${extractionResult.protagonist}"`);
   console.log(`[searchAndSummarizeEvent] 搜索关键词: "${searchQuery}"`);
 
   try {
     const searchResponse = await searchClient.webSearch(searchQuery, 5, true);
 
+    console.log(`[searchAndSummarizeEvent] 搜索结果数量: ${searchResponse.web_items?.length || 0}`);
+    if (searchResponse.web_items && searchResponse.web_items.length > 0) {
+      console.log(`[searchAndSummarizeEvent] 前3条搜索结果标题:`);
+      searchResponse.web_items.slice(0, 3).forEach((item: any, i: number) => {
+        console.log(`  [${i + 1}] ${item.title}`);
+      });
+    }
+
     if (!searchResponse.web_items || searchResponse.web_items.length === 0) {
+      console.log(`[searchAndSummarizeEvent] ❌ 无搜索结果，跳过补充`);
       return null;
     }
+
+    console.log(`[searchAndSummarizeEvent] ✅ 有搜索结果，开始概括`);
 
     // 使用搜索摘要作为补充
     const summary = searchResponse.summary || null;
 
-    // 让 LLM 基于搜索结果概括完整事件经过
+    // 让 LLM 基于搜索结果概括完整事件经过，同时判断相关性（shouldUse）
     if (summary || searchResponse.web_items.length > 0) {
+      const systemPrompt = loadSearchSummarizePrompt();
       const llmClient = new LLMClient(config, customHeaders);
 
       const searchContext = searchResponse.web_items
         .slice(0, 3)
-        .map((item, i) => `[${i + 1}] ${item.title}: ${item.snippet}`)
+        .map((item: any, i: number) => `[${i + 1}] ${item.title}: ${item.snippet}`)
         .join('\n');
 
       const llmMessages = [
         {
           role: 'system' as const,
-          content: '你是一个专业的事件概括助手。基于提供的搜索结果，用客观中立的叙事体概括事件完整经过。要求：1) 100-300字；2) 保留关键数据和事实；3) 不编造信息；4) 如果搜索结果信息不足，基于已有信息合理概括。直接输出概括文本，不要有任何格式标记。',
+          content: systemPrompt,
         },
         {
           role: 'user' as const,
@@ -303,15 +359,44 @@ async function searchAndSummarizeEvent(
         temperature: 0.1,
       });
 
+      const rawContent2 = llmResponse.content.trim();
+      console.log(`[searchAndSummarizeEvent] LLM 原始返回: ${rawContent2.slice(0, 300)}${rawContent2.length > 300 ? '...' : ''}`);
+
+      // 解析 LLM 返回的 JSON（提示词要求返回 { eventFullStory, shouldUse }）
+      const parsed = parseSearchSummarizeResponse(rawContent2);
+
+      if (!parsed) {
+        console.log(`[searchAndSummarizeEvent] ❌ LLM 返回解析失败或为空，跳过补充`);
+        console.log(`[searchAndSummarizeEvent] ========== 搜索调试结束 ==========`);
+        return null;
+      }
+
+      if (!parsed.shouldUse) {
+        console.log(`[searchAndSummarizeEvent] ⚠️ LLM 判断搜索结果与原始信息不相关（shouldUse=false），跳过补充`);
+        console.log(`[searchAndSummarizeEvent] ========== 搜索调试结束 ==========`);
+        return null;
+      }
+
+      const fullStory = parsed.eventFullStory;
+      console.log(`[searchAndSummarizeEvent] ✅ 概括完成，长度: ${fullStory.length} 字符`);
+      console.log(`[searchAndSummarizeEvent] ========== 搜索调试结束 ==========`);
+
+      if (!fullStory) {
+        return null;
+      }
+
       return {
         summary: summary || null,
-        fullStory: llmResponse.content.trim(),
+        fullStory,
       };
     }
 
+    console.log(`[searchAndSummarizeEvent] ⚠️ 搜索结果无内容，跳过补充`);
+    console.log(`[searchAndSummarizeEvent] ========== 搜索调试结束 ==========`);
     return null;
   } catch (error) {
-    console.error('[searchAndSummarizeEvent] 搜索失败:', error);
+    console.error('[searchAndSummarizeEvent] ❌ 搜索失败:', error);
+    console.log(`[searchAndSummarizeEvent] ========== 搜索调试结束 ==========`);
     return null;
   }
 }
@@ -328,6 +413,49 @@ function safeString(val: unknown): string {
   // LLM 偶尔返回字面量 "null"/"undefined"/"None" 作为空值表达
   if (str === 'null' || str === 'undefined' || str === 'None') return '';
   return str;
+}
+
+/**
+ * 解析搜索概括 LLM 返回的 JSON 响应
+ * 提示词要求返回 { eventFullStory: string, shouldUse: boolean }
+ * 
+ * 返回 null 表示解析失败或不应使用
+ */
+function parseSearchSummarizeResponse(content: string): { eventFullStory: string; shouldUse: boolean } | null {
+  try {
+    let jsonStr = content.trim();
+
+    // 去除 markdown 代码块标记
+    if (jsonStr.startsWith('```')) {
+      jsonStr = jsonStr.replace(/^```(?:json)?\s*\n?/, '').replace(/\n?```\s*$/, '');
+    }
+
+    const parsed = JSON.parse(jsonStr);
+
+    const shouldUse = parsed.shouldUse === true;
+    const eventFullStory = safeString(parsed.eventFullStory);
+
+    // shouldUse=false 时，eventFullStory 应为空（提示词要求）
+    if (!shouldUse) {
+      return { eventFullStory: '', shouldUse: false };
+    }
+
+    // shouldUse=true 但 eventFullStory 为空，视为异常
+    if (!eventFullStory) {
+      console.warn('[parseSearchSummarizeResponse] shouldUse=true 但 eventFullStory 为空，视为无效');
+      return null;
+    }
+
+    return { eventFullStory, shouldUse: true };
+  } catch (error) {
+    // JSON 解析失败，尝试作为纯文本处理（兼容 LLM 未返回 JSON 的情况）
+    const trimmed = content.trim();
+    if (trimmed && trimmed.length > 50) {
+      console.warn('[parseSearchSummarizeResponse] JSON 解析失败，回退为纯文本使用');
+      return { eventFullStory: trimmed, shouldUse: true };
+    }
+    return null;
+  }
 }
 
 /**
@@ -424,6 +552,8 @@ function parseCaseExtractionResponse(content: string): CaseExtractionResult {
       emotionTags: safeStringArray(parsed.emotionTags),
       caseType: VALID_CASE_TYPES.includes(parsed.caseType) ? parsed.caseType : 'positive',
       industry: VALID_INDUSTRIES.includes(parsed.industry) ? parsed.industry : 'insurance',
+      llmExtractedTitle: '',  // 将在 extractCaseFromSnippet 中赋值
+      searchKeywords: safeString(parsed.searchKeywords),  // LLM 从原文提取的搜索关键词
       searchPerformed: false,
       searchPending: false,
       searchSummary: null,
@@ -438,15 +568,18 @@ function parseCaseExtractionResponse(content: string): CaseExtractionResult {
 /**
  * 兜底：LLM 调用失败时使用基础提取
  * eventFullStory 保留完整原文，background 留空让用户自行填写
+ * 标题使用速记原始标题（与正常流程保持一致）
  */
-function buildFallbackCaseExtraction(rawContent: string): CaseExtractionResult {
+function buildFallbackCaseExtraction(rawContent: string, snippetTitle?: string): CaseExtractionResult {
   return {
-    title: rawContent.slice(0, 30) + (rawContent.length > 30 ? '...' : ''),
+    title: snippetTitle || rawContent.slice(0, 30) + (rawContent.length > 30 ? '...' : ''),
     eventFullStory: rawContent,
     background: '',
     insuranceAction: '',
     result: '暂无结果信息',
     productTags: [],
+    llmExtractedTitle: '',
+    searchKeywords: '',  // 兜底时无 LLM 生成的搜索关键词
     protagonist: '',
     crowdTags: [],
     emotionTags: [],

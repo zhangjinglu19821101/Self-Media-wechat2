@@ -7,13 +7,75 @@ import { searchAndSupplementEventStory, type CaseExtractionResult } from '@/lib/
 import { HeaderUtils } from 'coze-coding-dev-sdk';
 
 /**
+ * 校验并清洗前端传回的 extractionResult
+ * 防止篡改：仅保留搜索补充所需的字段，强制类型和长度约束
+ */
+function sanitizeExtractionResult(raw: unknown): CaseExtractionResult | null {
+  if (!raw || typeof raw !== 'object') return null;
+
+  const obj = raw as Record<string, unknown>;
+
+  // 必须存在的字符串字段
+  const title = typeof obj.title === 'string' ? obj.title.slice(0, 200) : '';
+  const eventFullStory = typeof obj.eventFullStory === 'string' ? obj.eventFullStory.slice(0, 2000) : '';
+  const background = typeof obj.background === 'string' ? obj.background.slice(0, 1000) : '';
+  const insuranceAction = typeof obj.insuranceAction === 'string' ? obj.insuranceAction.slice(0, 500) : '';
+  const result = typeof obj.result === 'string' ? obj.result.slice(0, 500) : '';
+
+  // 后台字段
+  const llmExtractedTitle = typeof obj.llmExtractedTitle === 'string' ? obj.llmExtractedTitle.slice(0, 200) : '';
+  const searchKeywords = typeof obj.searchKeywords === 'string' ? obj.searchKeywords.slice(0, 200) : '';
+  const protagonist = typeof obj.protagonist === 'string' ? obj.protagonist.slice(0, 100) : '';
+
+  // 数组字段：逐元素校验
+  const productTags = Array.isArray(obj.productTags)
+    ? obj.productTags.filter((t: unknown) => typeof t === 'string' && (t as string).length <= 10).slice(0, 10) as string[]
+    : [];
+  const crowdTags = Array.isArray(obj.crowdTags)
+    ? obj.crowdTags.filter((t: unknown) => typeof t === 'string' && (t as string).length <= 10).slice(0, 10) as string[]
+    : [];
+  const emotionTags = Array.isArray(obj.emotionTags)
+    ? obj.emotionTags.filter((t: unknown) => typeof t === 'string' && (t as string).length <= 10).slice(0, 10) as string[]
+    : [];
+
+  // 枚举字段
+  const VALID_CASE_TYPES = ['positive', 'warning', 'milestone'] as const;
+  const VALID_INDUSTRIES = ['insurance', 'banking', 'securities', 'fund', 'trust', 'fintech'] as const;
+  const caseType = VALID_CASE_TYPES.includes(obj.caseType as typeof VALID_CASE_TYPES[number])
+    ? obj.caseType as typeof VALID_CASE_TYPES[number]
+    : 'positive';
+  const industry = VALID_INDUSTRIES.includes(obj.industry as typeof VALID_INDUSTRIES[number])
+    ? obj.industry as typeof VALID_INDUSTRIES[number]
+    : 'insurance';
+
+  return {
+    title,
+    eventFullStory,
+    background,
+    insuranceAction,
+    result,
+    productTags,
+    llmExtractedTitle,
+    searchKeywords,
+    protagonist,
+    crowdTags,
+    emotionTags,
+    caseType,
+    industry,
+    searchPerformed: false,
+    searchPending: false,
+    searchSummary: null,
+  };
+}
+
+/**
  * POST /api/info-snippets/[id]/extract-case/search-supplement
  * Step 2: 异步搜索补充 eventFullStory
  * 
  * 前端在收到 Step 1 结果后异步调用此接口，不阻塞用户编辑
  * 
  * Body:
- * - extractionResult: Step 1 返回的提取结果（前端原样传回）
+ * - extractionResult: Step 1 返回的提取结果（前端原样传回，后端校验后使用）
  */
 export async function POST(
   request: NextRequest,
@@ -25,10 +87,10 @@ export async function POST(
     const customHeaders = HeaderUtils.extractForwardHeaders(request.headers);
 
     const body = await request.json();
-    const extractionResult = body.extractionResult as CaseExtractionResult | undefined;
+    const sanitized = sanitizeExtractionResult(body.extractionResult);
 
-    if (!extractionResult) {
-      return NextResponse.json({ error: '缺少 extractionResult 参数' }, { status: 400 });
+    if (!sanitized) {
+      return NextResponse.json({ error: 'extractionResult 参数格式无效' }, { status: 400 });
     }
 
     // 查询原始速记内容
@@ -45,10 +107,10 @@ export async function POST(
 
     const rawContent = snippets[0].rawContent || snippets[0].summary || snippets[0].title || '';
 
-    // 执行搜索补充
+    // 执行搜索补充（使用校验后的 extractionResult）
     const supplementResult = await searchAndSupplementEventStory(
       rawContent,
-      extractionResult,
+      sanitized,
       customHeaders
     );
 

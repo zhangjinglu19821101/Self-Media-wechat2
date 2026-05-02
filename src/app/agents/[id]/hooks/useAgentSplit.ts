@@ -34,6 +34,7 @@ export interface SplitResult {
     acceptanceCriteria: string;
     id?: string;
   }>;
+  productTags?: string[]; // 🔥 新增：产品标签
   totalDeliverables?: string;
   timeFrame?: string;
   summary?: string;

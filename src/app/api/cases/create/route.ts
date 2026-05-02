@@ -1,15 +1,22 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { industryCaseLibrary } from '@/lib/db/schema/industry-case-library';
+import { infoSnippets } from '@/lib/db/schema/info-snippets';
 import { getWorkspaceId } from '@/lib/auth/context';
+import { eq } from 'drizzle-orm';
 import { randomUUID } from 'crypto';
 
 /**
  * POST /api/cases/create
  * 创建行业案例（用户确认后的结构化数据入库）
- * 
+ * 支持幂等：相同 snippetId 不会重复创建，返回已存在的案例
+ *
+ * 并发安全：
+ * - info_snippets.case_id 有 UNIQUE 约束，DB 层保证一对一
+ * - 整个操作在事务中执行，防止 TOCTOU 竞态
+ *
  * Body:
- * - snippetId: 关联的速记ID（可选，用于溯源）
+ * - snippetId: 关联的速记ID（可选，用于溯源和防重）
  * - title: 案例标题（必填）
  * - eventFullStory: 事件完整原版经过（可选）
  * - background: 核心背景（必填）
@@ -40,26 +47,55 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: '案例结果不能为空' }, { status: 400 });
     }
 
-    // 产品标签（同时填充 applicableProducts 和 productTags，保持历史兼容性）
-    // 注：applicableProducts 用于展示，productTags 用于 GIN 索引检索
+    // === 快速路径：如果传了 snippetId，先检查是否已关联案例 ===
+    if (body.snippetId) {
+      const snippetQuery = await db
+        .select({ caseId: infoSnippets.caseId })
+        .from(infoSnippets)
+        .where(eq(infoSnippets.id, body.snippetId))
+        .limit(1);
+
+      const existingCaseId = snippetQuery[0]?.caseId;
+
+      if (existingCaseId) {
+        // 已存在案例，查询并返回
+        const existingCase = await db
+          .select()
+          .from(industryCaseLibrary)
+          .where(eq(industryCaseLibrary.id, existingCaseId))
+          .limit(1);
+
+        if (existingCase[0]) {
+          console.log(`[cases/create] snippetId=${body.snippetId} 已存在案例 id=${existingCaseId}，返回已有案例`);
+          return NextResponse.json({
+            success: true,
+            alreadyExists: true,
+            data: {
+              id: existingCase[0].id,
+              caseId: existingCase[0].caseId,
+              title: existingCase[0].title,
+            },
+          });
+        }
+      }
+    }
+
+    // === 创建新案例（事务保证原子性） ===
     const productTags = Array.isArray(body.productTags) ? body.productTags : [];
+    const caseBusinessId = `CASE-${randomUUID().slice(0, 8).toUpperCase()}`;
 
-    // 生成案例编号（使用 UUID 避免碰撞）
-    const caseId = `CASE-${randomUUID().slice(0, 8).toUpperCase()}`;
-
-    // 构建入库数据
     const caseData = {
       industry: body.industry || 'insurance',
       caseType: body.caseType || 'positive',
-      caseId,
+      caseId: caseBusinessId,
       title: body.title.trim(),
       eventFullStory: body.eventFullStory?.trim() || null,
       protagonist: body.protagonist?.trim() || null,
       background: body.background.trim(),
       insuranceAction: body.insuranceAction?.trim() || null,
       result: body.result.trim(),
-      applicableProducts: productTags,      // 与 productTags 同步，历史兼容
-      productTags: productTags,             // 主字段，有 GIN 索引用于检索
+      applicableProducts: productTags,
+      productTags: productTags,
       crowdTags: body.crowdTags || [],
       sceneTags: [],
       emotionTags: body.emotionTags || [],
@@ -71,15 +107,70 @@ export async function POST(request: NextRequest) {
       status: 'active',
     };
 
-    // 入库
-    const [inserted] = await db.insert(industryCaseLibrary).values(caseData).returning();
+    // 事务：插入案例 + 反写 snippet.caseId（原子操作，防竞态）
+    const result = await db.transaction(async (tx) => {
+      // 1. 插入案例
+      const [inserted] = await tx.insert(industryCaseLibrary).values(caseData).returning();
+
+      // 2. 反写 caseId 到 info_snippets（如果有 snippetId）
+      if (body.snippetId) {
+        try {
+          await tx
+            .update(infoSnippets)
+            .set({ caseId: inserted.id, updatedAt: new Date() })
+            .where(eq(infoSnippets.id, body.snippetId));
+          console.log(`[cases/create] 案例 ${inserted.id} 反写到 info_snippets.case_id`);
+        } catch (updateError: any) {
+          // UNIQUE 冲突：并发场景下另一事务已先写入，说明案例已存在
+          if (updateError?.code === '23505') {
+            console.log(`[cases/create] 并发冲突：snippetId=${body.snippetId} 已被另一请求关联案例，回滚本次创建`);
+            tx.rollback();
+            return null;
+          }
+          throw updateError;
+        }
+      }
+
+      return inserted;
+    });
+
+    // 事务回滚（并发冲突），重新查询已有案例返回
+    if (!result && body.snippetId) {
+      const snippetQuery = await db
+        .select({ caseId: infoSnippets.caseId })
+        .from(infoSnippets)
+        .where(eq(infoSnippets.id, body.snippetId))
+        .limit(1);
+
+      const existingCaseId = snippetQuery[0]?.caseId;
+      if (existingCaseId) {
+        const existingCase = await db
+          .select()
+          .from(industryCaseLibrary)
+          .where(eq(industryCaseLibrary.id, existingCaseId))
+          .limit(1);
+
+        if (existingCase[0]) {
+          return NextResponse.json({
+            success: true,
+            alreadyExists: true,
+            data: {
+              id: existingCase[0].id,
+              caseId: existingCase[0].caseId,
+              title: existingCase[0].title,
+            },
+          });
+        }
+      }
+    }
 
     return NextResponse.json({
       success: true,
+      alreadyExists: false,
       data: {
-        id: inserted.id,
-        caseId: inserted.caseId,
-        title: inserted.title,
+        id: result!.id,
+        caseId: result!.caseId,
+        title: result!.title,
       },
     });
   } catch (error) {

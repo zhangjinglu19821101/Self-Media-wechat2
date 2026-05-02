@@ -147,9 +147,11 @@ export async function POST(
     // 3. 调用 LLM 让 agent 拆分任务
     console.log(`🔍 调用 LLM 让 Agent ${agentId} 拆分任务...`);
     
-    const subTasks = await splitTaskForAgent(agentId, task);
+    const splitResult = await splitTaskForAgent(agentId, task);
+    const subTasks = splitResult.subTasks;
+    const productTags = splitResult.productTags;
     
-    console.log(`✅ Agent ${agentId} 拆分完成，子任务数量：${subTasks.length}`);
+    console.log(`✅ Agent ${agentId} 拆分完成，子任务数量：${subTasks.length}，产品标签：${productTags.join(', ')}`);
     
     // 4. 插入子任务到 agent_sub_tasks 表
     for (let i = 0; i < subTasks.length; i++) {
@@ -214,6 +216,7 @@ export async function POST(
     return NextResponse.json({
       success: true,
       subTaskCount: subTasks.length,
+      productTags,
       subTasks,
       message: `成功拆分 ${subTasks.length} 个子任务`,
     });

@@ -171,11 +171,14 @@ export class AgentBUnifiedSplitter extends BaseSplitter {
 
           // 调用 Agent B 进行拆分（用 Agent B 的身份）
           console.log(`🤖 [${this.agentId}] 调用 splitTaskForAgent 拆解任务...`);
-          const subTasks = await splitTaskForAgent('B', task);
-          console.log(`✅ [${this.agentId}] 拆解完成，子任务数量: ${subTasks.length}`);
+          const splitResult = await splitTaskForAgent('B', task);
+          const subTasks = splitResult.subTasks;
+          const productTags = splitResult.productTags;
+          console.log(`✅ [${this.agentId}] 拆解完成，子任务数量: ${subTasks.length}，产品标签: ${productTags.join(', ')}`);
 
           // 构建统一的拆解结果格式
           const splitResultData = {
+            productTags: productTags, // 🔥 新增：产品标签
             subTasks: subTasks.map((st, index) => ({
               taskTitle: st.title,
               title: st.title,
@@ -209,6 +212,7 @@ export class AgentBUnifiedSplitter extends BaseSplitter {
               toAgentId: 'A',
               message: '拆解完成，请确认拆解方案',
               splitResult: splitResultData,
+              productTags: productTags, // 🔥 新增：产品标签
             },
             result: splitResultString,
             relatedTaskId: task.id,

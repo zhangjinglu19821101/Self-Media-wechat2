@@ -40,6 +40,7 @@ interface AISplitResponse {
     orderIndex?: number;
   }>;
   domain?: string;
+  productTags?: string[];
   systemPrompt?: string;
   generatedTaskTitle?: string; // 自动生成的任务标题
 }
@@ -57,7 +58,11 @@ const AVAILABLE_AGENTS = [
 export default function AgentBSplitPage() {
   const [taskTitle, setTaskTitle] = useState('');
   const [taskDescription, setTaskDescription] = useState('');
-  const [executionDate, setExecutionDate] = useState(new Date().toISOString().split('T')[0]);
+  const [executionDate, setExecutionDate] = useState('');
+  // 在客户端挂载后设置今日日期，避免 SSR/Client hydration 不一致
+  useEffect(() => {
+    setExecutionDate(new Date().toISOString().split('T')[0]);
+  }, []);
   const [mainInstruction, setMainInstruction] = useState('');
   const [subTasks, setSubTasks] = useState<SubTask[]>([
     { id: '1', title: '', description: '', executor: 'B', orderIndex: 1 },
@@ -67,6 +72,7 @@ export default function AgentBSplitPage() {
   const [hasSplitResult, setHasSplitResult] = useState(false);
   const [tempSessionId, setTempSessionId] = useState<string | null>(null); // 临时会话 ID，用于替换逻辑
   const [detectedDomain, setDetectedDomain] = useState<string | null>(null); // 识别到的领域
+  const [detectedProductTags, setDetectedProductTags] = useState<string[]>([]); // 识别到的产品标签
   const [showPrompt, setShowPrompt] = useState(false); // 是否展示提示词
   const [fullPrompt, setFullPrompt] = useState<string | null>(null); // 完整的提示词内容
   
@@ -221,6 +227,10 @@ export default function AgentBSplitPage() {
       // 保存识别到的领域和提示词
       if (result.domain) {
         setDetectedDomain(result.domain);
+      }
+      // 保存识别到的产品标签
+      if (result.productTags && result.productTags.length > 0) {
+        setDetectedProductTags(result.productTags);
       }
       if (result.systemPrompt) {
         setFullPrompt(result.systemPrompt);
@@ -802,6 +812,49 @@ export default function AgentBSplitPage() {
                     🎯 识别到的领域：<span className="font-bold">{detectedDomain}</span>
                   </div>
                 )}
+                {/* 产品标签交互区 - AI 识别回填，用户可编辑 */}
+                <div className="space-y-1.5">
+                  <label className="text-sm font-medium text-amber-600 flex items-center gap-1">
+                    🏷️ 产品标签
+                  </label>
+                  <div className="flex items-center gap-2">
+                    <Input
+                      value={detectedProductTags.join('、')}
+                      onChange={(e) => {
+                        const tags = e.target.value.split(/[、,，\s]+/).filter(Boolean);
+                        setDetectedProductTags(tags);
+                      }}
+                      className="h-8 text-sm flex-1"
+                      placeholder="AI 自动识别，也可手动输入标签"
+                    />
+                  </div>
+                  <div className="flex flex-wrap gap-1 mt-1">
+                    {['意外险', '重疾险', '医疗险', '寿险', '年金险', '增额终身寿', '教育金', '养老金', '信托', '财产险', '雇主责任险'].map((preset) => {
+                      const isSelected = detectedProductTags.includes(preset);
+                      return (
+                        <button
+                          key={preset}
+                          type="button"
+                          onClick={() => {
+                            if (isSelected) {
+                              setDetectedProductTags(detectedProductTags.filter(t => t !== preset));
+                            } else {
+                              setDetectedProductTags([...detectedProductTags, preset]);
+                            }
+                          }}
+                          className={`text-[10px] px-2 py-0.5 rounded-full border transition-colors ${
+                            isSelected
+                              ? 'bg-amber-50 border-amber-200 text-amber-700'
+                              : 'bg-slate-50 border-slate-200 text-slate-500 hover:bg-slate-100'
+                          }`}
+                        >
+                          {isSelected ? '✓ ' : ''}{preset}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
                 <Button 
                   variant="outline" 
                   size="sm" 

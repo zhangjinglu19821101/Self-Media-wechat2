@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Input } from '@/components/ui/input';
@@ -45,7 +45,11 @@ interface SimpleSplitDialogProps {
 export function SimpleSplitDialog({ open, onOpenChange, onSuccess }: SimpleSplitDialogProps) {
   const [taskTitle, setTaskTitle] = useState('');
   const [taskDescription, setTaskDescription] = useState('');
-  const [executionDate, setExecutionDate] = useState(new Date().toISOString().split('T')[0]);
+  const [executionDate, setExecutionDate] = useState('');
+  // 在客户端挂载后设置今日日期，避免 SSR/Client hydration 不一致
+  useEffect(() => {
+    setExecutionDate(new Date().toISOString().split('T')[0]);
+  }, []);
   const [subTasks, setSubTasks] = useState<SubTask[]>([
     { id: '1', title: '', description: '', executor: 'B', orderIndex: 1 },
   ]);

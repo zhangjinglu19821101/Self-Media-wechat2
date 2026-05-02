@@ -154,6 +154,15 @@ export interface SubTaskSplitResult {
   criticalReason: string; // 关键原因（存储在 metadata.criticalReason）
 }
 
+/**
+ * 任务拆分完整结果（包含产品标签）
+ * 用于 splitTaskForAgent 函数的新返回值
+ */
+export interface TaskSplitResult {
+  productTags: string[]; // 识别出的产品标签
+  subTasks: SubTaskSplitResult[]; // 子任务列表
+}
+
 // ============================================
 // 导出缓存工具（供外部查看统计信息）
 // ============================================
@@ -628,9 +637,9 @@ ${rejectionReason}
  * Agent 拆分任务
  * @param agentId Agent ID
  * @param task 任务信息
- * @returns 拆分后的子任务列表
+ * @returns 拆分结果（包含产品标签和子任务列表）
  */
-export async function splitTaskForAgent(agentId: string, task: any): Promise<SubTaskSplitResult[]> {
+export async function splitTaskForAgent(agentId: string, task: any): Promise<TaskSplitResult> {
   console.log('[DEBUG] [splitTaskForAgent] ===== 开始拆分任务 =====');
   console.log('[DEBUG] [splitTaskForAgent] Agent:', agentId);
   console.log('[DEBUG] [splitTaskForAgent] 任务标题:', task.taskTitle || task.taskName);
@@ -673,6 +682,22 @@ export async function splitTaskForAgent(agentId: string, task: any): Promise<Sub
   const cached = agentTaskSplitCache.get(cacheKey);
   if (cached) {
     console.log(`✅ Agent ${agentId} 任务拆分结果已缓存`);
+    // 🔥 兼容旧格式：如果缓存的是数组，转换为新格式
+    if (Array.isArray(cached)) {
+      console.log(`📋 缓存数据是旧格式（数组），转换为新格式`);
+      return {
+        productTags: [],
+        subTasks: cached,
+      };
+    }
+    // 确保新格式有 productTags 字段
+    if (!cached.productTags) {
+      console.log(`📋 缓存数据缺少 productTags，补充空数组`);
+      return {
+        productTags: [],
+        subTasks: cached.subTasks || [],
+      };
+    }
     return cached;
   }
 
@@ -1277,9 +1302,39 @@ executor 字段指定执行该子任务的 agent ID，例如：
 ]
 \`\`\`
 
+## 产品标签识别（重要）
+
+在拆解任务之前，你需要先识别用户指令涉及的产品标签。这决定了文章的核心主题和素材方向。
+
+### 产品标签列表
+
+从用户指令中识别以下产品标签（可多选）：
+
+| 大类 | 产品标签 |
+|------|---------|
+| 意外险 | 意外险、意外伤害险、意外医疗 |
+| 健康险 | 重疾险、重大疾病险、大病险、医疗险、百万医疗险、住院医疗、门诊医疗 |
+| 寿险 | 寿险、终身寿险、定期寿险、增额寿、增额终身寿险、定额寿险 |
+| 年金险 | 年金险、年金、养老年金、教育金、教育年金、少儿年金 |
+| 储蓄险 | 储蓄险、少儿储蓄险、教育储蓄、理财险、增额终身寿 |
+
+### 识别规则
+
+1. **直接匹配**：用户指令中明确提到的产品名称，如"写一篇重疾险的文章" → productTags: ["重疾险"]
+2. **场景推断**：根据用户描述的场景推断，如"猝死怎么赔" → productTags: ["意外险", "寿险"]
+3. **关键词关联**：如"教育规划"、"孩子未来" → productTags: ["教育金", "教育年金"]
+4. **多标签情况**：如果用户指令涉及多个产品，返回所有相关的标签
+
+### 重要提示
+- 产品标签识别是拆解任务的第一步，直接影响后续素材收集和内容创作方向
+- 如果无法识别出具体产品，返回空数组 []
+- 标签要尽量精准，不要过度推断
+
+---
+
 ## 数据流转过程
 
-1. 你返回上述 JSON 格式的子任务数据
+1. 你返回上述 JSON 格式的数据（包含产品标签和子任务数组）
 2. 后端接收后，自动：
    - 生成 id（UUID）
    - 设置 command_result_id
@@ -1300,36 +1355,40 @@ executor 字段指定执行该子任务的 agent ID，例如：
 - ❌ 不要在 JSON 前后添加任何说明文字
 - ❌ 不要添加任何 Markdown 格式
 
-**只返回纯 JSON 数组**：
-[
-  {
-    "orderIndex": 1,
-    "title": "第一个子任务",
-    "description": "详细描述要完成的任务内容",
-    "executor": "insurance-d",
-    "deadline": "2026-02-20",
-    "priority": "urgent",
-    "estimatedHours": 4,
-    "acceptanceCriteria": "验收标准：明确界定任务完成的具体要求",
-    "isCritical": true,
-    "criticalReason": "这是关键任务，失败会影响整体进度"
-  },
-  {
-    "orderIndex": 2,
-    "title": "第二个子任务",
-    "description": "详细描述要完成的任务内容",
-    "executor": "insurance-d",
-    "deadline": "2026-02-21",
-    "priority": "normal",
-    "estimatedHours": 2,
-    "acceptanceCriteria": "验收标准：明确界定任务完成的具体要求",
-    "isCritical": true,
-    "criticalReason": "这是关键任务，失败会影响整体进度"
-  }
-]
+**返回 JSON 对象格式**：
+
+{
+  "productTags": ["产品标签1", "产品标签2"],
+  "subTasks": [
+    {
+      "orderIndex": 1,
+      "title": "第一个子任务",
+      "description": "详细描述要完成的任务内容",
+      "executor": "insurance-d",
+      "deadline": "2026-02-20",
+      "priority": "urgent",
+      "estimatedHours": 4,
+      "acceptanceCriteria": "验收标准：明确界定任务完成的具体要求",
+      "isCritical": true,
+      "criticalReason": "这是关键任务，失败会影响整体进度"
+    },
+    {
+      "orderIndex": 2,
+      "title": "第二个子任务",
+      "description": "详细描述要完成的任务内容",
+      "executor": "insurance-d",
+      "deadline": "2026-02-21",
+      "priority": "normal",
+      "estimatedHours": 2,
+      "acceptanceCriteria": "验收标准：明确界定任务完成的具体要求",
+      "isCritical": true,
+      "criticalReason": "这是关键任务，失败会影响整体进度"
+    }
+  ]
+}
 
 **重要说明**：
-- ✅ 只返回纯 JSON 数组，不要任何其他内容
+- ✅ 只返回纯 JSON 对象（包含 productTags 和 subTasks），不要任何其他内容
 - ✅ 确保 JSON 格式正确，可以被 JSON.parse() 直接解析
 - ✅ 每个子任务必须包含所有必填字段
 - ✅ 从第一个字符开始就是 [，最后一个字符就是 ]
@@ -1379,41 +1438,66 @@ executor 字段指定执行该子任务的 agent ID，例如：
     // 解析 LLM 响应
     const content = response.content;
     console.log(`📄 LLM 返回内容长度: ${content.length} 字符`);
+    console.log(`📄 LLM 返回内容前500字符: ${content.substring(0, 500)}`);
 
     let subTasks: SubTaskSplitResult[];
+    let extractedProductTags: string[] = []; // 🔥 新增：提取的产品标签
 
     try {
-      // 🔥 简化：优先直接解析纯 JSON，不要 Markdown 格式
-      let jsonStr = '';
+      // 🔥 支持新格式（对象）和旧格式（数组）
+      let parsedResult: any;
+      let jsonStr = ''; // 用于正则提取的 JSON 字符串
 
       // 方法1：优先尝试直接解析整个内容为 JSON（最快路径）
       console.log(`[extract] 优先尝试直接解析纯 JSON...`);
       try {
-        subTasks = JSON.parse(content.trim());
-        console.log(`✅ 直接解析 JSON 成功！`);
+        parsedResult = JSON.parse(content.trim());
+        console.log(`✅ 直接解析 JSON 成功！类型: ${Array.isArray(parsedResult) ? '数组' : '对象'}`);
       } catch (directParseError) {
-        console.log(`[extract] 直接解析失败，尝试提取 JSON 数组...`);
+        console.log(`[extract] 直接解析失败，尝试提取 JSON...`);
         
-        // 方法2：如果直接解析失败，尝试提取 JSON 数组（兼容旧格式）
+        // 方法2：尝试提取 JSON 对象或数组
+        const objectMatch = content.match(/\{[\s\S]*\}/);
         const arrayMatch = content.match(/\[[\s\S]*\]/);
-        if (arrayMatch) {
+        
+        if (objectMatch) {
+          jsonStr = objectMatch[0];
+          console.log(`[extract] 提取到 JSON 对象`);
+          parsedResult = JSON.parse(jsonStr);
+        } else if (arrayMatch) {
           jsonStr = arrayMatch[0];
-          console.log(`[extract] 提取到 JSON 数组`);
-          subTasks = JSON.parse(jsonStr);
+          console.log(`[extract] 提取到 JSON 数组（旧格式兼容）`);
+          parsedResult = JSON.parse(jsonStr);
         } else {
           // 方法3：最后尝试 Markdown 代码块（仅为了向后兼容）
           const codeBlockMatch = content.match(/```(?:json)?\s*\n?([\s\S]*?)```/);
           if (codeBlockMatch) {
             jsonStr = codeBlockMatch[1].trim();
             console.log(`[extract] 从 Markdown 代码块中提取 JSON（向后兼容）`);
-            subTasks = JSON.parse(jsonStr);
+            parsedResult = JSON.parse(jsonStr);
           } else {
-            throw new Error('No JSON array found in LLM response');
+            throw new Error('No JSON found in LLM response');
           }
         }
       }
 
-      console.log(`✅ 成功解析 ${subTasks.length} 个子任务`);
+      // 🔥 区分新格式（对象）和旧格式（数组）
+      if (Array.isArray(parsedResult)) {
+        // 旧格式：直接是子任务数组
+        console.log(`📋 检测到旧格式（数组），直接作为子任务列表`);
+        subTasks = parsedResult;
+        extractedProductTags = [];
+      } else if (parsedResult && typeof parsedResult === 'object') {
+        // 新格式：对象包含 productTags 和 subTasks
+        console.log(`📋 检测到新格式（对象），提取产品标签和子任务`);
+        extractedProductTags = parsedResult.productTags || [];
+        subTasks = parsedResult.subTasks || [];
+        console.log(`🏷️ 提取到产品标签: ${JSON.stringify(extractedProductTags)}`);
+      } else {
+        throw new Error('Invalid JSON structure: expected array or object');
+      }
+
+      console.log(`✅ 成功解析 ${subTasks.length} 个子任务，${extractedProductTags.length} 个产品标签`);
 
       // 验证子任务数据结构
       subTasks = subTasks.filter((task, index) => {
@@ -1432,42 +1516,58 @@ executor 字段指定执行该子任务的 agent ID，例如：
       subTasks.sort((a, b) => a.orderIndex - b.orderIndex);
 
       console.log(`✅ 子任务验证完成，最终数量: ${subTasks.length}`);
+      console.log(`🏷️ 产品标签: ${JSON.stringify(extractedProductTags)}`);
+
+      // 构建返回结果
+      const result: TaskSplitResult = {
+        productTags: extractedProductTags,
+        subTasks: subTasks,
+      };
 
       // 缓存结果
-      agentTaskSplitCache.set(cacheKey, subTasks);
+      agentTaskSplitCache.set(cacheKey, result);
 
-      return subTasks;
+      return result;
     } catch (parseError) {
       console.error(`❌ 解析 LLM 响应失败:`, parseError);
       console.error(`📄 原始响应:`, content);
 
       // 解析失败时返回默认模拟数据
       console.warn(`⚠️ 使用默认模拟数据`);
-      const defaultTasks = [
-        {
-          orderIndex: 1,
-          title: '收集素材',
-          description: '收集相关的产品素材和数据',
-          executor: agentId,
-          acceptanceCriteria: '素材收集完成，整理成文档',
-          isCritical: true,
-          criticalReason: '素材是任务执行的前提，没有素材无法继续',
-        },
-        {
-          orderIndex: 2,
-          title: '执行任务',
-          description: '根据素材执行任务',
-          executor: agentId,
-          acceptanceCriteria: '任务完成，符合要求',
-          isCritical: true,
-          criticalReason: '这是核心执行任务，失败则整个任务无法完成',
-        },
-      ];
+      const defaultResult: TaskSplitResult = {
+        productTags: [],
+        subTasks: [
+          {
+            orderIndex: 1,
+            title: '收集素材',
+            description: '收集相关的产品素材和数据',
+            executor: agentId,
+            acceptanceCriteria: '素材收集完成，整理成文档',
+            isCritical: true,
+            criticalReason: '素材是任务执行的前提，没有素材无法继续',
+            deadline: '今日',
+            priority: 'urgent',
+            estimatedHours: 2,
+          },
+          {
+            orderIndex: 2,
+            title: '执行任务',
+            description: '根据素材执行任务',
+            executor: agentId,
+            acceptanceCriteria: '任务完成，符合要求',
+            isCritical: true,
+            criticalReason: '这是核心执行任务，失败则整个任务无法完成',
+            deadline: '今日',
+            priority: 'urgent',
+            estimatedHours: 4,
+          },
+        ],
+      };
 
       // 缓存默认结果
-      agentTaskSplitCache.set(cacheKey, defaultTasks);
+      agentTaskSplitCache.set(cacheKey, defaultResult);
 
-      return defaultTasks;
+      return defaultResult;
     }
   } catch (error) {
     console.error(`❌ LLM 调用失败:`, error);

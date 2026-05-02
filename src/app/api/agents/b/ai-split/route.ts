@@ -7,6 +7,38 @@ import { loadAgentPrompt } from '@/lib/agents/prompt-loader';
 import { getAllFlowTemplates } from '@/lib/agents/flow-templates';
 
 /**
+ * 从指令中提取保险产品标签
+ * 参考速记转案例的产品标签提取逻辑，按关键词长度降序匹配，避免短词误匹配
+ */
+function extractProductTags(instruction: string): string[] {
+  // 保险产品关键词（按长度降序排列，优先匹配长词）
+  const productKeywords = [
+    '增额终身寿险', '增额终身寿', '增额寿',
+    '意外伤害险', '意外医疗', '意外险',
+    '重大疾病险', '大病险', '重疾险',
+    '百万医疗险', '住院医疗', '门诊医疗', '医疗险',
+    '定期寿险', '定额寿险', '终身寿险', '寿险',
+    '教育年金', '养老年金', '少儿年金', '年金险', '年金',
+    '少儿储蓄险', '教育储蓄', '储蓄险', '理财险',
+    '分红险', '万能险', '投连险', '两全险',
+    '惠民保', '医保', '社保', '公积金',
+    '信托', '家族信托', '保险金信托',
+    '存款', '大额存单',
+  ].sort((a, b) => b.length - a.length);
+
+  const tags: string[] = [];
+  const lowerInstruction = instruction.toLowerCase();
+  
+  for (const keyword of productKeywords) {
+    if (lowerInstruction.includes(keyword.toLowerCase()) && !tags.includes(keyword)) {
+      tags.push(keyword);
+    }
+  }
+  
+  return tags;
+}
+
+/**
  * 识别任务领域
  * @param instruction 任务指令
  * @returns 领域类型：'insurance' | 'ai' | 'general'
@@ -17,7 +49,7 @@ function identifyDomain(instruction: string): 'insurance' | 'ai' | 'general' {
   // 保险领域关键词
   const insuranceKeywords = [
     '保险', 'insurance', '增额寿', '年金', '分红险', '惠民保', '医保',
-    '存款', '储蓄', '银行', '理财', '保障', '理赔', '投保'
+    '存款', '储蓄', '银行', '理财', '保障', '理赔', '投保', '信托', '继承', '传承'
   ];
   
   // AI 领域关键词
@@ -184,6 +216,10 @@ export async function POST(request: NextRequest) {
     const domain = identifyDomain(instruction);
     console.log(`🎯 [AI-Split] 识别到的领域: ${domain}`);
 
+    // 1.5 提取产品标签
+    const productTags = extractProductTags(instruction);
+    console.log(`🏷️ [AI-Split] 识别到的产品标签: ${productTags.join(', ')}`);
+
     // 2. 根据领域构建系统提示词
     const systemPrompt = buildSystemPrompt(domain, instruction);
     console.log(`📝 [AI-Split] 系统提示词长度: ${systemPrompt.length}`);
@@ -278,6 +314,7 @@ export async function POST(request: NextRequest) {
       success: true,
       subTasks: validSubTasks,
       domain: domain, // 返回识别到的领域
+      productTags: productTags, // 返回识别到的产品标签
       systemPrompt: systemPrompt, // 返回完整的提示词内容
       generatedTaskTitle: generatedTaskTitle, // 返回自动生成的任务标题
     });

@@ -129,13 +129,16 @@ export async function POST(request: NextRequest) {
           }
 
           // Agent B 拆解任务
-          const subTasks = await splitTaskForAgent('agent-b', taskDetail[0]);
+          const splitResult = await splitTaskForAgent('agent-b', taskDetail[0]);
+          const subTasks = splitResult.subTasks;
+          const productTags = splitResult.productTags;
 
           agentBResults.push({
             taskId: task.taskId,
             taskName: task.taskName,
             success: true,
             subTaskCount: subTasks.length,
+            productTags: productTags,
             subTasks: subTasks.map(st => ({
               orderIndex: st.orderIndex,
               title: st.title,
@@ -144,7 +147,7 @@ export async function POST(request: NextRequest) {
             })),
           });
 
-          console.log(`✅ 任务 ${task.taskName} 拆解成功，子任务数量: ${subTasks.length}`);
+          console.log(`✅ 任务 ${task.taskName} 拆解成功，子任务数量: ${subTasks.length}，产品标签: ${productTags.join(', ')}`);
         } catch (error) {
           const errorMsg = error instanceof Error ? error.message : String(error);
           console.error(`❌ 拆解任务 ${task.taskName} 失败:`, errorMsg);

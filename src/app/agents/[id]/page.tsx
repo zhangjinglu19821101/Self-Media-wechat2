@@ -87,6 +87,7 @@ export default function AgentChatPage() {
 
   const [historyLoaded, setHistoryLoaded] = useState(false);
   const [lastAssistantContent, setLastAssistantContent] = useState('');
+  const [lastUserInput, setLastUserInput] = useState(''); // 🔥 新增：保存用户原始输入，用于任务标题
 
   // 🔥 新增：任务拆解提示相关状态
   const [showSplitDialog, setShowSplitDialog] = useState(false);
@@ -1134,6 +1135,7 @@ export default function AgentChatPage() {
 
     setMessages((prev) => [...prev, userMessage]);
     const userInput = input;
+    setLastUserInput(userInput); // 🔥 保存用户原始输入，用于任务标题
     setInput('');
     setLoading(true);
     setError('');
@@ -1514,7 +1516,20 @@ ${lastAssistantContent}
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({
-            taskName: `任务拆解：${lastAssistantContent.substring(0, 50)}...`,
+            taskName: (() => {
+              // 🔥 从用户输入或 Agent A 回复中提取 "主题《xxx》" 格式的标题
+              // 优先从用户原始输入提取，其次从 Agent A 回复提取
+              const sourcesToCheck = [lastUserInput, lastAssistantContent, ...messages.filter(m => m.role === 'user').map(m => m.content).reverse()];
+              for (const source of sourcesToCheck) {
+                if (!source) continue;
+                const match = source.match(/主题[《"<『【]([^》"』】]+)[》"』】]/);
+                if (match) {
+                  return `主题《${match[1]}》`;
+                }
+              }
+              // 兜底：使用最近的用户输入前50字
+              return lastUserInput?.substring(0, 50) || lastAssistantContent.substring(0, 50) + '...';
+            })(),
             coreCommand: lastAssistantContent, // 🔥 修复：存储 Agent A 的原始回复，而不是拆解指令
             executor: 'B',
             taskDurationStart: new Date().toISOString(),

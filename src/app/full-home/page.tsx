@@ -122,6 +122,7 @@ interface AISplitResponse {
   domain?: string;
   systemPrompt?: string;
   generatedTaskTitle?: string; // 自动生成的任务标题
+  productTags?: string[]; // AI 识别的产品标签
 }
 
 const AVAILABLE_AGENTS = [
@@ -168,6 +169,8 @@ interface RecommendedSnippet {
 interface CaseItem {
   id: string;
   title: string;
+  caseType: string;
+  eventFullStory: string;
   protagonist: string;
   background: string;
   insuranceAction: string;
@@ -179,6 +182,7 @@ interface CaseItem {
   sceneTags: string[];
   emotionTags: string[];
   relevanceScore: number;
+  productTagMatchCount: number;
 }
 
 // 🔥🔥🔥 精简素材快照类型：只保存必要字段，大幅减少 sessionStorage 容量占用
@@ -329,6 +333,8 @@ function toFullCaseItem(snapshot: CaseItemSnapshot): CaseItem {
   return {
     id: snapshot.id,
     title: snapshot.title,
+    caseType: 'positive',
+    eventFullStory: '',
     protagonist: '',
     background: '',
     insuranceAction: '',
@@ -340,6 +346,7 @@ function toFullCaseItem(snapshot: CaseItemSnapshot): CaseItem {
     sceneTags: [],
     emotionTags: [],
     relevanceScore: snapshot.relevanceScore || 0,
+    productTagMatchCount: 0,
   };
 }
 
@@ -396,6 +403,7 @@ interface InfoSnippet {
   complianceLevel: string | null;
   materialStatus: string | null;
   materialId: string | null;
+  caseId: string | null;  // 已关联的案例 ID
   status: string;
   createdAt: string;
 }
@@ -426,6 +434,8 @@ export default function HomePage() {
   const [hasSplitResult, setHasSplitResult] = useState(false);
   const [tempSessionId, setTempSessionId] = useState<string | null>(null); // 临时会话 ID，用于替换逻辑
   const [detectedDomain, setDetectedDomain] = useState<string | null>(null); // 识别到的领域
+  const [detectedProductTags, setDetectedProductTags] = useState<string[]>([]); // AI 识别的产品标签
+  const [splitProductTags, setSplitProductTags] = useState<string[]>([]); // 拆解区域产品标签（可编辑）
   const [showPrompt, setShowPrompt] = useState(false); // 是否展示提示词
   const [fullPrompt, setFullPrompt] = useState<string | null>(null); // 完整的提示词内容
   
@@ -603,6 +613,9 @@ export default function HomePage() {
     emotionTags: string[];
     caseType: 'positive' | 'warning' | 'milestone';
     industry: string;
+    llmExtractedTitle?: string;  // LLM 提炼的原始标题（用于搜索关键词）
+    searchKeywords?: string;  // LLM 从原文提取的搜索关键词
+    caseId: string | null;  // 已关联的案例 ID
     searchPerformed: boolean;
     searchPending: boolean;
     searchSummary: string | null;
@@ -719,18 +732,24 @@ export default function HomePage() {
     };
   }, []); // 空数组：仅挂载时执行一次
 
-  // 🔥 从指令自动提取任务标题 + 默认执行日期（仅提取一次）
+  // 🔥 从指令自动提取任务标题 + 默认执行日期
+  // 核心规则：只要指令中有"主题《xxx》"，就自动提取到任务标题（用户也可手动修改）
+  const userManuallyEditedTitleRef = useRef(false);
   useEffect(() => {
-    if (autoExtractedRef.current) return; // 只提取一次，防止 taskTitle 变化导致循环
     if (!mainInstruction) return;
-    autoExtractedRef.current = true;
-    // 任务标题：从 mainInstruction 提取 "主题《xxx》" 或使用前50字
-    if (!taskTitle) {
-      const match = mainInstruction.match(/主题[《"<『]([^》"』]+)[》"』]/);
-      const title = match ? `主题《${match[1]}》` : mainInstruction.slice(0, 50);
-      setTaskTitle(title);
+    // 任务标题：从 mainInstruction 提取 "主题《xxx》"
+    const match = mainInstruction.match(/主题[《"<『【]([^》"』】]+)[》"』】]/);
+    if (match) {
+      const extractedTitle = `主题《${match[1]}》`;
+      // 如果用户没有手动修改过标题，或者当前标题也是自动提取的"主题《xxx》"格式，则覆盖
+      if (!userManuallyEditedTitleRef.current) {
+        setTaskTitle(extractedTitle);
+      }
+    } else if (!taskTitle && !userManuallyEditedTitleRef.current) {
+      // 没有匹配到"主题《xxx》"且标题为空，使用前50字
+      setTaskTitle(mainInstruction.slice(0, 50));
     }
-    // 执行日期：默认当天
+    // 执行日期：默认当天（仅设置一次）
     if (!executionDate) {
       setExecutionDate(new Date().toISOString().split('T')[0]);
     }
@@ -1115,6 +1134,10 @@ export default function HomePage() {
       // 保存识别到的领域和提示词
       if (result.domain) {
         setDetectedDomain(result.domain);
+      }
+      if (result.productTags && result.productTags.length > 0) {
+        setDetectedProductTags(result.productTags);
+        setSplitProductTags(result.productTags); // AI 识别的标签回填到可编辑区域
       }
       if (result.systemPrompt) {
         setFullPrompt(result.systemPrompt);
@@ -1939,22 +1962,66 @@ export default function HomePage() {
     }
   };
 
-  // 🔥 速记转案例：提取结构化信息
+  // 🔥 速记转案例：提取结构化信息（或加载已有案例）
   const handleConvertSnippetToCase = async (snippet: InfoSnippet) => {
     try {
       setConvertingSnippetId(snippet.id);
       setCaseExtracting(true);
-      setCaseExtractionElapsed(0);  // 重置计时
+      setCaseExtractionElapsed(0);
       setShowCaseConversionDialog(true);
-      caseDialogActiveRef.current = true;  // 标记对话框活跃
+      caseDialogActiveRef.current = true;
 
-      // 启动超时计时器（60秒超时）
+      // === 情形1：snippet 已有 caseId → 加载已有案例 ===
+      if (snippet.caseId) {
+        const existingCase: any = await apiGet(`/api/cases/${snippet.caseId}`);
+        if (!caseDialogActiveRef.current) return;
+
+        if (existingCase?.success && existingCase?.data) {
+          const c = existingCase.data;
+          const data = {
+            snippetId: snippet.id,
+            caseId: c.id,
+            snippetTitle: snippet.title || '',
+            title: c.title,
+            eventFullStory: c.eventFullStory || '',
+            background: c.background || '',
+            insuranceAction: c.insuranceAction || '',
+            result: c.result || '',
+            productTags: c.productTags || [],
+            protagonist: c.protagonist || '',
+            crowdTags: c.crowdTags || [],
+            emotionTags: c.emotionTags || [],
+            caseType: (c.caseType as 'positive' | 'warning' | 'milestone') || 'positive',
+            industry: c.industry || 'insurance',
+            llmExtractedTitle: c.title,
+            searchKeywords: '',
+            searchPerformed: true,
+            searchPending: false,
+            searchSummary: null,
+          };
+          setCaseExtractionResult(data);
+          setCaseEditForm({
+            title: c.title || '',
+            eventFullStory: c.eventFullStory || '',
+            background: c.background || '',
+            insuranceAction: c.insuranceAction || '',
+            result: c.result || '',
+            productTags: (c.productTags || []).join('、'),
+          });
+          toast.info('已加载已有案例，可直接编辑保存');
+        } else {
+          toast.error('加载已有案例失败，将重新提取');
+        }
+        setCaseExtracting(false);
+        return;
+      }
+
+      // === 情形2：无 caseId → 正常 LLM 提取流程 ===
       const TIMEOUT_SECONDS = 60;
       caseExtractionTimeoutRef.current = setInterval(() => {
         setCaseExtractionElapsed(prev => {
           const next = prev + 1;
           if (next >= TIMEOUT_SECONDS) {
-            // 超时处理
             clearInterval(caseExtractionTimeoutRef.current!);
             caseExtractionTimeoutRef.current = null;
             setCaseExtracting(false);
@@ -1966,16 +2033,13 @@ export default function HomePage() {
         });
       }, 1000);
 
-      // Step 1: 仅 LLM 提取，尽快返回展示
       const result: any = await apiPost(`/api/info-snippets/${snippet.id}/extract-case`);
 
-      // 清除超时计时器
       if (caseExtractionTimeoutRef.current) {
         clearInterval(caseExtractionTimeoutRef.current);
         caseExtractionTimeoutRef.current = null;
       }
 
-      // 对话框已关闭（超时或用户取消），丢弃结果
       if (!caseDialogActiveRef.current) return;
 
       if (result.success && result.data) {
@@ -1990,10 +2054,8 @@ export default function HomePage() {
           productTags: (data.productTags || []).join('、'),
         });
 
-        // Step 2: 如果需要搜索补充，异步执行（不阻塞用户编辑）
         if (data.searchPending) {
           setCaseSearching(true);
-          // 不 await，让搜索在后台进行
           searchSupplementForCase(snippet.id, data);
         }
       } else {
@@ -2003,7 +2065,6 @@ export default function HomePage() {
       }
     } catch (error: any) {
       console.error('[InfoSnippets] 案例提取失败:', error);
-      // 清除超时计时器
       if (caseExtractionTimeoutRef.current) {
         clearInterval(caseExtractionTimeoutRef.current);
         caseExtractionTimeoutRef.current = null;
@@ -2016,7 +2077,7 @@ export default function HomePage() {
     }
   };
 
-  // 🔥 速记转案例：取消提取
+// 🔥 速记转案例：取消提取
   const handleCancelCaseExtraction = () => {
     // 清除超时计时器
     if (caseExtractionTimeoutRef.current) {
@@ -2078,41 +2139,78 @@ export default function HomePage() {
     try {
       setCaseSaving(true);
 
-      const result: any = await apiPost('/api/cases/create', {
-        snippetId: caseExtractionResult.snippetId,
-        title: caseEditForm.title.trim(),
-        eventFullStory: caseEditForm.eventFullStory.trim(),
-        background: caseEditForm.background.trim(),
-        insuranceAction: caseEditForm.insuranceAction.trim(),
-        result: caseEditForm.result.trim(),
-        productTags: caseEditForm.productTags.split(/[、,，\s]+/).filter(Boolean),
-        protagonist: caseExtractionResult.protagonist,
-        crowdTags: caseExtractionResult.crowdTags,
-        emotionTags: caseExtractionResult.emotionTags,
-        caseType: caseExtractionResult.caseType,
-        industry: caseExtractionResult.industry,
-      });
+      // 区分：已有 caseId → 更新，否则 → 创建
+      if (caseExtractionResult.caseId) {
+        // === 更新已有案例 ===
+        const result: any = await apiPut(`/api/cases/${caseExtractionResult.caseId}`, {
+          title: caseEditForm.title.trim(),
+          eventFullStory: caseEditForm.eventFullStory.trim(),
+          background: caseEditForm.background.trim(),
+          insuranceAction: caseEditForm.insuranceAction.trim(),
+          result: caseEditForm.result.trim(),
+          productTags: caseEditForm.productTags.split(/[\u3001,,\uff0c\s]+/).filter(Boolean),
+          protagonist: caseExtractionResult.protagonist,
+          crowdTags: caseExtractionResult.crowdTags,
+          emotionTags: caseExtractionResult.emotionTags,
+          caseType: caseExtractionResult.caseType,
+          industry: caseExtractionResult.industry,
+        });
 
-      if (result.success) {
-        toast.success(`案例「${caseEditForm.title}」已创建成功`);
-        caseDialogActiveRef.current = false;
-        setShowCaseConversionDialog(false);
-        setCaseExtractionResult(null);
-        setConvertingSnippetId(null);
-        setCaseSearching(false);
-        setCaseEditForm({ title: '', eventFullStory: '', background: '', insuranceAction: '', result: '', productTags: '' });
+        if (result.success) {
+          toast.success(`\u6848\u4f8b\u300c${caseEditForm.title}\u300d\u5df2\u66f4\u65b0\u6210\u529f`);
+          caseDialogActiveRef.current = false;
+          setShowCaseConversionDialog(false);
+          setCaseExtractionResult(null);
+          setConvertingSnippetId(null);
+          setCaseSearching(false);
+          setCaseEditForm({ title: '', eventFullStory: '', background: '', insuranceAction: '', result: '', productTags: '' });
+          loadSnippetList();
+        } else {
+          toast.error(result.error || '\u6848\u4f8b\u66f4\u65b0\u5931\u8d25');
+        }
       } else {
-        toast.error(result.error || '案例创建失败');
+        // === 创建新案例 ===
+        const result: any = await apiPost('/api/cases/create', {
+          snippetId: caseExtractionResult.snippetId,
+          title: caseEditForm.title.trim(),
+          eventFullStory: caseEditForm.eventFullStory.trim(),
+          background: caseEditForm.background.trim(),
+          insuranceAction: caseEditForm.insuranceAction.trim(),
+          result: caseEditForm.result.trim(),
+          productTags: caseEditForm.productTags.split(/[\u3001,,\uff0c\s]+/).filter(Boolean),
+          protagonist: caseExtractionResult.protagonist,
+          crowdTags: caseExtractionResult.crowdTags,
+          emotionTags: caseExtractionResult.emotionTags,
+          caseType: caseExtractionResult.caseType,
+          industry: caseExtractionResult.industry,
+        });
+
+        if (result.success) {
+          if (result.alreadyExists) {
+            toast.info(`\u6848\u4f8b\u300c${caseEditForm.title}\u300d\u5df2\u5b58\u5728\uff0c\u5df2\u52a0\u8f7d\u5df2\u6709\u5185\u5bb9`);
+          } else {
+            toast.success(`\u6848\u4f8b\u300c${caseEditForm.title}\u300d\u5df2\u521b\u5efa\u6210\u529f`);
+          }
+          caseDialogActiveRef.current = false;
+          setShowCaseConversionDialog(false);
+          setCaseExtractionResult(null);
+          setConvertingSnippetId(null);
+          setCaseSearching(false);
+          setCaseEditForm({ title: '', eventFullStory: '', background: '', insuranceAction: '', result: '', productTags: '' });
+          loadSnippetList();
+        } else {
+          toast.error(result.error || '\u6848\u4f8b\u521b\u5efa\u5931\u8d25');
+        }
       }
     } catch (error: any) {
-      console.error('[InfoSnippets] 案例保存失败:', error);
-      toast.error(error?.message || '案例保存失败');
+      console.error('[InfoSnippets] \u6848\u4f8b\u4fdd\u5b58\u5931\u8d25:', error);
+      toast.error(error?.message || '\u6848\u4f8b\u4fdd\u5b58\u5931\u8d25');
     } finally {
       setCaseSaving(false);
     }
   };
 
-  // 🔥 信息速记：在素材tab中选为素材（复用素材选择交互）
+// 🔥 信息速记：在素材tab中选为素材（复用素材选择交互）
   const handleSelectSnippetInMaterialTab = async (snippet: InfoSnippet) => {
     try {
       let materialId = snippet.materialId;
@@ -2718,7 +2816,7 @@ export default function HomePage() {
               </label>
               <Input
                 value={taskTitle}
-                onChange={(e) => setTaskTitle(e.target.value)}
+                onChange={(e) => { setTaskTitle(e.target.value); userManuallyEditedTitleRef.current = true; }}
                 placeholder="例如：主题《存款，是放在银行大额存单还是保险的增额寿》"
                 className="border-blue-200 focus:ring-blue-500 focus:border-blue-500 bg-white/70"
               />
@@ -2777,6 +2875,54 @@ export default function HomePage() {
                         🎯 领域：<span className="font-bold">{detectedDomain}</span>
                       </div>
                     )}
+                    {/* 产品标签 - 可交互，参考速记转案例样式 */}
+                    <div className="mt-1 space-y-1.5">
+                      <Label className="text-xs text-slate-500 flex items-center gap-1">
+                        <span>🏷️ 产品标签</span>
+                        <span className="text-[10px] text-slate-400">（AI 自动识别，可修改）</span>
+                      </Label>
+                      {/* 已选标签 Badge */}
+                      {splitProductTags.length > 0 && (
+                        <div className="flex flex-wrap gap-1">
+                          {splitProductTags.map((tag, i) => (
+                            <Badge
+                              key={i}
+                              className="bg-amber-50 text-amber-700 hover:bg-amber-100 cursor-pointer group flex items-center gap-1 pr-1"
+                              onClick={() => {
+                                setSplitProductTags(prev => prev.filter((_, idx) => idx !== i));
+                              }}
+                            >
+                              {tag}
+                              <X className="h-3 w-3 opacity-50 group-hover:opacity-100" />
+                            </Badge>
+                          ))}
+                        </div>
+                      )}
+                      {/* 快捷标签选择 */}
+                      <div className="flex flex-wrap gap-1">
+                        {['意外险', '重疾险', '医疗险', '寿险', '年金险', '增额终身寿', '教育金', '养老金', '信托', '财产险', '雇主责任险'].map((preset) => {
+                          const isSelected = splitProductTags.includes(preset);
+                          return (
+                            <button
+                              key={preset}
+                              type="button"
+                              onClick={() => {
+                                setSplitProductTags(prev =>
+                                  isSelected ? prev.filter(t => t !== preset) : [...prev, preset]
+                                );
+                              }}
+                              className={`text-[10px] px-2 py-0.5 rounded-full border transition-colors ${
+                                isSelected
+                                  ? 'bg-amber-50 border-amber-200 text-amber-700'
+                                  : 'bg-slate-50 border-slate-200 text-slate-500 hover:bg-slate-100'
+                              }`}
+                            >
+                              {isSelected ? '✓ ' : ''}{preset}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
                     {/* 创作引导折叠预览 */}
                     {guideCardsCollapsed && (
                       <div className="text-xs text-slate-500 flex items-center gap-1">
@@ -4034,6 +4180,14 @@ export default function HomePage() {
                                         onClick={() => setViewingCase(c)}
                                       >
                                         <div className="flex items-center gap-2">
+                                          <Badge className={`text-[10px] px-1.5 py-0 ${
+                                            c.caseType === 'positive' ? 'bg-green-100 text-green-700' :
+                                            c.caseType === 'warning' ? 'bg-amber-100 text-amber-700' :
+                                            'bg-blue-100 text-blue-700'
+                                          }`}>
+                                            {c.caseType === 'positive' ? '正面' :
+                                             c.caseType === 'warning' ? '警示' : '里程碑'}
+                                          </Badge>
                                           <span className={`font-medium text-sm ${isSelected ? 'text-emerald-700' : 'text-slate-700'}`}>
                                             {c.title}
                                           </span>
@@ -4577,126 +4731,155 @@ export default function HomePage() {
         </DialogContent>
       </Dialog>
 
-      {/* 案例详情弹窗 */}
+      {/* 案例详情弹窗 - 按速记转案例样式展示 */}
       <Dialog open={!!viewingCase} onOpenChange={(open) => !open && setViewingCase(null)}>
-        <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+        <DialogContent className="sm:max-w-[640px] max-h-[85vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle className="text-lg font-bold text-slate-900 pr-8">
-              {viewingCase?.title}
+            <DialogTitle className="flex items-center gap-2">
+              <Briefcase className="h-5 w-5 text-amber-500" />
+              案例详情
             </DialogTitle>
-            <DialogDescription className="text-sm text-slate-500 mt-1">
+            <DialogDescription>
               查看案例完整详情
             </DialogDescription>
           </DialogHeader>
-          
+
           {viewingCase && (
-            <div className="space-y-4 py-2">
-              {/* 人物/主体 */}
-              {viewingCase.protagonist && (
-                <div className="space-y-1">
-                  <h4 className="text-sm font-semibold text-slate-700 flex items-center gap-1.5">
-                    <Users className="w-4 h-4 text-blue-500" />
-                    人物/主体
-                  </h4>
-                  <p className="text-sm text-slate-600 bg-slate-50 rounded-lg p-3 leading-relaxed">
-                    {viewingCase.protagonist}
+            <div className="space-y-4">
+              {/* 案例类型标识 */}
+              <div className="flex items-center gap-2">
+                <Badge className={`${
+                  viewingCase.caseType === 'positive' ? 'bg-green-100 text-green-700' :
+                  viewingCase.caseType === 'warning' ? 'bg-amber-100 text-amber-700' :
+                  'bg-blue-100 text-blue-700'
+                }`}>
+                  {viewingCase.caseType === 'positive' ? '正面案例' :
+                   viewingCase.caseType === 'warning' ? '反面警示' : '行业里程碑'}
+                </Badge>
+              </div>
+
+              {/* 标题 */}
+              <div>
+                <Label className="text-xs text-slate-500 mb-1 block">案例标题</Label>
+                <p className="text-sm font-medium text-slate-900 bg-slate-50 rounded-md px-3 py-2 min-h-[36px] flex items-center">
+                  {viewingCase.title}
+                </p>
+              </div>
+
+              {/* 事件完整经过 */}
+              {viewingCase.eventFullStory && (
+                <div>
+                  <Label className="text-xs text-slate-500 mb-1 block">事件完整经过</Label>
+                  <p className="text-sm text-slate-700 bg-amber-50/50 rounded-md px-3 py-2.5 leading-relaxed whitespace-pre-wrap">
+                    {viewingCase.eventFullStory}
                   </p>
                 </div>
               )}
-              
+
               {/* 核心背景 */}
               {viewingCase.background && (
-                <div className="space-y-1">
-                  <h4 className="text-sm font-semibold text-slate-700 flex items-center gap-1.5">
-                    <FileText className="w-4 h-4 text-amber-500" />
-                    核心背景
-                  </h4>
-                  <p className="text-sm text-slate-600 bg-amber-50/50 rounded-lg p-3 leading-relaxed">
+                <div>
+                  <Label className="text-xs text-slate-500 mb-1 block">核心背景 *</Label>
+                  <p className="text-sm text-slate-700 bg-amber-50/50 rounded-md px-3 py-2.5 leading-relaxed whitespace-pre-wrap">
                     {viewingCase.background}
                   </p>
                 </div>
               )}
-              
-              {/* 保险方案 */}
+
+              {/* 保险动作 */}
               {viewingCase.insuranceAction && (
-                <div className="space-y-1">
-                  <h4 className="text-sm font-semibold text-slate-700 flex items-center gap-1.5">
-                    <Shield className="w-4 h-4 text-emerald-500" />
-                    保险方案
-                  </h4>
-                  <p className="text-sm text-slate-600 bg-emerald-50/50 rounded-lg p-3 leading-relaxed">
+                <div>
+                  <Label className="text-xs text-slate-500 mb-1 block">保险动作</Label>
+                  <p className="text-sm text-slate-700 bg-emerald-50/50 rounded-md px-3 py-2.5 leading-relaxed whitespace-pre-wrap">
                     {viewingCase.insuranceAction}
                   </p>
                 </div>
               )}
-              
+
               {/* 结果详情 */}
               {viewingCase.result && (
-                <div className="space-y-1">
-                  <h4 className="text-sm font-semibold text-slate-700 flex items-center gap-1.5">
-                    <CheckCircle2 className="w-4 h-4 text-purple-500" />
-                    结果详情
-                  </h4>
-                  <p className="text-sm text-slate-600 bg-purple-50/50 rounded-lg p-3 leading-relaxed">
+                <div>
+                  <Label className="text-xs text-slate-500 mb-1 block">结果详情 *</Label>
+                  <p className="text-sm text-slate-700 bg-purple-50/50 rounded-md px-3 py-2.5 leading-relaxed whitespace-pre-wrap">
                     {viewingCase.result}
                   </p>
                 </div>
               )}
-              
-              {/* 标签 */}
-              <div className="flex flex-wrap gap-2 pt-2">
-                {viewingCase.applicableProducts.length > 0 && (
-                  <div className="flex flex-wrap gap-1">
-                    <span className="text-xs text-slate-400">适用产品:</span>
-                    {viewingCase.applicableProducts.map(tag => (
-                      <span key={tag} className="text-[10px] px-2 py-0.5 rounded-full bg-sky-100 text-sky-700">{tag}</span>
+
+              {/* 产品标签 */}
+              {viewingCase.productTags.length > 0 && (
+                <div>
+                  <Label className="text-xs text-slate-500 mb-1.5 block">产品标签</Label>
+                  <div className="flex flex-wrap gap-1.5">
+                    {viewingCase.productTags.map((tag, i) => (
+                      <Badge key={i} className="bg-amber-50 text-amber-700 hover:bg-amber-100">
+                        {tag}
+                      </Badge>
                     ))}
                   </div>
-                )}
-                {viewingCase.applicableScenarios.length > 0 && (
-                  <div className="flex flex-wrap gap-1">
-                    <span className="text-xs text-slate-400">适用场景:</span>
-                    {viewingCase.applicableScenarios.map(tag => (
-                      <span key={tag} className="text-[10px] px-2 py-0.5 rounded-full bg-teal-100 text-teal-700">{tag}</span>
-                    ))}
+                </div>
+              )}
+
+              {/* AI 自动提取的标签（折叠区） */}
+              {(viewingCase.protagonist || viewingCase.crowdTags.length > 0 || viewingCase.emotionTags.length > 0 || viewingCase.sceneTags.length > 0 || viewingCase.applicableProducts.length > 0 || viewingCase.applicableScenarios.length > 0) && (
+                <details className="group">
+                  <summary className="text-xs text-slate-400 cursor-pointer hover:text-slate-600 flex items-center gap-1">
+                    <ChevronDown className="h-3 w-3 transition-transform group-open:rotate-180" />
+                    AI 自动提取的标签
+                  </summary>
+                  <div className="mt-2 space-y-2 pl-4 border-l-2 border-slate-100">
+                    {viewingCase.protagonist && (
+                      <div className="flex items-center gap-2 text-xs">
+                        <span className="text-slate-500">主人公：</span>
+                        <span className="text-slate-700">{viewingCase.protagonist}</span>
+                      </div>
+                    )}
+                    {viewingCase.crowdTags.length > 0 && (
+                      <div className="flex items-center gap-2 text-xs flex-wrap">
+                        <span className="text-slate-500">人群标签：</span>
+                        {viewingCase.crowdTags.map((tag, i) => (
+                          <Badge key={i} className="bg-slate-100 text-slate-600 px-1.5 py-0.5 text-[10px]">{tag}</Badge>
+                        ))}
+                      </div>
+                    )}
+                    {viewingCase.emotionTags.length > 0 && (
+                      <div className="flex items-center gap-2 text-xs flex-wrap">
+                        <span className="text-slate-500">情绪标签：</span>
+                        {viewingCase.emotionTags.map((tag, i) => (
+                          <Badge key={i} className="bg-slate-100 text-slate-600 px-1.5 py-0.5 text-[10px]">{tag}</Badge>
+                        ))}
+                      </div>
+                    )}
+                    {viewingCase.sceneTags.length > 0 && (
+                      <div className="flex items-center gap-2 text-xs flex-wrap">
+                        <span className="text-slate-500">场景标签：</span>
+                        {viewingCase.sceneTags.map((tag, i) => (
+                          <Badge key={i} className="bg-slate-100 text-slate-600 px-1.5 py-0.5 text-[10px]">{tag}</Badge>
+                        ))}
+                      </div>
+                    )}
+                    {viewingCase.applicableProducts.length > 0 && (
+                      <div className="flex items-center gap-2 text-xs flex-wrap">
+                        <span className="text-slate-500">适用产品：</span>
+                        {viewingCase.applicableProducts.map((tag, i) => (
+                          <Badge key={i} className="bg-slate-100 text-slate-600 px-1.5 py-0.5 text-[10px]">{tag}</Badge>
+                        ))}
+                      </div>
+                    )}
+                    {viewingCase.applicableScenarios.length > 0 && (
+                      <div className="flex items-center gap-2 text-xs flex-wrap">
+                        <span className="text-slate-500">适用场景：</span>
+                        {viewingCase.applicableScenarios.map((tag, i) => (
+                          <Badge key={i} className="bg-slate-100 text-slate-600 px-1.5 py-0.5 text-[10px]">{tag}</Badge>
+                        ))}
+                      </div>
+                    )}
                   </div>
-                )}
-                {viewingCase.productTags.length > 0 && (
-                  <div className="flex flex-wrap gap-1">
-                    <span className="text-xs text-slate-400">产品标签:</span>
-                    {viewingCase.productTags.map(tag => (
-                      <span key={tag} className="text-[10px] px-2 py-0.5 rounded-full bg-blue-100 text-blue-700">{tag}</span>
-                    ))}
-                  </div>
-                )}
-                {viewingCase.crowdTags.length > 0 && (
-                  <div className="flex flex-wrap gap-1">
-                    <span className="text-xs text-slate-400">人群标签:</span>
-                    {viewingCase.crowdTags.map(tag => (
-                      <span key={tag} className="text-[10px] px-2 py-0.5 rounded-full bg-purple-100 text-purple-700">{tag}</span>
-                    ))}
-                  </div>
-                )}
-                {viewingCase.sceneTags.length > 0 && (
-                  <div className="flex flex-wrap gap-1">
-                    <span className="text-xs text-slate-400">场景标签:</span>
-                    {viewingCase.sceneTags.map(tag => (
-                      <span key={tag} className="text-[10px] px-2 py-0.5 rounded-full bg-green-100 text-green-700">{tag}</span>
-                    ))}
-                  </div>
-                )}
-                {viewingCase.emotionTags.length > 0 && (
-                  <div className="flex flex-wrap gap-1">
-                    <span className="text-xs text-slate-400">情绪标签:</span>
-                    {viewingCase.emotionTags.map(tag => (
-                      <span key={tag} className="text-[10px] px-2 py-0.5 rounded-full bg-rose-100 text-rose-700">{tag}</span>
-                    ))}
-                  </div>
-                )}
-              </div>
+                </details>
+              )}
             </div>
           )}
-          
+
           <DialogFooter className="flex gap-2 sm:gap-2">
             <Button
               variant="outline"
@@ -5072,15 +5255,6 @@ export default function HomePage() {
                       <X className="h-3 w-3 opacity-50 group-hover:opacity-100" />
                     </Badge>
                   ))}
-                </div>
-                {/* 输入框 + 快捷标签 */}
-                <div className="flex gap-2">
-                  <Input
-                    value={caseEditForm.productTags}
-                    onChange={(e) => setCaseEditForm(prev => ({ ...prev, productTags: e.target.value }))}
-                    className="h-8 text-sm flex-1"
-                    placeholder="输入标签后回车，或点击下方快捷标签"
-                  />
                 </div>
                 {/* 快捷标签选择 */}
                 <div className="flex flex-wrap gap-1 mt-2">
@@ -6061,9 +6235,11 @@ export default function HomePage() {
                                     onClick={() => handleConvertSnippetToCase(snippet)}
                                     disabled={caseExtracting && convertingSnippetId === snippet.id}
                                     className={`h-7 px-2 rounded-md flex items-center justify-center text-xs font-medium gap-1 transition-colors disabled:opacity-50 ${
-                                      snippetCategories.includes('real_case')
-                                        ? 'bg-amber-50 text-amber-600 border border-amber-200 hover:bg-amber-100 hover:text-amber-700'
-                                        : 'bg-slate-50 text-slate-500 border border-slate-200 hover:bg-slate-100 hover:text-slate-600'
+                                      snippet.caseId
+                                        ? 'bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 hover:text-emerald-800'
+                                        : snippetCategories.includes('real_case')
+                                          ? 'bg-amber-50 text-amber-600 border border-amber-200 hover:bg-amber-100 hover:text-amber-700'
+                                          : 'bg-slate-50 text-slate-500 border border-slate-200 hover:bg-slate-100 hover:text-slate-600'
                                     }`}
                                   >
                                     {caseExtracting && convertingSnippetId === snippet.id ? (
@@ -6071,13 +6247,15 @@ export default function HomePage() {
                                     ) : (
                                       <Briefcase className="h-3 w-3" />
                                     )}
-                                    转案例
+                                    {snippet.caseId ? '编辑案例' : '转案例'}
                                   </button>
                                 </TooltipTrigger>
                                 <TooltipContent>
-                                  {snippetCategories.includes('real_case')
-                                    ? <p>将此速记转化为行业案例</p>
-                                    : <p>该速记未被识别为真实案例，转换效果可能不佳</p>
+                                  {snippet.caseId
+                                    ? <p>查看/编辑此速记已转化的行业案例</p>
+                                    : snippetCategories.includes('real_case')
+                                      ? <p>将此速记转化为行业案例</p>
+                                      : <p>该速记未被识别为真实案例，转换效果可能不佳</p>
                                   }
                                 </TooltipContent>
                               </Tooltip>

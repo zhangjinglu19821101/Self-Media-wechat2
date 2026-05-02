@@ -81,11 +81,14 @@ async function handleSingleSplit(taskId: string) {
 
   // 调用 Agent B 的拆分逻辑
   console.log('🤖 [split-task] 调用 splitTaskForAgent 拆解任务...');
-  const subTasks = await splitTaskForAgent('agent-b', task);
-  console.log(`✅ [split-task] 拆解完成，子任务数量: ${subTasks.length}`);
+  const splitResult = await splitTaskForAgent('agent-b', task);
+  const subTasks = splitResult.subTasks;
+  const productTags = splitResult.productTags;
+  console.log(`✅ [split-task] 拆解完成，子任务数量: ${subTasks.length}，产品标签: ${productTags.join(', ')}`);
 
   // 构建拆分结果格式
-  const splitResult = {
+  const splitResultData = {
+    productTags: productTags, // 🔥 新增：产品标签
     subTasks: subTasks.map((st, index) => ({
       taskTitle: st.title,
       title: st.title,
@@ -112,7 +115,8 @@ async function handleSingleSplit(taskId: string) {
       taskStatus: 'pending_review',
       metadata: {
         ...task.metadata,
-        splitResult,
+        splitResult: splitResultData,
+        productTags: productTags, // 🔥 新增：产品标签存储到 metadata
         splitAt: new Date().toISOString(),
         splitRejected: false,
       },
@@ -122,7 +126,7 @@ async function handleSingleSplit(taskId: string) {
     .returning();
 
   // 创建通知给 Agent A
-  const splitResultString = JSON.stringify(splitResult);
+  const splitResultString = JSON.stringify(splitResultData);
   
   await createNotification({
     agentId: 'A',
@@ -132,7 +136,8 @@ async function handleSingleSplit(taskId: string) {
       fromAgentId: 'B',
       toAgentId: 'A',
       message: '拆解完成，请确认拆解方案',
-      splitResult: splitResult,
+      splitResult: splitResultData,
+      productTags: productTags, // 🔥 新增：产品标签
     },
     result: splitResultString,
     relatedTaskId: taskId,
@@ -141,7 +146,8 @@ async function handleSingleSplit(taskId: string) {
     metadata: {
       taskId: taskId,
       splitType: 'agent_b_split',
-      subTaskCount: splitResult.subTasks?.length || 0,
+      subTaskCount: splitResultData.subTasks?.length || 0,
+      productTags: productTags, // 🔥 新增：产品标签
       splitPopupStatus: null,
       originalTaskContent: task.metadata?.splitRequest?.originalContent || task.coreCommand || task.taskName || '',
       originalTaskTitle: task.taskName || '',
@@ -151,7 +157,7 @@ async function handleSingleSplit(taskId: string) {
   return NextResponse.json({
     success: true,
     message: '任务拆分完成，等待确认',
-    data: { task: updatedTask, splitResult },
+    data: { task: updatedTask, splitResult: splitResultData, productTags },
   });
 }
 
@@ -302,8 +308,10 @@ ${task.coreCommand || ''}
 
       // 步骤4：调用 LLM 一次性拆解该分组的所有任务
       console.log(`   🤖 调用 LLM 批量拆解 ${groupTasks.length} 个任务...`);
-      const flatSubTasks = await splitTaskForAgent('agent-b', virtualTask as any);
-      console.log(`   ✅ LLM 返回 ${flatSubTasks.length} 个扁平子任务`);
+      const batchSplitResult = await splitTaskForAgent('agent-b', virtualTask as any);
+      const flatSubTasks = batchSplitResult.subTasks;
+      const batchProductTags = batchSplitResult.productTags;
+      console.log(`   ✅ LLM 返回 ${flatSubTasks.length} 个扁平子任务，产品标签: ${batchProductTags.join(', ')}`);
 
       // 步骤5：将扁平化的子任务平均分配给该分组的各个任务
       console.log(`   📦 分配子任务给 ${groupTasks.length} 个任务...`);
@@ -354,6 +362,7 @@ ${task.coreCommand || ''}
             criticalReason: st.criticalReason,
             orderIndex: st.orderIndex || index + 1,
           })),
+          productTags: batchProductTags, // 🔥 新增：产品标签
           summary: `批量拆解任务为 ${subTasks.length} 个子任务`,
           totalDeliverables: subTasks.length.toString(),
           timeFrame: `${subTasks.length}步`,
