@@ -113,8 +113,15 @@ export async function GET(request: NextRequest) {
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : '提示词预览失败';
     console.error('[PromptAssemblerAPI] GET error:', error);
+    return NextResponse.json({
+      success: false,
+      error: message,
+    }, { status: 500 });
+  }
+}
+
 // ========== DELETE: 刷新提示词缓存 ==========
-// 
+//
 // 用于在修改提示词文件后刷新缓存，无需重启服务
 // 使用场景：运营人员修改 universal-objective-writing.md 或 insurance-compliance-rules.md 后调用
 

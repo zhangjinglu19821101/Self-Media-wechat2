@@ -118,7 +118,27 @@ export function hasStructuredResult(
 }
 
 /**
+ * 🔴🔴🔴 多层级提取函数：逐层尝试提取有效字符串
+ * 不是"非彼即此"，而是"逐一尝试，全部失败才返回默认值"
+ */
+function multiLevelExtract(
+  sources: Array<{ value: any; name: string }>,
+  defaultValue: string,
+  fieldName: string
+): string {
+  for (const source of sources) {
+    if (typeof source.value === 'string' && source.value.trim().length > 0) {
+      console.log(`[fillLegacyFields] ✅ ${fieldName} 从 ${source.name} 提取成功: "${source.value.substring(0, 50)}..."`);
+      return source.value;
+    }
+  }
+  console.log(`[fillLegacyFields] ⚠️ ${fieldName} 所有层级均为空，使用默认值: "${defaultValue.substring(0, 50)}..."`);
+  return defaultValue;
+}
+
+/**
  * 从结构化结果自动填充原有字段（向后兼容）
+ * 🔴🔴🔴 重构：多层级兜底机制，而非"非彼即此"
  */
 export function fillLegacyFields(result: ExecutorDirectResult): ExecutorDirectResult {
   if (!hasStructuredResult(result)) {
@@ -126,6 +146,32 @@ export function fillLegacyFields(result: ExecutorDirectResult): ExecutorDirectRe
   }
   
   const { structuredResult } = result;
+  
+  // 🔴🔴🔴 多层级提取 briefResponse
+  // 优先级：顶层 > structuredResult > 备选字段 > 默认值
+  const briefResponse = multiLevelExtract(
+    [
+      { value: result.briefResponse, name: '顶层 briefResponse' },
+      { value: structuredResult.briefResponse, name: 'structuredResult.briefResponse' },
+      { value: structuredResult.resultContent, name: 'structuredResult.resultContent' },
+      { value: result.result, name: '顶层 result' },
+    ],
+    '',
+    'briefResponse'
+  );
+  
+  // 🔴🔴🔴 多层级提取 selfEvaluation
+  // 优先级：顶层 > structuredResult > 备选字段 > 默认值
+  const selfEvaluation = multiLevelExtract(
+    [
+      { value: result.selfEvaluation, name: '顶层 selfEvaluation' },
+      { value: structuredResult.selfEvaluation, name: 'structuredResult.selfEvaluation' },
+      { value: structuredResult.completionJudgment?.suggestions, name: 'completionJudgment.suggestions' },
+      { value: structuredResult.executionSummary?.actionsTaken?.join('; '), name: 'executionSummary.actionsTaken' },
+    ],
+    '',
+    'selfEvaluation'
+  );
   
   // 🔴 修复：让 fillLegacyFields 更健壮，处理缺失的字段
   // 🔴🔴🔴 注意：needsMcpSupport 和 mcpParams 需要从 structuredResult.executionSummary 提取
@@ -139,8 +185,8 @@ export function fillLegacyFields(result: ExecutorDirectResult): ExecutorDirectRe
     needsMcpSupport: result.needsMcpSupport ?? structuredResult.executionSummary?.needsMcpSupport,
     // 🔴🔴🔴 从 structuredResult.executionSummary 提取 mcpParams（场景2核心）
     mcpParams: result.mcpParams ?? structuredResult.executionSummary?.mcpParams,
-    // 🔴 修复：从 structuredResult 提取 briefResponse 和 selfEvaluation
-    briefResponse: result.briefResponse ?? structuredResult.briefResponse,
-    selfEvaluation: result.selfEvaluation ?? structuredResult.selfEvaluation,
+    // 🔴🔴🔴 使用多层级提取结果
+    briefResponse,
+    selfEvaluation,
   };
 }

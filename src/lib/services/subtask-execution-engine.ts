@@ -399,27 +399,55 @@ function convertExecutorDirectToAgentResult(
     }
   }
   
-  // 🔴🔴🔴 P0-1 修复：将 briefResponse/selfEvaluation/executionSummary 传递到顶层
-  // 前端从 step_history 的 responseContent 中提取这些字段，必须存在于顶层
-  // 🔴🔴🔴 【修复】当 isCompleted=false 时，如果 LLM 没有返回这两个字段，提供兜底值
-  let briefResponse = typeof directResult.briefResponse === 'string'
-    ? directResult.briefResponse
-    : undefined;
-  let selfEvaluation = typeof directResult.selfEvaluation === 'string'
-    ? directResult.selfEvaluation
-    : undefined;
+  // 🔴🔴🔴 P0-1 修复：多层级提取 briefResponse 和 selfEvaluation
+  // 不是"非彼即此"，而是"逐一尝试，全部失败才使用默认值"
+  const briefResponse = (() => {
+    // 层级1：顶层 directResult.briefResponse
+    if (typeof directResult.briefResponse === 'string' && directResult.briefResponse.trim().length > 0) {
+      return directResult.briefResponse;
+    }
+    // 层级2：structuredResult.briefResponse
+    if (typeof structuredResult?.briefResponse === 'string' && structuredResult.briefResponse.trim().length > 0) {
+      return structuredResult.briefResponse;
+    }
+    // 层级3：备选字段（result、output 等）
+    if (typeof directResult.result === 'string' && directResult.result.trim().length > 0) {
+      return directResult.result.substring(0, 200);  // 截取前200字
+    }
+    // 兜底：空字符串
+    return '';
+  })();
+  
+  const selfEvaluation = (() => {
+    // 层级1：顶层 directResult.selfEvaluation
+    if (typeof directResult.selfEvaluation === 'string' && directResult.selfEvaluation.trim().length > 0) {
+      return directResult.selfEvaluation;
+    }
+    // 层级2：structuredResult.selfEvaluation
+    if (typeof structuredResult?.selfEvaluation === 'string' && structuredResult.selfEvaluation.trim().length > 0) {
+      return structuredResult.selfEvaluation;
+    }
+    // 层级3：备选字段（suggestions、reasoning 等）
+    if (typeof suggestions === 'string' && suggestions.trim().length > 0) {
+      return suggestions;
+    }
+    if (typeof reasoning === 'string' && reasoning.trim().length > 0) {
+      return reasoning;
+    }
+    // 兜底：空字符串
+    return '';
+  })();
   
   // 🔴🔴🔴 【关键修复】当任务未完成时，提供默认的 briefResponse 和 selfEvaluation
-  if (!isTaskDown) {
-    if (!briefResponse) {
-      briefResponse = originalResult || '任务未能完成';
-    }
-    if (!selfEvaluation) {
-      selfEvaluation = suggestions 
+  const finalBriefResponse = !isTaskDown && !briefResponse
+    ? (originalResult || '任务未能完成')
+    : briefResponse;
+    
+  const finalSelfEvaluation = !isTaskDown && !selfEvaluation
+    ? (suggestions 
         ? `任务未完成：${suggestions}` 
-        : '任务未能完成，具体原因请查看执行结论';
-    }
-  }
+        : '任务未能完成，具体原因请查看执行结论')
+    : selfEvaluation;
   
   const executionSummaryFromDirect = structuredResult?.executionSummary
     ? { ...structuredResult.executionSummary }
@@ -430,8 +458,8 @@ function convertExecutorDirectToAgentResult(
     isNeedMcp,
     isTaskDown,
     problem: problem,
-    briefResponse,
-    selfEvaluation,
+    briefResponse: finalBriefResponse,
+    selfEvaluation: finalSelfEvaluation,
     executionSummary: executionSummaryFromDirect,
     executorOutput: {
       result: originalResult,  // 🔴 P0-2：使用原始 result（执行结论声明，如"【执行结论】..."）
