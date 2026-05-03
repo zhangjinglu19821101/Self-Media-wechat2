@@ -17,7 +17,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { requireAuth } from '@/lib/auth/context';
 import { db } from '@/lib/db';
 import { agentSubTasks, agentSubTasksStepHistory } from '@/lib/db/schema';
-import { eq, and, desc, sql, or } from 'drizzle-orm';
+import { eq, and, desc, sql, or, ne } from 'drizzle-orm';
 import { manuallyExecuteInProgressSubtasks } from '@/lib/cron';
 
 // ═══════════════════════════════════════════════════════════════
@@ -167,14 +167,15 @@ export async function GET(request: NextRequest) {
     }
 
     // 3. 查询 MCP 执行历史，获取更详细的失败信息
-    // 从 step_history 中提取 canComplete=false 的记录
+    // 从 step_history 中提取 canComplete=false 的记录（排除 auto 记录）
     const stepHistory = await db
       .select()
       .from(agentSubTasksStepHistory)
       .where(
         and(
           eq(agentSubTasksStepHistory.commandResultId, subTask.commandResultId),
-          eq(agentSubTasksStepHistory.stepNo, subTask.orderIndex)
+          eq(agentSubTasksStepHistory.stepNo, subTask.orderIndex),
+          ne(agentSubTasksStepHistory.interactUser, 'auto')  // 排除系统自动执行记录
         )
       )
       .orderBy(desc(agentSubTasksStepHistory.interactTime));
@@ -380,14 +381,15 @@ export async function POST(request: NextRequest) {
       // 使用子任务中的 commandResultId
       const actualCommandResultId = commandResultId || subTask.commandResultId;
       
-      // 1. 查询沟通历史记录
+      // 1. 查询沟通历史记录（排除 auto 记录）
       const interactionHistoryForComplete = await db
         .select()
         .from(agentSubTasksStepHistory)
         .where(
           and(
             eq(agentSubTasksStepHistory.commandResultId, actualCommandResultId),
-            eq(agentSubTasksStepHistory.stepNo, subTask.orderIndex)
+            eq(agentSubTasksStepHistory.stepNo, subTask.orderIndex),
+            ne(agentSubTasksStepHistory.interactUser, 'auto')  // 排除系统自动执行记录
           )
         )
         .orderBy(agentSubTasksStepHistory.interactTime);

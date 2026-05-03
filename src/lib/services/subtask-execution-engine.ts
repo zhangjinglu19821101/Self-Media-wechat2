@@ -4995,6 +4995,28 @@ export class SubtaskExecutionEngine {
           console.log('[SubtaskEngine] [command_result_id=' + task.commandResultId + '] ⚠️  未从 ArticleContentService 获取到文章内容');
         }
       }
+
+      // 3. 如果仍然没有，从前序任务（order_index - 1）的 result_text 数据库字段获取
+      if (!priorStepOutputText && task.orderIndex > 1) {
+        console.log('[SubtaskEngine] [command_result_id=' + task.commandResultId + '] 尝试从前序任务 result_text 获取内容，前序 order_index=' + (task.orderIndex - 1));
+        const predecessorTask = await db
+          .select({ resultText: agentSubTasks.resultText })
+          .from(agentSubTasks)
+          .where(
+            and(
+              eq(agentSubTasks.commandResultId, task.commandResultId as any),
+              eq(agentSubTasks.orderIndex, task.orderIndex - 1)
+            )
+          )
+          .limit(1);
+        
+        if (predecessorTask.length > 0 && predecessorTask[0].resultText && predecessorTask[0].resultText.length > 50) {
+          priorStepOutputText = predecessorTask[0].resultText;
+          console.log('[SubtaskEngine] [command_result_id=' + task.commandResultId + '] ✅ 从前序任务 result_text 获取到内容，长度:', priorStepOutputText.length);
+        } else {
+          console.log('[SubtaskEngine] [command_result_id=' + task.commandResultId + '] ⚠️  前序任务 result_text 为空或内容过短');
+        }
+      }
     } catch (error) {
       console.warn('[SubtaskEngine] [command_result_id=' + task.commandResultId + '] ⚠️  获取上一步骤输出失败:', {
         message: error instanceof Error ? error.message : String(error)

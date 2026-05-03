@@ -6,7 +6,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { agentSubTasks, dailyTask } from '@/lib/db/schema';
-import { eq, and, or, desc, exists } from 'drizzle-orm';
+import { eq, and, or, desc, exists, ne } from 'drizzle-orm';
 import { agentSubTasksStepHistory } from '@/lib/db/schema';
 import { getWorkspaceId } from '@/lib/auth/context';
 
@@ -42,7 +42,7 @@ export async function GET(
       conditions.push(eq(agentSubTasks.status, status));
     }
     
-    // 🔥 只返回有交互历史的任务
+    // 🔥 只返回有交互历史的任务（排除 auto 记录）
     if (hasInteraction === 'true') {
       conditions.push(
         exists(
@@ -51,7 +51,8 @@ export async function GET(
             .where(
               and(
                 eq(agentSubTasksStepHistory.commandResultId, agentSubTasks.commandResultId),
-                eq(agentSubTasksStepHistory.stepNo, agentSubTasks.orderIndex)
+                eq(agentSubTasksStepHistory.stepNo, agentSubTasks.orderIndex),
+                ne(agentSubTasksStepHistory.interactUser, 'auto')  // 排除系统自动执行记录
               )
             )
         )

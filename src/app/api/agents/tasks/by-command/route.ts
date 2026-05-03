@@ -7,7 +7,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { requireAuth } from '@/lib/auth/context';
 import { db } from '@/lib/db';
 import { agentSubTasks, agentSubTasksStepHistory } from '@/lib/db/schema';
-import { eq, desc, exists, and } from 'drizzle-orm';
+import { eq, desc, exists, and, ne } from 'drizzle-orm';
 
 /**
  * 从 task_description 中提取用户原始指令
@@ -70,7 +70,8 @@ export async function GET(request: NextRequest) {
               .where(
                 and(
                   eq(agentSubTasksStepHistory.commandResultId, agentSubTasks.commandResultId),
-                  eq(agentSubTasksStepHistory.stepNo, agentSubTasks.orderIndex)
+                  eq(agentSubTasksStepHistory.stepNo, agentSubTasks.orderIndex),
+                  ne(agentSubTasksStepHistory.interactUser, 'auto')  // 排除系统自动执行记录
                 )
               )
           )

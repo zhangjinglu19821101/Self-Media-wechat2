@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { articleContent, agentSubTasks, agentSubTasksStepHistory } from '@/lib/db/schema';
-import { eq, and, desc, or } from 'drizzle-orm';
+import { eq, and, desc, or, ne } from 'drizzle-orm';
 import { requireAuth, getWorkspaceId } from '@/lib/auth/context';
 
 export async function GET(request: NextRequest) {
@@ -66,9 +66,9 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // 2. 从 agentSubTasksStepHistory 表提取历史版本（作为补充）
+    // 2. 从 agentSubTasksStepHistory 表提取历史版本（作为补充，排除 auto 记录）
     let historyVersions: any[] = [];
-    
+
     if (commandResultId) {
       const historyRecords = await db
         .select()
@@ -76,7 +76,8 @@ export async function GET(request: NextRequest) {
         .where(
           and(
             eq(agentSubTasksStepHistory.commandResultId, commandResultId),
-            eq(agentSubTasksStepHistory.stepNo, 1) // order_index=1 是初稿
+            eq(agentSubTasksStepHistory.stepNo, 1), // order_index=1 是初稿
+            ne(agentSubTasksStepHistory.interactUser, 'auto')  // 排除系统自动执行记录
           )
         )
         .orderBy(agentSubTasksStepHistory.interactTime);

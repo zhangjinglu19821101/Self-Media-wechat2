@@ -1,5 +1,53 @@
 # 执行Agent标准返回格式
 
+## 【🔴🔴🔴 最高优先级：输出格式铁律】
+
+**你必须严格遵守以下输出规则，违反即视为任务失败：**
+
+### 铁律1：只输出纯 JSON
+- ✅ **正确**：直接输出 `{` 开头、`}` 结尾的纯 JSON 对象
+- ❌ **错误**：在 JSON 前后添加任何文字、解释、说明
+- ❌ **错误**：输出 Markdown 代码块 \`\`\`json...\`\`\`
+- ❌ **错误**：输出数组 `[...]` 作为顶层结构
+
+### 铁律2：JSON 必须完整可解析
+- 必须以 `{` 开头，以 `}` 结尾
+- 所有字符串必须用双引号 `"`
+- 所有键名必须用双引号
+- 禁止尾随逗号
+- 禁止单引号
+
+### 铁律3：必填字段一个不能少
+无论任务成功还是失败，以下字段**必须存在**：
+```
+{
+  "isCompleted": true/false,
+  "result": "【执行结论】...",
+  "suggestion": "...",
+  "structuredResult": {
+    "briefResponse": "...",
+    "selfEvaluation": "...",
+    "executionSummary": {
+      "actionsTaken": [...]
+    }
+  }
+}
+```
+
+### 🔴 输出示例（直接复制这个格式，只改内容）
+
+**任务完成时：**
+```json
+{"isCompleted":true,"result":"【执行结论】去AI化优化已完成，文章更具真人感","suggestion":"","structuredResult":{"briefResponse":"我对文章进行了去AI化改写，打破了模板化结构","selfEvaluation":"改写成功，文章更自然、更像真人手写","executionSummary":{"actionsTaken":["分析了原文AI特征","进行了口语化改写","打乱了规整排版"],"needsMcpSupport":false}}}
+```
+
+**任务失败时：**
+```json
+{"isCompleted":false,"result":"【执行结论】无法获取前序文章内容","suggestion":"请检查前序任务是否完成","structuredResult":{"briefResponse":"尝试获取前序文章但失败","selfEvaluation":"缺少输入内容，无法执行去AI化优化","executionSummary":{"actionsTaken":["检查前序任务输出","发现内容为空"],"needsMcpSupport":false}}}
+```
+
+---
+
 ## 【你的目标】
 基于你的专业能力完成任务，并按照标准格式输出结果。
 

@@ -7,7 +7,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { requireAuth } from '@/lib/auth/context';
 import { db } from '@/lib/db';
 import { agentSubTasks, agentSubTasksStepHistory, dailyTask } from '@/lib/db/schema';
-import { eq, and, desc } from 'drizzle-orm';
+import { eq, and, desc, ne } from 'drizzle-orm';
 
 export async function GET(
   request: NextRequest,
@@ -47,14 +47,15 @@ export async function GET(
 
         const relatedDailyTask = dailyTaskResult.length > 0 ? dailyTaskResult[0] : null;
 
-        // 查询交互历史，获取待确认字段和可选方案
+        // 查询交互历史，获取待确认字段和可选方案（排除 auto 记录）
         const stepHistory = await db
           .select()
           .from(agentSubTasksStepHistory)
           .where(
             and(
               eq(agentSubTasksStepHistory.commandResultId, subTask.commandResultId),
-              eq(agentSubTasksStepHistory.stepNo, subTask.orderIndex)
+              eq(agentSubTasksStepHistory.stepNo, subTask.orderIndex),
+              ne(agentSubTasksStepHistory.interactUser, 'auto')  // 排除系统自动执行记录
             )
           )
           .orderBy(desc(agentSubTasksStepHistory.interactTime))

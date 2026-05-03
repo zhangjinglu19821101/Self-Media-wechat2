@@ -67,7 +67,13 @@ export interface ExecutionResult {
   originalInstruction: OriginalInstruction;
   executionSummary: ExecutionSummary;
   resultContent: any;
-  completionJudgment: CompletionJudgment;
+  completionJudgment?: CompletionJudgment;
+  
+  // 🔴 P0-1 修复：新增标准返回字段（deai-optimizer 等新 Agent 使用）
+  taskInstruction?: string;
+  briefRequest?: string;
+  briefResponse?: string;
+  selfEvaluation?: string;
 }
 
 // 执行Agent直接执行结果（增强版）
@@ -133,5 +139,8 @@ export function fillLegacyFields(result: ExecutorDirectResult): ExecutorDirectRe
     needsMcpSupport: result.needsMcpSupport ?? structuredResult.executionSummary?.needsMcpSupport,
     // 🔴🔴🔴 从 structuredResult.executionSummary 提取 mcpParams（场景2核心）
     mcpParams: result.mcpParams ?? structuredResult.executionSummary?.mcpParams,
+    // 🔴 修复：从 structuredResult 提取 briefResponse 和 selfEvaluation
+    briefResponse: result.briefResponse ?? structuredResult.briefResponse,
+    selfEvaluation: result.selfEvaluation ?? structuredResult.selfEvaluation,
   };
 }

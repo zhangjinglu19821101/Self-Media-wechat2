@@ -69,16 +69,22 @@ export class JsonParserEnhancer {
     }
     
     // 检测执行 Agent 标准格式（扁平格式）
-    // 特征：isCompleted + structuredResult + executionSummary
+    // 特征：isCompleted + structuredResult + executionSummary + selfEvaluation + briefResponse
     const executorPatterns = [
       /"isCompleted"\s*:/,
       /"structuredResult"\s*:/,
       /"executionSummary"\s*:/,
+      /"selfEvaluation"\s*:/,
+      /"briefResponse"\s*:/,
+      /"resultText"\s*:/,
+      /"actionsTaken"\s*:/,
     ];
     
     const executorMatchCount = executorPatterns.filter(p => p.test(text)).length;
-    if (executorMatchCount >= 2) {
-      console.log('[JsonParserEnhancer] 🔍 检测到执行 Agent 标准格式');
+    // 🔴🔴🔴 P0-修复：只要有 isCompleted 就认为是执行 Agent 格式
+    // 原因：很多执行 Agent 只返回 isCompleted + selfEvaluation + briefResponse，没有 structuredResult
+    if (executorMatchCount >= 1 && /"isCompleted"\s*:/.test(text)) {
+      console.log('[JsonParserEnhancer] 🔍 检测到执行 Agent 标准格式（匹配模式数:', executorMatchCount, '）');
       return 'executor';
     }
     
@@ -89,6 +95,11 @@ export class JsonParserEnhancer {
       if (/"type"\s*:\s*"(PASS|FAIL|NEED_USER|EXECUTE_MCP|REEXECUTE_EXECUTOR|COMPLETE)"/.test(text)) {
         console.log('[JsonParserEnhancer] 🔍 纯 JSON 检测为 Agent B 格式');
         return 'agent-b';
+      }
+      // 🔴 新增：检查是否包含 isCompleted 字段（执行 Agent 格式）
+      if (/"isCompleted"\s*:/.test(text)) {
+        console.log('[JsonParserEnhancer] 🔍 纯 JSON 检测为执行 Agent 格式');
+        return 'executor';
       }
     }
     
@@ -142,6 +153,7 @@ export class JsonParserEnhancer {
 
   /**
    * 🔴 新增：专门针对执行 Agent 标准格式的解析
+   * 🔴🔴🔴 P0-修复：优先尝试直接解析整个文本为 JSON 对象
    */
   static parseExecutorStandardFormat(text: string): GenericParseResult {
     const warnings: string[] = [];
@@ -149,7 +161,83 @@ export class JsonParserEnhancer {
     console.log('[JsonParserEnhancer] 🔴 使用执行 Agent 标准格式专门解析');
     
     try {
-      // 使用通用解析
+      // 🔴🔴🔴 P0-修复：优先尝试直接解析整个文本为 JSON 对象
+      // 原因：LLM 返回的响应通常就是纯 JSON 对象，不需要复杂的提取逻辑
+      const trimmedText = text.trim();
+      
+      // 检查是否以 { 开头且以 } 结尾（可能是有效的 JSON 对象）
+      if (trimmedText.startsWith('{')) {
+        // 找到第一个完整的 JSON 对象
+        let depth = 0;
+        let inString = false;
+        let escape = false;
+        let endPos = -1;
+        
+        for (let i = 0; i < trimmedText.length; i++) {
+          const char = trimmedText[i];
+          
+          if (escape) {
+            escape = false;
+            continue;
+          }
+          
+          if (char === '\\') {
+            escape = true;
+            continue;
+          }
+          
+          if (char === '"') {
+            inString = !inString;
+            continue;
+          }
+          
+          if (!inString) {
+            if (char === '{') depth++;
+            else if (char === '}') {
+              depth--;
+              if (depth === 0) {
+                endPos = i;
+                break;
+              }
+            }
+          }
+        }
+        
+        if (endPos > 0) {
+          const jsonCandidate = trimmedText.substring(0, endPos + 1);
+          console.log('[JsonParserEnhancer] 🔍 尝试直接解析顶层 JSON 对象，长度:', jsonCandidate.length);
+          
+          try {
+            const data = JSON.parse(jsonCandidate);
+            // 验证是否是对象且包含 isCompleted
+            if (typeof data === 'object' && data !== null && !Array.isArray(data)) {
+              if ('isCompleted' in data) {
+                console.log('[JsonParserEnhancer] ✅ 直接解析成功，找到 isCompleted 字段');
+                return {
+                  success: true,
+                  data,
+                  warnings: ['使用直接解析模式']
+                };
+              } else {
+                console.log('[JsonParserEnhancer] ⚠️ 直接解析成功，但缺少 isCompleted 字段');
+                warnings.push('执行 Agent 标准格式缺少字段: isCompleted');
+                return {
+                  success: true,
+                  data,
+                  warnings
+                };
+              }
+            } else {
+              console.log('[JsonParserEnhancer] ⚠️ 直接解析结果不是对象，类型:', typeof data, Array.isArray(data) ? 'array' : '');
+            }
+          } catch (directParseError) {
+            console.log('[JsonParserEnhancer] ⚠️ 直接解析失败:', directParseError instanceof Error ? directParseError.message : String(directParseError));
+          }
+        }
+      }
+      
+      // 回退到通用解析
+      console.log('[JsonParserEnhancer] 🔄 回退到通用解析');
       const result = this.parseGenericJson(text);
       
       if (result.success && result.data) {
@@ -307,18 +395,20 @@ export class JsonParserEnhancer {
       }
     }
 
-    // 🔴 新增：使用栈匹配精确提取 JSON 数组
-    const arrayResult = this.extractJsonArrayWithStackMatching(text);
-    if (arrayResult) {
-      console.log(`🔍 [通用解析] 使用提取模式: 栈匹配 JSON 数组`);
-      return arrayResult;
-    }
-
-    // 2. 🔧 修复：使用栈匹配精确提取 JSON 对象，避免贪婪匹配问题
+    // 🔴🔴🔴 P0-修复：交换顺序，JSON 对象提取优先于数组
+    // 原因：大多数 Agent 响应的顶层结构是对象（如 {isCompleted: true, ...}）
+    // 如果先提取数组，会错误地匹配到内部的 actionsTaken 等数组字段
     const stackResult = this.extractJsonWithStackMatching(text);
     if (stackResult) {
       console.log(`🔍 [通用解析] 使用提取模式: 栈匹配 JSON 对象`);
       return stackResult;
+    }
+
+    // 🔴 新增：使用栈匹配精确提取 JSON 数组（仅当对象提取失败时才尝试）
+    const arrayResult = this.extractJsonArrayWithStackMatching(text);
+    if (arrayResult) {
+      console.log(`🔍 [通用解析] 使用提取模式: 栈匹配 JSON 数组`);
+      return arrayResult;
     }
 
     return null;

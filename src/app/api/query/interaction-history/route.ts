@@ -9,7 +9,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { agentSubTasksStepHistory } from '@/lib/db/schema';
-import { eq, and } from 'drizzle-orm';
+import { eq, and, ne } from 'drizzle-orm';
 
 export async function GET(request: NextRequest) {
   try {
@@ -29,9 +29,10 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // 构建查询条件
+    // 构建查询条件（排除 auto 记录）
     const whereConditions = [
-      eq(agentSubTasksStepHistory.commandResultId, commandResultId)
+      eq(agentSubTasksStepHistory.commandResultId, commandResultId),
+      ne(agentSubTasksStepHistory.interactUser, 'auto')  // 排除系统自动执行记录
     ];
 
     if (stepNo) {

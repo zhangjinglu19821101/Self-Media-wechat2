@@ -113,6 +113,23 @@ export async function GET(request: NextRequest) {
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : '提示词预览失败';
     console.error('[PromptAssemblerAPI] GET error:', error);
+// ========== DELETE: 刷新提示词缓存 ==========
+// 
+// 用于在修改提示词文件后刷新缓存，无需重启服务
+// 使用场景：运营人员修改 universal-objective-writing.md 或 insurance-compliance-rules.md 后调用
+
+export async function DELETE() {
+  try {
+    promptAssemblerService.invalidateCache();
+    
+    return NextResponse.json({
+      success: true,
+      message: '提示词缓存已刷新',
+      timestamp: new Date().toISOString(),
+    });
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : '缓存刷新失败';
+    console.error('[PromptAssemblerAPI] DELETE error:', error);
     return NextResponse.json({
       success: false,
       error: message,

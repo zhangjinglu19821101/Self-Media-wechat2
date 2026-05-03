@@ -82,6 +82,7 @@ export interface AssembledPrompt {
     hasConfirmedOutline?: boolean; // Phase 3
     hasPriorStepOutput?: boolean;  // 🔴 前序步骤结果
     hasIndustryCases?: boolean;    // 🔥 是否有行业案例
+    hasUniversalObjectiveWriting?: boolean; // 🔥 是否有通用客观写作要求
   };
 }
 
@@ -111,6 +112,9 @@ const DEFAULT_EXECUTOR_TYPE = 'insurance-d';
 // 🔥 合规规则文件路径（所有保险创作 Agent 共用）
 const COMPLIANCE_RULES_FILE = 'src/lib/agents/prompts/insurance-compliance-rules.md';
 
+// 🔥 通用客观写作要求文件路径（所有平台通用）
+const UNIVERSAL_OBJECTIVE_WRITING_FILE = 'src/lib/agents/prompts/universal-objective-writing.md';
+
 // ========== 需要注入合规规则的 Agent 类型列表 ==========
 const COMPLIANCE_REQUIRED_AGENTS = new Set([
   'insurance-d',
@@ -125,6 +129,8 @@ export class PromptAssemblerService {
   private fixedBasePrompts: Map<string, string> = new Map();
   // 🔥 合规规则缓存（P1-2: 使用 Promise 缓存避免并发竞态）
   private complianceRulesPromise: Promise<string> | null = null;
+  // 🔥 通用客观写作要求缓存
+  private universalObjectiveWritingPromise: Promise<string> | null = null;
 
   /**
    * 加载固定基础提示词
@@ -166,6 +172,8 @@ export class PromptAssemblerService {
       this.fixedBasePrompts.clear();
       // 🔥 同时刷新合规规则缓存（P1-1）
       this.invalidateComplianceRulesCache();
+      // 🔥 同时刷新通用客观写作要求缓存
+      this.invalidateUniversalObjectiveWritingCache();
     }
   }
 
@@ -174,6 +182,44 @@ export class PromptAssemblerService {
    */
   invalidateComplianceRulesCache(): void {
     this.complianceRulesPromise = null;
+  }
+
+  /**
+   * 🔥 强制刷新通用客观写作要求缓存
+   */
+  invalidateUniversalObjectiveWritingCache(): void {
+    this.universalObjectiveWritingPromise = null;
+  }
+
+  /**
+   * 🔥 加载通用客观写作要求（所有平台通用）
+   */
+  private async loadUniversalObjectiveWriting(): Promise<string> {
+    if (this.universalObjectiveWritingPromise) {
+      return this.universalObjectiveWritingPromise;
+    }
+
+    this.universalObjectiveWritingPromise = this._loadUniversalObjectiveWritingOnce();
+    return this.universalObjectiveWritingPromise;
+  }
+
+  /**
+   * 通用客观写作要求实际加载逻辑
+   */
+  private async _loadUniversalObjectiveWritingOnce(): Promise<string> {
+    const filePath = path.join(process.cwd(), UNIVERSAL_OBJECTIVE_WRITING_FILE);
+    try {
+      const content = await readFile(filePath, 'utf-8');
+      return content;
+    } catch (error) {
+      console.error('[PromptAssembler] 加载通用客观写作要求失败:', error);
+      // 生产环境不允许静默降级
+      if (process.env.COZE_PROJECT_ENV === 'PROD') {
+        throw new Error('通用客观写作要求文件加载失败，生产环境不允许静默降级');
+      }
+      console.warn('[PromptAssembler] 非生产环境，通用客观写作要求降级为空');
+      return '';
+    }
   }
 
   /**
@@ -620,11 +666,14 @@ export class PromptAssemblerService {
     const [
       fixedBasePrompt,
       complianceRulesText,
+      universalObjectiveWritingText,
       { userExclusiveRules, styleRules, sampleArticles, availableMaterials }
     ] = await Promise.all([
       this.loadFixedBasePrompt(options.executorType),
       // 🔥 仅对保险创作 Agent 加载合规规则
       needsComplianceRules ? this.loadComplianceRules() : Promise.resolve(''),
+      // 🔥 加载通用客观写作要求（所有平台通用）
+      this.loadUniversalObjectiveWriting(),
       // 🔥 Phase 5.5: 传递 templateId 给数字资产服务
       digitalAssetService.getDigitalAssetsForPrompt(options.workspaceId, options.templateId),
     ]);
@@ -636,9 +685,11 @@ export class PromptAssemblerService {
     const currentTaskText = this.formatCurrentTask(options, availableMaterials);
 
     // M4: 拼接顺序对齐需求文档 3.2.3
-    // 最终提示词 = 固定基础提示词 + 🔥合规规则（保险创作Agent） + 用户专属动态规则 + 本次创作需求
+    // 最终提示词 = 固定基础提示词 + 🔥通用客观写作要求 + 🔥合规规则（保险创作Agent） + 用户专属动态规则 + 本次创作需求
     const fullPrompt = [
       fixedBasePrompt,
+      universalObjectiveWritingText, // 🔥 通用客观写作要求（所有平台通用）
+      '\n---\n\n',
       complianceRulesSection, // 🔥 合规规则注入（在固定基础提示词之后、用户专属规则之前）
       '\n---\n\n',
       userExclusiveRulesSection.formattedText,
@@ -665,6 +716,7 @@ export class PromptAssemblerService {
         hasConfirmedOutline: !!options.confirmedOutline, // Phase 3
         hasPriorStepOutput: !!options.priorStepOutput,    // 🔴 前序步骤结果
         hasIndustryCases: !!options.industryCases,        // 🔥 是否有行业案例
+        hasUniversalObjectiveWriting: !!universalObjectiveWritingText, // 🔥 是否有通用客观写作要求
       },
     };
   }

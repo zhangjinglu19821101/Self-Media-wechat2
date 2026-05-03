@@ -52,7 +52,7 @@ export async function GET(
 
     const relatedDailyTask = relatedTasks.length > 0 ? relatedTasks[0] : null;
 
-    // 3. 查询交互历史记录
+    // 3. 查询交互历史记录（排除系统自动执行的 "auto" 记录，仅保留真实 Agent 执行记录）
     const stepHistory = await db
       .select()
       .from(agentSubTasksStepHistory)
@@ -62,9 +62,10 @@ export async function GET(
           eq(agentSubTasksStepHistory.stepNo, subTask.orderIndex)
         )
       )
-      .orderBy(agentSubTasksStepHistory.interactTime);
+      .orderBy(agentSubTasksStepHistory.interactTime)
+      .then(records => records.filter(r => r.interactUser !== 'auto'));
 
-    console.log(`📜 查询到 ${stepHistory.length} 条交互历史记录`);
+    console.log(`📜 查询到 ${stepHistory.length} 条交互历史记录（已排除 auto 记录）`);
 
     // 4. 查询 MCP 执行记录
     // 使用 commandResultId 和 orderIndex 查询

@@ -7,7 +7,7 @@
 set -Eeuo pipefail
 
 # 设置工作目录（支持环境变量覆盖）
-export COZE_WORKSPACE_PATH="${COZE_WORKSPACE_PATH:-/workspace/projects}"
+export COZE_WORKSPACE_PATH="${COZE_WORKSPACE_PATH:-$(dirname "$0"/..)}"
 cd "${COZE_WORKSPACE_PATH}"
 
 # 加载开发环境变量（如果存在）

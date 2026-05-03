@@ -34,6 +34,8 @@ import { getFlowTemplate } from '@/lib/agents/flow-templates';
 import { HorizontalFlowDiagram } from '@/components/creation-guide/horizontal-flow-diagram';
 import { NodeDetailPanel } from '@/components/creation-guide/node-detail-drawer';
 import type { FlowNode } from '@/components/creation-guide/types';
+import { ClientDate } from '@/components/client-date';
+import { ReminderTime } from '@/components/reminder-time';
 
 // 🔥 信息速记分类颜色和标签（模块级常量，避免每次渲染重复创建）
 const SNIPPET_CATEGORY_COLORS: Record<string, { bg: string; text: string; border: string }> = {
@@ -513,6 +515,14 @@ export default function HomePage() {
   const [loadingRecommendedCases, setLoadingRecommendedCases] = useState(false);
   const [hasSearchedCases, setHasSearchedCases] = useState(false); // 是否已搜索过案例
   const [viewingCase, setViewingCase] = useState<CaseItem | null>(null); // 查看案例详情
+  
+  // 🔥 案例搜索相关状态（完全替换模式）
+  const [caseSearchMode, setCaseSearchMode] = useState<'recommend' | 'search'>('recommend'); // 当前模式
+  const [caseSearchKeyword, setCaseSearchKeyword] = useState(''); // 搜索关键词
+  const [caseSearchLoading, setCaseSearchLoading] = useState(false); // 搜索加载中
+  const [caseFilterProduct, setCaseFilterProduct] = useState<string>(''); // 险种筛选
+  const [caseFilterCrowd, setCaseFilterCrowd] = useState<string>(''); // 人群筛选
+  const [caseFilterType, setCaseFilterType] = useState<string>(''); // 案例类型筛选
 
   // 🔥 结构选择相关状态
   const [selectedStructure, setSelectedStructure] = useState<StructureTemplate>(() => getDefaultStructure());
@@ -1565,6 +1575,60 @@ export default function HomePage() {
     }
   };
 
+  // 🔥 行业案例：搜索案例（完全替换模式）
+  const handleSearchCases = useCallback(async (keyword?: string, filters?: { productTag?: string; crowdTag?: string; caseType?: string }) => {
+    const searchKeyword = keyword ?? caseSearchKeyword;
+    const productTag = filters?.productTag ?? caseFilterProduct;
+    const crowdTag = filters?.crowdTag ?? caseFilterCrowd;
+    const caseType = filters?.caseType ?? caseFilterType;
+    
+    // 至少需要一个搜索条件
+    if (!searchKeyword.trim() && !productTag && !crowdTag && !caseType) {
+      return;
+    }
+    
+    setCaseSearchLoading(true);
+    setCaseSearchMode('search'); // 切换到搜索模式
+    
+    try {
+      const params = new URLSearchParams();
+      if (searchKeyword.trim()) params.set('keywords', searchKeyword.trim());
+      if (productTag) params.set('productTags', productTag);
+      if (crowdTag) params.set('crowdTags', crowdTag);
+      if (caseType) params.set('caseType', caseType);
+      params.set('limit', '10');
+      
+      const data: any = await apiGet(`/api/cases/recommend?${params.toString()}`);
+      const cases: CaseItem[] = data?.data || [];
+      
+      // 完全替换：搜索结果直接替换推荐结果
+      setRecommendedCases(cases);
+      setHasSearchedCases(true);
+      
+      if (cases.length > 0) {
+        toast.success(`找到 ${cases.length} 条相关案例`);
+      } else {
+        toast.info('未找到匹配的案例');
+      }
+    } catch (error) {
+      console.error('搜索案例失败:', error);
+      toast.error('搜索案例失败');
+    } finally {
+      setCaseSearchLoading(false);
+    }
+  }, [caseSearchKeyword, caseFilterProduct, caseFilterCrowd, caseFilterType]);
+
+  // 🔥 行业案例：切换回推荐模式
+  const handleSwitchToRecommend = useCallback(async () => {
+    setCaseSearchMode('recommend');
+    setCaseSearchKeyword('');
+    setCaseFilterProduct('');
+    setCaseFilterCrowd('');
+    setCaseFilterType('');
+    setRecommendedCases([]);
+    setHasSearchedCases(false);
+  }, []);
+
   // 🔥 核心观点：自动推荐受 prevInstructionRef 保护（见上方素材自动推荐 useEffect）
   // 🔥 案例推荐：不由 mainInstruction 触发，仅由 handleAISplit（拆解后）和手动按钮触发
   // 🔥 案例推荐的数据来自快照持久化，刷新后从 sessionStorage 恢复
@@ -1773,26 +1837,6 @@ export default function HomePage() {
       toast.error('创建失败');
     } finally {
       setCreatingReminder(false);
-    }
-  };
-
-  // 🔥 提醒中心：格式化时间
-  const formatReminderTime = (dateStr: string) => {
-    const date = new Date(dateStr);
-    const now = new Date();
-    const diffMs = date.getTime() - now.getTime();
-    const diffDays = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
-    
-    if (diffDays < 0) {
-      return `逾期 ${Math.abs(diffDays)} 天`;
-    } else if (diffDays === 0) {
-      return '今天';
-    } else if (diffDays === 1) {
-      return '明天';
-    } else if (diffDays <= 7) {
-      return `${diffDays} 天后`;
-    } else {
-      return date.toLocaleDateString('zh-CN', { month: 'short', day: 'numeric' });
     }
   };
 
@@ -4121,20 +4165,147 @@ export default function HomePage() {
                       {/* 案例引用 Tab */}
                       {activeGuideTab === 'case' && (
                         <div className="space-y-4">
-                          <div className="flex items-center justify-between mb-1">
+                          {/* 搜索区域 */}
+                          <div className="space-y-3">
                             <div className="flex items-center gap-2">
-                              <span className="text-sm font-medium text-slate-700">选择行业案例</span>
-                              <span className="text-xs text-slate-400">增强文章说服力和真实感</span>
+                              {/* 搜索框 */}
+                              <div className="flex-1 relative">
+                                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                                <Input
+                                  placeholder="搜索案例关键词..."
+                                  value={caseSearchKeyword}
+                                  onChange={(e) => setCaseSearchKeyword(e.target.value)}
+                                  onKeyDown={(e) => {
+                                    if (e.key === 'Enter') {
+                                      handleSearchCases();
+                                    }
+                                  }}
+                                  className="pl-9 h-9 text-sm"
+                                />
+                              </div>
+                              {/* AI 推荐按钮 */}
+                              <Button 
+                                variant="outline" 
+                                size="sm" 
+                                onClick={() => {
+                                  handleRecommendCases(false);
+                                  setCaseSearchMode('recommend');
+                                }} 
+                                disabled={loadingRecommendedCases || !mainInstruction.trim()} 
+                                className="h-9 px-3 text-xs text-emerald-600 hover:text-emerald-700 border-emerald-200 hover:border-emerald-300"
+                              >
+                                {loadingRecommendedCases ? <Loader2 className="w-3.5 h-3.5 animate-spin mr-1.5" /> : <Sparkles className="w-3.5 h-3.5 mr-1.5" />}
+                                AI推荐
+                              </Button>
                             </div>
-                            <Button variant="ghost" size="sm" onClick={() => handleRecommendCases(false)} disabled={loadingRecommendedCases || !mainInstruction.trim()} className="h-8 px-3 text-xs text-emerald-600 hover:text-emerald-700">
-                              {loadingRecommendedCases ? <Loader2 className="w-3.5 h-3.5 animate-spin mr-1.5" /> : <Sparkles className="w-3.5 h-3.5 mr-1.5" />}
-                              推荐案例
-                            </Button>
+                            
+                            {/* 筛选器 */}
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <Select value={caseFilterProduct} onValueChange={(v) => {
+                                setCaseFilterProduct(v);
+                                if (v || caseSearchKeyword || caseFilterCrowd || caseFilterType) {
+                                  setTimeout(() => handleSearchCases(undefined, { productTag: v }), 100);
+                                }
+                              }}>
+                                <SelectTrigger className="h-8 w-[120px] text-xs">
+                                  <SelectValue placeholder="险种筛选" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="">全部险种</SelectItem>
+                                  <SelectItem value="意外险">意外险</SelectItem>
+                                  <SelectItem value="重疾险">重疾险</SelectItem>
+                                  <SelectItem value="医疗险">医疗险</SelectItem>
+                                  <SelectItem value="寿险">寿险</SelectItem>
+                                  <SelectItem value="年金险">年金险</SelectItem>
+                                  <SelectItem value="增额终身寿险">增额终身寿险</SelectItem>
+                                  <SelectItem value="雇主责任险">雇主责任险</SelectItem>
+                                  <SelectItem value="财产险">财产险</SelectItem>
+                                </SelectContent>
+                              </Select>
+                              
+                              <Select value={caseFilterCrowd} onValueChange={(v) => {
+                                setCaseFilterCrowd(v);
+                                if (v || caseSearchKeyword || caseFilterProduct || caseFilterType) {
+                                  setTimeout(() => handleSearchCases(undefined, { crowdTag: v }), 100);
+                                }
+                              }}>
+                                <SelectTrigger className="h-8 w-[120px] text-xs">
+                                  <SelectValue placeholder="人群筛选" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="">全部人群</SelectItem>
+                                  <SelectItem value="上班族">上班族</SelectItem>
+                                  <SelectItem value="企业主">企业主</SelectItem>
+                                  <SelectItem value="老年人">老年人</SelectItem>
+                                  <SelectItem value="儿童">儿童</SelectItem>
+                                  <SelectItem value="家庭">家庭</SelectItem>
+                                  <SelectItem value="高净值">高净值</SelectItem>
+                                </SelectContent>
+                              </Select>
+                              
+                              <Select value={caseFilterType} onValueChange={(v) => {
+                                setCaseFilterType(v);
+                                if (v || caseSearchKeyword || caseFilterProduct || caseFilterCrowd) {
+                                  setTimeout(() => handleSearchCases(undefined, { caseType: v }), 100);
+                                }
+                              }}>
+                                <SelectTrigger className="h-8 w-[100px] text-xs">
+                                  <SelectValue placeholder="类型" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="">全部类型</SelectItem>
+                                  <SelectItem value="positive">正面案例</SelectItem>
+                                  <SelectItem value="warning">警示案例</SelectItem>
+                                  <SelectItem value="milestone">里程碑</SelectItem>
+                                </SelectContent>
+                              </Select>
+                              
+                              {/* 搜索按钮 */}
+                              <Button 
+                                size="sm" 
+                                onClick={() => handleSearchCases()}
+                                disabled={caseSearchLoading || (!caseSearchKeyword && !caseFilterProduct && !caseFilterCrowd && !caseFilterType)}
+                                className="h-8 px-3 text-xs"
+                              >
+                                {caseSearchLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin mr-1" /> : <Search className="w-3.5 h-3.5 mr-1" />}
+                                搜索
+                              </Button>
+                              
+                              {/* 清空筛选 */}
+                              {(caseSearchKeyword || caseFilterProduct || caseFilterCrowd || caseFilterType) && (
+                                <Button 
+                                  variant="ghost" 
+                                  size="sm" 
+                                  onClick={() => {
+                                    setCaseSearchKeyword('');
+                                    setCaseFilterProduct('');
+                                    setCaseFilterCrowd('');
+                                    setCaseFilterType('');
+                                    setRecommendedCases([]);
+                                    setHasSearchedCases(false);
+                                    setCaseSearchMode('recommend');
+                                  }}
+                                  className="h-8 px-2 text-xs text-slate-500"
+                                >
+                                  <X className="w-3.5 h-3.5 mr-1" />
+                                  清空
+                                </Button>
+                              )}
+                            </div>
                           </div>
 
-                          {!mainInstruction.trim() && (
-                            <div className="text-center py-6 text-sm text-slate-400">
-                              请先输入任务指令，系统将根据指令推荐最相关的案例
+                          {/* 当前模式提示 */}
+                          {caseSearchMode === 'search' && recommendedCases.length > 0 && (
+                            <div className="text-xs text-slate-500 flex items-center gap-1">
+                              <Search className="w-3 h-3" />
+                              搜索结果（{recommendedCases.length} 条）
+                              <span className="text-slate-400 ml-2">| 点击「AI推荐」切换回智能推荐</span>
+                            </div>
+                          )}
+                          {caseSearchMode === 'recommend' && recommendedCases.length > 0 && (
+                            <div className="text-xs text-emerald-600 flex items-center gap-1">
+                              <Sparkles className="w-3 h-3" />
+                              AI 推荐结果（{recommendedCases.length} 条）
                             </div>
                           )}
 
@@ -4155,13 +4326,9 @@ export default function HomePage() {
                             </div>
                           )}
 
-                          {/* 推荐案例列表 */}
+                          {/* 案例列表 */}
                           {recommendedCases.length > 0 && (
                             <div className="space-y-2">
-                              <div className="text-xs font-medium text-emerald-600 flex items-center gap-1">
-                                <Sparkles className="w-3 h-3" />
-                                根据指令推荐的最相关案例（点击查看详情或选择）
-                              </div>
                               {recommendedCases.map((c) => {
                                 const isSelected = selectedCaseIds.includes(c.id);
                                 return (
@@ -4233,12 +4400,20 @@ export default function HomePage() {
                             </div>
                           )}
 
-                          {/* 无推荐结果 */}
-                          {mainInstruction.trim() && !loadingRecommendedCases && recommendedCases.length === 0 && (
+                          {/* 无结果提示 */}
+                          {!loadingRecommendedCases && !caseSearchLoading && recommendedCases.length === 0 && (
                             <div className="text-center py-8 text-sm text-slate-400">
-                              {hasSearchedCases
-                                ? '未找到与指令相关的案例，当前案例库覆盖的险种：意外险、医疗险、重疾险、财产险、雇主责任险'
-                                : '点击上方「推荐案例」按钮，获取与指令相关的行业案例'}
+                              {caseSearchMode === 'search' && hasSearchedCases
+                                ? '未找到匹配的案例，请尝试其他关键词或筛选条件'
+                                : '请输入关键词搜索，或点击「AI推荐」获取智能推荐案例'}
+                            </div>
+                          )}
+                          
+                          {/* 加载中提示 */}
+                          {(loadingRecommendedCases || caseSearchLoading) && (
+                            <div className="text-center py-8 text-sm text-slate-500 flex items-center justify-center gap-2">
+                              <Loader2 className="w-4 h-4 animate-spin" />
+                              {caseSearchMode === 'search' ? '搜索中...' : 'AI 推荐中...'}
                             </div>
                           )}
                         </div>
@@ -5000,9 +5175,7 @@ export default function HomePage() {
                                 <SelectItem key={val} value={val}>
                                   {version.title || `版本 ${index + 1}`}
                                   {version.timestamp && (
-                                    <span className="text-gray-500 ml-2">
-                                      {new Date(version.timestamp).toLocaleString()}
-                                    </span>
+                                    <ClientDate date={version.timestamp} format="full" className="text-gray-500 ml-2" />
                                   )}
                                 </SelectItem>
                                 );
@@ -5023,9 +5196,7 @@ export default function HomePage() {
                               <SelectItem key={val} value={val}>
                                 {version.title || `版本 ${index + 1}`}
                                 {version.timestamp && (
-                                  <span className="text-gray-500 ml-2">
-                                    {new Date(version.timestamp).toLocaleString()}
-                                  </span>
+                                  <ClientDate date={version.timestamp} format="full" className="text-gray-500 ml-2" />
                                 )}
                               </SelectItem>
                               );
@@ -5558,7 +5729,7 @@ export default function HomePage() {
                                 <span className="font-medium truncate">{reminder.content}</span>
                               </div>
                               <div className="text-xs text-slate-500 mt-1">
-                                {formatReminderTime(reminder.remindAt)}
+                                <ReminderTime dateStr={reminder.remindAt} />
                               </div>
                             </div>
                             {/* 操作 */}
@@ -6460,13 +6631,13 @@ function WechatDraftsTab() {
               <div>
                 <Label>创建时间</Label>
                 <div className="text-sm mt-1">
-                  {new Date(selectedDraft.createTime).toLocaleString()}
+                  <ClientDate date={selectedDraft.createTime} format="full" />
                 </div>
               </div>
               <div>
                 <Label>更新时间</Label>
                 <div className="text-sm mt-1">
-                  {new Date(selectedDraft.updateTime).toLocaleString()}
+                  <ClientDate date={selectedDraft.updateTime} format="full" />
                 </div>
               </div>
             </div>
@@ -6571,7 +6742,7 @@ function WechatDraftsTab() {
                     </TableCell>
                     <TableCell>v{draft.version}</TableCell>
                     <TableCell>
-                      {new Date(draft.createTime).toLocaleDateString()}
+                      <ClientDate date={draft.createTime} format="date" />
                     </TableCell>
                     <TableCell>
                       <Button variant="outline" size="sm" onClick={() => viewDraft(draft)}>
@@ -6991,16 +7162,11 @@ function ContentExportTab() {
                     {/* 生成时间 */}
                     <div className="text-xs text-gray-400 flex items-center gap-1">
                       <Clock className="h-3 w-3" />
-                      <span>
-                        {task.completedAt 
-                          ? new Date(task.completedAt).toLocaleString('zh-CN', {
-                              month: '2-digit',
-                              day: '2-digit',
-                              hour: '2-digit',
-                              minute: '2-digit'
-                            })
-                          : '未知时间'}
-                      </span>
+                      <ClientDate 
+                        date={task.completedAt} 
+                        format="task" 
+                        fallback="未知时间"
+                      />
                     </div>
                   </div>
 
