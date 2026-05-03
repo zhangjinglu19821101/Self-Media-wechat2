@@ -27,6 +27,11 @@ import { eq, and, or, lte, desc, inArray, notInArray, lt, gte, sql, isNull, asc 
 import { Branch1IntelligentExecutor } from '@/lib/mcp/branch1-intelligent-executor';
 import { genericMCPCall } from '@/lib/mcp/generic-mcp-call';
 import { callLLM } from '@/lib/agent-llm';
+// 🔴🔴🔴 统一提取函数（消除代码重复）
+import { 
+  extractBriefResponse, 
+  extractSelfEvaluation 
+} from '@/lib/types/agent-execution-result';
 
 import { AgentCapabilityService } from '@/lib/services/agent-capability-service';
 import { getCurrentBeijingTime } from '@/lib/utils/date-time';
@@ -399,55 +404,28 @@ function convertExecutorDirectToAgentResult(
     }
   }
   
-  // 🔴🔴🔴 P0-1 修复：多层级提取 briefResponse 和 selfEvaluation
-  // 不是"非彼即此"，而是"逐一尝试，全部失败才使用默认值"
-  const briefResponse = (() => {
-    // 层级1：顶层 directResult.briefResponse
-    if (typeof directResult.briefResponse === 'string' && directResult.briefResponse.trim().length > 0) {
-      return directResult.briefResponse;
-    }
-    // 层级2：structuredResult.briefResponse
-    if (typeof structuredResult?.briefResponse === 'string' && structuredResult.briefResponse.trim().length > 0) {
-      return structuredResult.briefResponse;
-    }
-    // 层级3：备选字段（result、output 等）
-    if (typeof directResult.result === 'string' && directResult.result.trim().length > 0) {
-      return directResult.result.substring(0, 200);  // 截取前200字
-    }
-    // 兜底：空字符串
-    return '';
-  })();
+  // 🔴🔴🔴 P0-1 修复：使用统一的多层级提取函数（消除代码重复）
+  // 不再使用内联 IIFE，而是调用 agent-execution-result.ts 中的统一函数
+  const briefResponse = extractBriefResponse(
+    directResult.briefResponse,
+    structuredResult,
+    directResult.result
+  );
   
-  const selfEvaluation = (() => {
-    // 层级1：顶层 directResult.selfEvaluation
-    if (typeof directResult.selfEvaluation === 'string' && directResult.selfEvaluation.trim().length > 0) {
-      return directResult.selfEvaluation;
-    }
-    // 层级2：structuredResult.selfEvaluation
-    if (typeof structuredResult?.selfEvaluation === 'string' && structuredResult.selfEvaluation.trim().length > 0) {
-      return structuredResult.selfEvaluation;
-    }
-    // 层级3：备选字段（suggestions、reasoning 等）
-    if (typeof suggestions === 'string' && suggestions.trim().length > 0) {
-      return suggestions;
-    }
-    if (typeof reasoning === 'string' && reasoning.trim().length > 0) {
-      return reasoning;
-    }
-    // 兜底：空字符串
-    return '';
-  })();
+  const selfEvaluation = extractSelfEvaluation(
+    directResult.selfEvaluation,
+    structuredResult,
+    suggestions,
+    reasoning,
+    isTaskDown  // 🔴 传递 isTaskDown 用于区分任务完成/未完成的兜底策略
+  );
   
-  // 🔴🔴🔴 【关键修复】当任务未完成时，提供默认的 briefResponse 和 selfEvaluation
-  const finalBriefResponse = !isTaskDown && !briefResponse
-    ? (originalResult || '任务未能完成')
-    : briefResponse;
-    
-  const finalSelfEvaluation = !isTaskDown && !selfEvaluation
-    ? (suggestions 
-        ? `任务未完成：${suggestions}` 
-        : '任务未能完成，具体原因请查看执行结论')
-    : selfEvaluation;
+  // 🔴🔴🔴 【简化】移除重复的兜底逻辑
+  // extractSelfEvaluation 已经内置了场景区分：
+  // - 任务完成但无 selfEvaluation → 中性兜底值
+  // - 任务未完成 → 如实说明原因
+  const finalBriefResponse = briefResponse || (isTaskDown ? '' : (originalResult || '任务未能完成'));
+  const finalSelfEvaluation = selfEvaluation;
   
   const executionSummaryFromDirect = structuredResult?.executionSummary
     ? { ...structuredResult.executionSummary }

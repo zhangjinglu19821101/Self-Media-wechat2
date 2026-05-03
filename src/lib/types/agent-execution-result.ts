@@ -120,25 +120,98 @@ export function hasStructuredResult(
 /**
  * 🔴🔴🔴 多层级提取函数：逐层尝试提取有效字符串
  * 不是"非彼即此"，而是"逐一尝试，全部失败才返回默认值"
+ * 
+ * @param sources 数据源数组，按优先级排序
+ * @param defaultValue 最终兜底值
+ * @param fieldName 字段名（用于日志）
+ * @returns 提取到的有效字符串，或默认值
  */
-function multiLevelExtract(
+export function multiLevelExtract(
   sources: Array<{ value: any; name: string }>,
   defaultValue: string,
   fieldName: string
 ): string {
   for (const source of sources) {
     if (typeof source.value === 'string' && source.value.trim().length > 0) {
-      console.log(`[fillLegacyFields] ✅ ${fieldName} 从 ${source.name} 提取成功: "${source.value.substring(0, 50)}..."`);
+      console.log(`[multiLevelExtract] ✅ ${fieldName} 从 ${source.name} 提取成功: "${source.value.substring(0, 50)}..."`);
       return source.value;
     }
   }
-  console.log(`[fillLegacyFields] ⚠️ ${fieldName} 所有层级均为空，使用默认值: "${defaultValue.substring(0, 50)}..."`);
+  console.log(`[multiLevelExtract] ⚠️ ${fieldName} 所有层级均为空，使用默认值: "${defaultValue.substring(0, 50)}..."`);
   return defaultValue;
+}
+
+/**
+ * 🔴🔴🔴 提取 briefResponse 的多层级配置
+ * 优先级：顶层 > structuredResult > 备选字段 > 默认值
+ */
+export function extractBriefResponse(
+  directBriefResponse: string | undefined,
+  structuredResult: any,
+  directResult: any
+): string {
+  return multiLevelExtract(
+    [
+      { value: directBriefResponse, name: '顶层 briefResponse' },
+      { value: structuredResult?.briefResponse, name: 'structuredResult.briefResponse' },
+      { value: structuredResult?.resultContent, name: 'structuredResult.resultContent' },
+      { value: typeof directResult === 'string' ? directResult : undefined, name: '顶层 result' },
+    ],
+    '',  // 默认值：空字符串，由调用方决定是否使用特殊兜底
+    'briefResponse'
+  );
+}
+
+/**
+ * 🔴🔴🔴 提取 selfEvaluation 的多层级配置
+ * 优先级：顶层 > structuredResult > 备选字段 > 默认值
+ * 
+ * @param isTaskDown 任务是否完成（用于决定兜底值）
+ * @param suggestions 建议字段（用于未完成时的兜底）
+ */
+export function extractSelfEvaluation(
+  directSelfEvaluation: string | undefined,
+  structuredResult: any,
+  suggestions?: string,
+  reasoning?: string,
+  isTaskDown?: boolean
+): string {
+  const extracted = multiLevelExtract(
+    [
+      { value: directSelfEvaluation, name: '顶层 selfEvaluation' },
+      { value: structuredResult?.selfEvaluation, name: 'structuredResult.selfEvaluation' },
+      { value: structuredResult?.completionJudgment?.suggestions, name: 'completionJudgment.suggestions' },
+      { value: structuredResult?.executionSummary?.actionsTaken?.join('; '), name: 'executionSummary.actionsTaken' },
+      { value: suggestions, name: 'suggestions' },
+      { value: reasoning, name: 'reasoning' },
+    ],
+    '',  // 默认值：空字符串，由调用方决定是否使用特殊兜底
+    'selfEvaluation'
+  );
+  
+  // 🔴🔴🔴 【关键】区分两种场景的兜底值
+  // 场景1：任务完成但无 selfEvaluation → 使用中性兜底值，不误导 Agent B
+  // 场景2：任务未完成 → 如实说明原因
+  if (extracted.trim().length === 0) {
+    if (isTaskDown === false) {
+      // 任务未完成：提供有意义的未完成原因
+      return suggestions 
+        ? `任务未完成：${suggestions}` 
+        : '任务未能完成，具体原因请查看执行结论';
+    } else {
+      // 任务完成或未知：使用中性兜底值，避免误导 Agent B
+      return '';
+    }
+  }
+  
+  return extracted;
 }
 
 /**
  * 从结构化结果自动填充原有字段（向后兼容）
  * 🔴🔴🔴 重构：多层级兜底机制，而非"非彼即此"
+ * 
+ * 统一入口：所有需要提取 legacy 字段的场景都应调用此函数
  */
 export function fillLegacyFields(result: ExecutorDirectResult): ExecutorDirectResult {
   if (!hasStructuredResult(result)) {
@@ -147,44 +220,33 @@ export function fillLegacyFields(result: ExecutorDirectResult): ExecutorDirectRe
   
   const { structuredResult } = result;
   
-  // 🔴🔴🔴 多层级提取 briefResponse
-  // 优先级：顶层 > structuredResult > 备选字段 > 默认值
-  const briefResponse = multiLevelExtract(
-    [
-      { value: result.briefResponse, name: '顶层 briefResponse' },
-      { value: structuredResult.briefResponse, name: 'structuredResult.briefResponse' },
-      { value: structuredResult.resultContent, name: 'structuredResult.resultContent' },
-      { value: result.result, name: '顶层 result' },
-    ],
-    '',
-    'briefResponse'
+  // 🔴🔴🔴 使用统一的多层级提取函数
+  const briefResponse = extractBriefResponse(
+    result.briefResponse,
+    structuredResult,
+    result.result
   );
   
-  // 🔴🔴🔴 多层级提取 selfEvaluation
-  // 优先级：顶层 > structuredResult > 备选字段 > 默认值
-  const selfEvaluation = multiLevelExtract(
-    [
-      { value: result.selfEvaluation, name: '顶层 selfEvaluation' },
-      { value: structuredResult.selfEvaluation, name: 'structuredResult.selfEvaluation' },
-      { value: structuredResult.completionJudgment?.suggestions, name: 'completionJudgment.suggestions' },
-      { value: structuredResult.executionSummary?.actionsTaken?.join('; '), name: 'executionSummary.actionsTaken' },
-    ],
-    '',
-    'selfEvaluation'
+  const selfEvaluation = extractSelfEvaluation(
+    result.selfEvaluation,
+    structuredResult,
+    structuredResult.completionJudgment?.suggestions,
+    undefined,
+    result.isCompleted  // 🔴 传递 isCompleted 用于决定兜底值
   );
   
   // 🔴 修复：让 fillLegacyFields 更健壮，处理缺失的字段
-  // 🔴🔴🔴 注意：needsMcpSupport 和 mcpParams 需要从 structuredResult.executionSummary 提取
+  // 🔴🔴🔴 注意：needsMcpSupport 和 mcpParams 是 ExecutorDirectResult 的顶层字段
+  // 不应该从 structuredResult.executionSummary 提取（ExecutionSummary 接口不包含这些字段）
   return {
     ...result,
     // 自动从结构化结果填充原有字段（安全访问）
     isCompleted: structuredResult.completionJudgment?.isCompleted ?? result.isCompleted ?? false,
     result: structuredResult.resultContent ?? result.result,
     suggestion: structuredResult.completionJudgment?.suggestions ?? result.suggestion ?? '',
-    // 🔴🔴🔴 从 structuredResult.executionSummary 提取 needsMcpSupport（场景2核心）
-    needsMcpSupport: result.needsMcpSupport ?? structuredResult.executionSummary?.needsMcpSupport,
-    // 🔴🔴🔴 从 structuredResult.executionSummary 提取 mcpParams（场景2核心）
-    mcpParams: result.mcpParams ?? structuredResult.executionSummary?.mcpParams,
+    // 🔴🔴🔴 needsMcpSupport 和 mcpParams 直接使用顶层字段
+    needsMcpSupport: result.needsMcpSupport,
+    mcpParams: result.mcpParams,
     // 🔴🔴🔴 使用多层级提取结果
     briefResponse,
     selfEvaluation,
