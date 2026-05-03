@@ -520,9 +520,9 @@ export default function HomePage() {
   const [caseSearchMode, setCaseSearchMode] = useState<'recommend' | 'search'>('recommend'); // 当前模式
   const [caseSearchKeyword, setCaseSearchKeyword] = useState(''); // 搜索关键词
   const [caseSearchLoading, setCaseSearchLoading] = useState(false); // 搜索加载中
-  const [caseFilterProduct, setCaseFilterProduct] = useState<string>(''); // 险种筛选
-  const [caseFilterCrowd, setCaseFilterCrowd] = useState<string>(''); // 人群筛选
-  const [caseFilterType, setCaseFilterType] = useState<string>(''); // 案例类型筛选
+  const [caseFilterProduct, setCaseFilterProduct] = useState<string>('all'); // 险种筛选
+  const [caseFilterCrowd, setCaseFilterCrowd] = useState<string>('all'); // 人群筛选
+  const [caseFilterType, setCaseFilterType] = useState<string>('all'); // 案例类型筛选
 
   // 🔥 结构选择相关状态
   const [selectedStructure, setSelectedStructure] = useState<StructureTemplate>(() => getDefaultStructure());
@@ -1578,9 +1578,10 @@ export default function HomePage() {
   // 🔥 行业案例：搜索案例（完全替换模式）
   const handleSearchCases = useCallback(async (keyword?: string, filters?: { productTag?: string; crowdTag?: string; caseType?: string }) => {
     const searchKeyword = keyword ?? caseSearchKeyword;
-    const productTag = filters?.productTag ?? caseFilterProduct;
-    const crowdTag = filters?.crowdTag ?? caseFilterCrowd;
-    const caseType = filters?.caseType ?? caseFilterType;
+    // 将 'all' 转换为空字符串用于 API 调用
+    const productTag = (filters?.productTag ?? caseFilterProduct) === 'all' ? '' : (filters?.productTag ?? caseFilterProduct);
+    const crowdTag = (filters?.crowdTag ?? caseFilterCrowd) === 'all' ? '' : (filters?.crowdTag ?? caseFilterCrowd);
+    const caseType = (filters?.caseType ?? caseFilterType) === 'all' ? '' : (filters?.caseType ?? caseFilterType);
     
     // 至少需要一个搜索条件
     if (!searchKeyword.trim() && !productTag && !crowdTag && !caseType) {
@@ -1622,9 +1623,9 @@ export default function HomePage() {
   const handleSwitchToRecommend = useCallback(async () => {
     setCaseSearchMode('recommend');
     setCaseSearchKeyword('');
-    setCaseFilterProduct('');
-    setCaseFilterCrowd('');
-    setCaseFilterType('');
+    setCaseFilterProduct('all');
+    setCaseFilterCrowd('all');
+    setCaseFilterType('all');
     setRecommendedCases([]);
     setHasSearchedCases(false);
   }, []);
@@ -4203,15 +4204,16 @@ export default function HomePage() {
                             <div className="flex items-center gap-2 flex-wrap">
                               <Select value={caseFilterProduct} onValueChange={(v) => {
                                 setCaseFilterProduct(v);
-                                if (v || caseSearchKeyword || caseFilterCrowd || caseFilterType) {
-                                  setTimeout(() => handleSearchCases(undefined, { productTag: v }), 100);
+                                const apiValue = v === 'all' ? '' : v;
+                                if (apiValue || caseSearchKeyword || (caseFilterCrowd !== 'all' ? caseFilterCrowd : '') || (caseFilterType !== 'all' ? caseFilterType : '')) {
+                                  setTimeout(() => handleSearchCases(undefined, { productTag: apiValue }), 100);
                                 }
                               }}>
                                 <SelectTrigger className="h-8 w-[120px] text-xs">
                                   <SelectValue placeholder="险种筛选" />
                                 </SelectTrigger>
                                 <SelectContent>
-                                  <SelectItem value="">全部险种</SelectItem>
+                                  <SelectItem value="all">全部险种</SelectItem>
                                   <SelectItem value="意外险">意外险</SelectItem>
                                   <SelectItem value="重疾险">重疾险</SelectItem>
                                   <SelectItem value="医疗险">医疗险</SelectItem>
@@ -4225,15 +4227,16 @@ export default function HomePage() {
                               
                               <Select value={caseFilterCrowd} onValueChange={(v) => {
                                 setCaseFilterCrowd(v);
-                                if (v || caseSearchKeyword || caseFilterProduct || caseFilterType) {
-                                  setTimeout(() => handleSearchCases(undefined, { crowdTag: v }), 100);
+                                const apiValue = v === 'all' ? '' : v;
+                                if (apiValue || caseSearchKeyword || (caseFilterProduct !== 'all' ? caseFilterProduct : '') || (caseFilterType !== 'all' ? caseFilterType : '')) {
+                                  setTimeout(() => handleSearchCases(undefined, { crowdTag: apiValue }), 100);
                                 }
                               }}>
                                 <SelectTrigger className="h-8 w-[120px] text-xs">
                                   <SelectValue placeholder="人群筛选" />
                                 </SelectTrigger>
                                 <SelectContent>
-                                  <SelectItem value="">全部人群</SelectItem>
+                                  <SelectItem value="all">全部人群</SelectItem>
                                   <SelectItem value="上班族">上班族</SelectItem>
                                   <SelectItem value="企业主">企业主</SelectItem>
                                   <SelectItem value="老年人">老年人</SelectItem>
@@ -4245,15 +4248,16 @@ export default function HomePage() {
                               
                               <Select value={caseFilterType} onValueChange={(v) => {
                                 setCaseFilterType(v);
-                                if (v || caseSearchKeyword || caseFilterProduct || caseFilterCrowd) {
-                                  setTimeout(() => handleSearchCases(undefined, { caseType: v }), 100);
+                                const apiValue = v === 'all' ? '' : v;
+                                if (apiValue || caseSearchKeyword || (caseFilterProduct !== 'all' ? caseFilterProduct : '') || (caseFilterCrowd !== 'all' ? caseFilterCrowd : '')) {
+                                  setTimeout(() => handleSearchCases(undefined, { caseType: apiValue }), 100);
                                 }
                               }}>
                                 <SelectTrigger className="h-8 w-[100px] text-xs">
                                   <SelectValue placeholder="类型" />
                                 </SelectTrigger>
                                 <SelectContent>
-                                  <SelectItem value="">全部类型</SelectItem>
+                                  <SelectItem value="all">全部类型</SelectItem>
                                   <SelectItem value="positive">正面案例</SelectItem>
                                   <SelectItem value="warning">警示案例</SelectItem>
                                   <SelectItem value="milestone">里程碑</SelectItem>
@@ -4264,7 +4268,7 @@ export default function HomePage() {
                               <Button 
                                 size="sm" 
                                 onClick={() => handleSearchCases()}
-                                disabled={caseSearchLoading || (!caseSearchKeyword && !caseFilterProduct && !caseFilterCrowd && !caseFilterType)}
+                                disabled={caseSearchLoading || (!caseSearchKeyword && caseFilterProduct === 'all' && caseFilterCrowd === 'all' && caseFilterType === 'all')}
                                 className="h-8 px-3 text-xs"
                               >
                                 {caseSearchLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin mr-1" /> : <Search className="w-3.5 h-3.5 mr-1" />}
@@ -4272,15 +4276,15 @@ export default function HomePage() {
                               </Button>
                               
                               {/* 清空筛选 */}
-                              {(caseSearchKeyword || caseFilterProduct || caseFilterCrowd || caseFilterType) && (
+                              {(caseSearchKeyword || caseFilterProduct !== 'all' || caseFilterCrowd !== 'all' || caseFilterType !== 'all') && (
                                 <Button 
                                   variant="ghost" 
                                   size="sm" 
                                   onClick={() => {
                                     setCaseSearchKeyword('');
-                                    setCaseFilterProduct('');
-                                    setCaseFilterCrowd('');
-                                    setCaseFilterType('');
+                                    setCaseFilterProduct('all');
+                                    setCaseFilterCrowd('all');
+                                    setCaseFilterType('all');
                                     setRecommendedCases([]);
                                     setHasSearchedCases(false);
                                     setCaseSearchMode('recommend');
