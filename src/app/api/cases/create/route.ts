@@ -58,7 +58,7 @@ export async function POST(request: NextRequest) {
       const existingCaseId = snippetQuery[0]?.caseId;
 
       if (existingCaseId) {
-        // 已存在案例，查询并返回
+        // 已存在案例，查询并判断是否是系统预置案例
         const existingCase = await db
           .select()
           .from(industryCaseLibrary)
@@ -66,16 +66,23 @@ export async function POST(request: NextRequest) {
           .limit(1);
 
         if (existingCase[0]) {
-          console.log(`[cases/create] snippetId=${body.snippetId} 已存在案例 id=${existingCaseId}，返回已有案例`);
-          return NextResponse.json({
-            success: true,
-            alreadyExists: true,
-            data: {
-              id: existingCase[0].id,
-              caseId: existingCase[0].caseId,
-              title: existingCase[0].title,
-            },
-          });
+          // 如果是系统预置案例（workspaceId = 'system'），允许创建新案例
+          if (existingCase[0].workspaceId === 'system') {
+            console.log(`[cases/create] snippetId=${body.snippetId} 关联的是系统预置案例，允许创建新案例`);
+            // 继续执行创建逻辑
+          } else {
+            // 非系统预置案例，返回已有案例
+            console.log(`[cases/create] snippetId=${body.snippetId} 已存在案例 id=${existingCaseId}，返回已有案例`);
+            return NextResponse.json({
+              success: true,
+              alreadyExists: true,
+              data: {
+                id: existingCase[0].id,
+                caseId: existingCase[0].caseId,
+                title: existingCase[0].title,
+              },
+            });
+          }
         }
       }
     }
