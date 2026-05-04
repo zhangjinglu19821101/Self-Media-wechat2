@@ -745,8 +745,21 @@ export default function HomePage() {
   // 🔥 从指令自动提取任务标题 + 默认执行日期
   // 核心规则：只要指令中有"主题《xxx》"，就自动提取到任务标题（用户也可手动修改）
   const userManuallyEditedTitleRef = useRef(false);
+  const prevMainInstructionRef = useRef<string>(''); // 追踪上一次的指令内容
   useEffect(() => {
     if (!mainInstruction) return;
+
+    // 🔥 当指令内容发生显著变化时（长度差异>50%或完全不同的内容），重置手动编辑标记
+    // 这样新粘贴的指令可以触发自动提取
+    const prevLength = prevMainInstructionRef.current.length;
+    const currLength = mainInstruction.length;
+    const lengthDiff = Math.abs(currLength - prevLength);
+    const significantChange = prevLength === 0 || lengthDiff > prevLength * 0.5;
+    if (significantChange && prevMainInstructionRef.current !== mainInstruction) {
+      userManuallyEditedTitleRef.current = false;
+    }
+    prevMainInstructionRef.current = mainInstruction;
+
     // 任务标题：从 mainInstruction 提取 "主题《xxx》"
     const match = mainInstruction.match(/主题[《"<『【]([^》"』】]+)[》"』】]/);
     if (match) {
@@ -755,8 +768,8 @@ export default function HomePage() {
       if (!userManuallyEditedTitleRef.current) {
         setTaskTitle(extractedTitle);
       }
-    } else if (!taskTitle && !userManuallyEditedTitleRef.current) {
-      // 没有匹配到"主题《xxx》"且标题为空，使用前50字
+    } else if (!userManuallyEditedTitleRef.current) {
+      // 没有匹配到"主题《xxx》"且用户未手动修改，使用前50字
       setTaskTitle(mainInstruction.slice(0, 50));
     }
     // 执行日期：默认当天（仅设置一次）
