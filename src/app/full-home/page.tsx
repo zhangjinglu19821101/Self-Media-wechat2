@@ -637,7 +637,8 @@ export default function HomePage() {
     insuranceAction: string;
     result: string;
     productTags: string;
-  }>({ title: '', eventFullStory: '', background: '', insuranceAction: '', result: '', productTags: '' });
+    industry: string;
+  }>({ title: '', eventFullStory: '', background: '', insuranceAction: '', result: '', productTags: '', industry: 'insurance' });
   const caseDialogActiveRef = useRef(false);  // 跟踪对话框是否活跃，防止关闭后搜索回调污染状态
   const caseExtractionTimeoutRef = useRef<NodeJS.Timeout | null>(null);  // 提取超时计时器
   const [caseExtractionElapsed, setCaseExtractionElapsed] = useState(0);  // 提取已用时间（秒）
@@ -2210,7 +2211,7 @@ export default function HomePage() {
           crowdTags: caseExtractionResult.crowdTags,
           emotionTags: caseExtractionResult.emotionTags,
           caseType: caseExtractionResult.caseType,
-          industry: caseExtractionResult.industry,
+          industry: caseEditForm.industry || caseExtractionResult.industry,
         });
 
         if (result.success) {
@@ -2220,7 +2221,7 @@ export default function HomePage() {
           setCaseExtractionResult(null);
           setConvertingSnippetId(null);
           setCaseSearching(false);
-          setCaseEditForm({ title: '', eventFullStory: '', background: '', insuranceAction: '', result: '', productTags: '' });
+          setCaseEditForm({ title: '', eventFullStory: '', background: '', insuranceAction: '', result: '', productTags: '', industry: 'insurance' });
           loadSnippetList();
         } else {
           toast.error(result.error || '\u6848\u4f8b\u66f4\u65b0\u5931\u8d25');
@@ -2239,7 +2240,7 @@ export default function HomePage() {
           crowdTags: caseExtractionResult.crowdTags,
           emotionTags: caseExtractionResult.emotionTags,
           caseType: caseExtractionResult.caseType,
-          industry: caseExtractionResult.industry,
+          industry: caseEditForm.industry || caseExtractionResult.industry,
         });
 
         if (result.success) {
@@ -2253,7 +2254,7 @@ export default function HomePage() {
           setCaseExtractionResult(null);
           setConvertingSnippetId(null);
           setCaseSearching(false);
-          setCaseEditForm({ title: '', eventFullStory: '', background: '', insuranceAction: '', result: '', productTags: '' });
+          setCaseEditForm({ title: '', eventFullStory: '', background: '', insuranceAction: '', result: '', productTags: '', industry: 'insurance' });
           loadSnippetList();
         } else {
           toast.error(result.error || '\u6848\u4f8b\u521b\u5efa\u5931\u8d25');
@@ -5289,7 +5290,7 @@ export default function HomePage() {
           setConvertingSnippetId(null);
           setCaseSearching(false);
           setCaseExtractionElapsed(0);
-          setCaseEditForm({ title: '', eventFullStory: '', background: '', insuranceAction: '', result: '', productTags: '' });
+          setCaseEditForm({ title: '', eventFullStory: '', background: '', insuranceAction: '', result: '', productTags: '', industry: 'insurance' });
         }
       }}>
         <DialogContent className="sm:max-w-[640px] max-h-[85vh] overflow-y-auto">
@@ -5423,6 +5424,39 @@ export default function HomePage() {
                 />
               </div>
 
+              {/* 行业分类 */}
+              <div>
+                <Label className="text-xs text-slate-500 mb-1.5 block">行业分类</Label>
+                <div className="flex flex-wrap gap-1">
+                  {[{ value: 'insurance', label: '保险' }, { value: 'banking', label: '银行' }, { value: 'securities', label: '证券' }, { value: 'fund', label: '基金' }, { value: 'trust', label: '信托' }, { value: 'fintech', label: '金融科技' }].map((opt) => {
+                    const currentIndustries = caseEditForm.industry ? caseEditForm.industry.split(',') : [];
+                    const isSelected = currentIndustries.includes(opt.value);
+                    return (
+                      <button
+                        key={opt.value}
+                        type="button"
+                        onClick={() => {
+                          let industries = caseEditForm.industry ? caseEditForm.industry.split(',') : [];
+                          if (isSelected) {
+                            industries = industries.filter((t: string) => t !== opt.value);
+                          } else {
+                            industries.push(opt.value);
+                          }
+                          setCaseEditForm(prev => ({ ...prev, industry: industries.join(',') }));
+                        }}
+                        className={`text-[10px] px-2 py-0.5 rounded-full border transition-colors ${
+                          isSelected
+                            ? 'bg-blue-50 border-blue-200 text-blue-700'
+                            : 'bg-slate-50 border-slate-200 text-slate-500 hover:bg-slate-100'
+                        }`}
+                      >
+                        {isSelected ? '✓ ' : ''}{opt.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
               {/* 产品标签（Tag Input 优化） */}
               <div>
                 <Label className="text-xs text-slate-500 mb-1.5 block">产品标签</Label>
@@ -5445,7 +5479,7 @@ export default function HomePage() {
                 </div>
                 {/* 快捷标签选择 */}
                 <div className="flex flex-wrap gap-1 mt-2">
-                  {['意外险', '重疾险', '医疗险', '寿险', '年金险', '增额终身寿', '教育金', '养老金'].map((preset) => {
+                  {['意外险', '重疾险', '医疗险', '寿险', '年金险', '增额终身寿', '教育金', '养老金', '信托'].map((preset) => {
                     const currentTags = caseEditForm.productTags.split(/[、,，\s]+/).filter(Boolean);
                     const isSelected = currentTags.includes(preset);
                     return (
@@ -5521,7 +5555,7 @@ export default function HomePage() {
                   setCaseExtractionResult(null);
                   setConvertingSnippetId(null);
                   setCaseSearching(false);
-                  setCaseEditForm({ title: '', eventFullStory: '', background: '', insuranceAction: '', result: '', productTags: '' });
+                  setCaseEditForm({ title: '', eventFullStory: '', background: '', insuranceAction: '', result: '', productTags: '', industry: 'insurance' });
                 }}
                 disabled={caseSaving}
                 className="h-9"

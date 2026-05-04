@@ -87,7 +87,7 @@ export async function POST(request: NextRequest) {
     }
     
     // 模式2：推荐案例
-    const { instruction, platform, limit } = body;
+    const { instruction, platform, limit, industry } = body;
     
     if (!instruction) {
       return NextResponse.json({
@@ -96,8 +96,8 @@ export async function POST(request: NextRequest) {
       }, { status: 400 });
     }
     
-    // 🔥 传递 workspaceId 给 recommendCases（需要修改该方法签名）
-    const cases = await industryCaseService.recommendCases(instruction, platform, limit || 5, workspaceId);
+    // 🔥 传递 workspaceId 和 industry 给 recommendCases
+    const cases = await industryCaseService.recommendCases(instruction, platform, limit || 5, workspaceId, industry || 'insurance');
     
     // 格式化为提示词文本
     const promptText = industryCaseService.formatCasesForPrompt(cases);
