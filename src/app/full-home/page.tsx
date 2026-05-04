@@ -435,6 +435,7 @@ export default function HomePage() {
   const [isSplitting, setIsSplitting] = useState(false);
   const [hasSplitResult, setHasSplitResult] = useState(false);
   const [tempSessionId, setTempSessionId] = useState<string | null>(null); // 临时会话 ID，用于替换逻辑
+  const [taskListRefreshKey, setTaskListRefreshKey] = useState(0); // 任务列表刷新 key
   const [detectedDomain, setDetectedDomain] = useState<string | null>(null); // 识别到的领域
   const [detectedProductTags, setDetectedProductTags] = useState<string[]>([]); // AI 识别的产品标签
   const [splitProductTags, setSplitProductTags] = useState<string[]>([]); // 拆解区域产品标签（可编辑）
@@ -2524,6 +2525,9 @@ export default function HomePage() {
       if (result.data.tempSessionId) {
         setTempSessionId(result.data.tempSessionId);
       }
+
+      // 触发任务列表刷新
+      setTaskListRefreshKey(prev => prev + 1);
       
     } catch (error: any) {
       if (checkApiKeyMissing(error)) return;
@@ -4815,7 +4819,8 @@ export default function HomePage() {
               <AgentTaskListNormal 
                 agentId="B" 
                 showPanel={true} 
-                onTogglePanel={() => {}} 
+                onTogglePanel={() => {}}
+                refreshKey={taskListRefreshKey}
               />
             </CardContent>
           </Card>
@@ -5120,6 +5125,7 @@ export default function HomePage() {
                 agentId="B"
                 showPanel={true}
                 onTogglePanel={() => {}}
+                refreshKey={taskListRefreshKey}
               />
             </CardContent>
           </Card>

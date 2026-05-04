@@ -75,6 +75,7 @@ interface AgentTaskListNormalProps {
   agentId: string;
   showPanel: boolean;
   onTogglePanel?: () => void;
+  refreshKey?: number;
 }
 
 interface StepHistory {
@@ -871,7 +872,7 @@ function AgentSelfStatementCard({ history }: { history: StepHistory }) {
   );
 }
 
-export function AgentTaskListNormal({ agentId, showPanel, onTogglePanel }: AgentTaskListNormalProps) {
+export function AgentTaskListNormal({ agentId, showPanel, onTogglePanel, refreshKey }: AgentTaskListNormalProps) {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [stats, setStats] = useState<TaskStats | null>(null);
   const [loading, setLoading] = useState(true);
@@ -1399,7 +1400,7 @@ export function AgentTaskListNormal({ agentId, showPanel, onTogglePanel }: Agent
 
     document.addEventListener('visibilitychange', handleVisibilityChange);
     return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
-  }, [agentId]);
+  }, [agentId, refreshKey]);
 
   // 获取状态图标和颜色
   const getStatusInfo = (status: string) => {
