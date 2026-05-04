@@ -2036,11 +2036,11 @@ export default function HomePage() {
 
         if (existingCase?.success && existingCase?.data) {
           const c = existingCase.data;
-          // 系统预置案例（workspaceId = 'system'）不允许修改，作为新案例创建
+          // 判断是否是系统预置案例
           const isSystemCase = c.workspaceId === 'system';
           const data = {
             snippetId: snippet.id,
-            caseId: isSystemCase ? null : c.id,  // 系统预置案例不设置 caseId，创建新案例
+            caseId: isSystemCase ? undefined : c.id, // 系统预置案例不设置 caseId，作为新案例创建
             snippetTitle: snippet.title || '',
             title: c.title,
             eventFullStory: c.eventFullStory || '',
