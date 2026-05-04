@@ -761,8 +761,9 @@ export class JsonParserEnhancer {
     repaired = repaired.replace(/([{,]\s*)([a-zA-Z_][a-zA-Z0-9_]*)\s*:/g, '$1"$2":');
     
     // 6. 🔴🔴🔴 新增：修复缺失的逗号（属性之间）
-    // 匹配: "value"后面直接跟着属性名的情况，补充逗号
-    repaired = repaired.replace(/"(\s*)"/g, '",'); // 先处理空字符串后的逗号
+    // 🔴🔴🔴 修复：之前的正则 /"(\s*)"/g 会把空字符串 "" 错误地替换成 ","
+    // 正确的做法：只处理 "value" 后面直接跟着属性名的情况，不影响空字符串值
+    // 匹配: 字符串值结束后，换行后直接跟着属性名的情况，补充逗号
     repaired = repaired.replace(/"([^"]*)"\s*\n\s*"([^"]*)":/g, '"$1",\n"$2":'); // 处理换行后缺少逗号的情况
     
     // 7. 🔴🔴🔴 新增：修复 true/false/null 拼写错误

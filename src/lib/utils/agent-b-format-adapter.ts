@@ -94,6 +94,20 @@ export class AgentBFormatAdapter {
       hasStructuredResult: !!executor.structuredResult
     });
     
+    // 🔴🔴🔴 容错处理：确保 suggestion 字段有值
+    // 如果 suggestion 为空或缺失，根据 isCompleted 自动生成默认值
+    let suggestion = executor.suggestion;
+    if (!suggestion || suggestion.trim() === '') {
+      if (executor.isCompleted === true) {
+        suggestion = '任务已完成，执行结果正常';
+      } else if (executor.isCompleted === false) {
+        suggestion = '任务未完成，需要进一步处理';
+      } else {
+        suggestion = '执行结果待确认';
+      }
+      console.log('[AgentBFormatAdapter] 🔴 容错：suggestion 为空，自动填充默认值:', suggestion);
+    }
+    
     // 🔴🔴🔴 核心逻辑：根据 isCompleted 和 isCompleted 综合判断 decisionType
     // 优先级：isCompleted > isCompleted
     // 1. isCompleted=false → 执行者不具备完成此任务的能力，需要切换执行者 → REEXECUTE_EXECUTOR
@@ -101,7 +115,7 @@ export class AgentBFormatAdapter {
     // 3. isCompleted=false（无 isCompleted）→ 任务执行失败，需要 Agent B 决定下一步 → FAILED
     
     let decisionType: 'COMPLETE' | 'FAILED' | 'REEXECUTE_EXECUTOR';
-    let reasoning = executor.result || executor.suggestion || '执行完成';
+    let reasoning = executor.result || suggestion || '执行完成';
     
     // 提取 structuredResult 中的关键信息
     if (executor.structuredResult) {
@@ -126,7 +140,7 @@ export class AgentBFormatAdapter {
       console.log('[AgentBFormatAdapter] 🔴 检测到 isCompleted=false，返回 REEXECUTE_EXECUTOR');
       
       // 从 structuredResult 中提取 reason（为什么不能完成）
-      const reason = executor.reason || executor.structuredResult?.reason || executor.suggestion || '执行者不具备完成此任务的能力';
+      const reason = executor.reason || executor.structuredResult?.reason || suggestion || '执行者不具备完成此任务的能力';
       reasoning = `执行者无法完成此任务：${reason}`;
       
       // 🔴🔴🔴 关键修复：根据 reason 内容推断应该使用哪个执行者

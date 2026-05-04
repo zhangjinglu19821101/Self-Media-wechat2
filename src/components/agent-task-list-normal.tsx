@@ -2114,17 +2114,13 @@ export function AgentTaskListNormal({ agentId, showPanel, onTogglePanel }: Agent
                               </p>
                             </>
                           ) : displayTask.executor === 'insurance-d' ? (
-                            /* 公众号：发布文章 */
+                            /* 公众号：写作完成，等待自动上传 */
                             <>
-                              <Link href={`/task-publish/${displayTask.id}`}>
-                                <Button className="w-full bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 text-white">
-                                  <Rocket className="w-4 h-4 mr-2" />
-                                  发布文章
-                                </Button>
-                              </Link>
-                              <p className="text-xs text-gray-400 text-center mt-2">
-                                将文章发布到微信公众号
-                              </p>
+                              <div className="w-full bg-gradient-to-r from-green-50 to-emerald-50 border border-green-200 rounded-lg p-4 text-center">
+                                <CheckCircle2 className="w-8 h-8 text-green-500 mx-auto mb-2" />
+                                <p className="text-green-700 font-medium">✓ 文章已完成</p>
+                                <p className="text-xs text-gray-500 mt-1">等待后续流程自动上传至公众号草稿箱</p>
+                              </div>
                             </>
                           ) : displayTask.executor === 'insurance-zhihu' ? (
                             /* 知乎：查看文章 */

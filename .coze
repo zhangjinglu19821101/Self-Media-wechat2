@@ -8,8 +8,8 @@ appliedPatches = [
 ]
 
 [dev]
-build = [ "bash", "./scripts/prepare.sh" ]
-run = [ "bash", "./scripts/dev.sh" ]
+build = ["bash", "-c", "cd /workspace/projects/ai-venture && pnpm install"]
+run = ["bash", "-c", "cd /workspace/projects/ai-venture && pnpm next dev --port 5000 -H 0.0.0.0"]
 
 [deploy]
 build = [ "bash", "./scripts/build.sh" ]
