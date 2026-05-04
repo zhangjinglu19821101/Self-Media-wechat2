@@ -393,6 +393,13 @@ function tokenizeChineseText(text: string): string[] {
     '传承工具', '财富管理', '资产管理', '家企财务',
     '家族信托', '保险信托', '资产信托', '财富信托',
     '税务筹划', '税务规划', '遗产税', '继承税',
+    // 知名人物名称（用于案例搜索）
+    '宗庆后', '马云', '马化腾', '任正非', '王健林', '李嘉诚',
+    '刘强东', '雷军', '董明珠', '张一鸣', '黄峥', '王兴',
+    '李彦宏', '丁磊', '周鸿祎', '史玉柱', '郭台铭', '柳传志',
+    '何享健', '杨国强', '许家印', '孙宏斌', '姚振华', '王石',
+    '潘石屹', '冯仑', '俞敏洪', '张朝阳', '王小川', '李斌',
+    '李想', '程维', '王卫', '陈东升', '泰康', '沈南鹏', '张磊',
   ].sort((a, b) => b.length - a.length);
   
   // 先按空格/标点拆分，再对每个片段做正向最大匹配
@@ -494,6 +501,25 @@ export async function searchCases(params: CaseSearchParams): Promise<CaseMatchRe
     conditions.push(eq(industryCaseLibrary.caseType, caseType));
   }
   
+  // 🔥 DEBUG: 直接用原生 SQL 检查数据库实际内容
+  console.log('[DEBUG] workspaceId 参数:', workspaceId);
+  console.log('[DEBUG] CASE_SYSTEM_WORKSPACE_ID:', CASE_SYSTEM_WORKSPACE_ID);
+  
+  try {
+    // 直接查询系统案例总数
+    const systemCountResult = await db.execute(sql`SELECT COUNT(*) as count FROM industry_case_library WHERE workspace_id = ${CASE_SYSTEM_WORKSPACE_ID}`);
+    console.log('[DEBUG] 原生 SQL 系统案例总数:', (systemCountResult as any[])[0]?.count);
+    
+    // 查询宗庆后案例是否存在
+    const zongCaseResult = await db.execute(sql`SELECT id, title, workspace_id, protagonist, background, result FROM industry_case_library WHERE title LIKE '%宗庆后%'`);
+    console.log('[DEBUG] 原生 SQL 宗庆后案例数量:', (zongCaseResult as any[]).length);
+    if ((zongCaseResult as any[]).length > 0) {
+      console.log('[DEBUG] 原生 SQL 宗庆后案例详情:', JSON.stringify((zongCaseResult as any[])[0], null, 2));
+    }
+  } catch (e) {
+    console.log('[DEBUG] 原生 SQL 查询失败:', e);
+  }
+
   // 执行查询（获取更多结果用于相关度计算）
   let query = db.select().from(industryCaseLibrary);
   
@@ -502,9 +528,21 @@ export async function searchCases(params: CaseSearchParams): Promise<CaseMatchRe
   }
   
   // 🔥 过滤空壳案例：只有标题但没有实际内容（protagonist/background/result 全空）的案例不参与推荐
+  // 🔥 DEBUG: 先检查不带 limit 的总数
+  const countQuery = conditions.length > 0 
+    ? db.select({ count: sql`count(*)` }).from(industryCaseLibrary).where(and(...conditions))
+    : db.select({ count: sql`count(*)` }).from(industryCaseLibrary);
+  const countResult = await countQuery;
+  console.log('[DEBUG] 数据库总记录数（符合条件）:', countResult[0]?.count);
+
   const allCasesRaw = await query
     .orderBy(desc(industryCaseLibrary.useCount))
     .limit(100); // 获取最多100条用于相关度计算
+
+  console.log('[DEBUG] allCasesRaw count:', allCasesRaw.length);
+  // 检查宗庆后案例是否在原始结果中
+  const zongCase = allCasesRaw.find(c => c.title && c.title.includes('宗庆后'));
+  console.log('[DEBUG] 宗庆后案例在 raw 结果中:', zongCase ? 'YES' : 'NO', zongCase ? zongCase.id : '');
 
   const allCases = allCasesRaw.filter(c =>
     ((c.protagonist && c.protagonist.trim()) ||
@@ -514,6 +552,11 @@ export async function searchCases(params: CaseSearchParams): Promise<CaseMatchRe
     // 🔥 过滤"待人工确认"标签的案例，不参与搜索推荐
     && !(c.productTags as string[])?.includes('待人工确认')
   );
+  
+  console.log('[DEBUG] allCases count after filtering:', allCases.length);
+  // 检查宗庆后案例是否在过滤后结果中
+  const zongCaseFiltered = allCases.find(c => c.title && c.title.includes('宗庆后'));
+  console.log('[DEBUG] 宗庆后案例在过滤后结果中:', zongCaseFiltered ? 'YES' : 'NO', zongCaseFiltered ? zongCaseFiltered.id : '');
   
   // 分桶收集：精确匹配 vs 无关案例（兜底候选）
   const matchedResults: CaseMatchResult[] = [];
@@ -570,12 +613,14 @@ export async function searchCases(params: CaseSearchParams): Promise<CaseMatchRe
     }
 
     // 🔥 标题关键词匹配（额外加分，弥补产品标签匹配不足）
-    const titleLower = caseItem.title.toLowerCase();
-    const titleKeywordList = tokenizeChineseText(keywords.toLowerCase());
-    for (const keyword of titleKeywordList) {
-      if (!keyword || keyword.length < 2) continue;  // 忽略单字
-      if (titleLower.includes(keyword)) {
-        relevanceScore += 50;  // 标题命中关键词，高分
+    if (keywords) {
+      const titleLower = caseItem.title.toLowerCase();
+      const titleKeywordList = tokenizeChineseText(keywords.toLowerCase());
+      for (const keyword of titleKeywordList) {
+        if (!keyword || keyword.length < 2) continue;  // 忽略单字
+        if (titleLower.includes(keyword)) {
+          relevanceScore += 50;  // 标题命中关键词，高分
+        }
       }
     }
 
