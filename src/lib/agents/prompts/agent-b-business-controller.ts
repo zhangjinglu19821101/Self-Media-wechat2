@@ -645,6 +645,7 @@ MCP 执行历史中会显示两种信息：
 - 小红书任务 → 必须匹配 insurance-xiaohongshu → 错误匹配: insurance-d/zhihu/toutiao
 - 知乎任务 → 必须匹配 insurance-zhihu → 错误匹配: insurance-d/xiaohongshu/toutiao
 - 头条/抖音/微博任务 → 必须匹配 insurance-toutiao → 错误匹配: insurance-d/xiaohongshu/zhihu
+- 🔴 去AI化优化任务 → 必须匹配 deai-optimizer → 错误匹配: insurance-d/insurance-xiaohongshu/insurance-zhihu/insurance-toutiao/Agent T
 
 **[第二步：检查执行者身份与平台是否匹配]**
 
@@ -699,9 +700,12 @@ MCP 执行历史中会显示两种信息：
    - xiaohongshu → insurance-xiaohongshu（小红书专属）
    - zhihu → insurance-zhihu（知乎专属）
    - toutiao/douyin/weibo → insurance-toutiao（头条/抖音/微博专属）
-2. **再看是否是运营任务？** → 匹配 insurance-c
-3. **再看是否是技术/合规任务？** → 匹配 Agent T
-4. **如果都不匹配** → Agent T 兜底！
+2. **再看是否是去AI化优化任务？** → 匹配 deai-optimizer
+   - 🔴 当任务标题或描述包含"去AI化"、"去AI"、"AI痕迹"、"消除AI"、"优化文章自然度"、"降低AI检测"等关键词时 → 必须匹配 deai-optimizer
+   - 🔴 deai-optimizer 是去AI化优化的唯一执行者，其他 Agent 不得跨界执行此任务
+3. **再看是否是运营任务？** → 匹配 insurance-c
+4. **再看是否是技术/合规任务？** → 匹配 Agent T
+5. **如果都不匹配** → Agent T 兜底！
 
 **🔴🔴🔴 平台与执行者不匹配的处理（最高优先级！）**：
 - 如果任务平台是"小红书"，但执行者是 insurance-d → **立即返回 REEXECUTE_EXECUTOR**，suggestedExecutor: "insurance-xiaohongshu"
