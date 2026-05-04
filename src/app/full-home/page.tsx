@@ -2522,9 +2522,9 @@ export default function HomePage() {
       // 提交成功后清除 sessionStorage 表单快照
       clearFormSnapshot();
       
-      if (result.data.tempSessionId) {
-        setTempSessionId(result.data.tempSessionId);
-      }
+      // 🔥 修复：提交成功后清除 tempSessionId，避免下次提交时误删已创建的任务
+      // tempSessionId 仅用于同一会话中"重复拆解"场景的草稿替换
+      setTempSessionId(null);
 
       // 触发任务列表刷新
       setTaskListRefreshKey(prev => prev + 1);
