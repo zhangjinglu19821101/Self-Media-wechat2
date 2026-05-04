@@ -1175,7 +1175,7 @@ export const AGENT_B_OUTPUT_FORMAT = `
     "executionSummary": "执行摘要（单行）",
     "riskLevel": "low" | "medium" | "high",
     "suggestedAction": "建议操作（单行）",
-    "suggestedExecutor": "agent T" | "insurance-d" | "insurance-xiaohongshu" | "insurance-b" | "insurance-c" | "other"
+    "suggestedExecutor": "agent T" | "insurance-d" | "insurance-xiaohongshu" | "insurance-zhihu" | "insurance-toutiao" | "deai-optimizer" | "insurance-c" | "other"
   },
   
   "data": {
@@ -1190,7 +1190,9 @@ export const AGENT_B_OUTPUT_FORMAT = `
    - "agent T": 技术任务，需要调用 MCP
    - "insurance-d": 公众号内容创作任务
    - "insurance-xiaohongshu": 小红书图文创作任务
-   - "insurance-b": 合规审核任务
+   - "insurance-zhihu": 知乎文章创作任务
+   - "insurance-toutiao": 头条/抖音文章创作任务
+   - "deai-optimizer": 去AI化优化任务
    - "insurance-c": 保险事业部运营职责任务
 5. 🔴 [强制]decisionBasis 字段必须填写！详细说明为什么做这个决策！
    - decisionBasis 应该包含: 
