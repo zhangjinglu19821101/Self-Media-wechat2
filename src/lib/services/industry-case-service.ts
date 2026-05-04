@@ -14,7 +14,7 @@
 import { db } from '@/lib/db';
 import { industryCaseLibrary, caseUsageLog, CASE_SYSTEM_WORKSPACE_ID } from '@/lib/db/schema';
 import type { NewIndustryCase, IndustryCase } from '@/lib/db/schema';
-import { eq, and, or, desc, inArray, sql } from 'drizzle-orm';
+import { eq, and, or, desc, inArray, sql, like } from 'drizzle-orm';
 import { readFileSync, existsSync } from 'fs';
 import { join } from 'path';
 import { getLLMClient } from '@/lib/agent-llm';
@@ -496,10 +496,20 @@ export async function searchCases(params: CaseSearchParams): Promise<CaseMatchRe
   if (industry) {
     // 支持逗号分隔的多选 industry（如 'insurance,trust'）
     const industries = industry.split(',').map(s => s.trim()).filter(Boolean);
-    if (industries.length === 1) {
-      conditions.push(eq(industryCaseLibrary.industry, industries[0]));
-    } else if (industries.length > 1) {
-      conditions.push(inArray(industryCaseLibrary.industry, industries));
+    // 构建匹配条件：支持数据库中逗号分隔的多选值
+    // 例如：数据库存储 'trust,insurance'，搜索 'insurance' 也应该匹配
+    const industryConditions = industries.map(ind => 
+      or(
+        eq(industryCaseLibrary.industry, ind),                    // 精确匹配：industry = 'insurance'
+        like(industryCaseLibrary.industry, `${ind},%`),           // 在开头：'insurance,...'
+        like(industryCaseLibrary.industry, `%,${ind},%`),         // 在中间：'...,insurance,...'
+        like(industryCaseLibrary.industry, `%,${ind}`)            // 在结尾：'...,insurance'
+      )
+    );
+    if (industryConditions.length === 1) {
+      conditions.push(industryConditions[0]!);
+    } else if (industryConditions.length > 1) {
+      conditions.push(or(...industryConditions)!);
     }
   }
   
