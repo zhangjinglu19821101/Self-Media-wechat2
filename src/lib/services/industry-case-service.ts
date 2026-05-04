@@ -755,9 +755,11 @@ export async function recommendCases(instruction: string, platform?: string, lim
   const sceneTags = extractTags(instruction, []);
   
   // 根据平台调整权重
+  // 🔥 不限制 industry，让关键词匹配来决定相关度
+  // 之前硬编码 industry: 'insurance' 导致 trust 等类型的案例被过滤掉
   const searchParams: CaseSearchParams = {
     workspaceId,  // 🔥 传递 workspaceId
-    industry: 'insurance',
+    industry: undefined,  // 🔥 不限制行业，让关键词匹配来决定相关度
     productTags,
     crowdTags,
     sceneTags,
