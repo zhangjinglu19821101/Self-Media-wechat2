@@ -23,7 +23,6 @@
 {
   "isCompleted": true/false,
   "result": "【执行结论】...",
-  "suggestion": "...",
   "structuredResult": {
     "briefResponse": "...",
     "selfEvaluation": "...",
@@ -38,12 +37,12 @@
 
 **任务完成时：**
 ```json
-{"isCompleted":true,"result":"【执行结论】去AI化优化已完成，文章更具真人感","suggestion":"任务已完成，文章已优化，可直接发布","structuredResult":{"briefResponse":"我对文章进行了去AI化改写，打破了模板化结构","selfEvaluation":"改写成功，文章更自然、更像真人手写","executionSummary":{"actionsTaken":["分析了原文AI特征","进行了口语化改写","打乱了规整排版"],"needsMcpSupport":false}}}
+{"isCompleted":true,"result":"【执行结论】去AI化优化已完成，文章更具真人感","structuredResult":{"briefResponse":"我对文章进行了去AI化改写，打破了模板化结构","selfEvaluation":"改写成功，文章更自然、更像真人手写","executionSummary":{"actionsTaken":["分析了原文AI特征","进行了口语化改写","打乱了规整排版"],"needsMcpSupport":false}}}
 ```
 
 **任务失败时：**
 ```json
-{"isCompleted":false,"result":"【执行结论】无法获取前序文章内容","suggestion":"请检查前序任务是否完成","structuredResult":{"briefResponse":"尝试获取前序文章但失败","selfEvaluation":"缺少输入内容，无法执行去AI化优化","executionSummary":{"actionsTaken":["检查前序任务输出","发现内容为空"],"needsMcpSupport":false}}}
+{"isCompleted":false,"result":"【执行结论】无法获取前序文章内容","structuredResult":{"briefResponse":"尝试获取前序文章但失败","selfEvaluation":"缺少输入内容，无法执行去AI化优化","executionSummary":{"actionsTaken":["检查前序任务输出","发现内容为空"],"needsMcpSupport":false}}}
 ```
 
 ---
@@ -70,7 +69,6 @@
 | `structuredResult.briefResponse` | ✅ 必填 | 简要响应（说明你做了什么/将要做什么） |
 | `structuredResult.selfEvaluation` | ✅ 必填 | 自我评价（评价任务完成情况） |
 | `structuredResult.executionSummary.actionsTaken` | ✅ 必填 | 采取的行动列表 |
-| `suggestion` | ✅ 必填 | 必须填写具体内容，说明你的建议或反馈（不能为空字符串） |
 
 **🔴 重要：即使任务未完成（isCompleted=false），也必须填写 briefResponse 和 selfEvaluation！**
 
@@ -90,22 +88,19 @@
 // 情况1：任务在职责范围内且已完成
 {
   "isCompleted": true,
-  "result": "【执行结论】文章创作已完成",
-  "suggestion": "任务已完成，建议进入合规审核流程"
+  "result": "【执行结论】文章创作已完成"
 }
 
 // 情况2：任务在职责范围内但需要技术支持
 {
   "isCompleted": false,
-  "result": "【执行结论】文章已创作完成，需要合规审核支持",
-  "suggestion": "请调用合规审核工具对文章进行审核"
+  "result": "【执行结论】文章已创作完成，需要合规审核支持"
 }
 
 // 情况3：任务不在职责范围内
 {
   "isCompleted": false,
-  "result": "【执行结论】合规审核不是我的职责，需要技术专家处理",
-  "suggestion": "请将此任务分配给合规审核Agent"
+  "result": "【执行结论】合规审核不是我的职责，需要技术专家处理"
 }
 ```
 
@@ -138,8 +133,6 @@
   "isCompleted": true/false,
   
   "result": "【执行结论】一句话说明执行结果（必须简洁，50字以内）",
-  
-  "suggestion": "你的建议或反馈（必须填写具体内容，不能为空字符串，不能省略此字段）",
   
   "structuredResult": {
     "resultContent": "执行结果的详细内容",
@@ -288,7 +281,7 @@
 2. **如果你需要外部工具或信息**：
    - isCompleted = false
    - 在 result 中声明"【执行结论】需要 xxx 帮助"
-   - 在 suggestion 中清楚说明你需要什么帮助
+   - 在 resultContent 中清楚说明你需要什么帮助
    - 在 evidence 中说明为什么需要帮助
 
 3. **给 Agent B 的有效信息**：
@@ -302,7 +295,6 @@
 {
   "isCompleted": true,
   "result": "【执行结论】文章已通过合规审核，无需修改",
-  "suggestion": "文章合规，建议发布",
   "structuredResult": {
     "originalInstruction": {
       "title": "根据合规校验结果修改文章",
@@ -335,7 +327,6 @@
 {
   "isCompleted": false,
   "result": "【执行结论】需要 MCP 合规审核支持",
-  "suggestion": "请调用合规审核工具对文章进行审核",
   "structuredResult": {
     "originalInstruction": {
       "title": "公众号文章合规性审核",
@@ -364,7 +355,6 @@
 {
   "isCompleted": false,
   "result": "【执行结论】此任务不在我的职责范围内",
-  "suggestion": "请将此任务分配给合适的执行 Agent",
   "structuredResult": {
     "originalInstruction": {
       "title": "小红书图文创作",
@@ -400,6 +390,14 @@
 | `structuredResult.briefResponse` | ✅ **无论 isCompleted 是 true 还是 false，都已填写** |
 | `structuredResult.selfEvaluation` | ✅ **无论 isCompleted 是 true 还是 false，都已填写** |
 | `structuredResult.executionSummary.actionsTaken` | ✅ 已填写采取的行动 |
-| `suggestion` | ✅ 必填 | 必须填写具体内容，无论 isCompleted 是 true 还是 false（不能为空字符串，不能省略） |
 
 **🔴 严禁输出缺少必填字段的 JSON！**
+
+---
+
+## 🔴🔴🔴 重要：不要返回 suggestion 字段
+
+**执行 Agent 不要返回 suggestion 字段！**
+- 之前版本中有 suggestion 字段，但现在已移除
+- 只需返回上述必填字段即可
+- suggestion 字段的功能已由 result 字段替代
