@@ -2036,9 +2036,11 @@ export default function HomePage() {
 
         if (existingCase?.success && existingCase?.data) {
           const c = existingCase.data;
+          // 系统预置案例（workspaceId = 'system'）不允许修改，作为新案例创建
+          const isSystemCase = c.workspaceId === 'system';
           const data = {
             snippetId: snippet.id,
-            caseId: c.id,
+            caseId: isSystemCase ? null : c.id,  // 系统预置案例不设置 caseId，创建新案例
             snippetTitle: snippet.title || '',
             title: c.title,
             eventFullStory: c.eventFullStory || '',
@@ -2065,8 +2067,13 @@ export default function HomePage() {
             insuranceAction: c.insuranceAction || '',
             result: c.result || '',
             productTags: (c.productTags || []).join('、'),
+            industry: c.industry || 'insurance',
           });
-          toast.info('已加载已有案例，可直接编辑保存');
+          if (isSystemCase) {
+            toast.info('已加载系统预置案例作为模板，保存后将创建新案例');
+          } else {
+            toast.info('已加载已有案例，可直接编辑保存');
+          }
         } else {
           toast.error('加载已有案例失败，将重新提取');
         }
