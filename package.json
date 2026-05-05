@@ -104,7 +104,8 @@
     "vaul": "^1.1.2",
     "ws": "^8.19.0",
     "zod": "^4.3.5",
-    "typescript": "^5"
+    "typescript": "^5",
+    "playwright": "^1.59.1"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
@@ -118,7 +119,6 @@
     "eslint": "^9",
     "eslint-config-next": "16.1.1",
     "only-allow": "^1.2.2",
-    "playwright": "^1.59.1",
     "shadcn": "latest",
     "tailwindcss": "^4",
     "ts-node": "^10.9.2",
