@@ -21,33 +21,6 @@ import { eq, and } from 'drizzle-orm';
 import { v4 as uuidv4 } from 'uuid';
 import { SubtaskExecutionEngine } from '@/lib/services/subtask-execution-engine';
 
-// Mock 微信 API 成功返回
-// 注意：webpack ESM 导出为只读 getter，无法直接覆盖
-// 改用全局变量存储 mock 函数，在调用处判断
-let mockWechatAddDraft: ((params: any) => Promise<any>) | null = null;
-if (process.env.NODE_ENV !== 'production') {
-  try {
-    // Mock 版本：直接返回成功
-    mockWechatAddDraft = async (params: any) => {
-      console.log('🔧 [Mock] wechatAddDraft 被调用，返回 Mock 成功结果:', params);
-      return {
-        success: true,
-        data: {
-          media_id: 'mock_media_id_' + Date.now(),
-          create_time: Date.now()
-        },
-        metadata: {
-          accountId: params.accountId,
-          accountName: '保险事业部公众号',
-          timestamp: Date.now()
-        }
-      };
-    };
-  } catch (e) {
-    console.warn('Mock wechatAddDraft setup failed:', e);
-  }
-}
-
 export const maxDuration = 120;
 
 // 类型定义

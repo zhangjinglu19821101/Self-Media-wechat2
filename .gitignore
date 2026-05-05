@@ -79,6 +79,10 @@ ehthumbs.db
 Thumbs.db
 Desktop.ini
 
+# Backup files
+*.bak
+*.bak.*
+
 # Temporary files
 *.tmp
 *.temp
