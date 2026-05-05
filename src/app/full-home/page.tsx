@@ -1992,6 +1992,7 @@ export default function HomePage() {
       });
       toast.success('速记已保存');
       setSnippetForm({ rawContent: '' });
+      setSnippetAnalyzeResult(null);
       setDirectSaveTitle('');
       setSkipAIEnrichment(false);
       loadSnippetList();
@@ -6104,7 +6105,7 @@ export default function HomePage() {
                       onCheckedChange={setSkipAIEnrichment}
                       className="data-[state=checked]:bg-amber-500"
                     />
-                    <Label className="text-xs text-slate-600 cursor-pointer" onClick={() => setSkipAIEnrichment(!skipAIEnrichment)}>
+                    <Label className="text-xs text-slate-600 cursor-pointer">
                       跳过 AI 分析，直接保存
                     </Label>
                   </div>
