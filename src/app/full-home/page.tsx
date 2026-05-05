@@ -1978,10 +1978,15 @@ export default function HomePage() {
       return;
     }
     
+    if (!directSaveTitle.trim()) {
+      toast.error('请输入标题');
+      return;
+    }
+    
     setDirectSaving(true);
     try {
       await apiPost('/api/info-snippets', {
-        title: directSaveTitle.trim() || snippetForm.rawContent.slice(0, 50),
+        title: directSaveTitle.trim(),
         rawContent: snippetForm.rawContent,
         summary: null,
         keywords: null,
@@ -6114,9 +6119,9 @@ export default function HomePage() {
                     /* 直接保存模式 */
                     <div className="space-y-3">
                       <div>
-                        <Label className="text-xs text-slate-500 mb-1 block">标题（可选）</Label>
+                        <Label className="text-xs text-slate-500 mb-1 block">标题 <span className="text-red-500">*</span></Label>
                         <Input
-                          placeholder="可选填写标题，不填则自动截取内容前 50 字"
+                          placeholder="请输入标题（必填）"
                           value={directSaveTitle}
                           onChange={(e) => setDirectSaveTitle(e.target.value)}
                           className="text-sm"
