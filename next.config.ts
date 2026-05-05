@@ -10,7 +10,7 @@ const nextConfig: NextConfig = {
   },
 
   // 🔧 配置原生模块为外部包
-  serverExternalPackages: ['@napi-rs/canvas', 'postgres', 'drizzle-orm'],
+  serverExternalPackages: ['@napi-rs/canvas', 'postgres', 'drizzle-orm', 'playwright'],
 
   // 🔧 配置模块解析路径
   experimental: {
