@@ -6,6 +6,9 @@ const nextConfig: NextConfig = {
     ignoreBuildErrors: true,
   },
 
+  // 禁用 Turbopack，使用 webpack
+  turbopack: {},
+
   // 🔧 配置原生模块为外部包
   serverExternalPackages: ['@napi-rs/canvas', 'postgres', 'drizzle-orm'],
 
