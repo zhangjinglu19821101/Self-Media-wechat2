@@ -2,6 +2,9 @@ import type { NextConfig } from 'next';
 import webpack from 'webpack';
 
 const nextConfig: NextConfig = {
+  // 🔧 禁用 Turbopack，使用 webpack
+  turbo: {},
+  
   // 跳过 TypeScript 类型检查，加速构建
   typescript: {
     ignoreBuildErrors: true,
