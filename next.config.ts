@@ -1,27 +1,9 @@
 import type { NextConfig } from 'next';
-import webpack from 'webpack';
 
 const nextConfig: NextConfig = {
-  // 🔧 禁用 Turbopack，使用 webpack
-  turbo: {},
-  
   // 跳过 TypeScript 类型检查，加速构建
   typescript: {
     ignoreBuildErrors: true,
-  },
-  eslint: {
-    ignoreDuringBuilds: true,
-  },
-
-  // 🔧 配置 webpack mock 掉 playwright
-  webpack: (config) => {
-    config.plugins.push(
-      new webpack.NormalModuleReplacementPlugin(
-        /^playwright$/,
-        require.resolve('./src/lib/mocks/playwright-mock.ts')
-      )
-    );
-    return config;
   },
 
   // 🔧 配置原生模块为外部包

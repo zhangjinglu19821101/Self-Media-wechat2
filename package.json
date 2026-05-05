@@ -104,9 +104,7 @@
     "vaul": "^1.1.2",
     "ws": "^8.19.0",
     "zod": "^4.3.5",
-    "typescript": "^5",
-    "playwright": "^1.59.1",
-    "webpack": "^5"
+    "typescript": "^5"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
