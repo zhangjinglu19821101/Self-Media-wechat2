@@ -60,5 +60,4 @@ else
 fi
 
 # 启动 Next.js 开发服务器（带热更新）
-# 使用 --webpack 避免 Turbopack 与 lightningcss 原生模块不兼容
 exec pnpm next dev --webpack --port ${PORT} -H 0.0.0.0

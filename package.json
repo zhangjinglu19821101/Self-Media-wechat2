@@ -4,15 +4,12 @@
   "private": true,
   "scripts": {
     "dev": "bash ./scripts/dev.sh",
-    "dev:turbo": "bash ./scripts/dev-turbo.sh",
     "dev:monitor": "node scripts/dev-monitor.js",
     "dev:auto": "node scripts/dev-monitor.js &",
     "dev:clean": "bash ./scripts/clean-cache.sh && bash ./scripts/dev.sh",
     "dev:hard": "rm -rf .next node_modules && pnpm install && bash ./scripts/dev.sh",
     "build": "bash ./scripts/build.sh",
-    "build:turbo": "next build --turbo",
     "preinstall": "npx only-allow pnpm",
-    "postinstall": "node scripts/postinstall.js",
     "lint": "eslint",
     "start": "bash ./scripts/start.sh",
     "start:prod": "pm2 start ecosystem.config.cjs --env production",
@@ -108,9 +105,7 @@
     "typescript": "^5",
     "playwright": "^1.40.0",
     "tailwindcss": "^4",
-    "@tailwindcss/postcss": "^4",
-    "lightningcss": "^1.29.0",
-    "lightningcss-linux-x64-gnu": "^1.29.0"
+    "@tailwindcss/postcss": "^4"
   },
   "devDependencies": {
     "@types/bcryptjs": "^3.0.0",
