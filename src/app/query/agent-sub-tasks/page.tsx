@@ -11,6 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Textarea } from '@/components/ui/textarea';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { StepHistoryCard, type StepHistoryItem } from '@/components/step-history-card';
+import { Search, RefreshCw, Eye, ChevronUp, ChevronDown, Clock } from 'lucide-react';
 
 interface Task {
   id: number;

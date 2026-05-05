@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -110,9 +110,9 @@ export default function KnowledgeBasePage() {
   };
 
   // 初始加载统计
-  useState(() => {
+  useEffect(() => {
     loadStats();
-  });
+  }, []);
 
   return (
     <div className="container mx-auto py-8 px-4 max-w-7xl">
