@@ -11,6 +11,23 @@ import * as fs from 'fs';
 import * as path from 'path';
 
 /**
+ * Agent ID 到实际文件名的映射
+ * 与 prompt-loader.ts 保持一致
+ */
+const AGENT_PROMPT_FILE_MAP: Record<string, string> = {
+  'A': 'A.md',
+  'B': 'B.md',
+  'C': 'C.md',
+  'D': 'D.md',
+  'insurance-c': 'insurance-c.md',
+  'insurance-d': 'insurance-d-v3.md',  // 🔴 使用 v3 版本
+  'insurance-xiaohongshu': 'insurance-xiaohongshu.md',
+  'insurance-zhihu': 'insurance-zhihu.md',
+  'insurance-toutiao': 'insurance-toutiao.md',
+  'deai-optimizer': 'deai-optimizer.md',
+};
+
+/**
  * 从 Markdown 文件读取 Agent 提示词
  */
 function readAgentPrompt(agentId: AgentId): {
@@ -20,7 +37,9 @@ function readAgentPrompt(agentId: AgentId): {
   skillPrompts?: Record<string, string>;
 } {
   try {
-    const filePath = path.join(process.cwd(), 'src/lib/agents/prompts', `${agentId}.md`);
+    // 🔴 使用版本映射获取实际文件名
+    const fileName = AGENT_PROMPT_FILE_MAP[agentId] || `${agentId}.md`;
+    const filePath = path.join(process.cwd(), 'src/lib/agents/prompts', fileName);
     const content = fs.readFileSync(filePath, 'utf8');
 
     // 解析 Markdown 文件
