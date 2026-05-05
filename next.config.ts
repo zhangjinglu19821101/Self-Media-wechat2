@@ -6,14 +6,12 @@ const nextConfig: NextConfig = {
     ignoreBuildErrors: true,
   },
 
-  // 禁用 Turbopack，使用 webpack
-  turbopack: {},
-
   // 🔧 配置原生模块为外部包
   serverExternalPackages: ['@napi-rs/canvas', 'postgres', 'drizzle-orm'],
 
-  // 🔧 配置模块解析路径
+  // 🔧 实验性配置
   experimental: {
+    // 优化包导入
     optimizePackageImports: ['lucide-react', '@radix-ui/react-icons', 'date-fns', 'lodash'],
     // 禁用 worker threads 避免序列化问题
     workerThreads: false,
