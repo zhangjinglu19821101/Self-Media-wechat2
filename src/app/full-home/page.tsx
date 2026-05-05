@@ -15,6 +15,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
+import { Switch } from '@/components/ui/switch';
 import {
   Table,
   TableBody,
@@ -574,6 +575,9 @@ export default function HomePage() {
   const [snippetForm, setSnippetForm] = useState({
     rawContent: '',
   });
+  const [skipAIEnrichment, setSkipAIEnrichment] = useState(false);
+  const [directSaveTitle, setDirectSaveTitle] = useState('');
+  const [directSaving, setDirectSaving] = useState(false);
   
   // 🔥 提醒中心相关状态
   const [showReminderDrawer, setShowReminderDrawer] = useState(false);
@@ -1964,6 +1968,38 @@ export default function HomePage() {
       toast.error('保存失败');
     } finally {
       setSnippetSaving(false);
+    }
+  };
+
+  // 🔥 信息速记：直接保存（跳过AI分析）
+  const handleDirectSaveSnippet = async () => {
+    if (!snippetForm.rawContent.trim()) {
+      toast.error('请输入内容');
+      return;
+    }
+    
+    setDirectSaving(true);
+    try {
+      await apiPost('/api/info-snippets', {
+        title: directSaveTitle.trim() || snippetForm.rawContent.slice(0, 50),
+        rawContent: snippetForm.rawContent,
+        summary: null,
+        keywords: null,
+        category: null,
+        complianceStatus: null,
+        complianceIssues: null,
+        snippetType: 'memory',
+      });
+      toast.success('速记已保存');
+      setSnippetForm({ rawContent: '' });
+      setDirectSaveTitle('');
+      setSkipAIEnrichment(false);
+      loadSnippetList();
+    } catch (error) {
+      console.error('[InfoSnippets] 直接保存失败:', error);
+      toast.error('保存失败');
+    } finally {
+      setDirectSaving(false);
     }
   };
 
@@ -6061,20 +6097,62 @@ export default function HomePage() {
                     <p className="text-xs text-slate-400 mt-1">AI 将自动完成分类、标题、摘要、关键词、合规校验</p>
                   </div>
 
-                  <Button
-                    onClick={handleAnalyzeSnippet}
-                    disabled={snippetAnalyzing}
-                    className="w-full h-10 bg-gradient-to-r from-violet-500 to-purple-600 hover:from-violet-600 hover:to-purple-700 text-white"
-                  >
-                    {snippetAnalyzing ? (
-                      <><Loader2 className="mr-2 h-4 w-4 animate-spin" />AI 分析中...</>
-                    ) : (
-                      <><Sparkles className="mr-2 h-4 w-4" />AI 智能分析</>
-                    )}
-                  </Button>
+                  {/* 跳过 AI 分析开关 */}
+                  <div className="flex items-center gap-2 py-1">
+                    <Switch
+                      checked={skipAIEnrichment}
+                      onCheckedChange={setSkipAIEnrichment}
+                      className="data-[state=checked]:bg-amber-500"
+                    />
+                    <Label className="text-xs text-slate-600 cursor-pointer" onClick={() => setSkipAIEnrichment(!skipAIEnrichment)}>
+                      跳过 AI 分析，直接保存
+                    </Label>
+                  </div>
+
+                  {skipAIEnrichment ? (
+                    /* 直接保存模式 */
+                    <div className="space-y-3">
+                      <div>
+                        <Label className="text-xs text-slate-500 mb-1 block">标题（可选）</Label>
+                        <Input
+                          placeholder="可选填写标题，不填则自动截取内容前 50 字"
+                          value={directSaveTitle}
+                          onChange={(e) => setDirectSaveTitle(e.target.value)}
+                          className="text-sm"
+                        />
+                      </div>
+                      <Button
+                        onClick={handleDirectSaveSnippet}
+                        disabled={directSaving || !snippetForm.rawContent.trim()}
+                        className="w-full h-10 bg-amber-500 hover:bg-amber-600 text-white"
+                      >
+                        {directSaving ? (
+                          <><Loader2 className="mr-2 h-4 w-4 animate-spin" />保存中...</>
+                        ) : (
+                          <><Save className="mr-2 h-4 w-4" />直接保存</>
+                        )}
+                      </Button>
+                      <p className="text-xs text-amber-600/80 text-center">⚠️ 跳过 AI 分析将不会自动生成分类、摘要、关键词</p>
+                    </div>
+                  ) : (
+                    /* AI 分析模式 */
+                    <>
+                      <Button
+                        onClick={handleAnalyzeSnippet}
+                        disabled={snippetAnalyzing}
+                        className="w-full h-10 bg-gradient-to-r from-violet-500 to-purple-600 hover:from-violet-600 hover:to-purple-700 text-white"
+                      >
+                        {snippetAnalyzing ? (
+                          <><Loader2 className="mr-2 h-4 w-4 animate-spin" />AI 分析中...</>
+                        ) : (
+                          <><Sparkles className="mr-2 h-4 w-4" />AI 智能分析</>
+                        )}
+                      </Button>
+                    </>
+                  )}
 
                   {/* 互联网搜索（权威来源） */}
-                  {snippetForm.rawContent.trim().length > 0 && !snippetAnalyzeResult && (
+                  {snippetForm.rawContent.trim().length > 0 && !snippetAnalyzeResult && !skipAIEnrichment && (
                     <div className="pt-1">
                       <button
                         type="button"
