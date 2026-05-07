@@ -38,14 +38,19 @@ console.log(`[DB] 环境模式: ${PROJECT_ENV}, 目标 Schema: ${DB_SCHEMA}`);
 // ==================== 数据库连接 ====================
 
 const RAW_DATABASE_URL = process.env.DATABASE_URL;
-if (!RAW_DATABASE_URL) {
-  throw new Error('[DB] DATABASE_URL 环境变量未设置，请检查 .env.local 配置');
+
+// 构建时可能没有环境变量，延迟到运行时检查
+if (!RAW_DATABASE_URL && process.env.NODE_ENV !== 'production') {
+  console.warn('[DB] DATABASE_URL 环境变量未设置，数据库功能将不可用');
 }
 
 /**
  * 获取原始数据库连接 URL（不含 search_path，用于创建迁移连接）
  */
 export function getRawDatabaseUrl(): string {
+  if (!RAW_DATABASE_URL) {
+    throw new Error('[DB] DATABASE_URL 环境变量未设置，请检查环境配置');
+  }
   return RAW_DATABASE_URL;
 }
 
@@ -68,7 +73,11 @@ export function getRawDatabaseUrl(): string {
  *   - 这确保了即使 dev_schema 尚未创建表，系统仍可正常运行
  * - PROD 模式: 不设置 connection.options（PostgreSQL 默认使用 public）
  */
-function createConnection(): postgres.Sql {
+function createConnection(): postgres.Sql | null {
+  if (!RAW_DATABASE_URL) {
+    return null;
+  }
+  
   const isDev = DB_SCHEMA !== 'public';
   
   // eslint-disable-next-line @typescript-eslint/no-empty-object-type -- postgres.js requires generic parameter
@@ -95,9 +104,31 @@ function createConnection(): postgres.Sql {
   return postgres(RAW_DATABASE_URL, config);
 }
 
-// 创建全局数据库连接（单例，全进程共享连接池）
-const client = createConnection();
-export const db = drizzle(client, { schema });
+// 延迟初始化数据库连接
+let _client: postgres.Sql | null = null;
+let _db: ReturnType<typeof drizzle> | null = null;
+
+function getClient(): postgres.Sql {
+  if (!_client) {
+    _client = createConnection();
+  }
+  if (!_client) {
+    throw new Error('[DB] DATABASE_URL 环境变量未设置，无法创建数据库连接');
+  }
+  return _client;
+}
+
+// 创建懒加载的 db 代理对象
+const dbHandler: ProxyHandler<ReturnType<typeof drizzle>> = {
+  get(_, prop) {
+    return Reflect.get(drizzle(getClient(), { schema }), prop);
+  }
+};
+
+// 构建时使用空对象避免报错，运行时通过 proxy 懒加载
+export const db = RAW_DATABASE_URL 
+  ? drizzle(getClient(), { schema })
+  : new Proxy({} as ReturnType<typeof drizzle>, dbHandler);
 
 // 重新导出 schema 供其他模块使用
 export { schema };
