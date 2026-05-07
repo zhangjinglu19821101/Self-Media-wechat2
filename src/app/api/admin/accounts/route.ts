@@ -13,7 +13,6 @@ import { isSuperAdmin, getAccountId } from '@/lib/auth/context';
 import { hashPassword } from '@/lib/auth/password';
 import { randomBytes } from 'crypto';
 import { adminAuditLogs, ADMIN_ACTION } from '@/lib/db/schema/admin-audit-logs';
-import { log } from '@/lib/logger';
 
 /**
  * 记录管理员操作审计日志
@@ -43,9 +42,9 @@ async function createAuditLog(params: {
       ipAddress: params.ipAddress,
       userAgent: params.userAgent,
     });
-    log.info('[AdminAudit]', `${params.adminEmail} 执行了 ${params.action} 操作，目标用户: ${params.targetEmail}`);
+    console.log('[AdminAudit]', `${params.adminEmail} 执行了 ${params.action} 操作，目标用户: ${params.targetEmail}`);
   } catch (error) {
-    log.error('[AdminAudit]', '写入审计日志失败:', error);
+    console.error('[AdminAudit]', '写入审计日志失败:', error);
   }
 }
 
