@@ -168,9 +168,9 @@ export async function POST(request: NextRequest) {
     // 2. 获取当前用户信息（用于自我保护和审计日志）
     const currentUserId = await getAccountId();
     const currentUserEmail = await (async () => {
-      const session = await import('next-auth').then(m => m.getServerSession(
-        await import('@/lib/auth').then(m => m.authOptions)
-      ));
+      const { getServerSession } = await import('next-auth');
+      const { authOptions } = await import('@/lib/auth');
+      const session = await getServerSession(authOptions);
       return session?.user?.email || 'unknown';
     })();
 
