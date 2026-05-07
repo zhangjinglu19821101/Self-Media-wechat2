@@ -23,11 +23,15 @@ ENV NEXT_TELEMETRY_DISABLED=1
 ENV NODE_ENV=production
 RUN pnpm build
 
+# Copy static files for standalone mode
+RUN cp -r .next/static .next/standalone/.next/ && \
+    cp -r public .next/standalone/ || true
+
 # Expose port
 EXPOSE 5000
 
 ENV PORT=5000
 ENV HOSTNAME="0.0.0.0"
 
-# Start
-CMD ["pnpm", "start"]
+# Start with standalone server
+CMD ["node", ".next/standalone/server.js"]
