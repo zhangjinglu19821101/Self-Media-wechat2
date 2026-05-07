@@ -1,6 +1,9 @@
 import type { NextConfig } from 'next';
 
 const nextConfig: NextConfig = {
+  // Docker 部署需要 standalone 输出
+  output: 'standalone',
+
   // 跳过 TypeScript 类型检查，加速构建
   typescript: {
     ignoreBuildErrors: true,

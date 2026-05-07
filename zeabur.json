@@ -1,0 +1,26 @@
+{
+  "$schema": "https://schema.zeabur.app/schema.json",
+  "services": [
+    {
+      "name": "ai-venture",
+      "type": "web",
+      "source": {
+        "type": "git",
+        "url": "https://gitee.com/chinaclass/ai-venture.git",
+        "branch": "main"
+      },
+      "build": {
+        "type": "nodejs",
+        "command": "pnpm install && pnpm build"
+      },
+      "run": {
+        "command": "pnpm start",
+        "port": 5000
+      },
+      "env": {
+        "NODE_ENV": "production",
+        "PORT": "5000"
+      }
+    }
+  ]
+}
