@@ -3,6 +3,9 @@ FROM node:20-alpine
 
 WORKDIR /app
 
+# Install bash (required for build scripts)
+RUN apk add --no-cache bash
+
 # Install pnpm
 RUN npm install -g pnpm
 
