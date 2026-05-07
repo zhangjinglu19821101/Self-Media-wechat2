@@ -11,11 +11,12 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import {
-  Users, Building2, Search, Shield, Ban, CheckCircle, Key,
+  Users, Building2, Search, Shield, Ban, CheckCircle, Key, Unlock,
   ChevronLeft, ChevronRight, RefreshCw, AlertTriangle, Loader2
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -89,7 +90,7 @@ export default function AdminPage() {
   // 操作对话框
   const [actionDialog, setActionDialog] = useState<{
     open: boolean;
-    action: 'disable' | 'enable' | 'reset_password' | 'set_role' | null;
+    action: 'disable' | 'enable' | 'reset_password' | 'set_role' | 'unlock' | null;
     user: UserItem | null;
     newPassword?: string;
     newRole?: string;
@@ -163,12 +164,33 @@ export default function AdminPage() {
     }
   }, [userPagination.page, userPagination.pageSize, userSearch, userStatus]);
 
+  // 搜索防抖：userSearch 变化后自动触发搜索
+  useEffect(() => {
+    if (!isSuperAdmin) return;
+    const timer = setTimeout(() => {
+      loadUsers(1); // 搜索时重置到第一页
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [userSearch]);
+
   useEffect(() => {
     if (isSuperAdmin) loadUsers();
   }, [isSuperAdmin, userPagination.page, userStatus]);
 
+  // 二次确认输入状态
+  const [confirmInput, setConfirmInput] = useState('');
+
   const handleUserAction = async () => {
     if (!actionDialog.action || !actionDialog.user) return;
+
+    // 危险操作二次确认：检查输入的用户名是否匹配
+    const dangerousActions = ['disable', 'reset_password', 'set_role'];
+    if (dangerousActions.includes(actionDialog.action)) {
+      if (confirmInput.trim() !== actionDialog.user.name) {
+        toast.error('输入的用户名不匹配');
+        return;
+      }
+    }
 
     try {
       const body: any = {
@@ -194,10 +216,11 @@ export default function AdminPage() {
         }
         loadUsers();
       }
-    } catch (err) {
-      toast.error('操作失败');
+    } catch (err: any) {
+      toast.error(err?.message || '操作失败');
     } finally {
       setActionDialog({ open: false, action: null, user: null });
+      setConfirmInput('');
     }
   };
 
@@ -343,82 +366,116 @@ export default function AdminPage() {
                           <TableHead>用户</TableHead>
                           <TableHead>角色</TableHead>
                           <TableHead>状态</TableHead>
+                          <TableHead>锁定</TableHead>
                           <TableHead>工作空间</TableHead>
                           <TableHead>最后登录</TableHead>
                           <TableHead>操作</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {users.map((user) => (
-                          <TableRow key={user.id}>
-                            <TableCell>
-                              <div>
-                                <div className="font-medium">{user.name}</div>
-                                <div className="text-sm text-muted-foreground">{user.email}</div>
-                              </div>
-                            </TableCell>
-                            <TableCell>
-                              <Badge variant={user.role === 'super_admin' ? 'destructive' : 'secondary'}>
-                                {user.role === 'super_admin' ? '超管' : '普通'}
-                              </Badge>
-                            </TableCell>
-                            <TableCell>
-                              <Badge variant={user.status === 'active' ? 'default' : 'destructive'}>
-                                {user.status === 'active' ? '正常' : user.status === 'disabled' ? '已禁用' : '已暂停'}
-                              </Badge>
-                            </TableCell>
-                            <TableCell>{user.workspaceCount}</TableCell>
-                            <TableCell>
-                              {user.lastLoginAt
-                                ? new Date(user.lastLoginAt).toLocaleString('zh-CN')
-                                : '-'}
-                            </TableCell>
-                            <TableCell>
-                              <div className="flex items-center gap-1">
-                                {user.status === 'active' ? (
-                                  <Button
-                                    size="sm"
-                                    variant="ghost"
-                                    onClick={() => setActionDialog({ open: true, action: 'disable', user })}
-                                    title="禁用"
-                                  >
-                                    <Ban className="w-4 h-4 text-red-500" />
-                                  </Button>
+                        {users.map((user) => {
+                          const isLocked = user.lockedUntil && new Date(user.lockedUntil) > new Date();
+                          return (
+                            <TableRow key={user.id}>
+                              <TableCell>
+                                <div>
+                                  <div className="font-medium">{user.name}</div>
+                                  <div className="text-sm text-muted-foreground">{user.email}</div>
+                                </div>
+                              </TableCell>
+                              <TableCell>
+                                <Badge variant={user.role === 'super_admin' ? 'destructive' : 'secondary'}>
+                                  {user.role === 'super_admin' ? '超管' : '普通'}
+                                </Badge>
+                              </TableCell>
+                              <TableCell>
+                                <Badge variant={user.status === 'active' ? 'default' : 'destructive'}>
+                                  {user.status === 'active' ? '正常' : user.status === 'disabled' ? '已禁用' : '已暂停'}
+                                </Badge>
+                              </TableCell>
+                              <TableCell>
+                                {isLocked ? (
+                                  <div className="flex items-center gap-1">
+                                    <Badge variant="destructive" className="gap-1">
+                                      <AlertTriangle className="w-3 h-3" />
+                                      已锁定
+                                    </Badge>
+                                    <span className="text-xs text-muted-foreground">
+                                      ({user.failedLoginAttempts}次)
+                                    </span>
+                                  </div>
+                                ) : user.failedLoginAttempts > 0 ? (
+                                  <span className="text-xs text-muted-foreground">
+                                    失败 {user.failedLoginAttempts} 次
+                                  </span>
                                 ) : (
+                                  <span className="text-xs text-muted-foreground">-</span>
+                                )}
+                              </TableCell>
+                              <TableCell>{user.workspaceCount}</TableCell>
+                              <TableCell>
+                                {user.lastLoginAt
+                                  ? new Date(user.lastLoginAt).toLocaleString('zh-CN')
+                                  : '-'}
+                              </TableCell>
+                              <TableCell>
+                                <div className="flex items-center gap-1">
+                                  {/* 解锁按钮 - 仅当用户被锁定时显示 */}
+                                  {isLocked && (
+                                    <Button
+                                      size="sm"
+                                      variant="ghost"
+                                      onClick={() => setActionDialog({ open: true, action: 'unlock', user })}
+                                      title="解锁账号"
+                                    >
+                                      <Unlock className="w-4 h-4 text-amber-500" />
+                                    </Button>
+                                  )}
+                                  {user.status === 'active' ? (
+                                    <Button
+                                      size="sm"
+                                      variant="ghost"
+                                      onClick={() => setActionDialog({ open: true, action: 'disable', user })}
+                                      title="禁用"
+                                    >
+                                      <Ban className="w-4 h-4 text-red-500" />
+                                    </Button>
+                                  ) : (
+                                    <Button
+                                      size="sm"
+                                      variant="ghost"
+                                      onClick={() => setActionDialog({ open: true, action: 'enable', user })}
+                                      title="启用"
+                                    >
+                                      <CheckCircle className="w-4 h-4 text-green-500" />
+                                    </Button>
+                                  )}
                                   <Button
                                     size="sm"
                                     variant="ghost"
-                                    onClick={() => setActionDialog({ open: true, action: 'enable', user })}
-                                    title="启用"
+                                    onClick={() => setActionDialog({ open: true, action: 'reset_password', user, newPassword: '' })}
+                                    title="重置密码"
                                   >
-                                    <CheckCircle className="w-4 h-4 text-green-500" />
+                                    <Key className="w-4 h-4 text-orange-500" />
                                   </Button>
-                                )}
-                                <Button
-                                  size="sm"
-                                  variant="ghost"
-                                  onClick={() => setActionDialog({ open: true, action: 'reset_password', user, newPassword: '' })}
-                                  title="重置密码"
-                                >
-                                  <Key className="w-4 h-4 text-orange-500" />
-                                </Button>
-                                <Button
-                                  size="sm"
-                                  variant="ghost"
-                                  onClick={() => setActionDialog({
-                                    open: true,
-                                    action: 'set_role',
-                                    user,
-                                    newRole: user.role === 'super_admin' ? 'normal' : 'super_admin',
-                                  })}
-                                  title={user.role === 'super_admin' ? '取消超管' : '设为超管'}
-                                >
-                                  <Shield className={`w-4 h-4 ${user.role === 'super_admin' ? 'text-slate-400' : 'text-blue-500'}`} />
-                                </Button>
-                              </div>
-                            </TableCell>
-                          </TableRow>
-                        ))}
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    onClick={() => setActionDialog({
+                                      open: true,
+                                      action: 'set_role',
+                                      user,
+                                      newRole: user.role === 'super_admin' ? 'normal' : 'super_admin',
+                                    })}
+                                    title={user.role === 'super_admin' ? '取消超管' : '设为超管'}
+                                  >
+                                    <Shield className={`w-4 h-4 ${user.role === 'super_admin' ? 'text-slate-400' : 'text-blue-500'}`} />
+                                  </Button>
+                                </div>
+                              </TableCell>
+                            </TableRow>
+                          );
+                        })}
                       </TableBody>
                     </Table>
 
@@ -642,6 +699,7 @@ export default function AdminPage() {
               <DialogTitle>
                 {actionDialog.action === 'disable' && '禁用账号'}
                 {actionDialog.action === 'enable' && '启用账号'}
+                {actionDialog.action === 'unlock' && '解锁账号'}
                 {actionDialog.action === 'reset_password' && '重置密码'}
                 {actionDialog.action === 'set_role' && '设置角色'}
               </DialogTitle>
@@ -664,6 +722,18 @@ export default function AdminPage() {
                   <p>该用户将恢复正常使用权限</p>
                 )}
 
+                {actionDialog.action === 'unlock' && (
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2 text-amber-600">
+                      <Unlock className="w-4 h-4" />
+                      <span>将清除登录失败记录并解除账号锁定</span>
+                    </div>
+                    <p className="text-sm text-muted-foreground">
+                      当前失败次数：{actionDialog.user.failedLoginAttempts} 次
+                    </p>
+                  </div>
+                )}
+
                 {actionDialog.action === 'reset_password' && (
                   <div className="space-y-2">
                     <Input
@@ -682,14 +752,36 @@ export default function AdminPage() {
                       : '将取消超级管理员权限，恢复为普通用户'}
                   </p>
                 )}
+
+                {/* 危险操作二次确认：输入用户名 */}
+                {['disable', 'reset_password', 'set_role'].includes(actionDialog.action || '') && actionDialog.user && (
+                  <div className="mt-4 pt-4 border-t">
+                    <Label className="text-sm font-medium text-red-600">
+                      请输入用户名 "{actionDialog.user.name}" 以确认操作：
+                    </Label>
+                    <Input
+                      value={confirmInput}
+                      onChange={(e) => setConfirmInput(e.target.value)}
+                      placeholder={`请输入：${actionDialog.user.name}`}
+                      className="mt-2"
+                    />
+                  </div>
+                )}
               </div>
             )}
 
             <DialogFooter>
-              <Button variant="outline" onClick={() => setActionDialog({ open: false, action: null, user: null })}>
+              <Button variant="outline" onClick={() => { setActionDialog({ open: false, action: null, user: null }); setConfirmInput(''); }}>
                 取消
               </Button>
-              <Button onClick={handleUserAction}>
+              <Button 
+                onClick={handleUserAction}
+                disabled={
+                  ['disable', 'reset_password', 'set_role'].includes(actionDialog.action || '') 
+                  && actionDialog.user 
+                  && confirmInput.trim() !== actionDialog.user.name
+                }
+              >
                 确认
               </Button>
             </DialogFooter>

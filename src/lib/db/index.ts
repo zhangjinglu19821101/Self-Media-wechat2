@@ -37,8 +37,10 @@ console.log(`[DB] 环境模式: ${PROJECT_ENV}, 目标 Schema: ${DB_SCHEMA}`);
 
 // ==================== 数据库连接 ====================
 
-const RAW_DATABASE_URL = process.env.DATABASE_URL ||
-  'postgresql://user_7601448662618718259:bcc5e558-7809-4848-a97d-8b4817215e92@cp-deft-wind-b35fb7fc.pg4.aidap-global.cn-beijing.volces.com:5432/Database_1769852048532?sslmode=require';
+const RAW_DATABASE_URL = process.env.DATABASE_URL;
+if (!RAW_DATABASE_URL) {
+  throw new Error('[DB] DATABASE_URL 环境变量未设置，请检查 .env.local 配置');
+}
 
 /**
  * 获取原始数据库连接 URL（不含 search_path，用于创建迁移连接）

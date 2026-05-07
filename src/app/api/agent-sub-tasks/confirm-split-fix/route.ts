@@ -14,8 +14,10 @@ import { NextRequest, NextResponse } from 'next/server';
 import { requireAuth } from '@/lib/auth/context';
 import postgres from 'postgres';
 
-const DATABASE_URL = process.env.DATABASE_URL ||
-  'postgresql://user_7601448662618718259:bcc5e558-7809-4848-a97d-8b4817215e92@cp-deft-wind-b35fb7fc.pg4.aidap-global.cn-beijing.volces.com:5432/Database_1769852048532?sslmode=require&channel_binding=require';
+const DATABASE_URL = process.env.DATABASE_URL;
+if (!DATABASE_URL) {
+  throw new Error('[confirm-split-fix] DATABASE_URL 环境变量未设置');
+}
 
 export async function POST(request: NextRequest) {
   const sql = postgres(DATABASE_URL, { ssl: 'require', max: 1 });

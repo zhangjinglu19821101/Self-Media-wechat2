@@ -301,7 +301,128 @@ export class JsonParserEnhancer {
       warningsCount: (result.warnings || []).length
     });
     
+    // 🔴🔴🔴 P0-修复：对执行 Agent 格式的结果进行后处理规范化
+    // 1. 将 isCompleted 字段转换为布尔值（支持 "true"/"false" 字符串）
+    // 2. 填充缺失字段的默认值
+    if (result.success && result.data && (formatType === 'executor' || 'isCompleted' in result.data)) {
+      result.data = this.normalizeExecutorResult(result.data);
+      console.log('[JsonParserEnhancer] 🔧 已规范化执行 Agent 结果:', {
+        isCompleted: result.data.isCompleted,
+        hasResult: !!result.data.result,
+        hasBriefResponse: !!result.data.briefResponse,
+        hasSelfEvaluation: !!result.data.selfEvaluation
+      });
+    }
+    
     return result;
+  }
+  
+  /**
+   * 🔴🔴🔴 P0-修复：规范化执行 Agent 返回结果
+   * 1. 将 isCompleted 字段转换为布尔值（支持 "true"/"false" 字符串、1/0 数字）
+   * 2. 填充缺失字段的默认值
+   * 3. 处理嵌套的 structuredResult
+   */
+  private static normalizeExecutorResult(data: any): any {
+    if (!data || typeof data !== 'object') {
+      return data;
+    }
+    
+    const normalized = { ...data };
+    const warnings: string[] = [];
+    
+    // 1. 规范化 isCompleted 字段
+    if ('isCompleted' in normalized) {
+      const rawValue = normalized.isCompleted;
+      if (typeof rawValue === 'string') {
+        const lowerValue = rawValue.toLowerCase().trim();
+        if (lowerValue === 'true' || lowerValue === '1' || lowerValue === 'yes') {
+          normalized.isCompleted = true;
+          warnings.push(`isCompleted 字段从字符串 "${rawValue}" 转换为布尔值 true`);
+        } else if (lowerValue === 'false' || lowerValue === '0' || lowerValue === 'no') {
+          normalized.isCompleted = false;
+          warnings.push(`isCompleted 字段从字符串 "${rawValue}" 转换为布尔值 false`);
+        } else {
+          // 无法识别的字符串，默认为 false
+          normalized.isCompleted = false;
+          warnings.push(`isCompleted 字段无法识别 "${rawValue}"，默认设为 false`);
+        }
+      } else if (typeof rawValue === 'number') {
+        normalized.isCompleted = rawValue !== 0;
+        warnings.push(`isCompleted 字段从数字 ${rawValue} 转换为布尔值 ${normalized.isCompleted}`);
+      } else if (typeof rawValue !== 'boolean') {
+        normalized.isCompleted = false;
+        warnings.push(`isCompleted 字段类型异常 (${typeof rawValue})，默认设为 false`);
+      }
+    } else {
+      // 缺少 isCompleted 字段，尝试从其他字段推断
+      if (normalized.result && typeof normalized.result === 'string') {
+        // 如果有 result 字段且包含"执行成功"等关键词，推断为完成
+        if (normalized.result.includes('执行成功') || normalized.result.includes('【执行结论】任务已完成')) {
+          normalized.isCompleted = true;
+          warnings.push('缺少 isCompleted 字段，根据 result 内容推断为 true');
+        } else {
+          normalized.isCompleted = false;
+          warnings.push('缺少 isCompleted 字段，默认设为 false');
+        }
+      } else {
+        normalized.isCompleted = false;
+        warnings.push('缺少 isCompleted 字段，默认设为 false');
+      }
+    }
+    
+    // 2. 填充缺失的常用字段默认值
+    if (!normalized.result && !normalized.briefResponse) {
+      // 尝试从其他字段提取
+      if (normalized.output) {
+        normalized.result = normalized.output;
+        warnings.push('缺少 result 字段，已从 output 字段填充');
+      } else if (normalized.content) {
+        normalized.result = normalized.content;
+        warnings.push('缺少 result 字段，已从 content 字段填充');
+      }
+    }
+    
+    // 3. 规范化 structuredResult
+    if (normalized.structuredResult && typeof normalized.structuredResult === 'object') {
+      normalized.structuredResult = this.normalizeStructuredResult(normalized.structuredResult);
+    }
+    
+    // 4. 记录警告日志
+    if (warnings.length > 0) {
+      console.log('[JsonParserEnhancer] ⚠️ 结果规范化警告:', warnings);
+    }
+    
+    return normalized;
+  }
+  
+  /**
+   * 规范化 structuredResult 对象
+   */
+  private static normalizeStructuredResult(sr: any): any {
+    if (!sr || typeof sr !== 'object') {
+      return sr;
+    }
+    
+    const normalized = { ...sr };
+    
+    // 规范化 executionSummary
+    if (normalized.executionSummary && typeof normalized.executionSummary === 'object') {
+      if (typeof normalized.executionSummary.needsMcpSupport === 'string') {
+        normalized.executionSummary.needsMcpSupport = 
+          normalized.executionSummary.needsMcpSupport.toLowerCase() === 'true';
+      }
+    }
+    
+    // 规范化 completionJudgment
+    if (normalized.completionJudgment && typeof normalized.completionJudgment === 'object') {
+      if (typeof normalized.completionJudgment.isCompleted === 'string') {
+        normalized.completionJudgment.isCompleted = 
+          normalized.completionJudgment.isCompleted.toLowerCase() === 'true';
+      }
+    }
+    
+    return normalized;
   }
   /**
    * 🔴 新增：通用的 JSON 解析方法（适用于任何 JSON 格式）

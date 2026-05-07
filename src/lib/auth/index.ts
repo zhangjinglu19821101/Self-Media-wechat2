@@ -13,12 +13,21 @@
  * 必须用非 Secure cookie，否则 CSRF 验证必失败。
  */
 
-import NextAuth from 'next-auth';
+import NextAuth, { CredentialsSignin } from 'next-auth';
 import Credentials from 'next-auth/providers/credentials';
 import { db } from '@/lib/db';
 import { accounts, workspaceMembers, workspaces } from '@/lib/db/schema/auth';
 import { eq, and, sql } from 'drizzle-orm';
 import { verifyPassword } from '@/lib/auth/password';
+import { AUTH_ERROR_CODES } from '@/lib/constants/auth-errors';
+
+// 自定义 CredentialsSignin 子类，支持传递错误码到前端
+class AuthCredentialsError extends CredentialsSignin {
+  constructor(code: string) {
+    super();
+    this.code = code;
+  }
+}
 
 /**
  * 判断请求是否来自 HTTPS 连接
@@ -55,7 +64,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth((request) => {
         },
         async authorize(credentials) {
           if (!credentials?.email || !credentials?.password) {
-            return null;
+            throw new AuthCredentialsError(AUTH_ERROR_CODES.INVALID_PASSWORD);
           }
 
           const email = (credentials.email as string).trim().toLowerCase();
@@ -68,17 +77,17 @@ export const { handlers, auth, signIn, signOut } = NextAuth((request) => {
             .limit(1);
 
           if (!account) {
-            return null;
+            throw new AuthCredentialsError(AUTH_ERROR_CODES.USER_NOT_FOUND);
           }
 
           // 检查账号状态
           if (account.status === 'disabled') {
-            return null;
+            throw new AuthCredentialsError(AUTH_ERROR_CODES.ACCOUNT_DISABLED);
           }
 
           // 检查锁定
           if (account.lockedUntil && new Date(account.lockedUntil) > new Date()) {
-            return null;
+            throw new AuthCredentialsError(AUTH_ERROR_CODES.ACCOUNT_LOCKED);
           }
 
           // 验证密码
@@ -95,7 +104,12 @@ export const { handlers, auth, signIn, signOut } = NextAuth((request) => {
               updateData.lockedUntil = new Date(Date.now() + 30 * 60 * 1000);
             }
             await db.update(accounts).set(updateData).where(eq(accounts.id, account.id));
-            return null;
+
+            // 如果达到锁定阈值，提示锁定
+            if (newAttempts >= 5) {
+              throw new AuthCredentialsError(AUTH_ERROR_CODES.ACCOUNT_LOCKED);
+            }
+            throw new AuthCredentialsError(AUTH_ERROR_CODES.INVALID_PASSWORD);
           }
 
           // 登录成功：重置失败计数，更新最后登录时间

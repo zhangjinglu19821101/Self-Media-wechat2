@@ -43,9 +43,9 @@ export async function GET(request: Request) {
 
     return NextResponse.json({
       success: true,
-      totalCount: countResult.rows,
-      agentStats: agentStatsResult.rows,
-      recentRecords: recentRecordsResult.rows
+      totalCount: (countResult as { rows: { total_count: number }[] }).rows,
+      agentStats: (agentStatsResult as { rows: { interact_user: string; record_count: number }[] }).rows,
+      recentRecords: (recentRecordsResult as { rows: Record<string, unknown>[] }).rows
     });
   } catch (error: any) {
     console.error('❌ [详细检查] 失败:', error);

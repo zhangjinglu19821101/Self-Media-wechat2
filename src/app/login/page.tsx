@@ -10,6 +10,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Loader2, Mail, Lock, AlertCircle } from 'lucide-react';
 import Link from 'next/link';
+import { AUTH_ERROR_CODES, getAuthErrorMessage, isValidEmail } from '@/lib/constants/auth-errors';
 
 export default function LoginPage() {
   return (
@@ -38,6 +39,12 @@ function LoginContent() {
       return;
     }
 
+    // 验证邮箱格式
+    if (!isValidEmail(email)) {
+      setError(getAuthErrorMessage(AUTH_ERROR_CODES.EMAIL_INVALID));
+      return;
+    }
+
     setLoading(true);
     try {
       const result = await signIn('credentials', {
@@ -47,11 +54,10 @@ function LoginContent() {
       });
 
       if (result?.error) {
-        if (result.error === 'MissingCSRF' || result.error === 'CSRF') {
-          setError('登录会话过期，请刷新页面后重试');
-        } else {
-          setError('邮箱或密码不正确');
-        }
+        // NextAuth v5: 自定义错误通过 result.code 传递
+        // result.error = "CredentialsSignin", result.code = "user_not_found" 等
+        const errorCode = result.code || result.error;
+        setError(getAuthErrorMessage(errorCode));
       } else {
         // 等待 session cookie 设置（NextAuth 需要一点时间来设置 cookie）
         await new Promise(resolve => setTimeout(resolve, 200));

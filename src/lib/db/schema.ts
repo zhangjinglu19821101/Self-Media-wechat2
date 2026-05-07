@@ -1409,3 +1409,6 @@ export * from './schema/industry-case-library';
 
 // 信息速记哈希表（去重检测）
 export * from './schema/snippet-hashes';
+
+// 管理员审计日志表
+export * from './schema/admin-audit-logs';

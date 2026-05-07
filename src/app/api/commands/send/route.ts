@@ -8,7 +8,6 @@ import { createUserLLMClient } from '@/lib/llm/factory';
 import { handleRouteError } from '@/lib/api/route-error-handler';
 import { getWorkspaceId } from '@/lib/auth/context';
 import { sendNotificationToAgent } from '@/app/api/agents/sse-manager';
-import { ScenarioType, TaskParams } from '@/lib/global-schedule/types';
 import * as fs from 'fs';
 import * as path from 'path';
 import { db } from '@/lib/db';
@@ -16,6 +15,26 @@ import { agentTasks } from '@/lib/db/schema';
 import { eq } from 'drizzle-orm';
 import { SplitRetryManager } from '@/lib/services/split-retry-manager';
 import { CommandResultService } from '@/lib/services/command-result-service';
+
+/**
+ * 场景类型（替代已删除的 @/lib/global-schedule/types）
+ */
+type ScenarioType = 'processing' | 'success' | 'failed';
+
+/**
+ * 任务参数类型（替代已删除的 @/lib/global-schedule/types）
+ */
+interface TaskParams {
+  taskType: 'draft_6h' | 'final_7h' | 'normal_create';
+  taskId: string;
+  createRequirement?: {
+    contentDirection: string;
+    wordCount: string;
+    materialSource: string;
+    complianceRule: string;
+  };
+  extraRemark?: string;
+}
 
 /**
  * 场景标识标签映射

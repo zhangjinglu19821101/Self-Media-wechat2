@@ -36,9 +36,9 @@ export async function GET(request: Request) {
 
     return NextResponse.json({
       success: true,
-      stepHistoryStats: stepHistoryResult.rows,
-      mcpStats: mcpResult.rows,
-      recentRecords: recentRecords.rows
+      stepHistoryStats: (stepHistoryResult as { rows: Record<string, unknown>[] }).rows,
+      mcpStats: (mcpResult as { rows: Record<string, unknown>[] }).rows,
+      recentRecords: (recentRecords as { rows: Record<string, unknown>[] }).rows
     });
   } catch (error: any) {
     console.error('❌ [检查记录] 失败:', error);

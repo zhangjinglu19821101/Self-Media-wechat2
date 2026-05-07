@@ -601,7 +601,10 @@ export interface AgentBDecision {
     | 'USER_REJECT'
     | 'BUSINESS_RULE_VIOLATION'
     | 'UNKNOWN_ERROR'
-    | 'MCP_AUDIT_COMPLETE';
+    | 'MCP_AUDIT_COMPLETE'
+    | 'LOOP_RISK_DETECTED'
+    | 'LOOP_EXIT_BUT_TASK_COMPLETED'
+    | 'MAX_ITERATIONS_BUT_TASK_COMPLETED';
   reasoning: string;
   
   /**
@@ -2939,7 +2942,9 @@ export class SubtaskExecutionEngine {
         },
         finalStatus,  // responseStatus: 'pre_completed' 或 'pre_need_support'
         resultToSave,  // responseContent: 执行 Agent 的完整结果
-        task.id
+        task.id,
+        undefined,  // iteration
+        executorResult?.rawLlmResponse  // LLM原始响应，解析失败时可追溯
       );
       
       console.log('[执行Agent追踪] ✅ 执行 Agent 交互记录完成');
@@ -7489,6 +7494,105 @@ export class SubtaskExecutionEngine {
   }
 
   /**
+   * 🔴🔴🔴 【终审逻辑】退出死循环前的执行者完成状态评估
+   * 
+   * 核心原则：即使陷入死循环，如果执行者（如 insurance-d）已经成功完成了任务，
+   * 则应该返回 COMPLETE，而不是盲目判定失败。
+   * 
+   * 评估维度（按优先级排序）：
+   * 0. 执行者明确声明（最高优先级）：isTaskDown / isCompleted 声明
+   * 1. MCP 业务层成功：HTTP层+业务层都成功
+   * 1.5 合规校验特例：技术层成功即算完成（审核未通过也是正常结果）
+   * 2. reexecuteHistory 执行结果：历史记录中是否有成功的 executionResult
+   * 3. 任务结果数据：task.resultData 中的执行摘要
+   */
+  private evaluateExecutorCompletionBeforeLoopExit(
+    task: typeof agentSubTasks.$inferSelect,
+    executionContext: ExecutionContext,
+    reexecuteHistory: any[],
+    executorAttempts: Record<string, number>
+  ): { completed: boolean; reason: string } {
+    console.log('[SubtaskEngine] ========== [FinalEval] Loop Exit Evaluation Started ==========');
+    
+    // ========== 维度0（最高优先级）：执行者明确声明 ==========
+    // 执行者的业务层判断优先于 MCP 技术层结果
+    const executorFeedback = executionContext.executorFeedback;
+    
+    if (executorFeedback?.isTaskDown === true) {
+      const reason = `执行者 ${task.fromParentsExecutor} 明确声明 isTaskDown=true，任务已完成`;
+      console.log('[SubtaskEngine] ✅ [FinalEval] Dimension-0 passed (isTaskDown):', reason);
+      return { completed: true, reason };
+    }
+    
+    if (executorFeedback?.decisionContent?.isCompleted === true) {
+      const reason = `执行者 ${task.fromParentsExecutor} 明确声明 decisionContent.isCompleted=true，任务已完成`;
+      console.log('[SubtaskEngine] ✅ [FinalEval] Dimension-0 passed (isCompleted):', reason);
+      return { completed: true, reason };
+    }
+    
+    // ========== 维度1：MCP 执行结果检查 ==========
+    const mcpHistory = executionContext.mcpExecutionHistory || [];
+    const currentOrderMcp = mcpHistory.filter(
+      (m: McpAttempt) => m.decision.orderIndex === task.orderIndex
+    );
+    
+    // MCP 业务层成功（HTTP层+业务层都成功）
+    const mcpBusinessSuccess = currentOrderMcp.filter(
+      (m: McpAttempt) => m.result?.status === 'success' && m.result?.data?.success === true
+    );
+    
+    if (mcpBusinessSuccess.length > 0) {
+      const reason = `MCP 执行完全成功（HTTP层+业务层），order_index=${task.orderIndex} 共${mcpBusinessSuccess.length}次`;
+      console.log('[SubtaskEngine] ✅ [FinalEval] Dimension-1 passed (MCP business success):', reason);
+      return { completed: true, reason };
+    }
+    
+    // ========== 维度1.5：合规校验任务特殊判断（技术层成功即算完成）==========
+    // 合规校验类任务：审核未通过也是正常业务结果，不算失败
+    // 注意：不再依赖 orderIndex === 2 判断，使用精确关键词避免误判
+    const complianceKeywords = ['合规', '合规校验', '合规审核', '合规检查'];
+    const isComplianceTask = complianceKeywords.some(
+      kw => task.taskTitle?.includes(kw)
+    );
+    const mcpTechSuccess = currentOrderMcp.filter(
+      (m: McpAttempt) => m.result?.status === 'success'
+    );
+    
+    if (isComplianceTask && mcpTechSuccess.length > 0) {
+      const reason = `合规校验任务 MCP 技术层执行成功（${mcpTechSuccess.length}次），校验流程正常完成`;
+      console.log('[SubtaskEngine] ✅ [FinalEval] Dimension-1.5 passed (compliance MCP tech success):', reason);
+      return { completed: true, reason };
+    }
+    
+    // ========== 维度2：reexecuteHistory 执行结果检查 ==========
+    const successfulExecutions = reexecuteHistory.filter(
+      (h: any) => h?.executionResult?.success === true
+    );
+    
+    if (successfulExecutions.length > 0) {
+      const successfulExecutors = successfulExecutions
+        .map((h: any) => h?.executor || h?.previousExecutor)
+        .filter(Boolean);
+      const reason = `reexecuteHistory 中存在成功记录，执行者 ${successfulExecutors.join(', ')} 已完成任务`;
+      console.log('[SubtaskEngine] ✅ [FinalEval] Dimension-2 passed (history success):', reason);
+      return { completed: true, reason };
+    }
+    
+    // ========== 所有维度均未通过 ==========
+    // 设计原则：终审只检查结构化字段（布尔值/枚举值），不分析自然语言文本。
+    // 如果 isTaskDown=false、isCompleted=false、MCP 未成功、历史记录无成功，
+    // 说明执行者自己都认为没完成，程序不应通过关键词匹配去推翻执行者的判断。
+    // 此时正确的做法是返回 NEED_USER，把决策权交给用户。
+    const reason = `终审未通过: MCP成功=${mcpBusinessSuccess.length}/${currentOrderMcp.length}, ` +
+      `isTaskDown=${executorFeedback?.isTaskDown}, ` +
+      `isCompleted=${executorFeedback?.decisionContent?.isCompleted}, ` +
+      `history成功=${successfulExecutions.length}/${reexecuteHistory.length}`;
+    console.log('[SubtaskEngine] ❌ [FinalEval] All dimensions failed:', reason);
+    
+    return { completed: false, reason };
+  }
+
+  /**
    * 处理COMPLETE决策
    */
   public async handleCompleteDecision(
@@ -8057,12 +8161,63 @@ export class SubtaskExecutionEngine {
     userInteractions: UserInteraction[],
     iteration: number
   ) {
-    console.log('[SubtaskEngine] 🔴🔴🔴 处理超过最大迭代次数 🔴🔴🔴');
+    console.log('[SubtaskEngine] 🔴🔴🔴 [FinalEval] Max iterations exceeded, evaluating executor completion status...');
 
+    // 🔴🔴🔴 【终审逻辑】复用 evaluateExecutorCompletionBeforeLoopExit，统一评估维度
+    // 构建 executionContext（与 callAgentBWithDecision 中一致）
+    const executionContext: ExecutionContext = {
+      executorFeedback: {
+        isNeedMcp: executorResult?.isNeedMcp ?? false,
+        isTaskDown: executorResult?.isTaskDown ?? false,
+        isNeedSplit: false,
+        splitReason: '',
+        suggestedSplitPoints: [],
+        originalTask: task.taskTitle || '',
+        problem: executorResult?.problem || '',
+        attemptedSolutions: [],
+        decisionContent: executorResult?.decisionContent,
+        failureReason: executorResult?.failureReason,
+        briefResponse: executorResult?.briefResponse,
+        selfEvaluation: executorResult?.selfEvaluation,
+        executionSummary: executorResult?.executionSummary,
+      },
+      mcpExecutionHistory,
+      taskMeta: {
+        taskId: task.id,
+        taskType: (task.metadata as any)?.taskType || 'default',
+        priority: 'medium',
+        createdAt: task.createdAt || getCurrentBeijingTime(),
+        iterationCount: iteration,
+        maxIterations: iteration,
+        taskTitle: task.taskTitle,
+      }
+    };
 
+    const finalEvaluation = this.evaluateExecutorCompletionBeforeLoopExit(
+      task, executionContext, [], {}
+    );
 
-    // ========== 更新任务状态为waiting_user ==========
-    const userMessage = '任务已执行 ' + iteration + ' 次迭代仍在进行中，请您查看当前状态后决定下一步操作';
+    if (finalEvaluation.completed) {
+      console.log('[SubtaskEngine] ✅ [FinalEval] Max iterations but final evaluation passed → completing task');
+      const completeDecision: AgentBDecision = {
+        type: 'COMPLETE',
+        reasonCode: 'MAX_ITERATIONS_BUT_TASK_COMPLETED',
+        reasoning: `达到最大迭代次数(${iteration})，但终审评估确认任务已完成。${finalEvaluation.reason}`,
+        notCompletedReason: 'none',
+        decisionBasis: `最大迭代退出终审通过：${finalEvaluation.reason}`,
+        reviewConclusion: `最大迭代退出终审通过，${finalEvaluation.reason.substring(0, 80)}`,
+        context: {
+          executionSummary: `达到最大迭代但终审通过：${finalEvaluation.reason}`,
+          riskLevel: 'low',
+          suggestedAction: '无需操作，任务已完成'
+        }
+      };
+      await this.handleCompleteDecision(task, completeDecision, executorResult, mcpExecutionHistory, userInteractions, iteration);
+      return;
+    }
+
+    // 🔴 终审未通过，维持原有逻辑
+    const userMessage = '任务已执行 ' + iteration + ' 次迭代仍在进行中，终审未通过：' + finalEvaluation.reason;
     console.log('[SubtaskEngine] 🔴 调用 markTaskWaitingUser:', userMessage);
     await this.markTaskWaitingUser(task, userMessage);
     console.log('[SubtaskEngine] ✅ handleMaxIterationsExceeded 完成');
@@ -8110,6 +8265,9 @@ export class SubtaskExecutionEngine {
       // 🔴 注：前序内容获取已统一在内部处理，这里不再单独记录
       called_at: callStartAt.toISOString()
     });
+    
+    // 🔴 保存 LLM 原始响应，用于解析失败时写入数据库
+    let rawLlmResponse: string | undefined;
     
     try {
       // ========== 阶段1：加载提示词 ==========
@@ -8562,6 +8720,7 @@ ${userFeedbackText}
         fullPrompt,
         { workspaceId: task.workspaceId || undefined, timeout: _llmTimeout, commandResultId: task.commandResultId }
       );
+      rawLlmResponse = response;
       const llmEndAt = getCurrentBeijingTime();
       
       // 🔴 P0 修复：LLM 调用后刷新心跳（标记进程仍然活跃）
@@ -8620,6 +8779,9 @@ ${userFeedbackText}
       });
       console.log('');
       
+      // 🔴 关键：将 LLM 原始响应附着到 parsedResult 上，确保解析失败时也能保留原始报文
+      (parsedResult as any)._rawLlmResponse = response;
+      
       return parsedResult;
       
     } catch (error) {
@@ -8641,7 +8803,8 @@ ${userFeedbackText}
       
       return {
         isCompleted: false,
-        suggestion: `执行Agent处理时发生错误 (阶段: ${callPhase}): ${error instanceof Error ? error.message : String(error)}`
+        suggestion: `执行Agent处理时发生错误 (阶段: ${callPhase}): ${error instanceof Error ? error.message : String(error)}`,
+        rawLlmResponse  // ⚠️ 异常时仍保存原始报文，便于排查
       };
     }
   }
@@ -8841,7 +9004,8 @@ ${userFeedbackText}
     // 兜底：默认需要帮助
     return {
       isCompleted: false,
-      suggestion: '无法解析执行Agent的响应'
+      suggestion: '无法解析执行Agent的响应',
+      rawLlmResponse: response  // ⚠️ 解析失败时仍保存原始报文，便于排查
     };
   }
 
@@ -9999,35 +10163,90 @@ ${contentToUse}
     const latestExecution = reexecuteHistory[reexecuteHistory.length - 1];
     const latestExecutionSucceeded = latestExecution?.executionResult?.success === true;
     
-    // 🔴 死循环条件：执行次数>=2 且 最近一次执行仍未成功
-    // 如果最近一次执行已经成功，说明任务正在正常推进，不算死循环
-    const hasLoopRisk = (maxExecutorAttempts >= 2 && !latestExecutionSucceeded) || 
-                        (reexecuteHistory.length >= 1 && untriedExecutors.length === 0);
+    // 🔴🔴🔴 【Critical Fix】增强成功判断：同时检查 MCP 业务层执行结果
+    // 如果 insurance-d 通过 MCP 完成了任务，但 executionResult.success 未被正确设置，
+    // 也应该判定为成功，避免误入死循环退出逻辑
+    const latestMcpSucceeded = (() => {
+      const currentOrderMcp = (executionContext.mcpExecutionHistory || []).filter(
+        (m: McpAttempt) => m.decision.orderIndex === task.orderIndex
+      );
+      const mcpBusinessSuccess = currentOrderMcp.filter(
+        (m: McpAttempt) => m.result?.status === 'success' && m.result?.data?.success === true
+      );
+      return mcpBusinessSuccess.length > 0;
+    })();
+    
+    const effectiveLatestSucceeded = latestExecutionSucceeded || latestMcpSucceeded;
+    
+    // 🔴🔴🔴 【Critical Fix】死循环条件修正：
+    // 1. 执行次数>=2 且 最近一次执行（含MCP）仍未成功
+    // 2. reexecuteHistory >= 2（非1）且所有执行者都已尝试且均未成功
+    const hasLoopRisk = (maxExecutorAttempts >= 2 && !effectiveLatestSucceeded) || 
+                        (reexecuteHistory.length >= 2 && untriedExecutors.length === 0 && !effectiveLatestSucceeded);
     
     // 🔴 检查是否所有执行者都已尝试过，或者有死循环风险
     if (hasLoopRisk) {
-      console.log('[SubtaskEngine] 🔴🔴🔴 检测到可能陷入死循环，强制转为用户介入');
-      console.log('[SubtaskEngine] 死循环风险分析:', {
+      console.log('[SubtaskEngine] 🔴🔴🔴 [FinalEval] Loop risk detected, evaluating executor completion status...');
+      console.log('[SubtaskEngine] Loop risk analysis:', {
         executorAttempts,
         maxExecutorAttempts,
         reexecuteHistoryLength: reexecuteHistory.length,
         untriedExecutorsLength: untriedExecutors.length,
         hasLoopRisk,
-        // 🔴 新增：打印最近一次执行结果
         latestExecution: latestExecution ? {
           executor: latestExecution.executor,
           executionResult: latestExecution.executionResult,
           succeeded: latestExecutionSucceeded
-        } : '无历史执行'
+        } : 'no history'
       });
-      console.log('[SubtaskEngine] reexecuteHistory:', reexecuteHistory);
+      console.log('[SubtaskEngine] reexecuteHistory summary:', reexecuteHistory.map(h => ({
+        executor: h.executor,
+        previousExecutor: h.previousExecutor,
+        success: h?.executionResult?.success
+      })));
+      
+      // 🔴🔴🔴 【终审逻辑】退出死循环前，必须评估执行者是否已完成任务
+      // 核心原则：即使陷入死循环，如果执行者（如 insurance-d）已经成功完成了任务，
+      // 则应该返回 COMPLETE，而不是盲目判定失败
+      const finalEvaluation = this.evaluateExecutorCompletionBeforeLoopExit(
+        task, executionContext, reexecuteHistory, executorAttempts
+      );
+      
+      if (finalEvaluation.completed) {
+        console.log('[SubtaskEngine] ✅ [FinalEval] Loop exit but task completed → returning COMPLETE');
+        console.log('[SubtaskEngine] Final evaluation basis:', finalEvaluation.reason);
+        
+        return {
+          type: 'COMPLETE',
+          reasonCode: 'LOOP_EXIT_BUT_TASK_COMPLETED',
+          reasoning: `虽然检测到死循环风险，但终审评估确认任务已完成。${finalEvaluation.reason}`,
+          notCompletedReason: 'none',
+          decisionBasis: `死循环检测触发，但终审评估发现执行者已完成任务：${finalEvaluation.reason}`,
+          reviewConclusion: `死循环退出终审：执行者已完成任务，${finalEvaluation.reason.substring(0, 80)}`,
+          context: {
+            executionSummary: `死循环风险存在但任务已完成（终审通过）：${finalEvaluation.reason}`,
+            riskLevel: 'low',
+            suggestedAction: '无需操作，任务已完成'
+          },
+          data: {
+            promptMessage: {
+              title: '任务已完成',
+              description: `虽然存在死循环风险，但执行者已完成任务：${finalEvaluation.reason}`
+            }
+          }
+        };
+      }
+      
+      // 🔴 终审未通过，维持原有的死循环退出逻辑
+      console.log('[SubtaskEngine] 🔴🔴🔴 [FinalEval] All dimensions failed, maintaining loop exit → NEED_USER');
+      console.log('[SubtaskEngine] Final evaluation failure reason:', finalEvaluation.reason);
       
       return {
         type: 'NEED_USER',
         reasonCode: 'LOOP_RISK_DETECTED',
-        reasoning: `检测到任务可能陷入死循环（${triedExecutors.join(', ')}）。强制转为用户介入。`,
+        reasoning: `检测到任务可能陷入死循环（${triedExecutors.join(', ')}），且终审评估确认任务未完成。强制转为用户介入。终审未通过原因：${finalEvaluation.reason}`,
         notCompletedReason: 'loop_risk_detected', // 🔴 检测到死循环风险
-        decisionBasis: `执行者 ${JSON.stringify(executorAttempts)} 已尝试多次但任务仍未完成，存在死循环风险。`, // 🔴 决策依据
+        decisionBasis: `执行者 ${JSON.stringify(executorAttempts)} 已尝试多次但任务仍未完成，存在死循环风险。终审评估：${finalEvaluation.reason}`, // 🔴 决策依据
         context: {
           executionSummary: '检测到死循环风险，需要用户介入',
           riskLevel: 'high',
@@ -10417,7 +10636,8 @@ ${resultData.executionSummary}
     responseStatus: 'pre_completed' | 'pre_need_support' | 'pre_failed' | 'EXECUTE_MCP' | 'COMPLETE' | 'NEED_USER' | 'FAILED' | 'REEXECUTE_EXECUTOR',
     responseContent: any,
     subTaskId?: number | string,
-    iteration?: number
+    iteration?: number,
+    rawLlmResponse?: string
   ): Promise<number> {
     // 🔴🔴🔴 调试：打印传入参数
     console.log('[SubtaskEngine] recordAgentInteraction 入口参数:', {
@@ -11142,6 +11362,7 @@ ${resultData.executionSummary}
               timestamp: getCurrentBeijingTime().toISOString()
             },
             interactTime: getCurrentBeijingTime(),
+            rawLlmResponse: rawLlmResponse || null,
           });
 
         // 插入成功！
@@ -11530,7 +11751,8 @@ ${resultData.executionSummary}
     interactNum: number,
     interactUser: string,
     content: any,
-    subTaskId: number  // 🔴 新增：添加 subTaskId 参数
+    subTaskId: number,
+    rawLlmResponse?: string
   ) {
     console.log('[SubtaskEngine] 🔴 createInteractionStep 被调用:', {
       commandResultId,
@@ -11587,7 +11809,8 @@ ${resultData.executionSummary}
             interactContent: content,
             interactUser,
             interactTime: getCurrentBeijingTime(),
-          })
+            rawLlmResponse: rawLlmResponse || null,
+          } as any)
           .returning({ id: agentSubTasksStepHistory.id });
 
         const mcpAttempts = content?.response?.mcp_attempts;

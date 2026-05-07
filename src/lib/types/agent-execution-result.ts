@@ -106,6 +106,9 @@ export interface ExecutorDirectResult {
   // 🔴 P0-1 修复：标准执行格式字段（deai-optimizer 等新 Agent 使用）
   briefResponse?: string;
   selfEvaluation?: string;
+  
+  // 🔴 新增：LLM 原始响应文本（用于调试和排查解析失败原因）
+  rawLlmResponse?: string;
 }
 
 /**

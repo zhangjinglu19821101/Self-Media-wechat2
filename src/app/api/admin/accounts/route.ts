@@ -9,8 +9,45 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { accounts, workspaces, workspaceMembers } from '@/lib/db/schema/auth';
 import { eq, desc, like, or, and, sql } from 'drizzle-orm';
-import { isSuperAdmin } from '@/lib/auth/context';
+import { isSuperAdmin, getAccountId } from '@/lib/auth/context';
 import { hashPassword } from '@/lib/auth/password';
+import { randomBytes } from 'crypto';
+import { adminAuditLogs, ADMIN_ACTION } from '@/lib/db/schema/admin-audit-logs';
+import { log } from '@/lib/logger';
+
+/**
+ * 记录管理员操作审计日志
+ */
+async function createAuditLog(params: {
+  adminId: string;
+  adminEmail: string;
+  targetAccountId: string;
+  targetEmail: string;
+  action: string;
+  actionDetail?: string;
+  previousValue?: any;
+  newValue?: any;
+  ipAddress?: string;
+  userAgent?: string;
+}) {
+  try {
+    await db.insert(adminAuditLogs).values({
+      adminId: params.adminId,
+      adminEmail: params.adminEmail,
+      targetAccountId: params.targetAccountId,
+      targetEmail: params.targetEmail,
+      action: params.action,
+      actionDetail: params.actionDetail,
+      previousValue: params.previousValue,
+      newValue: params.newValue,
+      ipAddress: params.ipAddress,
+      userAgent: params.userAgent,
+    });
+    log.info('[AdminAudit]', `${params.adminEmail} 执行了 ${params.action} 操作，目标用户: ${params.targetEmail}`);
+  } catch (error) {
+    log.error('[AdminAudit]', '写入审计日志失败:', error);
+  }
+}
 
 /**
  * GET /api/admin/accounts
@@ -128,7 +165,16 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: '需要超级管理员权限' }, { status: 403 });
     }
 
-    // 2. 解析请求
+    // 2. 获取当前用户信息（用于自我保护和审计日志）
+    const currentUserId = await getAccountId();
+    const currentUserEmail = await (async () => {
+      const session = await import('next-auth').then(m => m.getServerSession(
+        await import('@/lib/auth').then(m => m.authOptions)
+      ));
+      return session?.user?.email || 'unknown';
+    })();
+
+    // 3. 解析请求
     const body = await request.json();
     const { action, accountId, data } = body;
 
@@ -136,22 +182,62 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: '缺少参数' }, { status: 400 });
     }
 
-    // 3. 执行操作
+    // 4. 获取目标用户信息（用于审计日志）
+    const targetUser = await db.select({
+      id: accounts.id,
+      email: accounts.email,
+      name: accounts.name,
+      role: accounts.role,
+      status: accounts.status,
+    }).from(accounts).where(eq(accounts.id, accountId)).limit(1);
+
+    if (targetUser.length === 0) {
+      return NextResponse.json({ error: '用户不存在' }, { status: 404 });
+    }
+    const target = targetUser[0];
+
+    // 5. 自我保护：禁止操作自己
+    const selfProtectedActions = ['disable', 'reset_password', 'set_role'];
+    if (currentUserId && accountId === currentUserId && selfProtectedActions.includes(action)) {
+      return NextResponse.json({ error: '不能对自己执行此操作' }, { status: 400 });
+    }
+
+    // 6. 获取请求元数据
+    const ipAddress = request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip') || 'unknown';
+    const userAgent = request.headers.get('user-agent') || 'unknown';
+
+    // 7. 执行操作
     let result: any = {};
 
     switch (action) {
       case 'disable': {
         // 禁用账号
+        const previousValue = { status: target.status };
         await db
           .update(accounts)
           .set({ status: 'disabled', updatedAt: new Date() })
           .where(eq(accounts.id, accountId));
+        
+        await createAuditLog({
+          adminId: currentUserId || 'unknown',
+          adminEmail: currentUserEmail,
+          targetAccountId: accountId,
+          targetEmail: target.email,
+          action: ADMIN_ACTION.DISABLE,
+          actionDetail: `管理员 ${currentUserEmail} 禁用了用户 ${target.email}`,
+          previousValue,
+          newValue: { status: 'disabled' },
+          ipAddress,
+          userAgent,
+        });
+        
         result = { message: '账号已禁用' };
         break;
       }
 
       case 'enable': {
         // 启用账号
+        const previousValue = { status: target.status, failedLoginAttempts: target.status };
         await db
           .update(accounts)
           .set({ 
@@ -161,6 +247,20 @@ export async function POST(request: NextRequest) {
             updatedAt: new Date() 
           })
           .where(eq(accounts.id, accountId));
+        
+        await createAuditLog({
+          adminId: currentUserId || 'unknown',
+          adminEmail: currentUserEmail,
+          targetAccountId: accountId,
+          targetEmail: target.email,
+          action: ADMIN_ACTION.ENABLE,
+          actionDetail: `管理员 ${currentUserEmail} 启用了用户 ${target.email}`,
+          previousValue,
+          newValue: { status: 'active', failedLoginAttempts: 0, lockedUntil: null },
+          ipAddress,
+          userAgent,
+        });
+        
         result = { message: '账号已启用' };
         break;
       }
@@ -180,7 +280,44 @@ export async function POST(request: NextRequest) {
           })
           .where(eq(accounts.id, accountId));
         
+        await createAuditLog({
+          adminId: currentUserId || 'unknown',
+          adminEmail: currentUserEmail,
+          targetAccountId: accountId,
+          targetEmail: target.email,
+          action: ADMIN_ACTION.RESET_PASSWORD,
+          actionDetail: `管理员 ${currentUserEmail} 重置了用户 ${target.email} 的密码`,
+          ipAddress,
+          userAgent,
+        });
+        
         result = { message: '密码已重置', newPassword };
+        break;
+      }
+
+      case 'unlock': {
+        // 解锁账号（只清除锁定状态，不重置密码）
+        await db
+          .update(accounts)
+          .set({ 
+            failedLoginAttempts: 0,
+            lockedUntil: null,
+            updatedAt: new Date() 
+          })
+          .where(eq(accounts.id, accountId));
+        
+        await createAuditLog({
+          adminId: currentUserId || 'unknown',
+          adminEmail: currentUserEmail,
+          targetAccountId: accountId,
+          targetEmail: target.email,
+          action: ADMIN_ACTION.UNLOCK,
+          actionDetail: `管理员 ${currentUserEmail} 解锁了用户 ${target.email}`,
+          ipAddress,
+          userAgent,
+        });
+        
+        result = { message: '账号已解锁', user: target };
         break;
       }
 
@@ -191,10 +328,24 @@ export async function POST(request: NextRequest) {
           return NextResponse.json({ error: '无效的角色' }, { status: 400 });
         }
         
+        const previousValue = { role: target.role };
         await db
           .update(accounts)
           .set({ role: newRole, updatedAt: new Date() })
           .where(eq(accounts.id, accountId));
+        
+        await createAuditLog({
+          adminId: currentUserId || 'unknown',
+          adminEmail: currentUserEmail,
+          targetAccountId: accountId,
+          targetEmail: target.email,
+          action: ADMIN_ACTION.SET_ROLE,
+          actionDetail: `管理员 ${currentUserEmail} 将用户 ${target.email} 的角色从 ${target.role} 改为 ${newRole}`,
+          previousValue,
+          newValue: { role: newRole },
+          ipAddress,
+          userAgent,
+        });
         
         result = { message: `角色已设置为 ${newRole}` };
         break;
@@ -212,13 +363,15 @@ export async function POST(request: NextRequest) {
 }
 
 /**
- * 生成随机密码
+ * 生成随机密码（使用加密安全随机数）
  */
 function generateRandomPassword(length = 12): string {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789!@#$%';
+  const charsLength = chars.length;
+  const randomBytesBuffer = randomBytes(length);
   let password = '';
   for (let i = 0; i < length; i++) {
-    password += chars.charAt(Math.floor(Math.random() * chars.length));
+    password += chars.charAt(randomBytesBuffer[i] % charsLength);
   }
   return password;
 }

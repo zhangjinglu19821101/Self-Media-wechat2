@@ -10,6 +10,9 @@ export const agentSubTasksStepHistory = pgTable('agent_sub_tasks_step_history', 
   interactUser: text('interact_user').notNull(), // 交互发起方：insurance-d（咨询方）/agent B（响应方）/human（人工响应方）。human场景：agent B无法解决，系统不存在可以提供的MCP服务，需要human处理的时候
   interactTime: timestamp('interact_time').notNull().defaultNow(),
   interactNum: integer('interact_num').notNull().default(1),
+  interactType: text('interact_type').notNull().default('agent_interaction'),
+  workspaceId: text('workspace_id'),
+  rawLlmResponse: text('raw_llm_response'), // LLM 原始响应报文，解析失败时可事后分析
 }, (table) => {
   return {
     // 🔴 修复：唯一索引应该包含 interact_num，确保同一任务的多轮交互都能被记录
@@ -19,4 +22,3 @@ export const agentSubTasksStepHistory = pgTable('agent_sub_tasks_step_history', 
 
 export type AgentSubTasksStepHistory = typeof agentSubTasksStepHistory.$inferSelect;
 export type AgentSubTasksStepHistoryInsert = typeof agentSubTasksStepHistory.$inferInsert;
-
