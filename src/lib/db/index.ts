@@ -39,9 +39,9 @@ console.log(`[DB] 环境模式: ${PROJECT_ENV}, 目标 Schema: ${DB_SCHEMA}`);
 
 const RAW_DATABASE_URL = process.env.DATABASE_URL;
 
-// 构建时可能没有环境变量，延迟到运行时检查
-if (!RAW_DATABASE_URL && process.env.NODE_ENV !== 'production') {
-  console.warn('[DB] DATABASE_URL 环境变量未设置，数据库功能将不可用');
+// 严格检查：构建时必须提供 DATABASE_URL
+if (!RAW_DATABASE_URL) {
+  throw new Error('[DB] DATABASE_URL 环境变量未设置，请检查环境配置');
 }
 
 /**
