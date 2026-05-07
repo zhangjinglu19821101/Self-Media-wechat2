@@ -1,0 +1,124 @@
+#!/bin/sh
+. "$(dirname "$0")/_/husky.sh"
+
+# 保存当前分支名称
+CURRENT_BRANCH=$(git branch --show-current)
+
+echo "🔍 Git Pre-commit 检查"
+echo "================================"
+echo "当前分支: $CURRENT_BRANCH"
+echo ""
+
+# 检查是否有暂存的文件
+STAGED_FILES=$(git diff --cached --name-only --diff-filter=ACM | grep -E '\.(ts|tsx|js|jsx)$' || true)
+
+if [ -z "$STAGED_FILES" ]; then
+  echo "✅ 没有 TypeScript/JavaScript 文件被暂存，跳过检查"
+  exit 0
+fi
+
+echo "📝 检查的文件:"
+echo "$STAGED_FILES"
+echo ""
+
+# 1. TypeScript 类型检查
+echo "🔍 1. TypeScript 类型检查..."
+if ! pnpm run type-check; then
+  echo "❌ TypeScript 类型检查失败"
+  echo ""
+  echo "💡 解决方案:"
+  echo "   1. 运行 'pnpm run type-check' 查看详细错误"
+  echo "   2. 修复类型错误后重新提交"
+  echo ""
+  exit 1
+fi
+echo "✅ TypeScript 类型检查通过"
+echo ""
+
+# 2. 检查是否有明显的模块导入错误
+echo "🔍 2. 检查模块导入..."
+ERROR_FOUND=false
+
+for file in $STAGED_FILES; do
+  if [ -f "$file" ]; then
+    # 检查是否有从不存在的模块导入
+    if grep -q "from '@/lib/command-detector'" "$file" 2>/dev/null; then
+      if [ ! -f "src/lib/command-detector.ts" ]; then
+        echo "❌ 文件 $file 导入了不存在的模块: @/lib/command-detector"
+        ERROR_FOUND=true
+      fi
+    fi
+  fi
+done
+
+if [ "$ERROR_FOUND" = true ]; then
+  echo ""
+  echo "💡 解决方案:"
+  echo "   1. 检查文件路径是否正确"
+  echo "   2. 确保 tsconfig.json 中的路径别名配置正确"
+  echo "   3. 运行 'pnpm run clean' 清理缓存"
+  echo ""
+  exit 1
+fi
+echo "✅ 模块导入检查通过"
+echo ""
+
+# 3. 检查配置文件
+echo "🔍 3. 检查配置文件..."
+CONFIG_CHANGED=$(echo "$STAGED_FILES" | grep -E '(next\.config\.(ts|js)|tsconfig\.json)$' || true)
+
+if [ -n "$CONFIG_CHANGED" ]; then
+  echo "⚠️  配置文件已更改:"
+  echo "$CONFIG_CHANGED"
+  echo ""
+  echo "💡 建议：提交后执行 'pnpm run clean' 清理缓存"
+  echo ""
+fi
+
+# 4. 检查 .next 目录大小（警告）
+echo "🔍 4. 检查缓存状态..."
+if [ -d ".next" ]; then
+  CACHE_SIZE=$(du -sh .next 2>/dev/null | cut -f1)
+  echo "📦 当前缓存大小: $CACHE_SIZE"
+
+  if [ $(du -s .next 2>/dev/null | cut -f1) -gt 1048576 ]; then
+    echo "⚠️  警告：缓存大小超过 1GB"
+    echo "💡 建议：运行 'pnpm run clean' 清理缓存"
+  fi
+  echo ""
+fi
+
+# 5. 检查关键文件
+echo "🔍 5. 检查关键文件..."
+CRITICAL_FILES=(
+  "src/lib/command-detector.ts"
+  "src/components/command-confirm-dialog.tsx"
+  "src/lib/agent-types.ts"
+  "src/lib/websocket-server.ts"
+)
+
+MISSING_FILES=0
+for file in "${CRITICAL_FILES[@]}"; do
+  if [ ! -f "$file" ]; then
+    echo "❌ 关键文件缺失: $file"
+    MISSING_FILES=$((MISSING_FILES + 1))
+  fi
+done
+
+if [ $MISSING_FILES -gt 0 ]; then
+  echo ""
+  echo "❌ 缺少 $MISSING_FILES 个关键文件"
+  echo "💡 请检查文件是否被误删"
+  echo ""
+  exit 1
+fi
+echo "✅ 所有关键文件存在"
+echo ""
+
+# 所有检查通过
+echo "================================"
+echo "✅ 所有检查通过！"
+echo ""
+echo "📝 提交信息："
+git log -1 --pretty=format:"%h - %s (%cr)" HEAD
+echo ""
