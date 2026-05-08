@@ -578,6 +578,7 @@ export default function HomePage() {
   const [skipAIEnrichment, setSkipAIEnrichment] = useState(false);
   const [directSaveTitle, setDirectSaveTitle] = useState('');
   const [directSaving, setDirectSaving] = useState(false);
+  const [expandedSnippetIds, setExpandedSnippetIds] = useState<Set<string>>(new Set());
   
   // 🔥 提醒中心相关状态
   const [showReminderDrawer, setShowReminderDrawer] = useState(false);
@@ -6528,6 +6529,50 @@ export default function HomePage() {
                                     {kw.trim()}
                                   </span>
                                 ))}
+                              </div>
+                            )}
+                            
+                            {/* 展开/收起原始内容预览 */}
+                            {snippet.rawContent && (
+                              <div className="mb-2">
+                                <button
+                                  onClick={() => {
+                                    setExpandedSnippetIds(prev => {
+                                      const newSet = new Set(prev);
+                                      if (newSet.has(snippet.id)) {
+                                        newSet.delete(snippet.id);
+                                      } else {
+                                        newSet.add(snippet.id);
+                                      }
+                                      return newSet;
+                                    });
+                                  }}
+                                  className="text-xs text-sky-600 hover:text-sky-700 flex items-center gap-1 transition-colors"
+                                >
+                                  {expandedSnippetIds.has(snippet.id) ? (
+                                    <>
+                                      <ChevronUp className="h-3.5 w-3.5" />
+                                      <span>收起原始内容</span>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <ChevronDown className="h-3.5 w-3.5" />
+                                      <span>展开原始内容</span>
+                                    </>
+                                  )}
+                                </button>
+                                {expandedSnippetIds.has(snippet.id) && (
+                                  <div className="mt-2 p-3 bg-slate-50 border border-slate-200 rounded-lg">
+                                    <div className="flex items-center gap-1.5 mb-1.5">
+                                      <FileText className="h-3.5 w-3.5 text-slate-400" />
+                                      <span className="text-xs font-medium text-slate-500">原始记录内容</span>
+                                      <span className="text-xs text-slate-400">({snippet.rawContent.length} 字)</span>
+                                    </div>
+                                    <p className="text-xs text-slate-700 leading-relaxed whitespace-pre-wrap max-h-60 overflow-y-auto">
+                                      {snippet.rawContent}
+                                    </p>
+                                  </div>
+                                )}
                               </div>
                             )}
                             
