@@ -2049,17 +2049,27 @@ export default function HomePage() {
       return;
     }
     
+    // 转换 keywords 为数组
+    const keywordsArray = editSnippetForm.keywords
+      .split(',')
+      .map(k => k.trim())
+      .filter(k => k.length > 0);
+    
     setEditSnippetSaving(true);
     try {
       const result: any = await fetch(`/api/info-snippets/${editingSnippet.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(editSnippetForm),
+        body: JSON.stringify({
+          ...editSnippetForm,
+          keywords: keywordsArray,  // 转换为数组
+        }),
       }).then(r => r.json());
       
       if (result.success) {
         toast.success('保存成功');
         setEditingSnippet(null);
+        setEditSnippetForm({ title: '', summary: '', rawContent: '', keywords: '' });  // 清理表单
         loadSnippetList();
       } else {
         toast.error(result.error || '保存失败');
@@ -6773,7 +6783,7 @@ export default function HomePage() {
             <div className="p-4 border-b flex items-center justify-between">
               <h3 className="font-semibold text-lg">编辑信息速记</h3>
               <button
-                onClick={() => setEditingSnippet(null)}
+                onClick={() => { setEditingSnippet(null); setEditSnippetForm({ title: '', summary: '', rawContent: '', keywords: '' }); }}
                 className="h-8 w-8 rounded-md hover:bg-slate-100 flex items-center justify-center"
               >
                 <X className="h-4 w-4" />
@@ -6823,7 +6833,7 @@ export default function HomePage() {
             </div>
             <div className="p-4 border-t flex justify-end gap-2">
               <button
-                onClick={() => setEditingSnippet(null)}
+                onClick={() => { setEditingSnippet(null); setEditSnippetForm({ title: '', summary: '', rawContent: '', keywords: '' }); }}
                 className="px-4 py-2 border rounded-md hover:bg-slate-50"
                 disabled={editSnippetSaving}
               >
