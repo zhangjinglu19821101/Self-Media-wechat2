@@ -1701,13 +1701,6 @@ export default function HomePage() {
     }
   }, [showSnippetDrawer, loadSnippetList]);
 
-  // 🔥 信息速记：切到素材tab时加载速记（素材和速记已合并为统一入口）
-  useEffect(() => {
-    if (activeGuideTab === 'material') {
-      loadSnippetList();
-    }
-  }, [activeGuideTab, loadSnippetList]);
-
   // 🔥 提醒中心：加载提醒数据和统计
   const loadReminderData = useCallback(async () => {
     try {
@@ -2082,39 +2075,6 @@ export default function HomePage() {
     }
   };
 
-  // 🔥 信息速记：选为素材（方案A：所有速记保存时已自动入库）
-  const handleSelectSnippetAsMaterial = async (snippet: InfoSnippet) => {
-    try {
-      const materialId = snippet.materialId;
-
-      // 边界情况：materialId 不存在（历史数据或异常），提示用户重新保存
-      if (!materialId) {
-        toast.error('该速记未入库，请编辑后重新保存');
-        return;
-      }
-
-      // 已选中 → 取消选择
-      if (selectedMaterialIds.includes(materialId)) {
-        setSelectedMaterialIds(prev => prev.filter(id => id !== materialId));
-        setSelectedMaterials(prev => prev.filter(m => m.id !== materialId));
-        return;
-      }
-
-      // 未选中 → 添加到已选素材
-      setSelectedMaterialIds(prev => [...prev, materialId]);
-      setSelectedMaterials(prev => [...prev, {
-        id: materialId,
-        title: snippet.title || '无标题速记',
-        type: 'data',
-        content: snippet.rawContent || snippet.summary || '',
-      }]);
-      toast.success('已选为素材');
-    } catch (error: any) {
-      console.error('[InfoSnippets] 选为素材失败:', error);
-      toast.error(error?.message || '操作失败');
-    }
-  };
-
   // 🔥 速记转案例：提取结构化信息（或加载已有案例）
   const handleConvertSnippetToCase = async (snippet: InfoSnippet) => {
     try {
@@ -2367,39 +2327,6 @@ export default function HomePage() {
       toast.error(error?.message || '\u6848\u4f8b\u4fdd\u5b58\u5931\u8d25');
     } finally {
       setCaseSaving(false);
-    }
-  };
-
-// 🔥 信息速记：在素材tab中选为素材（方案A：所有速记保存时已自动入库）
-  const handleSelectSnippetInMaterialTab = async (snippet: InfoSnippet) => {
-    try {
-      const materialId = snippet.materialId;
-
-      // 边界情况：materialId 不存在（历史数据或异常），提示用户重新保存
-      if (!materialId) {
-        toast.error('该速记未入库，请编辑后重新保存');
-        return;
-      }
-
-      // 已选中 → 取消选择
-      if (selectedMaterialIds.includes(materialId)) {
-        setSelectedMaterialIds(prev => prev.filter(id => id !== materialId));
-        setSelectedMaterials(prev => prev.filter(m => m.id !== materialId));
-        return;
-      }
-
-      // 未选中 → 添加到已选素材
-      setSelectedMaterialIds(prev => [...prev, materialId]);
-      setSelectedMaterials(prev => [...prev, {
-        id: materialId,
-        title: snippet.title || '无标题速记',
-        type: 'data',
-        content: snippet.rawContent || snippet.summary || '',
-      }]);
-      toast.success(`已选为素材`);
-    } catch (error: any) {
-      console.error('[InfoSnippets] 选为素材失败:', error);
-      toast.error(error?.message || '操作失败');
     }
   };
 
@@ -6205,31 +6132,6 @@ export default function HomePage() {
                                       ? <p>将此速记转化为行业案例</p>
                                       : <p>该速记未被识别为真实案例，转换效果可能不佳</p>
                                   }
-                                </TooltipContent>
-                              </Tooltip>
-                            </TooltipProvider>
-                            {/* 选为素材按钮 */}
-                            <TooltipProvider>
-                              <Tooltip>
-                                <TooltipTrigger asChild>
-                                  <button
-                                    onClick={() => handleSelectSnippetAsMaterial(snippet)}
-                                    className={`h-7 px-2 rounded-md flex items-center justify-center text-xs font-medium gap-1 transition-colors ${
-                                      snippet.materialId && selectedMaterialIds.includes(snippet.materialId)
-                                        ? 'bg-indigo-100 text-indigo-700 border border-indigo-300'
-                                        : 'bg-sky-50 text-sky-600 border border-sky-200 hover:bg-sky-100 hover:text-sky-700'
-                                    }`}
-                                  >
-                                    <BookmarkPlus className="h-3 w-3" />
-                                    {snippet.materialId && selectedMaterialIds.includes(snippet.materialId)
-                                      ? '转出素材'
-                                      : '转入素材'}
-                                  </button>
-                                </TooltipTrigger>
-                                <TooltipContent>
-                                  <p>{snippet.materialId && selectedMaterialIds.includes(snippet.materialId)
-                                    ? '从创作引导中移除此素材'
-                                    : '将此素材添加到创作引导'}</p>
                                 </TooltipContent>
                               </Tooltip>
                             </TooltipProvider>
