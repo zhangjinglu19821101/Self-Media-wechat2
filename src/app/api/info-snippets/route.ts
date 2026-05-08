@@ -151,7 +151,7 @@ export async function POST(request: NextRequest) {
       let materialType = 'data';
       let materialError: string | null = null;
       
-      // 🔒 判断是否应该转化为素材（quick_note 和 reminder 不转化）
+      // 判断是否应该转化为素材（方案A：所有速记都自动入库）
       const convertCheck = shouldConvertToMaterial(snippetCategories, snippetType || 'memory');
       
       if (!convertCheck.shouldConvert) {
