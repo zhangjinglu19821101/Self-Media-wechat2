@@ -54,15 +54,14 @@ export interface ConversionResult {
 // 转化前置判断
 // ================================================================
 
-/** 不允许自动转化到素材库的分类（类型不明确，无素材价值） */
-const SKIP_CONVERSION_CATEGORIES: ReadonlySet<string> = new Set(['quick_note']);
-
 /**
  * 判断速记是否应该转化为素材库记录
  * 
- * 不转化的条件（任一满足即跳过）：
- * 1. categories 仅包含 quick_note（简要速记，类型不明确）
- * 2. snippetType === 'reminder'（提醒类信息，不是素材）
+ * 【方案A】所有速记都自动入库到素材库：
+ * - real_case → case 类型素材
+ * - insurance / medical / intelligence → data 类型素材
+ * - quick_note → data 类型素材（类型不明确时默认为数据素材）
+ * - reminder → data 类型素材（提醒也可作为素材复用）
  * 
  * @returns { shouldConvert: boolean; reason?: string }
  */
@@ -70,17 +69,7 @@ export function shouldConvertToMaterial(
   categories: SnippetCategory[],
   snippetType: string | null,
 ): { shouldConvert: boolean; reason?: string } {
-  // 提醒类型不转化
-  if (snippetType === 'reminder') {
-    return { shouldConvert: false, reason: '提醒类型不转化为素材' };
-  }
-
-  // 仅包含 quick_note 的不转化（所有分类都在跳过集合中，即没有明确分类）
-  const meaningfulCategories = categories.filter(c => !SKIP_CONVERSION_CATEGORIES.has(c));
-  if (meaningfulCategories.length === 0) {
-    return { shouldConvert: false, reason: '简要速记(quick_note)类型不明确，不转化为素材' };
-  }
-
+  // 所有速记都入库，不再区分类型
   return { shouldConvert: true };
 }
 

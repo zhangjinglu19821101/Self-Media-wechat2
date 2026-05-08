@@ -2082,43 +2082,33 @@ export default function HomePage() {
     }
   };
 
-  // 🔥 信息速记：选为素材（已入库的直接选，未入库的先入库再选）
+  // 🔥 信息速记：选为素材（方案A：所有速记保存时已自动入库）
   const handleSelectSnippetAsMaterial = async (snippet: InfoSnippet) => {
     try {
-      let materialId = snippet.materialId;
+      const materialId = snippet.materialId;
 
-      // 已入库且已选中 → 取消选择
-      if (materialId && selectedMaterialIds.includes(materialId)) {
+      // 边界情况：materialId 不存在（历史数据或异常），提示用户重新保存
+      if (!materialId) {
+        toast.error('该速记未入库，请编辑后重新保存');
+        return;
+      }
+
+      // 已选中 → 取消选择
+      if (selectedMaterialIds.includes(materialId)) {
         setSelectedMaterialIds(prev => prev.filter(id => id !== materialId));
         setSelectedMaterials(prev => prev.filter(m => m.id !== materialId));
         return;
       }
 
-      // 未入库：先入库
-      if (!materialId) {
-        const convertResult: any = await apiPost(`/api/info-snippets/${snippet.id}/convert-to-material`);
-        if (convertResult.success && convertResult.data?.materialId) {
-          materialId = convertResult.data.materialId;
-          toast.success(`已入库并选为素材`);
-          loadSnippetList(); // 刷新列表状态
-        } else {
-          toast.error(convertResult.error || '入库失败');
-          return;
-        }
-      } else if (!selectedMaterialIds.includes(materialId)) {
-        toast.success('已选为素材');
-      }
-
-      // 已入库且未选中 → 添加到已选素材
-      if (materialId && !selectedMaterialIds.includes(materialId)) {
-        setSelectedMaterialIds(prev => [...prev, materialId]);
-        setSelectedMaterials(prev => [...prev, {
-          id: materialId!,
-          title: snippet.title || '无标题速记',
-          type: 'data',
-          content: snippet.rawContent || snippet.summary || '',
-        }]);
-      }
+      // 未选中 → 添加到已选素材
+      setSelectedMaterialIds(prev => [...prev, materialId]);
+      setSelectedMaterials(prev => [...prev, {
+        id: materialId,
+        title: snippet.title || '无标题速记',
+        type: 'data',
+        content: snippet.rawContent || snippet.summary || '',
+      }]);
+      toast.success('已选为素材');
     } catch (error: any) {
       console.error('[InfoSnippets] 选为素材失败:', error);
       toast.error(error?.message || '操作失败');
@@ -2380,43 +2370,33 @@ export default function HomePage() {
     }
   };
 
-// 🔥 信息速记：在素材tab中选为素材（复用素材选择交互）
+// 🔥 信息速记：在素材tab中选为素材（方案A：所有速记保存时已自动入库）
   const handleSelectSnippetInMaterialTab = async (snippet: InfoSnippet) => {
     try {
-      let materialId = snippet.materialId;
+      const materialId = snippet.materialId;
 
-      // 情形1: 已入库且已选中 → 取消选择
-      if (materialId && selectedMaterialIds.includes(materialId)) {
+      // 边界情况：materialId 不存在（历史数据或异常），提示用户重新保存
+      if (!materialId) {
+        toast.error('该速记未入库，请编辑后重新保存');
+        return;
+      }
+
+      // 已选中 → 取消选择
+      if (selectedMaterialIds.includes(materialId)) {
         setSelectedMaterialIds(prev => prev.filter(id => id !== materialId));
         setSelectedMaterials(prev => prev.filter(m => m.id !== materialId));
         return;
       }
 
-      // 情形2: 未入库 → 先入库
-      if (!materialId) {
-        const convertResult: any = await apiPost(`/api/info-snippets/${snippet.id}/convert-to-material`);
-        if (convertResult.success && convertResult.data?.materialId) {
-          materialId = convertResult.data.materialId;
-          toast.success(`「${snippet.title || '速记'}」已入库并选为素材`);
-          loadSnippetList(); // 刷新列表状态
-        } else {
-          toast.error(convertResult.error || '入库失败');
-          return;
-        }
-      } else if (!selectedMaterialIds.includes(materialId)) {
-        toast.success(`已选为素材`);
-      }
-
-      // 情形3: 已入库且未选中 → 添加到已选素材
-      if (materialId && !selectedMaterialIds.includes(materialId)) {
-        setSelectedMaterialIds(prev => [...prev, materialId]);
-        setSelectedMaterials(prev => [...prev, {
-          id: materialId!,
-          title: snippet.title || '无标题速记',
-          type: 'data',
-          content: snippet.rawContent || snippet.summary || '',
-        }]);
-      }
+      // 未选中 → 添加到已选素材
+      setSelectedMaterialIds(prev => [...prev, materialId]);
+      setSelectedMaterials(prev => [...prev, {
+        id: materialId,
+        title: snippet.title || '无标题速记',
+        type: 'data',
+        content: snippet.rawContent || snippet.summary || '',
+      }]);
+      toast.success(`已选为素材`);
     } catch (error: any) {
       console.error('[InfoSnippets] 选为素材失败:', error);
       toast.error(error?.message || '操作失败');
@@ -4097,7 +4077,7 @@ export default function HomePage() {
                                                 : 'bg-sky-500 text-white hover:bg-sky-600 shadow-sm'
                                             }`}
                                           >
-                                            {isSnippetSelected ? '✓ 已添加' : (snippet.materialId ? '+ 选择' : '入库并选择')}
+                                            {isSnippetSelected ? '✓ 已添加' : '+ 选择'}
                                           </button>
                                         </div>
                                       );
@@ -4273,7 +4253,7 @@ export default function HomePage() {
                                             : 'text-sky-600 hover:bg-sky-50 border border-transparent hover:border-sky-200'
                                         }`}
                                       >
-                                        {isSnippetSelected ? '✓' : (snippet.materialId ? '+选择' : '入库+选')}
+                                        {isSnippetSelected ? '✓' : '+选择'}
                                       </button>
                                     </div>
                                   );
@@ -6699,17 +6679,13 @@ export default function HomePage() {
                                     <BookmarkPlus className="h-3 w-3" />
                                     {snippet.materialId && selectedMaterialIds.includes(snippet.materialId)
                                       ? '转出素材'
-                                      : snippet.materialId
-                                        ? '转入素材'
-                                        : '入库并转入素材'}
+                                      : '转入素材'}
                                   </button>
                                 </TooltipTrigger>
                                 <TooltipContent>
                                   <p>{snippet.materialId && selectedMaterialIds.includes(snippet.materialId)
                                     ? '从创作引导中移除此素材'
-                                    : snippet.materialId
-                                      ? '将此素材添加到创作引导'
-                                      : '先入库到素材库，再添加到创作引导'}</p>
+                                    : '将此素材添加到创作引导'}</p>
                                 </TooltipContent>
                               </Tooltip>
                             </TooltipProvider>
