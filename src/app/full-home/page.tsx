@@ -2049,11 +2049,12 @@ export default function HomePage() {
       return;
     }
     
-    // 转换 keywords 为数组
-    const keywordsArray = editSnippetForm.keywords
+    // keywords 在数据库中是 text 类型（逗号分隔字符串），保持字符串格式
+    const keywordsStr = editSnippetForm.keywords
       .split(',')
       .map(k => k.trim())
-      .filter(k => k.length > 0);
+      .filter(k => k.length > 0)
+      .join(',');
     
     setEditSnippetSaving(true);
     try {
@@ -2062,7 +2063,7 @@ export default function HomePage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           ...editSnippetForm,
-          keywords: keywordsArray,  // 转换为数组
+          keywords: keywordsStr || null,  // 保持 text 格式：逗号分隔字符串
         }),
       }).then(r => r.json());
       
