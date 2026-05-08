@@ -183,7 +183,7 @@ userOpinion: "港险高收益是演示利率，不是保证收益，消费者要
   <p style="color:#E67E22; font-weight:bold; margin:0 0 1em; text-align:left;">【开头引导语，居左橙色加粗】</p>
 
   <!-- 一级标题（青绿色、居中）+ 分割线 -->
-  <h2 style="color:#2AB692; font-weight:bold; text-align:center; margin:1em 0; font-size:14px;">一、一级标题（居中青绿色）</h2>
+  <h2 style="color:#1A8A6F; font-weight:bold; text-align:center; margin:1em 0; font-size:14px;">一、一级标题（居中青绿色）</h2>
   <hr style="border:none; border-top:1px solid #eee; width:90%; margin:0.5em auto;">
   
   <!-- 二级标题（黑色、居左） -->
@@ -199,7 +199,7 @@ userOpinion: "港险高收益是演示利率，不是保证收益，消费者要
   <p style="color:#3E3E3E; text-align:left; margin:0 0 1em;">正文内容可无限复制，格式保持一致，无需重复调整。</p>
 
   <!-- 一级标题（青绿色、居中）+ 分割线 -->
-  <h2 style="color:#2AB692; font-weight:bold; text-align:center; margin:1em 0; font-size:14px;">二、一级标题（居中青绿色）</h2>
+  <h2 style="color:#1A8A6F; font-weight:bold; text-align:center; margin:1em 0; font-size:14px;">二、一级标题（居中青绿色）</h2>
   <hr style="border:none; border-top:1px solid #eee; width:90%; margin:0.5em auto;">
   
   <!-- 二级标题+正文 -->
