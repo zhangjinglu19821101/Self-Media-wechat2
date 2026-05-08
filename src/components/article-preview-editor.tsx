@@ -25,7 +25,7 @@ import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { 
   Eye, Pencil, CheckCircle2, SkipForward, Save, X, 
-  AlertCircle, Loader2, FileText, Image, ChevronLeft, ChevronRight
+  Loader2, FileText, ChevronLeft, ChevronRight
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { getCurrentBeijingTime } from '@/lib/utils/date-time';
@@ -37,12 +37,14 @@ import { XhsTextRenderer } from '@/components/xhs-text-renderer';
 import { 
   GRADIENT_SCHEMES, 
   parseXhsRenderData, 
-  parseXhsContent,
-  type XhsParsedContent 
+  parseXhsContent
 } from '@/lib/xhs-parser';
 
 // 🔥 微信公众号文章渲染器
 import { WechatArticleRenderer } from '@/components/wechat-article-renderer';
+
+// 🔥 微信公众号结构化段落编辑器
+import { WechatBlockEditor } from '@/components/wechat-block-editor';
 
 // ============ 类型定义 ============
 
@@ -65,8 +67,6 @@ export interface ArticlePreviewEditorProps {
   canSkip?: boolean;
   /** 确认回调（修改或跳过后触发） */
   onComplete: (result: PreviewCompleteResult) => void;
-  /** 取消回调 */
-  onCancel?: () => void;
   /** 🔴 新增：保存草稿回调（只保存不提交） */
   onSaveDraft?: (content: string, title: string) => Promise<void>;
 }
@@ -111,7 +111,6 @@ export function ArticlePreviewEditor({
   canEdit = true,
   canSkip = true,
   onComplete,
-  onCancel,
 }: ArticlePreviewEditorProps) {
   const [content, setContent] = useState(initialContent || '');
   const [title, setTitle] = useState(initialTitle || '');
@@ -123,6 +122,15 @@ export function ArticlePreviewEditor({
   const [isLoading, setIsLoading] = useState(!initialContent);
   const [activeTab, setActiveTab] = useState<'preview' | 'edit'>('preview');
 
+  // 🔥 公众号编辑器回调：同步更新 content 和 platformRenderData.htmlContent
+  const handleWechatBlockEditorChange = useCallback((newHtml: string) => {
+    setContent(newHtml);
+    // 同步更新 platformRenderData.htmlContent，确保预览也使用最新内容
+    if (platformRenderData && typeof platformRenderData === 'object' && 'htmlContent' in platformRenderData) {
+      setPlatformRenderData({ ...platformRenderData, htmlContent: newHtml });
+    }
+  }, [platformRenderData]);
+
   // 如果没有传入内容，从 API 加载
   // 🔴 P2-2 修复：增加 AbortController 处理竞态条件
   useEffect(() => {
@@ -130,7 +138,6 @@ export function ArticlePreviewEditor({
       taskId,
       initialContent: initialContent?.substring(0, 100),
       initialContentLength: initialContent?.length || 0,
-      initialPlatformRenderData: initialPlatformRenderData ? 'exists' : 'null',
     });
     
     if (initialContent) {
@@ -169,7 +176,7 @@ export function ArticlePreviewEditor({
               apiPlatformRenderData && 
               typeof apiPlatformRenderData === 'object' && 
               'htmlContent' in apiPlatformRenderData) {
-            finalContent = (apiPlatformRenderData as any).htmlContent || finalContent;
+            finalContent = (apiPlatformRenderData as { htmlContent: string }).htmlContent || finalContent;
           }
           
           setContent(finalContent);
@@ -335,7 +342,7 @@ export function ArticlePreviewEditor({
             <WechatHtmlPreview 
               html={
                 (platformRenderData && typeof platformRenderData === 'object' && 'htmlContent' in platformRenderData)
-                  ? (platformRenderData as any).htmlContent || content
+                  ? (platformRenderData as { htmlContent?: string }).htmlContent || content
                   : content
               } 
             />
@@ -351,7 +358,17 @@ export function ArticlePreviewEditor({
 
         {isEditing && (
           <TabsContent value="edit" className="mt-0">
-            {platform === 'xiaohongshu' ? (
+            {platform === 'wechat_official' ? (
+              <WechatBlockEditor
+                key={content}
+                html={
+                  (platformRenderData && typeof platformRenderData === 'object' && 'htmlContent' in platformRenderData)
+                    ? (platformRenderData as { htmlContent?: string }).htmlContent || content
+                    : content
+                }
+                onChange={handleWechatBlockEditorChange}
+              />
+            ) : platform === 'xiaohongshu' ? (
               <XiaohongshuContentEditor 
                 content={content} 
                 platformRenderData={platformRenderData}
@@ -774,7 +791,7 @@ function XiaohongshuContentEditor({
     : parseXhsContent(rawContent);
   const [title, setTitle] = useState(parsed.title);
   const [fullText, setFullText] = useState(parsed.fullText);
-  const [points, setPoints] = useState(parsed.points);
+  const [points, _setPoints] = useState(parsed.points);
   const [tags, setTags] = useState(parsed.tags.join(', '));
 
   const rebuildContent = useCallback(() => {
