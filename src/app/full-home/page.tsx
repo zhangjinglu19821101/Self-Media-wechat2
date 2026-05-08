@@ -6701,7 +6701,7 @@ export default function HomePage() {
                                       ? '转出素材'
                                       : snippet.materialId
                                         ? '转入素材'
-                                        : '入库并入素材'}
+                                        : '入库并转入素材'}
                                   </button>
                                 </TooltipTrigger>
                                 <TooltipContent>
