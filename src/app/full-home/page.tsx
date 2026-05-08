@@ -24,7 +24,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { Loader2, Plus, Trash2, Send, Sparkles, ListTodo, CheckCircle2, XCircle, GripVertical, MoveUp, MoveDown, Maximize2, Minimize2, AlertTriangle, GitCompare, RefreshCw, FileText, Save, Eye, Home, BookmarkPlus, ExternalLink, BookOpen, Clock, Building2, X, HelpCircle, Settings, Rocket, Layers, ChevronDown, ChevronUp, Cpu, Brain, Bell, Workflow, Palette, PenTool, ArrowRight, ArrowLeft, Briefcase, Shield, Users, Download, Copy, ImageIcon, Check, AlertCircle, Calendar, Lock, Search, Globe } from 'lucide-react';
+import { Loader2, Plus, Trash2, Send, Sparkles, ListTodo, CheckCircle2, XCircle, GripVertical, MoveUp, MoveDown, Maximize2, Minimize2, AlertTriangle, GitCompare, RefreshCw, FileText, Save, Eye, Home, BookmarkPlus, ExternalLink, BookOpen, Clock, Building2, X, HelpCircle, Settings, Rocket, Layers, ChevronDown, ChevronUp, Cpu, Brain, Bell, Workflow, Palette, PenTool, ArrowRight, ArrowLeft, Briefcase, Shield, Users, Download, Copy, ImageIcon, Check, AlertCircle, Calendar, Lock, Search, Globe, Edit3 } from 'lucide-react';
 import { toast } from 'sonner';
 import { AgentTaskListNormal } from '@/components/agent-task-list-normal';
 import { XiaohongshuPreview } from '@/components/xiaohongshu-preview';
@@ -579,6 +579,14 @@ export default function HomePage() {
   const [directSaveTitle, setDirectSaveTitle] = useState('');
   const [directSaving, setDirectSaving] = useState(false);
   const [expandedSnippetIds, setExpandedSnippetIds] = useState<Set<string>>(new Set());
+  const [editingSnippet, setEditingSnippet] = useState<InfoSnippet | null>(null);
+  const [editSnippetForm, setEditSnippetForm] = useState({
+    title: '',
+    summary: '',
+    rawContent: '',
+    keywords: '',
+  });
+  const [editSnippetSaving, setEditSnippetSaving] = useState(false);
   
   // 🔥 提醒中心相关状态
   const [showReminderDrawer, setShowReminderDrawer] = useState(false);
@@ -2018,6 +2026,48 @@ export default function HomePage() {
       loadSnippetList();
     } catch (error) {
       toast.error('删除失败');
+    }
+  };
+
+  // 🔥 信息速记：打开编辑弹窗
+  const handleOpenEditSnippet = (snippet: InfoSnippet) => {
+    setEditingSnippet(snippet);
+    setEditSnippetForm({
+      title: snippet.title || '',
+      summary: snippet.summary || '',
+      rawContent: snippet.rawContent || '',
+      keywords: snippet.keywords || '',
+    });
+  };
+
+  // 🔥 信息速记：保存编辑
+  const handleSaveEditSnippet = async () => {
+    if (!editingSnippet) return;
+    
+    if (!editSnippetForm.title.trim()) {
+      toast.error('标题不能为空');
+      return;
+    }
+    
+    setEditSnippetSaving(true);
+    try {
+      const result: any = await fetch(`/api/info-snippets/${editingSnippet.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(editSnippetForm),
+      }).then(r => r.json());
+      
+      if (result.success) {
+        toast.success('保存成功');
+        setEditingSnippet(null);
+        loadSnippetList();
+      } else {
+        toast.error(result.error || '保存失败');
+      }
+    } catch (error) {
+      toast.error('保存失败');
+    } finally {
+      setEditSnippetSaving(false);
     }
   };
 
@@ -6676,6 +6726,21 @@ export default function HomePage() {
                                 </Tooltip>
                               </TooltipProvider>
                             )}
+                            {/* 编辑按钮 */}
+                            <TooltipProvider>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <button
+                                    onClick={() => handleOpenEditSnippet(snippet)}
+                                    className="h-7 w-7 rounded-md hover:bg-blue-50 flex items-center justify-center text-slate-400 hover:text-blue-500 transition-colors"
+                                  >
+                                    <Edit3 className="h-3.5 w-3.5" />
+                                  </button>
+                                </TooltipTrigger>
+                                <TooltipContent><p>编辑</p></TooltipContent>
+                              </Tooltip>
+                            </TooltipProvider>
+                            {/* 删除按钮 */}
                             <TooltipProvider>
                               <Tooltip>
                                 <TooltipTrigger asChild>
@@ -6696,6 +6761,82 @@ export default function HomePage() {
                   })}
                 </div>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+      
+      {/* 编辑信息速记弹窗 */}
+      {editingSnippet && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-2xl max-h-[80vh] overflow-hidden">
+            <div className="p-4 border-b flex items-center justify-between">
+              <h3 className="font-semibold text-lg">编辑信息速记</h3>
+              <button
+                onClick={() => setEditingSnippet(null)}
+                className="h-8 w-8 rounded-md hover:bg-slate-100 flex items-center justify-center"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="p-4 space-y-4 overflow-y-auto max-h-[60vh]">
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">标题 *</label>
+                <input
+                  type="text"
+                  value={editSnippetForm.title}
+                  onChange={(e) => setEditSnippetForm(prev => ({ ...prev, title: e.target.value }))}
+                  className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  placeholder="输入标题"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">摘要</label>
+                <input
+                  type="text"
+                  value={editSnippetForm.summary}
+                  onChange={(e) => setEditSnippetForm(prev => ({ ...prev, summary: e.target.value }))}
+                  className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  placeholder="输入摘要（15-30字）"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">关键词</label>
+                <input
+                  type="text"
+                  value={editSnippetForm.keywords}
+                  onChange={(e) => setEditSnippetForm(prev => ({ ...prev, keywords: e.target.value }))}
+                  className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  placeholder="关键词，用逗号分隔"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">原始内容</label>
+                <textarea
+                  value={editSnippetForm.rawContent}
+                  onChange={(e) => setEditSnippetForm(prev => ({ ...prev, rawContent: e.target.value }))}
+                  className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500 min-h-[200px]"
+                  placeholder="原始记录内容"
+                />
+                <p className="text-xs text-slate-500 mt-1">{editSnippetForm.rawContent.length} 字</p>
+              </div>
+            </div>
+            <div className="p-4 border-t flex justify-end gap-2">
+              <button
+                onClick={() => setEditingSnippet(null)}
+                className="px-4 py-2 border rounded-md hover:bg-slate-50"
+                disabled={editSnippetSaving}
+              >
+                取消
+              </button>
+              <button
+                onClick={handleSaveEditSnippet}
+                disabled={editSnippetSaving}
+                className="px-4 py-2 bg-indigo-500 text-white rounded-md hover:bg-indigo-600 disabled:opacity-50 flex items-center gap-2"
+              >
+                {editSnippetSaving && <Loader2 className="h-4 w-4 animate-spin" />}
+                {editSnippetSaving ? '保存中...' : '保存'}
+              </button>
             </div>
           </div>
         </div>

@@ -69,9 +69,11 @@ export async function PUT(
     };
 
     // 只更新提供的字段
+    if (body.rawContent !== undefined) updateData.rawContent = body.rawContent;
     if (body.title !== undefined) updateData.title = body.title || null;
     if (body.summary !== undefined) updateData.summary = body.summary || null;
     if (body.keywords !== undefined) updateData.keywords = body.keywords || null;
+    if (body.categories !== undefined) updateData.categories = body.categories;
     if (body.applicableScenes !== undefined) updateData.applicableScenes = body.applicableScenes || null;
     if (body.remindAt !== undefined) updateData.remindAt = body.remindAt ? new Date(body.remindAt) : null;
     if (body.remindStatus !== undefined) updateData.remindStatus = body.remindStatus || null;
