@@ -46,6 +46,10 @@ export interface HtmlBlock {
   closeTag: string;
   /** 原始完整 HTML（用于回写时精确替换） */
   rawHtml: string;
+  /** 块在 contentHtml 中的起始位置（含 prefix 偏移后用于回写定位） */
+  startPos: number;
+  /** 块在 contentHtml 中的结束位置 */
+  endPos: number;
   /** 颜色样式（从 style 属性提取，用于前端渲染提示） */
   colorHint?: string;
 }
@@ -245,6 +249,8 @@ export function parseHtmlToBlocks(html: string): ParseResult {
         openTag: tag.fullMatch,
         closeTag: '',
         rawHtml,
+        startPos: tag.index,
+        endPos: tag.index + tag.length,
         colorHint: undefined,
       });
       i++;
@@ -311,6 +317,8 @@ export function parseHtmlToBlocks(html: string): ParseResult {
       openTag: tag.fullMatch,
       closeTag: closeTag.fullMatch,
       rawHtml,
+      startPos: tag.index,
+      endPos: closeTag.index + closeTag.length,
       colorHint,
     });
 
@@ -370,14 +378,14 @@ function findMatchingCloseTag(
  * @returns 重建后的 HTML
  */
 export function rebuildHtmlFromBlocks(parseResult: ParseResult, editedBlocks: HtmlBlock[]): string {
-  const { originalHtml } = parseResult;
+  const { originalHtml, prefix } = parseResult;
 
   if (!editedBlocks.length) {
     return originalHtml;
   }
 
-  // 逐块替换：用 rawHtml 在原始 HTML 中定位，然后重建
-  let result = originalHtml;
+  // 收集需要替换的块：按 startPos 升序排列
+  const replacements: Array<{ start: number; end: number; newHtml: string }> = [];
 
   for (const block of editedBlocks) {
     if (!block.editable || !block.rawHtml) continue;
@@ -395,8 +403,28 @@ export function rebuildHtmlFromBlocks(parseResult: ParseResult, editedBlocks: Ht
 
     const newRawHtml = block.openTag + newInnerHtml + block.closeTag;
 
-    // 在结果中替换原始 HTML
-    result = result.replace(originalBlock.rawHtml, newRawHtml);
+    // 使用位置信息（startPos/endPos）定位替换，而非字符串匹配
+    // 注意：startPos/endPos 是在 contentHtml 中的位置，需要加上 prefix 长度
+    const prefixLen = prefix.length;
+    replacements.push({
+      start: prefixLen + originalBlock.startPos,
+      end: prefixLen + originalBlock.endPos,
+      newHtml: newRawHtml,
+    });
+  }
+
+  if (replacements.length === 0) {
+    return originalHtml;
+  }
+
+  // 按 start 升序排列，确保从后往前替换时不影响前面的位置
+  replacements.sort((a, b) => a.start - b.start);
+
+  // 从后往前替换，避免前面的替换影响后面的位置偏移
+  let result = originalHtml;
+  for (let i = replacements.length - 1; i >= 0; i--) {
+    const { start, end, newHtml } = replacements[i];
+    result = result.substring(0, start) + newHtml + result.substring(end);
   }
 
   return result;

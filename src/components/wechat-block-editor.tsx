@@ -14,7 +14,7 @@
 
 'use client';
 
-import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
+import { useState, useMemo, useCallback, useEffect, useRef, memo } from 'react';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -176,7 +176,8 @@ interface BlockEditorProps {
   onTextChange: (index: number, newText: string) => void;
 }
 
-function BlockEditorItem({ block, originalText, readOnly, onTextChange }: BlockEditorProps) {
+/** 单个段落编辑器 — memo 防止无关段落重渲染 */
+const BlockEditorItem = memo(function BlockEditorItem({ block, originalText, readOnly, onTextChange }: BlockEditorProps) {
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [hasChanged, setHasChanged] = useState(false);
 
@@ -279,7 +280,7 @@ function BlockEditorItem({ block, originalText, readOnly, onTextChange }: BlockE
       )}
     </div>
   );
-}
+});
 
 // ============ 主组件 ============
 
@@ -305,6 +306,12 @@ export function WechatBlockEditor({ html, onChange, readOnly = false }: WechatBl
 
   // 🔥 修复无限循环：使用 ref 记录上次输出的 HTML，只有真正变化时才调用 onChange
   const lastHtmlRef = useRef<string>(html);
+
+  // 当 html prop 外部变化时（如恢复原文、key remount），同步更新 ref
+  // 防止 ref 持有旧值导致 onChange 漏触发
+  useEffect(() => {
+    lastHtmlRef.current = html;
+  }, [html]);
 
   // 当编辑状态变化时，回写到父组件（仅当内容真正变化时）
   useEffect(() => {
