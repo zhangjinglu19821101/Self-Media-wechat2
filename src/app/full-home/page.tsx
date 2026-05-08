@@ -6713,30 +6713,6 @@ export default function HomePage() {
                                 </TooltipContent>
                               </Tooltip>
                             </TooltipProvider>
-                            {/* 入库状态标识 */}
-                            {snippet.materialId ? (
-                              <TooltipProvider>
-                                <Tooltip>
-                                  <TooltipTrigger asChild>
-                                    <span className="h-7 w-7 rounded-md bg-green-50 border border-green-200 flex items-center justify-center text-green-600">
-                                      <Check className="h-3 w-3" />
-                                    </span>
-                                  </TooltipTrigger>
-                                  <TooltipContent><p>已入库到素材库</p></TooltipContent>
-                                </Tooltip>
-                              </TooltipProvider>
-                            ) : (
-                              <TooltipProvider>
-                                <Tooltip>
-                                  <TooltipTrigger asChild>
-                                    <span className="h-7 w-7 rounded-md bg-amber-50 border border-amber-200 flex items-center justify-center text-amber-600">
-                                      <AlertCircle className="h-3 w-3" />
-                                    </span>
-                                  </TooltipTrigger>
-                                  <TooltipContent><p>素材入库异常，可点击"入库并选为素材"重新入库</p></TooltipContent>
-                                </Tooltip>
-                              </TooltipProvider>
-                            )}
                             {/* 编辑按钮 */}
                             <TooltipProvider>
                               <Tooltip>
