@@ -6671,7 +6671,7 @@ export default function HomePage() {
                                     ) : (
                                       <Briefcase className="h-3 w-3" />
                                     )}
-                                    {snippet.caseId ? '编辑案例' : '转案例'}
+                                    {snippet.caseId ? '出案例' : '入案例'}
                                   </button>
                                 </TooltipTrigger>
                                 <TooltipContent>
@@ -6698,10 +6698,10 @@ export default function HomePage() {
                                   >
                                     <BookmarkPlus className="h-3 w-3" />
                                     {snippet.materialId && selectedMaterialIds.includes(snippet.materialId)
-                                      ? '取消选择'
+                                      ? '出素材'
                                       : snippet.materialId
-                                        ? '选为素材'
-                                        : '入库并选为素材'}
+                                        ? '入素材'
+                                        : '入库并入素材'}
                                   </button>
                                 </TooltipTrigger>
                                 <TooltipContent>
