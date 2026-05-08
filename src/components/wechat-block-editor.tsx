@@ -14,7 +14,7 @@
 
 'use client';
 
-import { useState, useMemo, useCallback, useEffect } from 'react';
+import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -303,10 +303,17 @@ export function WechatBlockEditor({ html, onChange, readOnly = false }: WechatBl
     setEditedTexts(prev => ({ ...prev, [index]: newText }));
   }, []);
 
-  // 当编辑状态变化时，实时回写到父组件
+  // 🔥 修复无限循环：使用 ref 记录上次输出的 HTML，只有真正变化时才调用 onChange
+  const lastHtmlRef = useRef<string>(html);
+
+  // 当编辑状态变化时，回写到父组件（仅当内容真正变化时）
   useEffect(() => {
     const newHtml = rebuildHtmlFromBlocks(parseResult, currentBlocks);
-    onChange(newHtml);
+    // 只有当 HTML 真正变化时才触发 onChange，避免循环
+    if (newHtml !== lastHtmlRef.current) {
+      lastHtmlRef.current = newHtml;
+      onChange(newHtml);
+    }
   }, [currentBlocks, onChange, parseResult]);
 
   // 编辑中的文本与原始不同的块数

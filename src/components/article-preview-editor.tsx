@@ -123,13 +123,17 @@ export function ArticlePreviewEditor({
   const [activeTab, setActiveTab] = useState<'preview' | 'edit'>('preview');
 
   // 🔥 公众号编辑器回调：同步更新 content 和 platformRenderData.htmlContent
+  // 使用函数式更新，避免依赖 platformRenderData 导致无限循环
   const handleWechatBlockEditorChange = useCallback((newHtml: string) => {
     setContent(newHtml);
     // 同步更新 platformRenderData.htmlContent，确保预览也使用最新内容
-    if (platformRenderData && typeof platformRenderData === 'object' && 'htmlContent' in platformRenderData) {
-      setPlatformRenderData({ ...platformRenderData, htmlContent: newHtml });
-    }
-  }, [platformRenderData]);
+    setPlatformRenderData(prev => {
+      if (prev && typeof prev === 'object' && 'htmlContent' in prev) {
+        return { ...prev, htmlContent: newHtml };
+      }
+      return prev;
+    });
+  }, []); // 空依赖数组，函数式更新不需要外部依赖
 
   // 如果没有传入内容，从 API 加载
   // 🔴 P2-2 修复：增加 AbortController 处理竞态条件
