@@ -359,20 +359,20 @@
   <!-- 开头引导语（橙色、居左） -->
   <p style="color:#E67E22; font-weight:bold; margin:0 0 1em; text-align:left;">今天跟大家聊聊买保险最容易踩的坑</p>
 
-  <!-- 一级标题（青绿色、居中）+ 分割线 -->
-  <h2 style="color:#1A8A6F; font-weight:bold; text-align:center; margin:1em 0; font-size:14px;">为什么很多人买了重疾险却理赔难？</h2>
+  <!-- 一级标题（黑色、居中）+ 分割线 -->
+  <h2 style="color:#000000; font-weight:bold; text-align:center; margin:1em 0; font-size:14px;">一、为什么很多人买了重疾险却理赔难？</h2>
   <hr style="border:none; border-top:1px solid #eee; width:90%; margin:0.5em auto;">
   
-  <!-- 二级标题（黑色、居左） -->
-  <h3 style="color:#000000; font-weight:bold; text-align:left; margin:1em 0; font-size:14px; line-height:1.75;">保险公司不告诉你的3个拒赔真相</h3>
+  <!-- 二级标题（青绿色、居左） -->
+  <h3 style="color:#1A8A6F; font-weight:bold; text-align:left; margin:1em 0; font-size:14px; line-height:1.75;">保险公司不告诉你的3个拒赔真相</h3>
   <!-- 正文（深灰、居左） -->
   <p style="color:#3E3E3E; text-align:left; margin:0 0 1em;">很多人以为买了重疾险就万事大吉，真到理赔时才发现，这也不赔那也不赔。今天我就把保险公司不会告诉你的3个拒赔真相讲清楚...</p>
   
   <!-- 重要提醒（红色、居左） -->
   <p style="color:#FF0000; font-weight:bold; text-align:left; margin:0 0 1em;">⚠️ 健康告知没填对，理赔100%被拒！</p>
 
-  <!-- 二级标题（黑色、居左） -->
-  <h3 style="color:#000000; font-weight:bold; text-align:left; margin:1em 0; font-size:14px; line-height:1.75;">算笔明白账：百万医疗险真的能赔100万吗？</h3>
+  <!-- 二级标题（青绿色、居左） -->
+  <h3 style="color:#1A8A6F; font-weight:bold; text-align:left; margin:1em 0; font-size:14px; line-height:1.75;">算笔明白账：百万医疗险真的能赔100万吗？</h3>
   <!-- 正文（深灰、居左） -->
   <p style="color:#3E3E3E; text-align:left; margin:0 0 1em;">百万医疗险每年保费才几百块，保额却有100万，听起来很美好。但真到理赔时，你会发现...</p>
   
