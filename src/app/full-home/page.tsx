@@ -6777,9 +6777,9 @@ export default function HomePage() {
         </div>
       )}
       
-      {/* 编辑信息速记弹窗 */}
+      {/* 编辑信息速记弹窗 - z-[70] 确保在抽屉(z-[60])之上 */}
       {editingSnippet && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[70]">
           <div className="bg-white rounded-lg shadow-xl w-full max-w-2xl max-h-[80vh] overflow-hidden">
             <div className="p-4 border-b flex items-center justify-between">
               <h3 className="font-semibold text-lg">编辑信息速记</h3>
