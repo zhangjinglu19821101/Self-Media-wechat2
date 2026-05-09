@@ -10,6 +10,7 @@ import { db } from '@/lib/db';
 import { accounts, workspaces, workspaceMembers } from '@/lib/db/schema/auth';
 import { eq, desc, like, or, and, sql } from 'drizzle-orm';
 import { isSuperAdmin, getAccountId } from '@/lib/auth/context';
+import { auth } from '@/lib/auth';
 import { hashPassword } from '@/lib/auth/password';
 import { randomBytes } from 'crypto';
 import { adminAuditLogs, ADMIN_ACTION } from '@/lib/db/schema/admin-audit-logs';
@@ -166,12 +167,8 @@ export async function POST(request: NextRequest) {
 
     // 2. 获取当前用户信息（用于自我保护和审计日志）
     const currentUserId = await getAccountId();
-    const currentUserEmail = await (async () => {
-      const { getServerSession } = await import('next-auth');
-      const { authOptions } = await import('@/lib/auth');
-      const session = await getServerSession(authOptions);
-      return session?.user?.email || 'unknown';
-    })();
+    const session = await auth();
+    const currentUserEmail = session?.user?.email || 'unknown';
 
     // 3. 解析请求
     const body = await request.json();
