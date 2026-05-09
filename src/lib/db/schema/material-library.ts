@@ -25,9 +25,6 @@ export type MaterialSourceType =
   | 'info_snippet'   // 信息速记转换
   | 'web_search';    // 网络搜索保存
 
-/** 素材来源 */
-export type MaterialSourceType = 'manual' | 'info_snippet' | 'task_download' | 'ai_generate' | 'system_import';
-
 /** 素材状态 */
 export type MaterialStatus = 'active' | 'archived' | 'draft';
 

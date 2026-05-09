@@ -320,7 +320,7 @@ export const dailyTask = pgTable('daily_task', {
   rejectionReason: text('rejection_reason'), // 拒绝理由
 
   // === 任务依赖 ===
-  dependencies: jsonb('dependencies').$type<{after?: string[]; before?: string[]}>().default('{}'), // 任务依赖关系
+  dependencies: jsonb('dependencies').$type<{after?: string[]; before?: string[]}>().default({}), // 任务依赖关系
   sortOrder: integer('sort_order').notNull().default(0), // 排序（考虑依赖）
 
   // === 元数据 ===
@@ -404,7 +404,7 @@ export const splitFailures = pgTable('split_failures', {
   resolvedBy: text('resolved_by'), // 解决人
   resolvedAt: timestamp('resolved_at'), // 解决时间
   resolutionMethod: text('resolution_method'), // 解决方式：manual=手动输入, agent_assist=辅助对话, other=其他
-  resolutionResult: jsonb('resolution_result').$type<{success: boolean, subTaskCount: number, dailyTask: any[]}>().default({}), // 解决结果
+  resolutionResult: jsonb('resolution_result').$type<{success?: boolean, subTaskCount?: number, dailyTask?: any[]}>(), // 解决结果
   
   // === 元数据 ===
   fromAgentId: text('from_agent_id').notNull(), // 发起方 Agent ID
@@ -812,14 +812,6 @@ export const agentDevPrinciples = pgTable('agent_dev_principles', {
   // === 时间戳 ===
   createdAt: timestamp('created_at').notNull().defaultNow(),
   updatedAt: timestamp('updated_at').notNull().defaultNow(),
-}, (table) => {
-  return {
-    // 🔥 唯一约束：同一个任务的同一个顺序只能有一个子任务
-    uniqueTaskOrder: unique('unique_task_order').on(
-      table.commandResultId, 
-      table.orderIndex
-    ),
-  };
 });
 
 // === 类型定义 ===
@@ -1384,10 +1376,6 @@ export type DomainCase = typeof domainCase.$inferSelect;
 export type NewDomainCase = typeof domainCase.$inferInsert;
 export type DomainTerminology = typeof domainTerminology.$inferSelect;
 export type NewDomainTerminology = typeof domainTerminology.$inferInsert;
-
-// 导出类型
-export type AgentSubTasksStepHistory = typeof agentSubTasksStepHistory.$inferSelect;
-export type NewAgentSubTasksStepHistory = typeof agentSubTasksStepHistory.$inferInsert;
 
 // MCP 执行记录表
 export * from './schema/agent-sub-tasks-mcp-executions';

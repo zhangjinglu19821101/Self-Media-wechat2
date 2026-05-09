@@ -39,10 +39,8 @@ console.log(`[DB] 环境模式: ${PROJECT_ENV}, 目标 Schema: ${DB_SCHEMA}`);
 
 const RAW_DATABASE_URL = process.env.DATABASE_URL;
 
-// 严格检查：构建时必须提供 DATABASE_URL
-if (!RAW_DATABASE_URL) {
-  throw new Error('[DB] DATABASE_URL 环境变量未设置，请检查环境配置');
-}
+// 构建时允许 DATABASE_URL 为空（运行时通过 proxy 懒加载）
+// 仅在运行时实际调用时才检查
 
 /**
  * 获取原始数据库连接 URL（不含 search_path，用于创建迁移连接）
@@ -118,35 +116,35 @@ function getClient(): postgres.Sql {
   return _client;
 }
 
+// 🔴 P0 修复：明确类型断言，传入 schema 类型参数以正确推断 query 属性
+type DatabaseWithSchema = ReturnType<typeof drizzle<typeof schema>>;
+
 // 创建懒加载的 db 代理对象
-const dbHandler: ProxyHandler<ReturnType<typeof drizzle>> = {
+const dbHandler: ProxyHandler<DatabaseWithSchema> = {
   get(_, prop) {
     return Reflect.get(drizzle(getClient(), { schema }), prop);
   }
 };
 
 // 构建时使用空对象避免报错，运行时通过 proxy 懒加载
-export const db = RAW_DATABASE_URL 
+export const db: DatabaseWithSchema = RAW_DATABASE_URL 
   ? drizzle(getClient(), { schema })
-  : new Proxy({} as ReturnType<typeof drizzle>, dbHandler);
+  : new Proxy({} as DatabaseWithSchema, dbHandler);
 
 // 重新导出 schema 供其他模块使用
 export { schema };
 
-// 🔴 P0 修复：统一返回类型
-type DatabaseInstance = ReturnType<typeof drizzle>;
-
 /**
  * 获取数据库连接实例
  */
-export function getDatabase(): DatabaseInstance {
+export function getDatabase(): DatabaseWithSchema {
   return db;
 }
 
 /**
  * 获取数据库连接实例（带重试机制）
  */
-export async function getDatabaseWithRetry(retries = 3, baseDelay = 1000): Promise<DatabaseInstance> {
+export async function getDatabaseWithRetry(retries = 3, baseDelay = 1000): Promise<DatabaseWithSchema> {
   for (let i = 0; i < retries; i++) {
     try {
       await db.execute(sql`SELECT 1`);
