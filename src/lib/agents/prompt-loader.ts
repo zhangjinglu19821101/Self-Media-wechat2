@@ -44,8 +44,8 @@ const legacyAgentPromptFiles: Record<string, string> = {
   'insurance-zhihu': 'insurance-zhihu.md',
   // 🔴 insurance-toutiao 使用头条专属提示词
   'insurance-toutiao': 'insurance-toutiao.md',
-  // 🔴 deai-optimizer 去AI化优化专家（使用 v2 融合版本）
-  'deai-optimizer': 'deai-optimizer-v2.md',
+  // 🔴 deai-optimizer 去AI化优化专家（使用周二成功版本）
+  'deai-optimizer': 'deai-optimizer.md',
   
   // 功能提示词
   'executor-standard-result': 'executor-standard-result.md',
