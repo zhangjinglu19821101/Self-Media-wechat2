@@ -297,10 +297,11 @@ export async function checkDatabaseHealth(): Promise<{
     }
 
     // P2-5: postgres.js 内部 pool 结构可能随版本变化，安全获取
+    const clientInstance = getClient();
     const poolStats = {
-      total: (client as unknown as { pool?: { size?: number } }).pool?.size ?? -1,
-      idle: (client as unknown as { pool?: { available?: number } }).pool?.available ?? -1,
-      waiting: (client as unknown as { pool?: { waiting?: number } }).pool?.waiting ?? -1,
+      total: (clientInstance as unknown as { pool?: { size?: number } }).pool?.size ?? -1,
+      idle: (clientInstance as unknown as { pool?: { available?: number } }).pool?.available ?? -1,
+      waiting: (clientInstance as unknown as { pool?: { waiting?: number } }).pool?.waiting ?? -1,
     };
 
     return {
@@ -337,8 +338,10 @@ export async function closeDatabase(): Promise<void> {
   dbClosing = true;
   try {
     console.log('[DB] 正在关闭数据库连接池...');
-    await client.end();
-    console.log('[DB] 数据库连接池已关闭');
+    if (_client) {
+      await _client.end();
+      console.log('[DB] 数据库连接池已关闭');
+    }
   } catch (error) {
     console.error('[DB] 关闭数据库连接池失败:', error);
   }
