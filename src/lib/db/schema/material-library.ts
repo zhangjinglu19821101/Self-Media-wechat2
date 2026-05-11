@@ -74,6 +74,12 @@ export const materialLibrary = pgTable('material_library', {
   topicTags: jsonb('topic_tags').$type<string[]>().default([]),     // 主题标签：港险、重疾、医疗险
   sceneTags: jsonb('scene_tags').$type<string[]>().default([]),     // 场景标签：开头案例、收益对比
   emotionTags: jsonb('emotion_tags').$type<string[]>().default([]), // 情绪标签：踩坑、避坑、省钱
+
+  // === 场景类型（类比素材设计文档）===
+  sceneType: text('scene_type'), // 场景类型：analogy(类比案例) / mistake(常见误区) / regulation(法规依据) / event(热点事件)
+
+  // === AI分析/解读文本 ===
+  analysisText: text('analysis_text'), // AI分析文本（类比映射、误区拆解、法规要点、事件启示）
   
   // === 适用信息 ===
   applicablePositions: jsonb('applicable_positions').$type<string[]>().default([]), // 适用位置：opening/body/conclusion

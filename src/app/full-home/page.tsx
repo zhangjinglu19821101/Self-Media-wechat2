@@ -24,7 +24,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { Loader2, Plus, Trash2, Send, Sparkles, ListTodo, CheckCircle2, XCircle, GripVertical, MoveUp, MoveDown, Maximize2, Minimize2, AlertTriangle, GitCompare, RefreshCw, FileText, Save, Eye, Home, BookmarkPlus, ExternalLink, BookOpen, Clock, Building2, X, HelpCircle, Settings, Rocket, Layers, ChevronDown, ChevronUp, Cpu, Brain, Bell, Workflow, Palette, PenTool, ArrowRight, ArrowLeft, Briefcase, Shield, Users, Download, Copy, ImageIcon, Check, AlertCircle, Calendar, Lock, Search, Globe, Edit3 } from 'lucide-react';
+import { Loader2, Plus, Trash2, Send, Sparkles, ListTodo, CheckCircle2, XCircle, GripVertical, MoveUp, MoveDown, Maximize2, Minimize2, AlertTriangle, GitCompare, RefreshCw, FileText, Save, Eye, Home, BookmarkPlus, ExternalLink, BookOpen, Clock, Building2, X, HelpCircle, Settings, Rocket, Layers, ChevronDown, ChevronUp, Cpu, Brain, Bell, Workflow, Palette, PenTool, ArrowRight, ArrowLeft, Briefcase, Shield, Users, Download, Copy, ImageIcon, Check, AlertCircle, Calendar, Lock, Search, Globe, Edit3, Lightbulb } from 'lucide-react';
 import { toast } from 'sonner';
 import { AgentTaskListNormal } from '@/components/agent-task-list-normal';
 import { XiaohongshuPreview } from '@/components/xiaohongshu-preview';
@@ -35,6 +35,7 @@ import { getFlowTemplate } from '@/lib/agents/flow-templates';
 import { HorizontalFlowDiagram } from '@/components/creation-guide/horizontal-flow-diagram';
 import { NodeDetailPanel } from '@/components/creation-guide/node-detail-drawer';
 import type { FlowNode } from '@/components/creation-guide/types';
+import { ARTICLE_TYPE_OPTIONS, ARTICLE_TYPE_REQUIREMENTS, type ArticleTypeKey } from '@/lib/agents/creation-guide-types';
 import { ClientDate } from '@/components/client-date';
 import { ReminderTime } from '@/components/reminder-time';
 
@@ -218,6 +219,7 @@ interface FormSnapshot {
   mainInstruction: string;
   coreOpinion: string;
   emotionTone: string;
+  articleType: string;
   selectedMaterialIds: string[];
   // 🔥 保存精简的素材快照，避免 content（大字段）撑爆 sessionStorage
   selectedMaterials: MaterialItemSnapshot[];
@@ -281,6 +283,7 @@ function loadFormSnapshot(): FormSnapshot | null {
         mainInstruction: snapshot.mainInstruction || '',
         coreOpinion: snapshot.coreOpinion || '',
         emotionTone: snapshot.emotionTone || '',
+        articleType: snapshot.articleType || '',
         selectedMaterialIds: snapshot.selectedMaterialIds || [],
         // 🔥 迁移已选素材：v0 可能保存完整 MaterialItem[]，统一转为精简快照
         selectedMaterials: (snapshot.selectedMaterials || []).length > 0
@@ -480,7 +483,7 @@ export default function HomePage() {
   // 🔥 创作引导相关状态
   const [showCreationGuide, setShowCreationGuide] = useState(true);
   const [activeGuideCard, setActiveGuideCard] = useState<'content' | 'structure' | 'platform' | 'guide' | null>(null);
-  const [activeGuideTab, setActiveGuideTab] = useState<'opinion' | 'emotion' | 'case'>('opinion');
+  const [activeGuideTab, setActiveGuideTab] = useState<'opinion' | 'emotion' | 'case' | 'articleType'>('opinion');
   
   // 🔥 横向流程图节点选中状态（用于联动详情面板）
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
@@ -488,6 +491,7 @@ export default function HomePage() {
   
   const [coreOpinion, setCoreOpinion] = useState('');
   const [emotionTone, setEmotionTone] = useState('理性客观'); // 默认值：理性客观
+  const [articleType, setArticleType] = useState<string>(''); // 创作类型（类比揭秘/误区辟谣/法规解读/事件驱动/通用写作）
   const [selectedMaterialIds, setSelectedMaterialIds] = useState<string[]>([]);
   const [selectedMaterials, setSelectedMaterials] = useState<MaterialItem[]>([]);
   const [materialSearchQuery, setMaterialSearchQuery] = useState('');
@@ -805,6 +809,7 @@ export default function HomePage() {
       mainInstruction,
       coreOpinion,
       emotionTone,
+      articleType,
       selectedMaterialIds,
       // 🔥 保存精简的素材快照（移除 content 等大字段），刷新后通过推荐列表重新获取正文
       selectedMaterials: selectedMaterials.map(toMaterialItemSnapshot),
@@ -2172,6 +2177,7 @@ export default function HomePage() {
           insuranceAction: data.insuranceAction || '',
           result: data.result || '',
           productTags: (data.productTags || []).join('、'),
+          industry: data.industry || 'insurance',
         });
 
         if (data.searchPending) {
@@ -2526,6 +2532,9 @@ export default function HomePage() {
         // 🔥 后端根据 subTasks 是否含 accountId 自动判断步骤来源
         // 含 accountId → 前端用户编辑的步骤（优先）
         // 不含 accountId → 流程模板或原始步骤
+        // 创作类型和结构化数据（素材-类比设计）
+        articleType: articleType || null,
+        structuredData: articleType ? { articleType } : null,
       });
 
       toast.success(`✅ 成功创建 ${result.data.insertedCount} 个子任务`);
@@ -3620,6 +3629,20 @@ export default function HomePage() {
                     <div className="flex items-center border-b border-slate-100 bg-slate-50/30">
                       <button
                         type="button"
+                        onClick={() => setActiveGuideTab('type' as any)}
+                        className={`px-6 py-3 text-sm font-medium transition-all relative ${
+                          (activeGuideTab as string) === 'type'
+                            ? 'text-sky-600 bg-white'
+                            : 'text-slate-500 hover:text-slate-700 hover:bg-slate-100/50'
+                        }`}
+                      >
+                        创作类型
+                        {(activeGuideTab as string) === 'type' && (
+                          <div className="absolute bottom-0 left-0 right-0 h-[2px] bg-sky-500 rounded-t-full" />
+                        )}
+                      </button>
+                      <button
+                        type="button"
                         onClick={() => setActiveGuideTab('opinion')}
                         className={`px-6 py-3 text-sm font-medium transition-all relative ${
                           activeGuideTab === 'opinion'
@@ -3648,6 +3671,24 @@ export default function HomePage() {
                       </button>
                       <button
                         type="button"
+                        onClick={() => setActiveGuideTab('articleType')}
+                        className={`px-6 py-3 text-sm font-medium transition-all relative ${
+                          activeGuideTab === 'articleType'
+                            ? 'text-sky-600 bg-white'
+                            : 'text-slate-500 hover:text-slate-700 hover:bg-slate-100/50'
+                        }`}
+                      >
+                        <Lightbulb className="w-3.5 h-3.5 inline mr-1" />
+                        创作类型
+                        {articleType && (
+                          <span className="ml-1 text-xs bg-violet-100 text-violet-700 px-1.5 py-0.5 rounded-full">1</span>
+                        )}
+                        {activeGuideTab === 'articleType' && (
+                          <div className="absolute bottom-0 left-0 right-0 h-[2px] bg-sky-500 rounded-t-full" />
+                        )}
+                      </button>
+                      <button
+                        type="button"
                         onClick={() => setActiveGuideTab('case')}
                         className={`px-6 py-3 text-sm font-medium transition-all relative ${
                           activeGuideTab === 'case'
@@ -3668,6 +3709,40 @@ export default function HomePage() {
                     
                     {/* Tab 内容区域 */}
                     <div className="p-6 bg-white">
+                      {/* 创作类型 Tab */}
+                      {activeGuideTab === 'articleType' && (
+                        <div className="space-y-4">
+                          <p className="text-sm text-gray-500 mb-3">选择创作类型，系统将自动推荐对应的类比素材</p>
+                          <div className="grid grid-cols-2 gap-3">
+                            {ARTICLE_TYPE_OPTIONS.map(opt => (
+                              <button
+                                key={opt.key}
+                                onClick={() => setArticleType(opt.key)}
+                                className={`p-3 rounded-lg border-2 text-left transition-all ${
+                                  articleType === opt.key
+                                    ? 'border-indigo-500 bg-indigo-50'
+                                    : 'border-gray-200 hover:border-gray-300'
+                                }`}
+                              >
+                                <div className="font-medium text-sm">{opt.label}</div>
+                                <div className="text-xs text-gray-500 mt-1">{opt.description}</div>
+                              </button>
+                            ))}
+                          </div>
+                          {articleType && ARTICLE_TYPE_REQUIREMENTS[articleType] && (
+                            <div className="mt-4 p-3 bg-blue-50 rounded-lg border border-blue-200">
+                              <p className="text-sm font-medium text-blue-700">
+                                必选素材: {ARTICLE_TYPE_REQUIREMENTS[articleType].required.join('、')}
+                              </p>
+                              {ARTICLE_TYPE_REQUIREMENTS[articleType].optional.length > 0 && (
+                                <p className="text-xs text-blue-600 mt-1">
+                                  可选素材: {ARTICLE_TYPE_REQUIREMENTS[articleType].optional.join('、')}
+                                </p>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      )}
                       {/* 核心观点 Tab */}
                       {activeGuideTab === 'opinion' && (
                         <div className="space-y-4">

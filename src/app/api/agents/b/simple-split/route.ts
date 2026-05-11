@@ -80,6 +80,8 @@ export async function POST(request: NextRequest) {
       accountIds, // 🔥 多平台发布：选中的账号ID列表
       imageCountMode, // 🔥 小红书图片数量模式（3-card/5-card/7-card）
       contentTemplateId, // 🔥🔥 内容模板ID（Phase 2-1: 图文分工模板）
+      articleType, // 🔥 创作类型（myth_busting/analogy/law_regulation/hot_event/standard）
+      structuredData, // 🔥 结构化创作引导数据（JSON对象）
       // useFlowTemplate 已移除：步骤来源由数据特征自动判断
       // 前端 subTasks 中包含 accountId 字段 → 使用前端编辑步骤
       // 否则 → 使用流程模板兜底
@@ -318,12 +320,14 @@ export async function POST(request: NextRequest) {
             relatedMaterials: relatedMaterials || null,
             structureName: subTask.structureName !== undefined ? subTask.structureName : (structureName || null),
             structureDetail: subTask.structureDetail !== undefined ? subTask.structureDetail : (structureDetail || null),
+            structuredData: structuredData || null, // 🔥 结构化创作引导数据
             metadata: {
               source: 'agent-b-simple-split',
               phase: 'base_article', // 🔥 阶段标识：基础文章
               tempSessionId: newTempSessionId,
               originalTaskTitle: taskTitle,
               originalTaskDescription: taskDescription,
+              articleType: articleType || null, // 🔥 创作类型
               guideSource: (subTask.userOpinion !== undefined || subTask.materialIds !== undefined)
                 ? 'task-level' : 'global',
               accountId: baseAccountId,
@@ -389,12 +393,14 @@ export async function POST(request: NextRequest) {
               originalInstruction: originalInstruction || null, // 🔥 独立存储原始指令
               materialIds: materialIds || [],
               relatedMaterials: relatedMaterials || null,
+              structuredData: structuredData || null, // 🔥 结构化创作引导数据
               metadata: {
                 source: 'agent-b-simple-split',
                 phase: 'platform_adaptation', // 🔥 阶段标识：平台适配
                 tempSessionId: newTempSessionId,
                 originalTaskTitle: taskTitle,
                 originalTaskDescription: taskDescription,
+                articleType: articleType || null, // 🔥 创作类型
                 guideSource: 'global',
                 accountId: adaptAcc.accountId,
                 accountIds: effectiveAccountIds,
@@ -468,6 +474,7 @@ export async function POST(request: NextRequest) {
           originalInstruction: taskOriginalInstruction, // 🔥 独立存储原始指令
           materialIds: taskMaterialIds,
           relatedMaterials: relatedMaterials || null,
+          structuredData: structuredData || null, // 🔥 结构化创作引导数据
           structureName: subTask.structureName !== undefined ? subTask.structureName : (structureName || null),
           structureDetail: subTask.structureDetail !== undefined ? subTask.structureDetail : (structureDetail || null),
           metadata: {
@@ -476,6 +483,7 @@ export async function POST(request: NextRequest) {
             tempSessionId: newTempSessionId,
             originalTaskTitle: taskTitle,
             originalTaskDescription: taskDescription,
+            articleType: articleType || null, // 🔥 创作类型
             guideSource: (subTask.userOpinion !== undefined ||
                           subTask.materialIds !== undefined)
               ? 'task-level'

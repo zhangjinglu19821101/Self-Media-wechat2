@@ -340,7 +340,7 @@ export function NodeDetailPanel({
             </div>
             <span className="font-medium">自动拆分信息</span>
             <span className="text-xs text-slate-400">
-              ({['orderIndex', 'structureName', 'userOpinion'].filter(k => (task as Record<string, unknown>)[k]).length} 项已填充)
+              ({['orderIndex', 'structureName', 'userOpinion'].filter(k => (task as unknown as Record<string, unknown>)[k]).length} 项已填充)
             </span>
           </button>
 

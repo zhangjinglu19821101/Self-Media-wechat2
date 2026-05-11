@@ -231,3 +231,25 @@ export interface ValidationResult {
   current: number;
   message?: string;
 }
+
+// ========== 创作控制器组件 Props ==========
+
+export interface CreationControllerProps {
+  children?: React.ReactNode;
+  [key: string]: unknown;
+}
+
+// ========== 核心锚点输入组件 Props ==========
+
+export interface CoreAnchorInputProps {
+  value?: string;
+  onChange?: (value: string) => void;
+  [key: string]: unknown;
+}
+
+// ========== 素材提供者组件 Props ==========
+
+export interface MaterialProviderProps {
+  children?: React.ReactNode;
+  [key: string]: unknown;
+}

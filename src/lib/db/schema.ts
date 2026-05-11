@@ -222,7 +222,7 @@ export const agentTasks = pgTable('agent_tasks', {
   userOpinion: text('user_opinion'), // 🔥 用户期望表达的核心观点（仅创作引导结构化内容）
   materialIds: jsonb('material_ids').$type<string[]>().default([]), // 🔥 关联的素材ID列表
   originalInstruction: text('original_instruction'), // 🔥 用户原始指令（独立存储，不传给 insurance-d）
-  
+  structuredData: jsonb('structured_data').$type<Record<string, unknown>>(), // 🔥 创作引导结构化数据（articleType/emotionTone/analogyConfig等）
   // === 时间戳 ===
   createdAt: timestamp('created_at').notNull().defaultNow(),
   updatedAt: timestamp('updated_at').notNull().defaultNow(),
@@ -337,6 +337,7 @@ export const dailyTask = pgTable('daily_task', {
   userOpinion: text('user_opinion'), // 🔥 用户期望表达的核心观点（仅创作引导结构化内容）
   materialIds: jsonb('material_ids').$type<string[]>().default([]), // 🔥 关联的素材ID列表
   originalInstruction: text('original_instruction'), // 🔥 用户原始指令（独立存储，不传给 insurance-d）
+  structuredData: jsonb('structured_data').$type<Record<string, unknown>>(), // 🔥 创作引导结构化数据
 
   // === 时间戳 ===
   createdAt: timestamp('created_at').notNull().defaultNow(),
@@ -488,6 +489,7 @@ export const agentSubTasks = pgTable('agent_sub_tasks', {
   materialIds: jsonb('material_ids').$type<string[]>().default([]), // 🔥 关联的素材ID列表（从主任务继承）
   relatedMaterials: text('related_materials'), // 🔥 关联素材补充区内容（软参考，灵活整合）
   originalInstruction: text('original_instruction'), // 🔥 用户原始指令（独立存储，不传给 insurance-d）
+  structuredData: jsonb('structured_data').$type<Record<string, unknown>>(), // 🔥 创作引导结构化数据（从主任务继承）
 
   // === 结构选择（新增）===
   structureName: text('structure_name'), // 🔥 选择的文章结构名称

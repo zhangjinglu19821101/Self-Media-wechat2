@@ -45,6 +45,8 @@ export interface PromptAssemblyOptions {
   /** @deprecated 使用 cardCountMode 代替 */
   imageCountMode?: '3-card' | '5-card' | '7-card'; // 兼容旧字段
   industryCases?: string;        // 🔥 行业案例预格式化文本（由执行引擎按需检索后传入）
+  articleType?: 'myth_busting' | 'analogy' | 'regulation' | 'story' | 'general'; // 🔥 创作类型（素材-类比设计）
+  analogyMaterials?: string;     // 🔥 类比素材预格式化文本（由执行引擎按创作类型检索后传入）
 }
 
 /**
@@ -616,6 +618,12 @@ export class PromptAssemblerService {
     // 案例文本在执行引擎中根据任务指令+前序分析结果按需检索，不在格式化函数中触发 DB 查询
     if (options.industryCases) {
       result += options.industryCases;
+      result += '\n';
+    }
+
+    // 3.6 🔥 类比素材区（按创作类型注入，由执行引擎检索后传入）
+    if (options.analogyMaterials) {
+      result += options.analogyMaterials;
       result += '\n';
     }
 

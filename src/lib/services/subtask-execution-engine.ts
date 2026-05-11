@@ -770,6 +770,9 @@ interface ExecutionContext {
   };
   // 🔴 【Step3 新增】用户原始指令（Agent B 仅供参考，不注入 insurance-d）
   originalInstruction?: string;
+  // 🔴 【创作引导】结构化创作数据（创作类型 + 素材选择结果）
+  structuredData?: Record<string, unknown>;
+  articleType?: string;
 }
 
 
@@ -8441,6 +8444,66 @@ export class SubtaskExecutionEngine {
           console.warn('[SubtaskEngine] 📚 行业案例检索失败（不影响主流程）:', _caseErr);
         }
 
+        // 🔥🔥🔥 素材-类比设计：根据创作类型检索类比素材
+        let _analogyMaterialsText = '';
+        let _articleType: string | undefined;
+        try {
+          const _taskStructuredData = (task as any).structuredData;
+          if (_taskStructuredData && typeof _taskStructuredData === 'object') {
+            _articleType = _taskStructuredData.articleType;
+          }
+          // 兜底从 metadata 读取
+          if (!_articleType) {
+            const _meta = (task as any).metadata || {};
+            _articleType = _meta.articleType;
+          }
+
+          if (_articleType && _articleType !== 'general') {
+            // 根据创作类型映射到素材 scene_type
+            const ARTICLE_TYPE_TO_SCENE: Record<string, string> = {
+              'myth_busting': 'myth_busting',
+              'analogy': 'analogy',
+              'regulation': 'regulation',
+              'story': 'story',
+            };
+            const _sceneType = ARTICLE_TYPE_TO_SCENE[_articleType];
+            if (_sceneType) {
+              const { db } = await import('@/lib/db');
+              const { materialLibrary } = await import('@/lib/db/schema/material-library');
+              const { eq, and, sql } = await import('drizzle-orm');
+              const _matchedMaterials = await db
+                .select({
+                  id: materialLibrary.id,
+                  title: materialLibrary.title,
+                  content: materialLibrary.content,
+                  sceneType: materialLibrary.sceneType,
+                  materialType: materialLibrary.materialType,
+                })
+                .from(materialLibrary)
+                .where(
+                  and(
+                    eq(materialLibrary.sceneType, _sceneType),
+                    eq(materialLibrary.isActive, true),
+                    sql`(${materialLibrary.ownerType} = 'system' OR ${materialLibrary.workspaceId} = ${task.workspaceId || ''})`
+                  )
+                )
+                .limit(8);
+
+              if (_matchedMaterials.length > 0) {
+                const _formatted = _matchedMaterials.map((m, i) =>
+                  `[${i + 1}] 【${m.title}】\n${m.content}`
+                ).join('\n\n');
+                _analogyMaterialsText = `【🔥 创作类型: ${_articleType} — 必选类比素材】\n以下素材与本创作类型强相关，请在文章中至少引用1条：\n\n${_formatted}`;
+                console.log('[SubtaskEngine] 🎯 类比素材检索命中:', _matchedMaterials.length, '条, 创作类型:', _articleType);
+              } else {
+                console.log('[SubtaskEngine] 🎯 类比素材检索无匹配, sceneType:', _sceneType);
+              }
+            }
+          }
+        } catch (_analogyErr) {
+          console.warn('[SubtaskEngine] 🎯 类比素材检索失败（不影响主流程）:', _analogyErr);
+        }
+
         insuranceDAssembledResult = await promptAssemblerService.assemblePrompt({
           workspaceId: task.workspaceId || undefined,
           executorType, // 🔥 传递 executorType 决定加载哪个提示词文件
@@ -8464,6 +8527,9 @@ export class SubtaskExecutionEngine {
           cardCountMode: _derivedCardCountMode,
           // 🔥🔥🔥 行业案例库：按需检索的预格式化文本（由上方逻辑检索后传入）
           industryCases: _industryCasesText || undefined,
+          // 🔥🔥🔥 素材-类比设计：创作类型 + 类比素材
+          articleType: _articleType as any || undefined,
+          analogyMaterials: _analogyMaterialsText || undefined,
         });
 
         agentPrompt = insuranceDAssembledResult.fixedBasePrompt; // 固定基础部分作为 agentPrompt
