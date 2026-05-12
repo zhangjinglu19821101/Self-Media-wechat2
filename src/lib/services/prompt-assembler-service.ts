@@ -45,8 +45,13 @@ export interface PromptAssemblyOptions {
   /** @deprecated 使用 cardCountMode 代替 */
   imageCountMode?: '3-card' | '5-card' | '7-card'; // 兼容旧字段
   industryCases?: string;        // 🔥 行业案例预格式化文本（由执行引擎按需检索后传入）
-  articleType?: 'myth_busting' | 'analogy' | 'regulation' | 'story' | 'general'; // 🔥 创作类型（素材-类比设计）
+  articleType?: 'myth_busting' | 'analogy' | 'regulation' | 'story' | 'general' | 'product_eval' | 'insurance_guide'; // 🔥 创作类型（素材-类比设计 + Phase 2 扩展）
   analogyMaterials?: string;     // 🔥 类比素材预格式化文本（由执行引擎按创作类型检索后传入）
+  // ===== Phase 2 新增字段 =====
+  articleLength?: 'short' | 'medium' | 'long'; // 🔥 篇幅类型
+  primaryMaterialData?: string;  // 🔥 主素材数据预格式化文本（产品信息/法规原文等）
+  auxiliaryMaterialData?: string; // 🔥 辅素材数据预格式化文本（类比/案例/数据等）
+  articleStructureTemplate?: string; // 🔥 文章结构模板预格式化文本（由 article-structure-templates 生成）
 }
 
 /**
@@ -625,6 +630,37 @@ export class PromptAssemblerService {
     if (options.analogyMaterials) {
       result += options.analogyMaterials;
       result += '\n';
+    }
+
+    // 3.7 🔥 Phase 2: 文章结构模板
+    if (options.articleStructureTemplate) {
+      result += options.articleStructureTemplate;
+      result += '\n';
+    }
+
+    // 3.8 🔥 Phase 2: 主素材数据（产品信息/法规原文等核心素材）
+    if (options.primaryMaterialData) {
+      result += options.primaryMaterialData;
+      result += '\n';
+    }
+
+    // 3.9 🔥 Phase 2: 辅素材数据（类比/案例/数据等支撑素材）
+    if (options.auxiliaryMaterialData) {
+      result += options.auxiliaryMaterialData;
+      result += '\n';
+    }
+
+    // 3.10 🔥 Phase 2: 篇幅要求
+    if (options.articleLength) {
+      const lengthLabels: Record<string, { label: string; range: string; instruction: string }> = {
+        short: { label: '短文', range: '800-1500字', instruction: '精炼表达，合并段落，每段不超过200字，快速切入核心观点' },
+        medium: { label: '中篇', range: '1500-3000字', instruction: '标准篇幅，每段150-400字，详细但不冗余' },
+        long: { label: '长文', range: '3000-5000字', instruction: '深度展开，每段200-600字，多角度论述，丰富案例和数据' },
+      };
+      const lc = lengthLabels[options.articleLength];
+      if (lc) {
+        result += `### 篇幅要求：${lc.label}（${lc.range}）\n${lc.instruction}\n\n`;
+      }
     }
 
     // 4. 素材

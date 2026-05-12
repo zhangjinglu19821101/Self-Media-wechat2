@@ -483,7 +483,7 @@ export default function HomePage() {
   // 🔥 创作引导相关状态
   const [showCreationGuide, setShowCreationGuide] = useState(true);
   const [activeGuideCard, setActiveGuideCard] = useState<'content' | 'structure' | 'platform' | 'guide' | null>(null);
-  const [activeGuideTab, setActiveGuideTab] = useState<'opinion' | 'emotion' | 'case' | 'articleType'>('opinion');
+  const [activeGuideTab, setActiveGuideTab] = useState<'opinion' | 'emotion' | 'case' | 'articleType' | 'aiAssist' | 'aiGenerate'>('opinion');
   
   // 🔥 横向流程图节点选中状态（用于联动详情面板）
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
@@ -491,7 +491,37 @@ export default function HomePage() {
   
   const [coreOpinion, setCoreOpinion] = useState('');
   const [emotionTone, setEmotionTone] = useState('理性客观'); // 默认值：理性客观
-  const [articleType, setArticleType] = useState<string>(''); // 创作类型（类比揭秘/误区辟谣/法规解读/事件驱动/通用写作）
+  const [articleType, setArticleType] = useState<string>(''); // 创作类型（类比揭秘/误区辟谣/法规解读/事件驱动/产品测评/投保指南/通用写作）
+  // 🔥 Phase 2: 篇幅选择
+  const [articleLength, setArticleLength] = useState<'short' | 'medium' | 'long'>('medium');
+  // 🔥 Phase 2: 主素材选择（产品测评/投保指南专用）
+  const [primaryMaterialId, setPrimaryMaterialId] = useState<string>('');
+  // 🔥 Phase 2: 辅素材选择（产品测评/投保指南专用）
+  const [auxiliaryMaterialIds, setAuxiliaryMaterialIds] = useState<string[]>([]);
+  // 🔥 Phase 3: AI 辅助生成
+  const [aiGenerateType, setAiGenerateType] = useState<'myth_busting' | 'regulation'>('myth_busting');
+  const [aiGenerateInput, setAiGenerateInput] = useState('');
+  const [aiGenerateContext, setAiGenerateContext] = useState('');
+  const [aiGenerateLoading, setAiGenerateLoading] = useState(false);
+  const [aiGenerateResult, setAiGenerateResult] = useState<Record<string, unknown> | null>(null);
+  // Phase 3: 误区素材生成
+  const [aiMisconceptionInput, setAiMisconceptionInput] = useState('');
+  const [aiMisconceptionResult, setAiMisconceptionResult] = useState<{
+    misconception: string;
+    truth: string;
+    analogy: string;
+    supportingData?: string;
+  } | null>(null);
+  // Phase 3: 法规解读生成
+  const [aiRegulationInput, setAiRegulationInput] = useState('');
+  const [aiRegulationResult, setAiRegulationResult] = useState<{
+    originalText: string;
+    plainExplanation: string;
+    keyPoints: string[];
+    creationSuggestion?: string;
+  } | null>(null);
+  // Phase 3: 通用 AI 生成加载状态
+  const [aiGenerating, setAiGenerating] = useState(false);
   const [selectedMaterialIds, setSelectedMaterialIds] = useState<string[]>([]);
   const [selectedMaterials, setSelectedMaterials] = useState<MaterialItem[]>([]);
   const [materialSearchQuery, setMaterialSearchQuery] = useState('');
@@ -2425,6 +2455,100 @@ export default function HomePage() {
     }
   };
 
+  // 🔥 Phase 3: AI 生成误区素材
+  const handleAiGenerateMisconception = async () => {
+    if (!aiMisconceptionInput.trim()) return;
+    setAiGenerating(true);
+    setAiMisconceptionResult(null);
+    try {
+      const res = await fetch('/api/materials/ai-generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-workspace-id': getCurrentWorkspaceId() || 'default-workspace' },
+        body: JSON.stringify({ type: 'myth_busting', input: aiMisconceptionInput.trim() }),
+      });
+      const data = await res.json();
+      if (data.success && data.result) {
+        setAiMisconceptionResult(data.result);
+      } else {
+        console.error('AI生成误区素材失败:', data.error);
+      }
+    } catch (err) {
+      console.error('AI生成误区素材请求失败:', err);
+    } finally {
+      setAiGenerating(false);
+    }
+  };
+
+  // 🔥 Phase 3: AI 生成法规解读
+  const handleAiGenerateRegulation = async () => {
+    if (!aiRegulationInput.trim()) return;
+    setAiGenerating(true);
+    setAiRegulationResult(null);
+    try {
+      const res = await fetch('/api/materials/ai-generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-workspace-id': getCurrentWorkspaceId() || 'default-workspace' },
+        body: JSON.stringify({ type: 'regulation', input: aiRegulationInput.trim() }),
+      });
+      const data = await res.json();
+      if (data.success && data.result) {
+        setAiRegulationResult(data.result);
+      } else {
+        console.error('AI生成法规解读失败:', data.error);
+      }
+    } catch (err) {
+      console.error('AI生成法规解读请求失败:', err);
+    } finally {
+      setAiGenerating(false);
+    }
+  };
+
+  // 🔥 Phase 3: 误区素材一键入库
+  const handleSaveMisconceptionToLibrary = async () => {
+    if (!aiMisconceptionResult) return;
+    try {
+      const res = await fetch('/api/materials/ai-generate-and-save', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-workspace-id': getCurrentWorkspaceId() || 'default-workspace' },
+        body: JSON.stringify({
+          type: 'myth_busting',
+          result: aiMisconceptionResult,
+          originalInput: aiMisconceptionInput,
+        }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setAiMisconceptionResult(null);
+        setAiMisconceptionInput('');
+      }
+    } catch (err) {
+      console.error('误区素材入库失败:', err);
+    }
+  };
+
+  // 🔥 Phase 3: 法规解读一键入库
+  const handleSaveRegulationToLibrary = async () => {
+    if (!aiRegulationResult) return;
+    try {
+      const res = await fetch('/api/materials/ai-generate-and-save', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-workspace-id': getCurrentWorkspaceId() || 'default-workspace' },
+        body: JSON.stringify({
+          type: 'regulation',
+          result: aiRegulationResult,
+          originalInput: aiRegulationInput,
+        }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setAiRegulationResult(null);
+        setAiRegulationInput('');
+      }
+    } catch (err) {
+      console.error('法规解读入库失败:', err);
+    }
+  };
+
   // 🔥 实际提交到服务器
   const submitToServer = async () => {
     // 🔥 当有平台分组时，注入平台信息让后端按平台筛选子任务
@@ -2534,7 +2658,17 @@ export default function HomePage() {
         // 不含 accountId → 流程模板或原始步骤
         // 创作类型和结构化数据（素材-类比设计）
         articleType: articleType || null,
-        structuredData: articleType ? { articleType } : null,
+        structuredData: articleType ? {
+          articleType,
+          // 🔥 Phase 2: 篇幅 + 主素材 + 辅素材
+          ...(articleLength !== 'medium' ? { articleLength } : {}),
+          ...(primaryMaterialId ? { primaryMaterialId } : {}),
+          ...(auxiliaryMaterialIds.length > 0 ? { auxiliaryMaterialIds } : {}),
+        } : null,
+        // 🔥 Phase 2: 传递到 metadata（执行引擎从 metadata 读取）
+        articleLength: articleLength !== 'medium' ? articleLength : null,
+        primaryMaterialId: primaryMaterialId || null,
+        auxiliaryMaterialIds: auxiliaryMaterialIds.length > 0 ? auxiliaryMaterialIds : null,
       });
 
       toast.success(`✅ 成功创建 ${result.data.insertedCount} 个子任务`);
@@ -3705,6 +3839,21 @@ export default function HomePage() {
                           <div className="absolute bottom-0 left-0 right-0 h-[2px] bg-sky-500 rounded-t-full" />
                         )}
                       </button>
+                      <button
+                        type="button"
+                        onClick={() => setActiveGuideTab('aiGenerate')}
+                        className={`px-6 py-3 text-sm font-medium transition-all relative ${
+                          activeGuideTab === 'aiGenerate'
+                            ? 'text-sky-600 bg-white'
+                            : 'text-slate-500 hover:text-slate-700 hover:bg-slate-100/50'
+                        }`}
+                      >
+                        <Sparkles className="w-3.5 h-3.5 inline mr-1" />
+                        AI生成
+                        {activeGuideTab === 'aiGenerate' && (
+                          <div className="absolute bottom-0 left-0 right-0 h-[2px] bg-sky-500 rounded-t-full" />
+                        )}
+                      </button>
                     </div>
                     
                     {/* Tab 内容区域 */}
@@ -3717,7 +3866,7 @@ export default function HomePage() {
                             {ARTICLE_TYPE_OPTIONS.map(opt => (
                               <button
                                 key={opt.key}
-                                onClick={() => setArticleType(opt.key)}
+                                onClick={() => { setArticleType(opt.key); if (opt.key === 'free_creation') { setPrimaryMaterialId(''); setAuxiliaryMaterialIds([]); } }}
                                 className={`p-3 rounded-lg border-2 text-left transition-all ${
                                   articleType === opt.key
                                     ? 'border-indigo-500 bg-indigo-50'
@@ -3737,6 +3886,107 @@ export default function HomePage() {
                               {ARTICLE_TYPE_REQUIREMENTS[articleType].optional.length > 0 && (
                                 <p className="text-xs text-blue-600 mt-1">
                                   可选素材: {ARTICLE_TYPE_REQUIREMENTS[articleType].optional.join('、')}
+                                </p>
+                              )}
+                            </div>
+                          )}
+
+                          {/* 🔥 Phase 2: 篇幅选择（选了创作类型后显示） */}
+                          {articleType && articleType !== 'general' && (
+                            <div className="mt-4 space-y-3">
+                              <div className="flex items-center gap-2">
+                                <span className="text-sm font-medium text-slate-700">文章篇幅</span>
+                                <span className="text-xs text-slate-400">影响段落结构和深度</span>
+                              </div>
+                              <div className="flex gap-3">
+                                {[
+                                  { key: 'short' as const, label: '短文', desc: '800-1500字', icon: '📄' },
+                                  { key: 'medium' as const, label: '中篇', desc: '1500-3000字', icon: '📃' },
+                                  { key: 'long' as const, label: '深度', desc: '3000-5000字', icon: '📜' },
+                                ].map(len => (
+                                  <button
+                                    key={len.key}
+                                    type="button"
+                                    onClick={() => setArticleLength(len.key)}
+                                    className={`flex-1 p-3 rounded-lg border-2 text-center transition-all ${
+                                      articleLength === len.key
+                                        ? 'border-indigo-500 bg-indigo-50'
+                                        : 'border-gray-200 hover:border-gray-300'
+                                    }`}
+                                  >
+                                    <div className="text-lg">{len.icon}</div>
+                                    <div className="font-medium text-sm">{len.label}</div>
+                                    <div className="text-xs text-gray-500">{len.desc}</div>
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+
+                          {/* 🔥 Phase 2: 主素材选择（产品测评/投保指南专用） */}
+                          {articleType && (articleType === 'product_eval' || articleType === 'insurance_guide') && (
+                            <div className="mt-4 space-y-3">
+                              <div className="flex items-center gap-2">
+                                <span className="text-sm font-medium text-slate-700">
+                                  {articleType === 'product_eval' ? '测评产品（主素材）' : '指南主题（主素材）'}
+                                </span>
+                                <span className="text-xs text-red-400">必选</span>
+                              </div>
+                              {primaryMaterialId ? (
+                                <div className="p-3 bg-indigo-50 border border-indigo-200 rounded-lg flex items-center justify-between">
+                                  <span className="text-sm text-indigo-700 font-medium">
+                                    已选择主素材
+                                  </span>
+                                  <button
+                                    type="button"
+                                    onClick={() => setPrimaryMaterialId('')}
+                                    className="text-xs text-red-500 hover:text-red-700"
+                                  >
+                                    清除
+                                  </button>
+                                </div>
+                              ) : (
+                                <div className="space-y-2">
+                                  <p className="text-xs text-gray-400">
+                                    {articleType === 'product_eval'
+                                      ? '请切换到"素材"标签页，选择要测评的产品素材作为主素材'
+                                      : '请切换到"素材"标签页，选择投保指南的核心主题素材'}
+                                  </p>
+                                  <button
+                                    type="button"
+                                    onClick={() => setActiveGuideTab('case')}
+                                    className="text-xs text-indigo-500 hover:text-indigo-700 underline"
+                                  >
+                                    前往选择素材 →
+                                  </button>
+                                </div>
+                              )}
+                            </div>
+                          )}
+
+                          {/* 🔥 Phase 2: 辅素材选择（产品测评/投保指南专用） */}
+                          {articleType && (articleType === 'product_eval' || articleType === 'insurance_guide') && (
+                            <div className="mt-4 space-y-3">
+                              <div className="flex items-center gap-2">
+                                <span className="text-sm font-medium text-slate-700">辅助素材</span>
+                                <span className="text-xs text-slate-400">可选，提供对比数据或支撑论据</span>
+                              </div>
+                              {auxiliaryMaterialIds.length > 0 ? (
+                                <div className="p-3 bg-green-50 border border-green-200 rounded-lg flex items-center justify-between">
+                                  <span className="text-sm text-green-700 font-medium">
+                                    已选择 {auxiliaryMaterialIds.length} 条辅助素材
+                                  </span>
+                                  <button
+                                    type="button"
+                                    onClick={() => setAuxiliaryMaterialIds([])}
+                                    className="text-xs text-red-500 hover:text-red-700"
+                                  >
+                                    清除全部
+                                  </button>
+                                </div>
+                              ) : (
+                                <p className="text-xs text-gray-400">
+                                  在素材标签页选择素材后，点击"设为辅助素材"即可添加
                                 </p>
                               )}
                             </div>
@@ -4051,6 +4301,39 @@ export default function HomePage() {
                                         >
                                           {isSelected ? '已选' : '选择'}
                                         </button>
+                                        {/* 🔥 Phase 2: 主素材/辅素材按钮（产品测评/投保指南时显示） */}
+                                        {(articleType === 'product_eval' || articleType === 'insurance_guide') && (
+                                          <>
+                                            <button
+                                              type="button"
+                                              onClick={() => setPrimaryMaterialId(c.id)}
+                                              className={`text-[10px] px-2 py-1 rounded transition-colors ${
+                                                primaryMaterialId === c.id
+                                                  ? 'bg-indigo-100 text-indigo-700 border border-indigo-300'
+                                                  : 'bg-indigo-500 text-white hover:bg-indigo-600'
+                                              }`}
+                                            >
+                                              {primaryMaterialId === c.id ? '已设主素材' : '设为主素材'}
+                                            </button>
+                                            <button
+                                              type="button"
+                                              onClick={() => {
+                                                if (auxiliaryMaterialIds.includes(c.id)) {
+                                                  setAuxiliaryMaterialIds(auxiliaryMaterialIds.filter(id => id !== c.id));
+                                                } else {
+                                                  setAuxiliaryMaterialIds([...auxiliaryMaterialIds, c.id]);
+                                                }
+                                              }}
+                                              className={`text-[10px] px-2 py-1 rounded transition-colors ${
+                                                auxiliaryMaterialIds.includes(c.id)
+                                                  ? 'bg-green-100 text-green-700 border border-green-300'
+                                                  : 'bg-green-500 text-white hover:bg-green-600'
+                                              }`}
+                                            >
+                                              {auxiliaryMaterialIds.includes(c.id) ? '已设辅助' : '设为辅助'}
+                                            </button>
+                                          </>
+                                        )}
                                       </div>
                                     </div>
                                   </div>
@@ -4075,6 +4358,154 @@ export default function HomePage() {
                               {caseSearchMode === 'search' ? '搜索中...' : 'AI 推荐中...'}
                             </div>
                           )}
+                        </div>
+                      )}
+
+                      {/* 🔥 Phase 3: AI 辅助生成 Tab */}
+                      {activeGuideTab === 'aiGenerate' && (
+                        <div className="space-y-5">
+                          {/* 误区素材生成 */}
+                          <div className="space-y-3">
+                            <div className="flex items-center gap-2">
+                              <AlertTriangle className="w-4 h-4 text-amber-500" />
+                              <span className="text-sm font-medium text-slate-700">误区素材生成</span>
+                              <span className="text-xs text-amber-500 bg-amber-50 px-2 py-0.5 rounded-full">AI辅助</span>
+                            </div>
+                            <p className="text-xs text-slate-400">
+                              输入一个常见错误认知（如&quot;买保险不如存银行&quot;），AI 将生成破局逻辑 + 类比素材推荐
+                            </p>
+                            <div className="space-y-2">
+                              <Input
+                                placeholder="例如：买保险不如存银行、小公司理赔难、有了社保不用买商保..."
+                                value={aiMisconceptionInput}
+                                onChange={e => setAiMisconceptionInput(e.target.value)}
+                                className="text-sm"
+                              />
+                              <div className="flex gap-2">
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  onClick={handleAiGenerateMisconception}
+                                  disabled={!aiMisconceptionInput.trim() || aiGenerating}
+                                  className="bg-amber-500 hover:bg-amber-600 text-white"
+                                >
+                                  {aiGenerating ? <Loader2 className="w-3.5 h-3.5 animate-spin mr-1" /> : <Sparkles className="w-3.5 h-3.5 mr-1" />}
+                                  生成误区素材
+                                </Button>
+                                {aiMisconceptionResult && (
+                                  <Button
+                                    type="button"
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={handleSaveMisconceptionToLibrary}
+                                    className="border-amber-300 text-amber-700 hover:bg-amber-50"
+                                  >
+                                    <BookmarkPlus className="w-3.5 h-3.5 mr-1" />
+                                    一键入库
+                                  </Button>
+                                )}
+                              </div>
+                            </div>
+                            {/* 生成结果展示 */}
+                            {aiMisconceptionResult && (
+                              <div className="mt-3 p-4 bg-amber-50 border border-amber-200 rounded-lg space-y-3">
+                                <div>
+                                  <p className="text-xs font-medium text-amber-700 mb-1">错误认知</p>
+                                  <p className="text-sm text-slate-700">{aiMisconceptionResult.misconception}</p>
+                                </div>
+                                <div>
+                                  <p className="text-xs font-medium text-amber-700 mb-1">真相解读</p>
+                                  <p className="text-sm text-slate-700">{aiMisconceptionResult.truth}</p>
+                                </div>
+                                <div>
+                                  <p className="text-xs font-medium text-amber-700 mb-1">类比推荐</p>
+                                  <p className="text-sm text-slate-700">{aiMisconceptionResult.analogy}</p>
+                                </div>
+                                {aiMisconceptionResult.supportingData && (
+                                  <div>
+                                    <p className="text-xs font-medium text-amber-700 mb-1">支撑数据</p>
+                                    <p className="text-sm text-slate-700">{aiMisconceptionResult.supportingData}</p>
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                          </div>
+
+                          <div className="border-t border-slate-100" />
+
+                          {/* 法规解读生成 */}
+                          <div className="space-y-3">
+                            <div className="flex items-center gap-2">
+                              <Shield className="w-4 h-4 text-blue-500" />
+                              <span className="text-sm font-medium text-slate-700">法规解读生成</span>
+                              <span className="text-xs text-blue-500 bg-blue-50 px-2 py-0.5 rounded-full">AI辅助</span>
+                            </div>
+                            <p className="text-xs text-slate-400">
+                              输入法规原文或条款，AI 将生成通俗解读 + 关键要点 + 创作建议
+                            </p>
+                            <div className="space-y-2">
+                              <textarea
+                                placeholder="粘贴法规原文，例如：《保险法》第十六条..."
+                                value={aiRegulationInput}
+                                onChange={e => setAiRegulationInput(e.target.value)}
+                                className="w-full min-h-[100px] p-3 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-300 focus:border-blue-300 resize-y"
+                              />
+                              <div className="flex gap-2">
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  onClick={handleAiGenerateRegulation}
+                                  disabled={!aiRegulationInput.trim() || aiGenerating}
+                                  className="bg-blue-500 hover:bg-blue-600 text-white"
+                                >
+                                  {aiGenerating ? <Loader2 className="w-3.5 h-3.5 animate-spin mr-1" /> : <Sparkles className="w-3.5 h-3.5 mr-1" />}
+                                  生成法规解读
+                                </Button>
+                                {aiRegulationResult && (
+                                  <Button
+                                    type="button"
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={handleSaveRegulationToLibrary}
+                                    className="border-blue-300 text-blue-700 hover:bg-blue-50"
+                                  >
+                                    <BookmarkPlus className="w-3.5 h-3.5 mr-1" />
+                                    一键入库
+                                  </Button>
+                                )}
+                              </div>
+                            </div>
+                            {/* 生成结果展示 */}
+                            {aiRegulationResult && (
+                              <div className="mt-3 p-4 bg-blue-50 border border-blue-200 rounded-lg space-y-3">
+                                <div>
+                                  <p className="text-xs font-medium text-blue-700 mb-1">法规原文</p>
+                                  <p className="text-sm text-slate-700 line-clamp-3">{aiRegulationResult.originalText}</p>
+                                </div>
+                                <div>
+                                  <p className="text-xs font-medium text-blue-700 mb-1">通俗解读</p>
+                                  <p className="text-sm text-slate-700">{aiRegulationResult.plainExplanation}</p>
+                                </div>
+                                <div>
+                                  <p className="text-xs font-medium text-blue-700 mb-1">关键要点</p>
+                                  <ul className="text-sm text-slate-700 space-y-1">
+                                    {aiRegulationResult.keyPoints.map((point: string, idx: number) => (
+                                      <li key={idx} className="flex items-start gap-2">
+                                        <span className="text-blue-400 mt-0.5">•</span>
+                                        {point}
+                                      </li>
+                                    ))}
+                                  </ul>
+                                </div>
+                                {aiRegulationResult.creationSuggestion && (
+                                  <div>
+                                    <p className="text-xs font-medium text-blue-700 mb-1">创作建议</p>
+                                    <p className="text-sm text-slate-700">{aiRegulationResult.creationSuggestion}</p>
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                          </div>
                         </div>
                       )}
                     </div>

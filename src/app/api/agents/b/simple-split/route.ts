@@ -80,8 +80,11 @@ export async function POST(request: NextRequest) {
       accountIds, // 🔥 多平台发布：选中的账号ID列表
       imageCountMode, // 🔥 小红书图片数量模式（3-card/5-card/7-card）
       contentTemplateId, // 🔥🔥 内容模板ID（Phase 2-1: 图文分工模板）
-      articleType, // 🔥 创作类型（myth_busting/analogy/law_regulation/hot_event/standard）
+      articleType, // 🔥 创作类型（myth_busting/analogy/law_regulation/hot_event/standard/product_eval/insurance_guide）
       structuredData, // 🔥 结构化创作引导数据（JSON对象）
+      articleLength, // 🔥 Phase 2: 篇幅类型（short/medium/long）
+      primaryMaterialId, // 🔥 Phase 2: 主素材ID（产品信息/法规原文等核心素材）
+      auxiliaryMaterialIds, // 🔥 Phase 2: 辅素材ID列表（类比/案例/数据等支撑素材）
       // useFlowTemplate 已移除：步骤来源由数据特征自动判断
       // 前端 subTasks 中包含 accountId 字段 → 使用前端编辑步骤
       // 否则 → 使用流程模板兜底
@@ -328,6 +331,9 @@ export async function POST(request: NextRequest) {
               originalTaskTitle: taskTitle,
               originalTaskDescription: taskDescription,
               articleType: articleType || null, // 🔥 创作类型
+              articleLength: articleLength || null, // 🔥 Phase 2: 篇幅类型
+              primaryMaterialId: primaryMaterialId || null, // 🔥 Phase 2: 主素材ID
+              auxiliaryMaterialIds: auxiliaryMaterialIds || null, // 🔥 Phase 2: 辅素材ID列表
               guideSource: (subTask.userOpinion !== undefined || subTask.materialIds !== undefined)
                 ? 'task-level' : 'global',
               accountId: baseAccountId,
@@ -401,6 +407,9 @@ export async function POST(request: NextRequest) {
                 originalTaskTitle: taskTitle,
                 originalTaskDescription: taskDescription,
                 articleType: articleType || null, // 🔥 创作类型
+              articleLength: articleLength || null, // 🔥 Phase 2: 篇幅类型
+              primaryMaterialId: primaryMaterialId || null, // 🔥 Phase 2: 主素材ID
+              auxiliaryMaterialIds: auxiliaryMaterialIds || null, // 🔥 Phase 2: 辅素材ID列表
                 guideSource: 'global',
                 accountId: adaptAcc.accountId,
                 accountIds: effectiveAccountIds,

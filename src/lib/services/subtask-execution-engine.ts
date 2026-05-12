@@ -8447,6 +8447,11 @@ export class SubtaskExecutionEngine {
         // 🔥🔥🔥 素材-类比设计：根据创作类型检索类比素材
         let _analogyMaterialsText = '';
         let _articleType: string | undefined;
+        // 🔥 Phase 2 新增
+        let _articleLength: 'short' | 'medium' | 'long' | undefined;
+        let _primaryMaterialDataText = '';
+        let _auxiliaryMaterialDataText = '';
+        let _articleStructureTemplateText = '';
         try {
           const _taskStructuredData = (task as any).structuredData;
           if (_taskStructuredData && typeof _taskStructuredData === 'object') {
@@ -8458,6 +8463,14 @@ export class SubtaskExecutionEngine {
             _articleType = _meta.articleType;
           }
 
+          // 🔥 Phase 2: 读取 articleLength / primaryMaterialId / auxiliaryMaterialIds
+          const _meta2 = (task as any).metadata || {};
+          if (!_articleLength) {
+            _articleLength = _meta2.articleLength || (task as any).articleLength;
+          }
+          const _primaryMaterialId = _meta2.primaryMaterialId;
+          const _auxiliaryMaterialIds: string[] = _meta2.auxiliaryMaterialIds || [];
+
           if (_articleType && _articleType !== 'general') {
             // 根据创作类型映射到素材 scene_type
             const ARTICLE_TYPE_TO_SCENE: Record<string, string> = {
@@ -8465,6 +8478,8 @@ export class SubtaskExecutionEngine {
               'analogy': 'analogy',
               'regulation': 'regulation',
               'story': 'story',
+              'product_eval': 'product_eval',
+              'insurance_guide': 'insurance_guide',
             };
             const _sceneType = ARTICLE_TYPE_TO_SCENE[_articleType];
             if (_sceneType) {
@@ -8500,6 +8515,70 @@ export class SubtaskExecutionEngine {
               }
             }
           }
+
+          // 🔥🔥🔥 Phase 2: 查询主素材数据
+          if (_primaryMaterialId) {
+            try {
+              const { db } = await import('@/lib/db');
+              const { materialLibrary } = await import('@/lib/db/schema/material-library');
+              const { eq } = await import('drizzle-orm');
+              const [primaryMat] = await db
+                .select({ id: materialLibrary.id, title: materialLibrary.title, content: materialLibrary.content, sceneType: materialLibrary.sceneType, materialType: materialLibrary.materialType })
+                .from(materialLibrary)
+                .where(eq(materialLibrary.id, _primaryMaterialId))
+                .limit(1);
+              if (primaryMat) {
+                _primaryMaterialDataText = `【🔥 主素材（核心内容，必须深度融入文章）】\n【${primaryMat.title}】\n${primaryMat.content}\n`;
+                console.log('[SubtaskEngine] 🎯 主素材查询成功:', primaryMat.title);
+              }
+            } catch (_pmErr) {
+              console.warn('[SubtaskEngine] 🎯 主素材查询失败:', _pmErr);
+            }
+          }
+
+          // 🔥🔥🔥 Phase 2: 查询辅素材数据
+          if (_auxiliaryMaterialIds.length > 0) {
+            try {
+              const { db } = await import('@/lib/db');
+              const { materialLibrary } = await import('@/lib/db/schema/material-library');
+              const { inArray } = await import('drizzle-orm');
+              const auxMats = await db
+                .select({ id: materialLibrary.id, title: materialLibrary.title, content: materialLibrary.content, sceneType: materialLibrary.sceneType, materialType: materialLibrary.materialType })
+                .from(materialLibrary)
+                .where(inArray(materialLibrary.id, _auxiliaryMaterialIds));
+              if (auxMats.length > 0) {
+                const _formatted = auxMats.map((m, i) => `[${i + 1}] 【${m.title}】\n${m.content}`).join('\n\n');
+                _auxiliaryMaterialDataText = `【🔥 辅助素材（支撑论据，灵活融入文章）】\n${_formatted}\n`;
+                console.log('[SubtaskEngine] 🎯 辅素材查询成功:', auxMats.length, '条');
+              }
+            } catch (_amErr) {
+              console.warn('[SubtaskEngine] 🎯 辅素材查询失败:', _amErr);
+            }
+          }
+
+          // 🔥🔥🔥 Phase 2: 生成文章结构模板文本
+          if (_articleType) {
+            try {
+              const { formatStructureTemplate, ARTICLE_STRUCTURE_TEMPLATES } = await import('@/lib/agents/article-structure-templates');
+              // 创作类型映射到模板ID
+              const TYPE_TO_TEMPLATE: Record<string, string> = {
+                'myth_busting': 'myth_busting',
+                'analogy': 'event_analogy',
+                'regulation': 'regulation_interpretation',
+                'story': 'event_analogy',
+                'general': 'free',
+                'product_eval': 'product_evaluation',
+                'insurance_guide': 'insurance_guide',
+              };
+              const templateId = TYPE_TO_TEMPLATE[_articleType];
+              if (templateId && ARTICLE_STRUCTURE_TEMPLATES[templateId]) {
+                _articleStructureTemplateText = formatStructureTemplate(templateId, _articleLength);
+                console.log('[SubtaskEngine] 📋 文章结构模板生成成功:', templateId, '篇幅:', _articleLength || 'medium');
+              }
+            } catch (_tplErr) {
+              console.warn('[SubtaskEngine] 📋 文章结构模板生成失败:', _tplErr);
+            }
+          }
         } catch (_analogyErr) {
           console.warn('[SubtaskEngine] 🎯 类比素材检索失败（不影响主流程）:', _analogyErr);
         }
@@ -8530,6 +8609,11 @@ export class SubtaskExecutionEngine {
           // 🔥🔥🔥 素材-类比设计：创作类型 + 类比素材
           articleType: _articleType as any || undefined,
           analogyMaterials: _analogyMaterialsText || undefined,
+          // 🔥🔥🔥 Phase 2: 文章篇幅 + 主素材 + 辅素材 + 结构模板
+          articleLength: _articleLength,
+          primaryMaterialData: _primaryMaterialDataText || undefined,
+          auxiliaryMaterialData: _auxiliaryMaterialDataText || undefined,
+          articleStructureTemplate: _articleStructureTemplateText || undefined,
         });
 
         agentPrompt = insuranceDAssembledResult.fixedBasePrompt; // 固定基础部分作为 agentPrompt

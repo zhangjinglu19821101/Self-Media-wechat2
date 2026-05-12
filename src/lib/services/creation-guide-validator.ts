@@ -1,7 +1,7 @@
 /**
  * 创作引导校验服务
  * 根据创作类型校验素材组合是否满足要求
- * 对应文档：docs/重要-素材-类比详细设计方案.md 第4节
+ * 对应文档：docs/重要-素材-类比详细设计方案.md 第4节 + Phase 2 扩展
  */
 
 import {
@@ -10,6 +10,8 @@ import {
   type ArticleTypeKey,
   type SceneTypeKey,
   type MaterialValidationResult,
+  type ProductEvaluationStructuredData,
+  type InsuranceGuideStructuredData,
 } from '@/lib/agents/creation-guide-types';
 
 /** 素材条目（简化版，仅含校验所需字段） */
@@ -17,6 +19,13 @@ interface MaterialItem {
   id: string;
   sceneType?: string | null;
   type: string;
+}
+
+/** 结构化数据校验结果 */
+export interface StructuredDataValidationResult {
+  isValid: boolean;
+  errors: string[];
+  warnings: string[];
 }
 
 /**
@@ -82,6 +91,93 @@ export function validateMaterialsForArticleType(
     missingRequired,
     suggestedOptional,
   };
+}
+
+/**
+ * 校验产品测评结构化数据
+ * Phase 2 新增
+ */
+export function validateProductEvalData(
+  data: Partial<ProductEvaluationStructuredData>
+): StructuredDataValidationResult {
+  const errors: string[] = [];
+  const warnings: string[] = [];
+
+  if (!data.products || data.products.length === 0) {
+    errors.push('产品测评必须选择至少1款测评产品');
+  } else if (data.products.length === 1) {
+    warnings.push('建议选择2-3款产品进行对比测评，单产品测评说服力有限');
+  } else if (data.products.length > 5) {
+    warnings.push('测评产品超过5款可能导致篇幅过长，建议控制在3-4款');
+  }
+
+  if (!data.dimensions || data.dimensions.length === 0) {
+    errors.push('产品测评必须选择至少1个测评维度');
+  } else if (data.dimensions.length < 3) {
+    warnings.push('建议选择3个以上测评维度，维度太少测评不够全面');
+  }
+
+  if (!data.targetAudience || data.targetAudience.trim().length < 2) {
+    errors.push('请描述目标人群（如：30-40岁已婚有娃家庭）');
+  }
+
+  return {
+    isValid: errors.length === 0,
+    errors,
+    warnings,
+  };
+}
+
+/**
+ * 校验投保指南结构化数据
+ * Phase 2 新增
+ */
+export function validateInsuranceGuideData(
+  data: Partial<InsuranceGuideStructuredData>
+): StructuredDataValidationResult {
+  const errors: string[] = [];
+  const warnings: string[] = [];
+
+  if (!data.targetGroup || data.targetGroup.trim().length < 2) {
+    errors.push('投保指南必须指定目标人群');
+  }
+
+  if (!data.coreNeeds || data.coreNeeds.length === 0) {
+    errors.push('请选择至少1项核心保障需求');
+  } else if (data.coreNeeds.length < 2) {
+    warnings.push('建议选择2项以上核心保障需求，方案更全面');
+  }
+
+  if (!data.budgetRange || data.budgetRange.trim().length < 2) {
+    warnings.push('建议提供预算范围，方便制定方案');
+  }
+
+  if (!data.focusPoints || data.focusPoints.length === 0) {
+    warnings.push('建议选择关注重点，帮助聚焦方案');
+  }
+
+  return {
+    isValid: errors.length === 0,
+    errors,
+    warnings,
+  };
+}
+
+/**
+ * 统一校验入口：根据创作类型校验结构化数据
+ */
+export function validateStructuredData(
+  articleType: ArticleTypeKey,
+  structuredData: Record<string, unknown>
+): StructuredDataValidationResult {
+  if (articleType === 'product_eval') {
+    return validateProductEvalData(structuredData as Partial<ProductEvaluationStructuredData>);
+  }
+  if (articleType === 'insurance_guide') {
+    return validateInsuranceGuideData(structuredData as Partial<InsuranceGuideStructuredData>);
+  }
+  // 其他类型无需结构化数据校验
+  return { isValid: true, errors: [], warnings: [] };
 }
 
 /**
