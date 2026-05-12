@@ -1,0 +1,30 @@
+import postgres from "postgres";
+
+const DATABASE_URL = process.env.DATABASE_URL ||
+  process.env.PGDATABASE_URL ||
+  'postgresql://user_7601448662618718259:bcc5e558-7809-4848-a97d-8b4817215e92@cp-deft-wind-b35fb7fc.pg4.aidap-global.cn-beijing.volces.com:5432/multi_platform_publish_db?sslmode=require&channel_binding=require';
+
+async function fix() {
+  const client = postgres(DATABASE_URL, {
+    ssl: 'require',
+    max: 1,
+  });
+  
+  try {
+    console.log("Dropping unique constraint...");
+    await client`ALTER TABLE agent_sub_tasks_step_history DROP CONSTRAINT IF EXISTS idx_command_result_step_no`;
+    console.log("✓ Dropped constraint");
+    
+    console.log("Creating new unique index with interact_type...");
+    await client`CREATE UNIQUE INDEX idx_command_result_step_type ON agent_sub_tasks_step_history(command_result_id, step_no, interact_type)`;
+    console.log("✓ Created new unique index with interact_type");
+    
+  } catch (e: any) {
+    console.error("Error:", e.message);
+  }
+  
+  await client.end();
+  process.exit(0);
+}
+
+fix();

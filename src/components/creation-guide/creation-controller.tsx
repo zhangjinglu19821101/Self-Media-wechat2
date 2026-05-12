@@ -78,7 +78,8 @@ export function CreationController({
   };
 
   const handleWordCountChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    onChange({ ...value, targetWordCount: e.target.value });
+    const num = parseInt(e.target.value, 10);
+    onChange({ ...value, targetWordCount: isNaN(num) ? 0 : num });
   };
 
   const handleOutlineConfirm = () => {

@@ -45,7 +45,7 @@ export interface PromptAssemblyOptions {
   /** @deprecated 使用 cardCountMode 代替 */
   imageCountMode?: '3-card' | '5-card' | '7-card'; // 兼容旧字段
   industryCases?: string;        // 🔥 行业案例预格式化文本（由执行引擎按需检索后传入）
-  articleType?: 'myth_busting' | 'analogy' | 'regulation' | 'story' | 'general' | 'product_eval' | 'insurance_guide'; // 🔥 创作类型（素材-类比设计 + Phase 2 扩展）
+  articleType?: string; // 🔥 创作类型（pitfall_guide/authority_analysis/story_driven/product_eval/insurance_guide/free_creation + 旧 key 兼容）
   analogyMaterials?: string;     // 🔥 类比素材预格式化文本（由执行引擎按创作类型检索后传入）
   // ===== Phase 2 新增字段 =====
   articleLength?: 'short' | 'medium' | 'long'; // 🔥 篇幅类型
@@ -624,6 +624,28 @@ export class PromptAssemblerService {
     if (options.industryCases) {
       result += options.industryCases;
       result += '\n';
+    }
+
+    // 3.55 🔥 创作类型声明（告知写作 Agent 本次创作类型，影响写作策略）
+    if (options.articleType) {
+      const ARTICLE_TYPE_LABELS: Record<string, string> = {
+        pitfall_guide: '避坑指南（误区+纠正+类比）',
+        authority_analysis: '权威解读（法规+影响+建议）',
+        story_driven: '故事驱动（事件+转折+启示）',
+        product_eval: '产品测评（对比+优劣+推荐）',
+        insurance_guide: '投保指南（需求+方案+避坑）',
+        free_creation: '自由创作（无固定结构）',
+        // 旧 key 兼容
+        myth_busting: '避坑指南（误区+纠正+类比）',
+        analogy: '类比驱动',
+        regulation: '法规解读',
+        story: '故事驱动',
+        general: '自由创作',
+      };
+      const typeLabel = ARTICLE_TYPE_LABELS[options.articleType] || options.articleType;
+      result += `### 创作类型\n\n`;
+      result += `本次创作类型为：**${typeLabel}**（${options.articleType}）\n`;
+      result += `请根据此创作类型选择合适的写作策略和结构。\n\n`;
     }
 
     // 3.6 🔥 类比素材区（按创作类型注入，由执行引擎检索后传入）

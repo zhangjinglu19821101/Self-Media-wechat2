@@ -180,6 +180,8 @@ export interface CreationControlData {
   targetWordCount: number;   // 目标字数
   writingStyle: string;      // 写作风格
   tone: string;              // 语气
+  outline: string;           // 大纲内容
+  outlineConfirmed: boolean; // 大纲是否已确认
 }
 
 // ========== 默认值 ==========
@@ -207,7 +209,9 @@ export const DEFAULT_MATERIAL_DATA: MaterialData = {
 export const DEFAULT_CREATION_CONTROL_DATA: CreationControlData = {
   targetWordCount: 2000,
   writingStyle: '专业严谨',
-  tone: '理性客观'
+  tone: '理性客观',
+  outline: '',
+  outlineConfirmed: false
 };
 
 // ========== 字数范围常量 ==========
@@ -235,21 +239,32 @@ export interface ValidationResult {
 // ========== 创作控制器组件 Props ==========
 
 export interface CreationControllerProps {
-  children?: React.ReactNode;
-  [key: string]: unknown;
+  value: CreationControlData;
+  onChange: (value: CreationControlData) => void;
+  onGenerateOutline: () => Promise<void>;
+  onGenerateFullText: () => Promise<void>;
+  canGenerateOutline: boolean;
+  generatingOutline: boolean;
+  generatingFullText: boolean;
+  onError?: (error: { code: string; message: string; retryable: boolean }) => void;
+  onSuccess?: (message: string) => void;
 }
 
 // ========== 核心锚点输入组件 Props ==========
 
 export interface CoreAnchorInputProps {
-  value?: string;
-  onChange?: (value: string) => void;
-  [key: string]: unknown;
+  value?: CoreAnchorData;
+  onChange?: (value: CoreAnchorData) => void;
+  wordCountRanges?: typeof WORD_COUNT_RANGES;
+  disabled?: boolean;
 }
 
 // ========== 素材提供者组件 Props ==========
 
 export interface MaterialProviderProps {
+  value: MaterialData;
+  onChange: (value: MaterialData) => void;
   children?: React.ReactNode;
-  [key: string]: unknown;
+  onMaterialsChange?: (materials: Material[]) => void;
+  workspaceId?: string;
 }

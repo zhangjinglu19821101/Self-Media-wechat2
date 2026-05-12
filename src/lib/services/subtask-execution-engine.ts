@@ -8471,81 +8471,104 @@ export class SubtaskExecutionEngine {
           const _primaryMaterialId = _meta2.primaryMaterialId;
           const _auxiliaryMaterialIds: string[] = _meta2.auxiliaryMaterialIds || [];
 
-          if (_articleType && _articleType !== 'general') {
-            // 根据创作类型映射到素材 scene_type
-            const ARTICLE_TYPE_TO_SCENE: Record<string, string> = {
-              'myth_busting': 'myth_busting',
-              'analogy': 'analogy',
-              'regulation': 'regulation',
-              'story': 'story',
-              'product_eval': 'product_eval',
-              'insurance_guide': 'insurance_guide',
+          if (_articleType && _articleType !== 'general' && _articleType !== 'free_creation') {
+            // 🔥 修复：创作类型映射到素材 scene_type（与 creation-guide-types.ts 对齐）
+            // 每种创作类型需要查询多种 sceneType 的素材，而非仅一种
+            const ARTICLE_TYPE_TO_SCENE_TYPES: Record<string, string[]> = {
+              pitfall_guide: ['mistake', 'analogy'],           // 避坑指南：误区+类比
+              authority_analysis: ['regulation', 'event'],      // 权威解读：法规+事件
+              story_driven: ['event', 'analogy'],              // 故事驱动：事件+类比
+              product_eval: ['product', 'analogy'],            // 产品测评：产品+类比
+              insurance_guide: ['regulation', 'analogy'],      // 投保指南：法规+类比
+              // 旧 key 兼容
+              myth_busting: ['mistake', 'analogy'],
+              analogy: ['analogy'],
+              regulation: ['regulation', 'event'],
+              story: ['event', 'analogy'],
             };
-            const _sceneType = ARTICLE_TYPE_TO_SCENE[_articleType];
-            if (_sceneType) {
-              const { db } = await import('@/lib/db');
-              const { materialLibrary } = await import('@/lib/db/schema/material-library');
-              const { eq, and, sql } = await import('drizzle-orm');
-              const _matchedMaterials = await db
-                .select({
-                  id: materialLibrary.id,
-                  title: materialLibrary.title,
-                  content: materialLibrary.content,
-                  sceneType: materialLibrary.sceneType,
-                  materialType: materialLibrary.materialType,
-                })
-                .from(materialLibrary)
-                .where(
-                  and(
-                    eq(materialLibrary.sceneType, _sceneType),
-                    eq(materialLibrary.isActive, true),
-                    sql`(${materialLibrary.ownerType} = 'system' OR ${materialLibrary.workspaceId} = ${task.workspaceId || ''})`
+            const _sceneTypes = ARTICLE_TYPE_TO_SCENE_TYPES[_articleType];
+            if (_sceneTypes && _sceneTypes.length > 0) {
+              try {
+                const { db } = await import('@/lib/db');
+                const { materialLibrary } = await import('@/lib/db/schema/material-library');
+                const { eq, and, sql, inArray } = await import('drizzle-orm');
+                // 查询所有相关 sceneType 的素材（含 workspaceId 隔离）
+                const _matchedMaterials = await db
+                  .select({
+                    id: materialLibrary.id,
+                    title: materialLibrary.title,
+                    content: materialLibrary.content,
+                    sceneType: materialLibrary.sceneType,
+                    materialType: materialLibrary.materialType,
+                  })
+                  .from(materialLibrary)
+                  .where(
+                    and(
+                      inArray(materialLibrary.sceneType, _sceneTypes),
+                      eq(materialLibrary.isActive, true),
+                      sql`(${materialLibrary.ownerType} = 'system' OR ${materialLibrary.workspaceId} = ${task.workspaceId || ''})`
+                    )
                   )
-                )
-                .limit(8);
+                  .limit(8);
 
-              if (_matchedMaterials.length > 0) {
-                const _formatted = _matchedMaterials.map((m, i) =>
-                  `[${i + 1}] 【${m.title}】\n${m.content}`
-                ).join('\n\n');
-                _analogyMaterialsText = `【🔥 创作类型: ${_articleType} — 必选类比素材】\n以下素材与本创作类型强相关，请在文章中至少引用1条：\n\n${_formatted}`;
-                console.log('[SubtaskEngine] 🎯 类比素材检索命中:', _matchedMaterials.length, '条, 创作类型:', _articleType);
-              } else {
-                console.log('[SubtaskEngine] 🎯 类比素材检索无匹配, sceneType:', _sceneType);
+                if (_matchedMaterials.length > 0) {
+                  // 按场景类型分组格式化
+                  const _formatted = _matchedMaterials.map((m, i) =>
+                    `[${i + 1}] 【${m.sceneType || '其他'}|${m.title}】\n${m.content}`
+                  ).join('\n\n');
+                  _analogyMaterialsText = `【🔥 创作类型: ${_articleType} — 必选素材】\n以下素材与本创作类型强相关，请在文章中至少引用1条：\n\n${_formatted}`;
+                  console.log('[SubtaskEngine] 🎯 类比素材检索命中:', _matchedMaterials.length, '条, 创作类型:', _articleType, ', sceneTypes:', _sceneTypes);
+                } else {
+                  console.log('[SubtaskEngine] 🎯 类比素材检索无匹配, sceneTypes:', _sceneTypes);
+                }
+              } catch (_sceneErr) {
+                console.warn('[SubtaskEngine] 🎯 类比素材检索失败:', _sceneErr);
               }
             }
           }
 
-          // 🔥🔥🔥 Phase 2: 查询主素材数据
+          // 🔥🔥🔥 Phase 2: 查询主素材数据（含 workspaceId 隔离）
           if (_primaryMaterialId) {
             try {
               const { db } = await import('@/lib/db');
               const { materialLibrary } = await import('@/lib/db/schema/material-library');
-              const { eq } = await import('drizzle-orm');
+              const { eq, and, sql } = await import('drizzle-orm');
               const [primaryMat] = await db
                 .select({ id: materialLibrary.id, title: materialLibrary.title, content: materialLibrary.content, sceneType: materialLibrary.sceneType, materialType: materialLibrary.materialType })
                 .from(materialLibrary)
-                .where(eq(materialLibrary.id, _primaryMaterialId))
+                .where(
+                  and(
+                    eq(materialLibrary.id, _primaryMaterialId),
+                    sql`(${materialLibrary.ownerType} = 'system' OR ${materialLibrary.workspaceId} = ${task.workspaceId || ''})`
+                  )
+                )
                 .limit(1);
               if (primaryMat) {
                 _primaryMaterialDataText = `【🔥 主素材（核心内容，必须深度融入文章）】\n【${primaryMat.title}】\n${primaryMat.content}\n`;
                 console.log('[SubtaskEngine] 🎯 主素材查询成功:', primaryMat.title);
+              } else {
+                console.warn('[SubtaskEngine] 🎯 主素材查询无结果（可能跨工作区越权）, id:', _primaryMaterialId);
               }
             } catch (_pmErr) {
               console.warn('[SubtaskEngine] 🎯 主素材查询失败:', _pmErr);
             }
           }
 
-          // 🔥🔥🔥 Phase 2: 查询辅素材数据
+          // 🔥🔥🔥 Phase 2: 查询辅素材数据（含 workspaceId 隔离）
           if (_auxiliaryMaterialIds.length > 0) {
             try {
               const { db } = await import('@/lib/db');
               const { materialLibrary } = await import('@/lib/db/schema/material-library');
-              const { inArray } = await import('drizzle-orm');
+              const { inArray, and, sql } = await import('drizzle-orm');
               const auxMats = await db
                 .select({ id: materialLibrary.id, title: materialLibrary.title, content: materialLibrary.content, sceneType: materialLibrary.sceneType, materialType: materialLibrary.materialType })
                 .from(materialLibrary)
-                .where(inArray(materialLibrary.id, _auxiliaryMaterialIds));
+                .where(
+                  and(
+                    inArray(materialLibrary.id, _auxiliaryMaterialIds),
+                    sql`(${materialLibrary.ownerType} = 'system' OR ${materialLibrary.workspaceId} = ${task.workspaceId || ''})`
+                  )
+                );
               if (auxMats.length > 0) {
                 const _formatted = auxMats.map((m, i) => `[${i + 1}] 【${m.title}】\n${m.content}`).join('\n\n');
                 _auxiliaryMaterialDataText = `【🔥 辅助素材（支撑论据，灵活融入文章）】\n${_formatted}\n`;
@@ -8560,15 +8583,21 @@ export class SubtaskExecutionEngine {
           if (_articleType) {
             try {
               const { formatStructureTemplate, ARTICLE_STRUCTURE_TEMPLATES } = await import('@/lib/agents/article-structure-templates');
-              // 创作类型映射到模板ID
+              // 🔥 修复：创作类型映射到模板ID（与 creation-guide-types.ts 对齐）
               const TYPE_TO_TEMPLATE: Record<string, string> = {
-                'myth_busting': 'myth_busting',
-                'analogy': 'event_analogy',
-                'regulation': 'regulation_interpretation',
-                'story': 'event_analogy',
-                'general': 'free',
-                'product_eval': 'product_evaluation',
-                'insurance_guide': 'insurance_guide',
+                // 新 key（与前端 ArticleTypeKey 对齐）
+                pitfall_guide: 'myth_busting',              // 避坑指南 → 避坑模板
+                authority_analysis: 'regulation_interpretation', // 权威解读 → 法规解读模板
+                story_driven: 'event_analogy',              // 故事驱动 → 事件类比模板
+                product_eval: 'product_evaluation',         // 产品测评 → 产品测评模板
+                insurance_guide: 'insurance_guide',         // 投保指南 → 投保指南模板
+                free_creation: 'free',                      // 自由创作 → 自由模板
+                // 旧 key 兼容
+                myth_busting: 'myth_busting',
+                analogy: 'event_analogy',
+                regulation: 'regulation_interpretation',
+                story: 'event_analogy',
+                general: 'free',
               };
               const templateId = TYPE_TO_TEMPLATE[_articleType];
               if (templateId && ARTICLE_STRUCTURE_TEMPLATES[templateId]) {
