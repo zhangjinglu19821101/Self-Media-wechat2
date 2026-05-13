@@ -1402,3 +1402,6 @@ export * from './schema/snippet-hashes';
 
 // 管理员审计日志表
 export * from './schema/admin-audit-logs';
+
+// 文章全维度提取表（5层21维）
+export * from './schema/article-extractions';

@@ -40,8 +40,10 @@ import {
   Save,
   X,
   ChevronDown,
+  Layers,
 } from 'lucide-react';
 import { apiGet, apiPost, apiFetch } from '@/lib/api/client';
+import ExtractionPanel from '@/components/article-extraction/extraction-panel';
 import type {
   SixDimensionAnalysis,
   OverallToneAnalysis,
@@ -541,10 +543,42 @@ export default function StyleInitPage() {
     });
   }, []);
 
+  const [mainTab, setMainTab] = useState<string>('style');
+
   return (
     <div className="min-h-screen bg-slate-50 p-4 md:p-8">
       <div className="max-w-6xl mx-auto space-y-6">
-        {/* 页面标题 */}
+        {/* 主Tab切换 */}
+        <div className="flex gap-2 border-b pb-2">
+          <button
+            onClick={() => setMainTab('style')}
+            className={`px-4 py-2 rounded-t-lg font-medium text-sm transition-all ${
+              mainTab === 'style'
+                ? 'bg-sky-500 text-white shadow-md'
+                : 'bg-white text-gray-600 hover:bg-gray-50'
+            }`}
+          >
+            <Sparkles className="w-4 h-4 inline mr-1" />
+            风格初始化
+          </button>
+          <button
+            onClick={() => setMainTab('extraction')}
+            className={`px-4 py-2 rounded-t-lg font-medium text-sm transition-all ${
+              mainTab === 'extraction'
+                ? 'bg-gradient-to-r from-amber-500 to-orange-500 text-white shadow-md'
+                : 'bg-white text-gray-600 hover:bg-gray-50'
+            }`}
+          >
+            <Layers className="w-4 h-4 inline mr-1" />
+            全维度提取
+          </button>
+        </div>
+
+        {mainTab === 'extraction' ? (
+          <ExtractionPanel />
+        ) : (
+        <>
+        {/* 原有风格初始化内容 */}
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-2xl font-bold flex items-center gap-3">
@@ -554,10 +588,33 @@ export default function StyleInitPage() {
               风格初始化
             </h1>
             <p className="mt-2 text-slate-500">
-              从文章提取写作风格，写入数字资产库供后续创作参考
+              从文章提取写作风格与全维度数字资产，写入数字资产库供后续创作参考
             </p>
           </div>
-          {existingRules && (
+          {/* 主Tab切换器 */}
+          <div className="flex items-center gap-1 bg-white rounded-lg border p-1 shadow-sm">
+            <button
+              onClick={() => setMainTab('style')}
+              className={`px-4 py-2 rounded-md text-sm font-medium transition-all ${
+                mainTab === 'style'
+                  ? 'bg-gradient-to-r from-sky-500 to-cyan-500 text-white shadow-sm'
+                  : 'text-slate-600 hover:bg-slate-100'
+              }`}
+            >
+              风格分析
+            </button>
+            <button
+              onClick={() => setMainTab('extraction')}
+              className={`px-4 py-2 rounded-md text-sm font-medium transition-all ${
+                mainTab === 'extraction'
+                  ? 'bg-gradient-to-r from-violet-500 to-purple-500 text-white shadow-sm'
+                  : 'text-slate-600 hover:bg-slate-100'
+              }`}
+            >
+              全维度提取
+            </button>
+          </div>
+          {mainTab === 'style' && existingRules && (
             <Card className="border-sky-200 bg-gradient-to-r from-sky-50 to-cyan-50 shadow-sm">
               <CardContent className="py-3 px-4 flex items-center gap-3">
                 <Database className="w-4 h-4 text-sky-500" />
@@ -1751,14 +1808,12 @@ export default function StyleInitPage() {
             </div>
           </div>
         )}
+        </>
+        )}
       </div>
     </div>
   );
 }
-
-// ═══════════════════════════════════════════════════
-// 维度摘要渲染器（用于总览卡片）
-// ═══════════════════════════════════════════════════
 
 function DimensionSummaryRenderer({ dimensionKey, data }: { dimensionKey: string; data: any }) {
   switch (dimensionKey) {
