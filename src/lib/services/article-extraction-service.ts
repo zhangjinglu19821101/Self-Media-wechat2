@@ -334,6 +334,7 @@ export function extractionToMaterialInputs(
   sourceArticleTitle: string
 ): Array<{
   type: string;
+  sceneType: string;
   title: string;
   content: string;
   topicTags: string[];
@@ -344,6 +345,7 @@ export function extractionToMaterialInputs(
 }> {
   const materials: Array<{
     type: string;
+    sceneType: string;
     title: string;
     content: string;
     topicTags: string[];
@@ -359,7 +361,8 @@ export function extractionToMaterialInputs(
   // 第二层素材化
   if (result.layer2.coreArgument) {
     materials.push({
-      type: 'analogy',
+      type: 'quote',
+      sceneType: 'analogy',
       title: `核心论点: ${result.layer2.coreArgument.substring(0, 30)}...`,
       content: result.layer2.coreArgument,
       topicTags: [...baseTopicTags, '核心论点'],
@@ -372,7 +375,8 @@ export function extractionToMaterialInputs(
 
   if (result.layer2.breakthroughLogic) {
     materials.push({
-      type: 'misconception',
+      type: 'story',
+      sceneType: 'misconception',
       title: `破局逻辑: ${result.layer2.breakthroughLogic.substring(0, 30)}...`,
       content: result.layer2.breakthroughLogic,
       topicTags: [...baseTopicTags, '破局逻辑'],
@@ -383,10 +387,96 @@ export function extractionToMaterialInputs(
     });
   }
 
+  // 第三层素材化
+  if (result.layer3.hookIntro) {
+    materials.push({
+      type: 'opening',
+      sceneType: 'opening_hook',
+      title: `钩子引入: ${result.layer3.hookIntro.substring(0, 30)}...`,
+      content: result.layer3.hookIntro,
+      topicTags: [...baseTopicTags, '文章开头'],
+      sceneTags: ['开头引入'],
+      emotionTags: baseEmotionTags,
+      sourceType: 'article_extraction',
+      structuredData: { layer: 3, dimension: 'hookIntro', sourceArticle: sourceArticleTitle },
+    });
+  }
+
+  if (result.layer3.emotionalAcceptance) {
+    materials.push({
+      type: 'opening',
+      sceneType: 'emotion_acceptance',
+      title: `情绪接纳: ${result.layer3.emotionalAcceptance.substring(0, 30)}...`,
+      content: result.layer3.emotionalAcceptance,
+      topicTags: [...baseTopicTags, '情绪接纳'],
+      sceneTags: ['开头引入'],
+      emotionTags: ['温情共情'],
+      sourceType: 'article_extraction',
+      structuredData: { layer: 3, dimension: 'emotionalAcceptance', sourceArticle: sourceArticleTitle },
+    });
+  }
+
+  if (result.layer3.cognitiveBreakthrough) {
+    materials.push({
+      type: 'story',
+      sceneType: 'misconception',
+      title: `认知破局: ${result.layer3.cognitiveBreakthrough.substring(0, 30)}...`,
+      content: result.layer3.cognitiveBreakthrough,
+      topicTags: [...baseTopicTags, '认知破局'],
+      sceneTags: ['逻辑错位'],
+      emotionTags: baseEmotionTags,
+      sourceType: 'article_extraction',
+      structuredData: { layer: 3, dimension: 'cognitiveBreakthrough', sourceArticle: sourceArticleTitle },
+    });
+  }
+
+  if (result.layer3.plainExplanation) {
+    materials.push({
+      type: 'case',
+      sceneType: 'analogy',
+      title: `通俗解释: ${result.layer3.plainExplanation.substring(0, 30)}...`,
+      content: result.layer3.plainExplanation,
+      topicTags: [...baseTopicTags, '通俗解释'],
+      sceneTags: ['通俗解释'],
+      emotionTags: baseEmotionTags,
+      sourceType: 'article_extraction',
+      structuredData: { layer: 3, dimension: 'plainExplanation', sourceArticle: sourceArticleTitle },
+    });
+  }
+
+  if (result.layer3.valueReconstruction) {
+    materials.push({
+      type: 'quote',
+      sceneType: 'value_reconstruction',
+      title: `价值重构: ${result.layer3.valueReconstruction.substring(0, 30)}...`,
+      content: result.layer3.valueReconstruction,
+      topicTags: [...baseTopicTags, '价值重构'],
+      sceneTags: ['观点提炼'],
+      emotionTags: baseEmotionTags,
+      sourceType: 'article_extraction',
+      structuredData: { layer: 3, dimension: 'valueReconstruction', sourceArticle: sourceArticleTitle },
+    });
+  }
+
+  if (result.layer3.closingElevation) {
+    materials.push({
+      type: 'ending',
+      sceneType: 'closing_elevation',
+      title: `收尾升华: ${result.layer3.closingElevation.substring(0, 30)}...`,
+      content: result.layer3.closingElevation,
+      topicTags: [...baseTopicTags, '收尾升华'],
+      sceneTags: ['收尾升华'],
+      emotionTags: baseEmotionTags,
+      sourceType: 'article_extraction',
+      structuredData: { layer: 3, dimension: 'closingElevation', sourceArticle: sourceArticleTitle },
+    });
+  }
+
   // 第五层素材化（最核心的数字财富）
   for (const misconception of result.layer5.misconceptions) {
     materials.push({
-      type: 'misconception',
+      type: 'story',
+      sceneType: 'misconception',
       title: `误区: ${misconception.substring(0, 30)}...`,
       content: misconception,
       topicTags: [...baseTopicTags, '客户误区'],
@@ -399,7 +489,8 @@ export function extractionToMaterialInputs(
 
   for (const analogy of result.layer5.lifeAnalogies) {
     materials.push({
-      type: 'analogy',
+      type: 'case',
+      sceneType: 'analogy',
       title: `类比: ${analogy.substring(0, 30)}...`,
       content: analogy,
       topicTags: [...baseTopicTags, '生活类比'],
@@ -413,6 +504,7 @@ export function extractionToMaterialInputs(
   for (const caseItem of result.layer5.realCases) {
     materials.push({
       type: 'case',
+      sceneType: 'real_case',
       title: `案例: ${caseItem.substring(0, 30)}...`,
       content: caseItem,
       topicTags: [...baseTopicTags, '真实案例'],
@@ -426,6 +518,7 @@ export function extractionToMaterialInputs(
   for (const dataItem of result.layer5.authorityData) {
     materials.push({
       type: 'data',
+      sceneType: 'authority_data',
       title: `数据: ${dataItem.substring(0, 30)}...`,
       content: dataItem,
       topicTags: [...baseTopicTags, '权威数据'],
@@ -439,6 +532,7 @@ export function extractionToMaterialInputs(
   for (const sentence of result.layer5.goldenSentences) {
     materials.push({
       type: 'quote',
+      sceneType: 'golden_sentence',
       title: `金句: ${sentence.substring(0, 30)}...`,
       content: sentence,
       topicTags: [...baseTopicTags, '金句'],
@@ -453,6 +547,7 @@ export function extractionToMaterialInputs(
   for (const pattern of result.layer4.fixedPatterns) {
     materials.push({
       type: 'quote',
+      sceneType: 'style_pattern',
       title: `固定句式: ${pattern.substring(0, 30)}...`,
       content: pattern,
       topicTags: [...baseTopicTags, '语言风格'],
@@ -460,6 +555,36 @@ export function extractionToMaterialInputs(
       emotionTags: baseEmotionTags,
       sourceType: 'article_extraction',
       structuredData: { layer: 4, dimension: 'fixedPattern', sourceArticle: sourceArticleTitle },
+    });
+  }
+
+  // 第二层: 行动指引素材化
+  if (result.layer2.actionGuide) {
+    materials.push({
+      type: 'ending',
+      sceneType: 'action_guide',
+      title: `行动指引: ${result.layer2.actionGuide.substring(0, 30)}...`,
+      content: result.layer2.actionGuide,
+      topicTags: [...baseTopicTags, '行动指引'],
+      sceneTags: ['收尾升华'],
+      emotionTags: baseEmotionTags,
+      sourceType: 'article_extraction',
+      structuredData: { layer: 2, dimension: 'actionGuide', sourceArticle: sourceArticleTitle },
+    });
+  }
+
+  // 第四层: 口头禅素材化
+  for (const phrase of result.layer4.catchphrases) {
+    materials.push({
+      type: 'quote',
+      sceneType: 'catchphrase',
+      title: `口头禅: ${phrase.substring(0, 30)}...`,
+      content: phrase,
+      topicTags: [...baseTopicTags, '语言风格'],
+      sceneTags: ['句式复用'],
+      emotionTags: baseEmotionTags,
+      sourceType: 'article_extraction',
+      structuredData: { layer: 4, dimension: 'catchphrase', sourceArticle: sourceArticleTitle },
     });
   }
 

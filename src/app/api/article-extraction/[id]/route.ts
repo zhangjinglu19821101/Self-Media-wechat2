@@ -45,7 +45,22 @@ export async function GET(
 
     return NextResponse.json({
       success: true,
-      data: { ...extraction, layers, assets },
+      data: {
+        ...extraction,
+        layers,
+        assets,
+        // 构造前端期望的 extraction 对象（从 layer1Data~layer5Data 直接读取）
+        extraction: {
+          layer1: extraction.layer1Data || (layers.find(l => l.layerName === 'meta_info')?.extractionData) || {},
+          layer2: extraction.layer2Data || (layers.find(l => l.layerName === 'core_logic')?.extractionData) || {},
+          layer3: extraction.layer3Data || (layers.find(l => l.layerName === 'content_module')?.extractionData) || {},
+          layer4: extraction.layer4Data || (layers.find(l => l.layerName === 'language_style')?.extractionData) || {},
+          layer5: extraction.layer5Data || (layers.find(l => l.layerName === 'atomic_material')?.extractionData) || {},
+          extractionSummary: extraction.extractionSummary || '',
+          assetValueScore: extraction.assetValueScore ?? 0,
+          reusableDimensionCount: extraction.reusableDimensionCount ?? 0,
+        },
+      },
     });
   } catch (error) {
     console.error('[ArticleExtraction] 查询详情失败:', error);

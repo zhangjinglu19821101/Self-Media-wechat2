@@ -41,6 +41,7 @@ export type MaterialOwnerType =
 export const VALID_SOURCE_TYPES: string[] = [
   'manual', 'article', 'ai_generate', 'import',
   'system_admin', 'system_crawl', 'info_snippet', 'web_search',
+  'article_extraction',
 ];
 
 /**

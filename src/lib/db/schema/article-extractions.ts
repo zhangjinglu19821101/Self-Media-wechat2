@@ -98,6 +98,18 @@ export const articleExtractions = pgTable('article_extractions', {
   articleText: text('article_text').notNull(),
   articleHash: varchar('article_hash', { length: 64 }), // SHA-256 去重
   
+  // 5层提取结果（JSONB 快照，与 extraction_layers 表冗余存储便于快速读取）
+  layer1Data: jsonb('layer1_data').$type<Record<string, any>>(),
+  layer2Data: jsonb('layer2_data').$type<Record<string, any>>(),
+  layer3Data: jsonb('layer3_data').$type<Record<string, any>>(),
+  layer4Data: jsonb('layer4_data').$type<Record<string, any>>(),
+  layer5Data: jsonb('layer5_data').$type<Record<string, any>>(),
+  
+  // 提取摘要与评估
+  extractionSummary: text('extraction_summary'),
+  assetValueScore: integer('asset_value_score').default(0),
+  reusableDimensionCount: integer('reusable_dimension_count').default(0),
+  
   // 元信息层快捷字段（高频查询）
   articleType: varchar('article_type', { length: 50 }),
   coreTheme: text('core_theme'),

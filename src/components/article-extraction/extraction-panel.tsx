@@ -9,35 +9,43 @@ import { Badge } from '@/components/ui/badge';
 import { Upload, FileText, ChevronDown, ChevronRight, Loader2, Sparkles, Map, BookOpen, Layers, Type, Atom, BarChart3 } from 'lucide-react';
 import { toast } from 'sonner';
 
-// ====== 类型定义 ======
+// ====== 类型定义（与后端 article-extraction-service.ts 保持一致）======
 
-/** 5层提取结果 */
+/** 5层提取结果（后端 ArticleExtractionResult 展平） */
 export interface FiveLayerExtraction {
-  layer1_metaInfo: Layer1MetaInfo;
-  layer2_coreLogic: Layer2CoreLogic;
-  layer3_contentModules: Layer3ContentModules;
-  layer4_languageStyle: Layer4LanguageStyle;
-  layer5_atomicMaterials: Layer5AtomicMaterials;
+  layer1: Layer1MetaInfo;
+  layer2: Layer2CoreLogic;
+  layer3: Layer3ContentModules;
+  layer4: Layer4LanguageStyle;
+  layer5: Layer5AtomicMaterials;
+  extractionSummary: string;
+  assetValueScore: number;
+  reusableDimensionCount: number;
 }
 
+/** 第一层：文章元信息层 */
 export interface Layer1MetaInfo {
-  articleTitle: { mainTitle: string; subTitle?: string; altTitles: string[] };
+  articleTitle: string;
+  subtitle?: string;
+  alternativeTitles?: string[];
   articleType: string;
   coreTheme: string;
-  targetAudience: string[];
+  targetAudience: string;
   emotionalTone: string;
   publishPlatform: string;
   publishTime?: string;
 }
 
+/** 第二层：核心逻辑层 */
 export interface Layer2CoreLogic {
   coreArgument: string;
   breakthroughLogic: string;
   argumentStructure: string;
   valueProposition: string;
-  callToAction: string;
+  actionGuide: string;
 }
 
+/** 第三层：内容模块层 */
 export interface Layer3ContentModules {
   hookIntro: string;
   emotionalAcceptance: string;
@@ -47,41 +55,47 @@ export interface Layer3ContentModules {
   closingElevation: string;
 }
 
+/** 第四层：语言风格层 */
 export interface Layer4LanguageStyle {
   fixedPatterns: string[];
   toneCharacteristics: string[];
-  personalCatchphrases: string[];
+  catchphrases: string[];
   forbiddenWords: string[];
   paragraphRhythm: string;
 }
 
+/** 第五层：原子素材单元层 */
 export interface Layer5AtomicMaterials {
   misconceptions: string[];
   lifeAnalogies: string[];
   realCases: string[];
-  authoritativeData: string[];
-  policyReferences: string[];
+  authorityData: string[];
+  goldenSentences: string[];
 }
 
 // ====== 层配置 ======
 
 const LAYER_CONFIG = [
-  { key: 'layer1_metaInfo', name: '文章元信息层', icon: BookOpen, color: 'blue', desc: '基础属性，用于分类与检索' },
-  { key: 'layer2_coreLogic', name: '核心逻辑层', icon: Layers, color: 'purple', desc: '文章骨架，决定论证路径' },
-  { key: 'layer3_contentModules', name: '内容模块层', icon: FileText, color: 'emerald', desc: '文章血肉，可独立复用' },
-  { key: 'layer4_languageStyle', name: '语言风格层', icon: Type, color: 'amber', desc: '文章灵魂，个人签名' },
-  { key: 'layer5_atomicMaterials', name: '原子素材层', icon: Atom, color: 'rose', desc: '最小价值单元，数字乐高' },
+  { key: 'layer1', name: '文章元信息层', icon: BookOpen, color: 'blue', desc: '基础属性，用于分类与检索' },
+  { key: 'layer2', name: '核心逻辑层', icon: Layers, color: 'purple', desc: '文章骨架，决定论证路径' },
+  { key: 'layer3', name: '内容模块层', icon: FileText, color: 'emerald', desc: '文章血肉，可独立复用' },
+  { key: 'layer4', name: '语言风格层', icon: Type, color: 'amber', desc: '文章灵魂，个人签名' },
+  { key: 'layer5', name: '原子素材层', icon: Atom, color: 'rose', desc: '最小价值单元，数字乐高' },
 ] as const;
 
 // ====== 数字资产地图组件 ======
 
 function DigitalAssetMap({ extraction }: { extraction: FiveLayerExtraction }) {
+  const l5ArrayCount = Object.values(extraction.layer5).reduce(
+    (sum: number, arr) => sum + (Array.isArray(arr) ? arr.length : 0), 0
+  );
+
   const assetCounts = [
-    { layer: '元信息', count: 7, color: 'bg-blue-500' },
-    { layer: '核心逻辑', count: 5, color: 'bg-purple-500' },
-    { layer: '内容模块', count: 6, color: 'bg-emerald-500' },
-    { layer: '语言风格', count: 5, color: 'bg-amber-500' },
-    { layer: '原子素材', count: Object.values(extraction.layer5_atomicMaterials).reduce((sum: number, arr) => sum + (Array.isArray(arr) ? arr.length : 0), 0), color: 'bg-rose-500' },
+    { layer: '元信息', count: countNonEmptyFields(extraction.layer1), color: 'bg-blue-500' },
+    { layer: '核心逻辑', count: countNonEmptyFields(extraction.layer2), color: 'bg-purple-500' },
+    { layer: '内容模块', count: countNonEmptyFields(extraction.layer3), color: 'bg-emerald-500' },
+    { layer: '语言风格', count: countNonEmptyFields(extraction.layer4), color: 'bg-amber-500' },
+    { layer: '原子素材', count: l5ArrayCount, color: 'bg-rose-500' },
   ];
 
   const totalAssets = assetCounts.reduce((sum, a) => sum + a.count, 0);
@@ -94,11 +108,16 @@ function DigitalAssetMap({ extraction }: { extraction: FiveLayerExtraction }) {
             <Map className="w-5 h-5 text-indigo-600" />
             <CardTitle className="text-lg text-indigo-800">数字资产地图</CardTitle>
           </div>
-          <Badge className="bg-indigo-600 text-white text-sm px-3 py-1">
-            共 {totalAssets} 项数字资产
-          </Badge>
+          <div className="flex items-center gap-2">
+            <Badge className="bg-indigo-600 text-white text-sm px-3 py-1">
+              共 {totalAssets} 项
+            </Badge>
+            <Badge className="bg-amber-500 text-white text-sm px-2 py-1">
+              价值 {extraction.assetValueScore}分
+            </Badge>
+          </div>
         </div>
-        <CardDescription>从1篇文章中提取的可复用数字资产全景</CardDescription>
+        <CardDescription>可复用维度 {extraction.reusableDimensionCount}/21 — {extraction.extractionSummary}</CardDescription>
       </CardHeader>
       <CardContent>
         <div className="grid grid-cols-5 gap-3">
@@ -107,7 +126,7 @@ function DigitalAssetMap({ extraction }: { extraction: FiveLayerExtraction }) {
               <div className="relative mx-auto w-16 h-16 mb-2">
                 <svg viewBox="0 0 36 36" className="w-full h-full -rotate-90">
                   <circle cx="18" cy="18" r="15.9" fill="none" stroke="#e5e7eb" strokeWidth="3" />
-                  <circle cx="18" cy="18" r="15.9" fill="none" className={asset.color.replace('bg-', 'stroke-')} strokeWidth="3" strokeDasharray={`${(asset.count / totalAssets) * 100} 100`} strokeLinecap="round" />
+                  <circle cx="18" cy="18" r="15.9" fill="none" className={asset.color.replace('bg-', 'stroke-')} strokeWidth="3" strokeDasharray={`${totalAssets > 0 ? (asset.count / totalAssets) * 100 : 0} 100`} strokeLinecap="round" />
                 </svg>
                 <span className="absolute inset-0 flex items-center justify-center text-lg font-bold text-slate-700">{asset.count}</span>
               </div>
@@ -117,7 +136,7 @@ function DigitalAssetMap({ extraction }: { extraction: FiveLayerExtraction }) {
         </div>
         <div className="mt-4 p-3 bg-white/60 rounded-lg border border-indigo-100">
           <p className="text-xs text-indigo-700">
-            💡 每积累一个提取单元，你的写作能力就变强一分。提取后的资产可直接喂给写作Agent，实现"写一篇，赚N篇"的复利效应。
+            每积累一个提取单元，你的写作能力就变强一分。提取后的资产可直接喂给写作Agent，实现"写一篇，赚N篇"的复利效应。
           </p>
         </div>
       </CardContent>
@@ -127,9 +146,9 @@ function DigitalAssetMap({ extraction }: { extraction: FiveLayerExtraction }) {
 
 // ====== 单层展开组件 ======
 
-function LayerCard({ layerKey, name, icon: Icon, color, desc, data, extraction }: {
+function LayerCard({ layerKey, name, icon: Icon, color, desc, data }: {
   layerKey: string; name: string; icon: any; color: string; desc: string;
-  data: any; extraction: FiveLayerExtraction;
+  data: any;
 }) {
   const [expanded, setExpanded] = useState(false);
 
@@ -142,36 +161,37 @@ function LayerCard({ layerKey, name, icon: Icon, color, desc, data, extraction }
   };
   const c = colorMap[color] || colorMap.blue;
 
-  // 渲染提取字段
   const renderFields = () => {
     if (!data) return <p className="text-sm text-slate-400">暂无数据</p>;
 
     switch (layerKey) {
-      case 'layer1_metaInfo':
+      case 'layer1':
         return (
           <div className="space-y-3">
-            <FieldRow label="文章标题" value={data.articleTitle?.mainTitle} sub={data.articleTitle?.subTitle} />
-            {data.articleTitle?.altTitles?.length > 0 && (
-              <FieldRow label="备选标题" value={data.articleTitle.altTitles.join(' / ')} />
+            <FieldRow label="文章标题" value={data.articleTitle} highlight />
+            {data.subtitle && <FieldRow label="副标题" value={data.subtitle} />}
+            {data.alternativeTitles?.length > 0 && (
+              <TagRow label="备选标题" values={data.alternativeTitles} />
             )}
             <FieldRow label="文章类型" value={data.articleType} badge />
             <FieldRow label="核心主题" value={data.coreTheme} />
-            <FieldRow label="目标人群" value={data.targetAudience?.join('、')} />
+            <FieldRow label="目标人群" value={data.targetAudience} />
             <FieldRow label="情感基调" value={data.emotionalTone} badge />
             <FieldRow label="发布平台" value={data.publishPlatform} badge />
+            {data.publishTime && <FieldRow label="发布时间" value={data.publishTime} />}
           </div>
         );
-      case 'layer2_coreLogic':
+      case 'layer2':
         return (
           <div className="space-y-3">
             <FieldRow label="核心论点" value={data.coreArgument} highlight />
             <FieldRow label="破局逻辑" value={data.breakthroughLogic} />
             <FieldRow label="论证结构" value={data.argumentStructure} />
             <FieldRow label="价值主张" value={data.valueProposition} />
-            <FieldRow label="行动指引" value={data.callToAction} />
+            <FieldRow label="行动指引" value={data.actionGuide} />
           </div>
         );
-      case 'layer3_contentModules':
+      case 'layer3':
         return (
           <div className="space-y-3">
             <FieldRow label="钩子引入" value={data.hookIntro} />
@@ -182,24 +202,24 @@ function LayerCard({ layerKey, name, icon: Icon, color, desc, data, extraction }
             <FieldRow label="收尾升华" value={data.closingElevation} />
           </div>
         );
-      case 'layer4_languageStyle':
+      case 'layer4':
         return (
           <div className="space-y-3">
             <TagRow label="固定句式" values={data.fixedPatterns} />
             <TagRow label="语气特征" values={data.toneCharacteristics} />
-            <TagRow label="个人口头禅" values={data.personalCatchphrases} />
+            <TagRow label="个人口头禅" values={data.catchphrases} variant="highlight" />
             <TagRow label="禁忌词汇" values={data.forbiddenWords} variant="danger" />
             <FieldRow label="段落节奏" value={data.paragraphRhythm} />
           </div>
         );
-      case 'layer5_atomicMaterials':
+      case 'layer5':
         return (
           <div className="space-y-3">
             <TagRow label="错误认知" values={data.misconceptions} variant="danger" />
             <TagRow label="生活类比" values={data.lifeAnalogies} variant="highlight" />
             <TagRow label="真实案例" values={data.realCases} />
-            <TagRow label="权威数据" values={data.authoritativeData} />
-            <TagRow label="政策引用" values={data.policyReferences} />
+            <TagRow label="权威数据" values={data.authorityData} />
+            <TagRow label="金句提炼" values={data.goldenSentences} />
           </div>
         );
       default:
@@ -218,7 +238,7 @@ function LayerCard({ layerKey, name, icon: Icon, color, desc, data, extraction }
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <Badge className={c.badge}>{countFields(data)} 项</Badge>
+          <Badge className={c.badge}>{countNonEmptyFields(data)} 项</Badge>
           {expanded ? <ChevronDown className="w-4 h-4 text-slate-400" /> : <ChevronRight className="w-4 h-4 text-slate-400" />}
         </div>
       </div>
@@ -234,7 +254,7 @@ function LayerCard({ layerKey, name, icon: Icon, color, desc, data, extraction }
 // ====== 辅助组件 ======
 
 function FieldRow({ label, value, sub, badge, highlight }: { label: string; value?: string; sub?: string; badge?: boolean; highlight?: boolean }) {
-  if (!value) return null;
+  if (!value || value === '未检测到') return null;
   return (
     <div className="flex items-start gap-2">
       <span className="text-xs font-medium text-slate-500 min-w-[80px] shrink-0 pt-0.5">{label}</span>
@@ -265,13 +285,14 @@ function TagRow({ label, values, variant }: { label: string; values?: string[]; 
   );
 }
 
-function countFields(data: any): number {
+/** 统计非空字段数量 */
+function countNonEmptyFields(data: any): number {
   if (!data) return 0;
   let count = 0;
   for (const val of Object.values(data)) {
     if (Array.isArray(val)) count += val.length;
-    else if (typeof val === 'object' && val !== null) count += countFields(val);
-    else if (val) count++;
+    else if (typeof val === 'object' && val !== null) count += countNonEmptyFields(val);
+    else if (val && val !== '未检测到') count++;
   }
   return count;
 }
@@ -285,6 +306,7 @@ export default function ArticleExtractionPanel() {
   const [extraction, setExtraction] = useState<FiveLayerExtraction | null>(null);
   const [extractionId, setExtractionId] = useState<string>('');
   const [history, setHistory] = useState<Array<{ id: string; title: string; createdAt: string }>>([]);
+  const [savingToLibrary, setSavingToLibrary] = useState(false);
 
   // 执行提取
   const handleExtract = useCallback(async () => {
@@ -306,19 +328,34 @@ export default function ArticleExtractionPanel() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           articleContent: articleText,
-          articleTitle: articleTitle || '未命名文章',
+          articleTitle: articleTitle || undefined,
         }),
       });
 
-      const data = await res.json();
-      if (!data.success) {
-        toast.error(data.error || '提取失败');
+      const resp = await res.json();
+      if (!resp.success) {
+        toast.error(resp.error || '提取失败');
         return;
       }
 
-      setExtraction(data.data.extraction);
-      setExtractionId(data.data.id);
-      toast.success(`提取完成！共发现 ${data.data.totalAssets} 项数字资产`);
+      // 后端返回: { success, data: { extractionId, layer1, layer2, ..., extractionSummary, assetValueScore, reusableDimensionCount, savedMaterialCount } }
+      const resultData = resp.data;
+      const extractionResult: FiveLayerExtraction = {
+        layer1: resultData.layer1,
+        layer2: resultData.layer2,
+        layer3: resultData.layer3,
+        layer4: resultData.layer4,
+        layer5: resultData.layer5,
+        extractionSummary: resultData.extractionSummary || '',
+        assetValueScore: resultData.assetValueScore ?? 0,
+        reusableDimensionCount: resultData.reusableDimensionCount ?? 0,
+      };
+
+      setExtraction(extractionResult);
+      setExtractionId(resultData.extractionId);
+
+      const totalAssets = extractionResult.reusableDimensionCount;
+      toast.success(`提取完成！可复用维度 ${totalAssets}/21，资产价值 ${extractionResult.assetValueScore}分`);
     } catch (err: any) {
       toast.error(err.message || '网络错误');
     } finally {
@@ -326,13 +363,45 @@ export default function ArticleExtractionPanel() {
     }
   }, [articleText, articleTitle]);
 
+  // 保存到素材库
+  const handleSaveToLibrary = useCallback(async () => {
+    if (!extractionId) {
+      toast.warning('请先完成提取');
+      return;
+    }
+    setSavingToLibrary(true);
+    try {
+      const res = await fetch(`/api/article-extraction/${extractionId}/save-to-library`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      });
+      const resp = await res.json();
+      if (resp.success) {
+        toast.success(`已保存 ${resp.data?.savedCount ?? 0} 条素材到素材库`);
+      } else {
+        toast.error(resp.error || '保存失败');
+      }
+    } catch (err: any) {
+      toast.error(err.message || '网络错误');
+    } finally {
+      setSavingToLibrary(false);
+    }
+  }, [extractionId]);
+
   // 加载历史
   const loadHistory = useCallback(async () => {
     try {
       const res = await fetch('/api/article-extraction/list?limit=10');
       const data = await res.json();
       if (data.success) {
-        setHistory(data.data.list || []);
+        const items = data.data?.items || data.data?.list || [];
+        // 后端返回 articleTitle，前端统一映射为 title
+        const mapped = items.map((item: any) => ({
+          id: item.id,
+          title: item.articleTitle || item.title || '未命名文章',
+          createdAt: item.createdAt,
+        }));
+        setHistory(mapped);
       }
     } catch { /* ignore */ }
   }, []);
@@ -341,9 +410,30 @@ export default function ArticleExtractionPanel() {
   const loadExtraction = useCallback(async (id: string) => {
     try {
       const res = await fetch(`/api/article-extraction/${id}`);
-      const data = await res.json();
-      if (data.success) {
-        setExtraction(data.data.extraction);
+      const resp = await res.json();
+      if (resp.success && resp.data) {
+        // 详情 API 返回格式可能不同，需要兼容
+        const detail = resp.data;
+        // 尝试从 extraction_layers 重建 FiveLayerExtraction
+        if (detail.extraction) {
+          setExtraction(detail.extraction);
+        } else if (detail.layers) {
+          const layersMap: Record<string, any> = {};
+          for (const layer of detail.layers) {
+            layersMap[layer.layerName] = layer.extractionData;
+          }
+          const extractionResult: FiveLayerExtraction = {
+            layer1: layersMap['meta_info'] || {},
+            layer2: layersMap['core_logic'] || {},
+            layer3: layersMap['content_module'] || {},
+            layer4: layersMap['language_style'] || {},
+            layer5: layersMap['atomic_material'] || {},
+            extractionSummary: detail.extractionSummary || '',
+            assetValueScore: detail.assetValueScore ?? 0,
+            reusableDimensionCount: detail.reusableDimensionCount ?? 0,
+          };
+          setExtraction(extractionResult);
+        }
         setExtractionId(id);
       }
     } catch { /* ignore */ }
@@ -384,7 +474,7 @@ export default function ArticleExtractionPanel() {
             className="bg-white"
           />
           <Textarea
-            placeholder="在此粘贴文章内容...&#10;&#10;建议粘贴完整的保险科普文章（至少200字），系统将提取：&#10;• 文章元信息（标题、类型、情感基调等）&#10;• 核心逻辑（论点、破局逻辑、论证结构等）&#10;• 内容模块（钩子引入、情绪接纳、认知破局等）&#10;• 语言风格（固定句式、口头禅、禁忌词等）&#10;• 原子素材（错误认知、生活类比、真实案例等）"
+            placeholder={"在此粘贴文章内容...\n\n建议粘贴完整的保险科普文章（至少200字），系统将提取：\n• 文章元信息（标题、类型、情感基调等）\n• 核心逻辑（论点、破局逻辑、论证结构等）\n• 内容模块（钩子引入、情绪接纳、认知破局等）\n• 语言风格（固定句式、口头禅、禁忌词等）\n• 原子素材（错误认知、生活类比、真实案例等）"}
             value={articleText}
             onChange={(e) => setArticleText(e.target.value)}
             className="min-h-[200px] bg-white"
@@ -413,10 +503,25 @@ export default function ArticleExtractionPanel() {
 
           {/* 5层展开卡片 */}
           <div className="space-y-3">
-            <h3 className="text-base font-semibold text-slate-700 flex items-center gap-2">
-              <Layers className="w-4 h-4 text-indigo-500" />
-              5层提取详情
-            </h3>
+            <div className="flex items-center justify-between">
+              <h3 className="text-base font-semibold text-slate-700 flex items-center gap-2">
+                <Layers className="w-4 h-4 text-indigo-500" />
+                5层提取详情
+              </h3>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleSaveToLibrary}
+                disabled={savingToLibrary}
+                className="text-indigo-600 border-indigo-300 hover:bg-indigo-50"
+              >
+                {savingToLibrary ? (
+                  <><Loader2 className="w-3 h-3 mr-1 animate-spin" />保存中...</>
+                ) : (
+                  <>保存到素材库</>
+                )}
+              </Button>
+            </div>
             {LAYER_CONFIG.map((layer) => (
               <LayerCard
                 key={layer.key}
@@ -426,7 +531,6 @@ export default function ArticleExtractionPanel() {
                 color={layer.color}
                 desc={layer.desc}
                 data={(extraction as any)[layer.key]}
-                extraction={extraction}
               />
             ))}
           </div>
@@ -434,7 +538,7 @@ export default function ArticleExtractionPanel() {
           {/* 资产复用提示 */}
           <Card className="border-2 border-amber-200 bg-amber-50/50">
             <CardContent className="p-4">
-              <h4 className="font-semibold text-amber-800 mb-2">🔄 资产复用路径</h4>
+              <h4 className="font-semibold text-amber-800 mb-2">资产复用路径</h4>
               <div className="grid grid-cols-2 gap-3 text-sm">
                 <div className="space-y-1">
                   <p className="text-amber-700 font-medium">写作Agent自动消费</p>

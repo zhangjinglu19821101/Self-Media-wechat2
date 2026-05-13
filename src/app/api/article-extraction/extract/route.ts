@@ -10,6 +10,8 @@ import { getWorkspaceId } from '@/lib/auth/context';
 import { db } from '@/lib/db';
 import { articleExtractions, extractionLayers, extractionAssets } from '@/lib/db/schema';
 import { extractArticleDimensions, extractionToMaterialInputs } from '@/lib/services/article-extraction-service';
+import { createHash } from 'crypto';
+import { eq } from 'drizzle-orm';
 
 export async function POST(request: NextRequest) {
   try {
@@ -26,24 +28,34 @@ export async function POST(request: NextRequest) {
 
     console.log(`[ArticleExtraction] 开始提取文章: ${articleTitle || '未命名'} (${articleContent.length}字)`);
 
+    // 计算文章哈希（用于去重）
+    const articleHash = createHash('sha256').update(articleContent.trim()).digest('hex');
+
     // 调用AI提取服务
     const extractionResult = await extractArticleDimensions(articleContent, articleTitle, {
       workspaceId: workspaceId as string,
     });
 
-    // 保存提取结果到数据库
+    // 保存提取结果到数据库（字段名与 Schema 保持一致）
     const [savedExtraction] = await db.insert(articleExtractions).values({
       workspaceId: workspaceId as string,
       articleTitle: extractionResult.layer1.articleTitle || articleTitle || '未命名文章',
-      articleContent: articleContent,
+      articleText: articleContent, // Schema 字段名是 articleText
+      articleHash: articleHash,
       layer1Data: extractionResult.layer1,
       layer2Data: extractionResult.layer2,
       layer3Data: extractionResult.layer3,
       layer4Data: extractionResult.layer4,
       layer5Data: extractionResult.layer5,
+      extractionSummary: extractionResult.extractionSummary,
       assetValueScore: extractionResult.assetValueScore,
       reusableDimensionCount: extractionResult.reusableDimensionCount,
-      extractionSummary: extractionResult.extractionSummary,
+      // 快捷字段（从 layer1 提取）
+      articleType: extractionResult.layer1.articleType || null,
+      coreTheme: extractionResult.layer1.coreTheme || null,
+      emotionTone: extractionResult.layer1.emotionalTone || null,
+      targetAudience: extractionResult.layer1.targetAudience || null,
+      publishPlatform: extractionResult.layer1.publishPlatform || null,
       templateId: templateId || null,
     }).returning();
 
@@ -59,15 +71,49 @@ export async function POST(request: NextRequest) {
       await db.insert(extractionAssets).values(assetRecords);
     }
 
-    // 如果选择保存到素材库
+    // 更新资产数量统计
+    await db
+      .update(articleExtractions)
+      .set({ totalAssetsCreated: assetRecords.length })
+      .where(eq(articleExtractions.id, savedExtraction.id));
+
+    // 如果选择保存到素材库，实际执行保存
     let savedMaterialCount = 0;
     if (saveToLibrary) {
-      const materialInputs = extractionToMaterialInputs(
-        extractionResult,
-        extractionResult.layer1.articleTitle || articleTitle || '未命名文章'
-      );
-      savedMaterialCount = materialInputs.length;
-      console.log(`[ArticleExtraction] 将保存 ${savedMaterialCount} 条素材到素材库`);
+      try {
+        const materialInputs = extractionToMaterialInputs(
+          extractionResult,
+          extractionResult.layer1.articleTitle || articleTitle || '未命名文章'
+        );
+        const sourceTitle = extractionResult.layer1.articleTitle || articleTitle || '未命名文章';
+        
+        // 实际写入 material_library 表
+        const { materialLibrary } = await import('@/lib/db/schema/material-library');
+        for (const input of materialInputs) {
+          try {
+            await db.insert(materialLibrary).values({
+              title: input.title,
+              content: input.content,
+              type: input.type as any,
+              sceneType: (input.sceneType as string) || null,
+              sourceType: 'article_extraction' as any,
+              ownerType: 'user' as const,
+              topicTags: input.topicTags || [],
+              sceneTags: input.sceneTags || [],
+              emotionTags: input.emotionTags || [],
+              workspaceId: workspaceId as string,
+              status: 'active',
+              sourceDesc: sourceTitle,
+            });
+            savedMaterialCount++;
+          } catch (insertErr) {
+            console.warn('[ArticleExtraction] 素材插入跳过（可能重复）:', input.title, insertErr);
+          }
+        }
+        console.log(`[ArticleExtraction] saveToLibrary: 成功保存 ${savedMaterialCount}/${materialInputs.length} 条素材到素材库`);
+      } catch (e) {
+        console.error('[ArticleExtraction] saveToLibrary 失败:', e);
+      }
     }
 
     console.log(`[ArticleExtraction] 提取完成: 资产价值=${extractionResult.assetValueScore}, 可复用维度=${extractionResult.reusableDimensionCount}/21`);
@@ -76,7 +122,14 @@ export async function POST(request: NextRequest) {
       success: true,
       data: {
         extractionId: savedExtraction.id,
-        ...extractionResult,
+        layer1: extractionResult.layer1,
+        layer2: extractionResult.layer2,
+        layer3: extractionResult.layer3,
+        layer4: extractionResult.layer4,
+        layer5: extractionResult.layer5,
+        extractionSummary: extractionResult.extractionSummary,
+        assetValueScore: extractionResult.assetValueScore,
+        reusableDimensionCount: extractionResult.reusableDimensionCount,
         savedMaterialCount,
       },
     });
