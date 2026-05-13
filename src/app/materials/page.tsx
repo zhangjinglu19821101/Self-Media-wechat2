@@ -43,6 +43,14 @@ interface Material {
   createdAt: string;
   updatedAt: string;
   lastUsedAt: string | null;
+  /** 行业标识 */
+  industry: string | null;
+  /** 场景类型（类比/误区/法规/事件等） */
+  sceneType: string | null;
+  /** AI 分析文本 */
+  analysisText: string | null;
+  /** 关联原始文章ID */
+  sourceArticleId: string | null;
 }
 
 type MaterialType = 'case' | 'data' | 'story' | 'quote' | 'opening' | 'ending';
@@ -90,6 +98,24 @@ const OWNER_TABS = [
   { value: 'system', label: '系统素材', icon: <Shield className="w-4 h-4" /> },
   { value: 'bookmarked', label: '已收藏', icon: <Bookmark className="w-4 h-4" /> },
 ];
+
+// 行业标识映射
+const INDUSTRY_MAP: Record<string, string> = {
+  insurance_life: '保险-人寿',
+  insurance_health: '保险-健康',
+  insurance_property: '保险-财产',
+  finance: '金融理财',
+  general: '通用',
+};
+
+// 场景类型映射
+const SCENE_TYPE_MAP: Record<string, string> = {
+  analogy: '类比',
+  myth_busting: '误区破局',
+  regulation: '法规解读',
+  event: '事件',
+  story: '故事',
+};
 
 // ==================== 工具函数 ====================
 const getTypeInfo = (type: MaterialType) => {
@@ -148,6 +174,7 @@ export default function MaterialsPage() {
     sceneTags: [] as string[],
     emotionTags: [] as string[],
     applicablePositions: [] as string[],
+    industry: '' as string,
   });
   const [tagInput, setTagInput] = useState('');
   const [formLoading, setFormLoading] = useState(false);
@@ -284,6 +311,7 @@ export default function MaterialsPage() {
       sceneTags: [],
       emotionTags: [],
       applicablePositions: [],
+      industry: '',
     });
     setSelectedMaterial(null);
     setEditDialogOpen(true);
@@ -306,6 +334,7 @@ export default function MaterialsPage() {
       sceneTags: material.sceneTags || [],
       emotionTags: material.emotionTags || [],
       applicablePositions: material.applicablePositions || [],
+      industry: material.industry || '',
     });
     setEditDialogOpen(true);
   };
@@ -609,6 +638,16 @@ export default function MaterialsPage() {
                             {typeInfo.icon}
                             {typeInfo.label}
                           </Badge>
+                          {material.industry && (
+                            <Badge variant="secondary" className="bg-purple-50 text-purple-700 border-purple-200 text-xs">
+                              {INDUSTRY_MAP[material.industry] || material.industry}
+                            </Badge>
+                          )}
+                          {material.sceneType && (
+                            <Badge variant="secondary" className="bg-teal-50 text-teal-700 border-teal-200 text-xs">
+                              {SCENE_TYPE_MAP[material.sceneType] || material.sceneType}
+                            </Badge>
+                          )}
                           <span className="font-medium truncate">{material.title}</span>
                           {material.useCount > 0 && (
                             <Badge variant="outline" className="text-xs">
@@ -726,6 +765,21 @@ export default function MaterialsPage() {
                     <p>{[...SOURCE_TYPES, ...SYSTEM_SOURCE_TYPES].find(s => s.value === selectedMaterial.sourceType)?.label || selectedMaterial.sourceType}</p>
                   </div>
                 </div>
+                {/* 行业标识 + 场景类型 + 关联文章 */}
+                <div className="grid grid-cols-3 gap-4">
+                  <div>
+                    <Label className="text-muted-foreground">行业标识</Label>
+                    <p>{selectedMaterial.industry ? (INDUSTRY_MAP[selectedMaterial.industry] || selectedMaterial.industry) : '-'}</p>
+                  </div>
+                  <div>
+                    <Label className="text-muted-foreground">场景类型</Label>
+                    <p>{selectedMaterial.sceneType ? (SCENE_TYPE_MAP[selectedMaterial.sceneType] || selectedMaterial.sceneType) : '-'}</p>
+                  </div>
+                  <div>
+                    <Label className="text-muted-foreground">关联原始文章</Label>
+                    <p>{selectedMaterial.sourceArticleId ? '已关联' : '-'}</p>
+                  </div>
+                </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <Label className="text-muted-foreground">状态</Label>
@@ -771,6 +825,19 @@ export default function MaterialsPage() {
                     {selectedMaterial.content}
                   </div>
                 </div>
+
+                {/* AI 分析文本 */}
+                {selectedMaterial.analysisText && (
+                  <div>
+                    <Label className="text-muted-foreground flex items-center gap-1">
+                      <Sparkles className="w-3 h-3" />
+                      AI 分析文本
+                    </Label>
+                    <div className="mt-2 p-4 bg-gradient-to-r from-purple-50 to-indigo-50 border border-purple-100 rounded-lg whitespace-pre-wrap text-sm">
+                      {selectedMaterial.analysisText}
+                    </div>
+                  </div>
+                )}
 
                 <Separator />
 
@@ -978,6 +1045,24 @@ export default function MaterialsPage() {
                   placeholder="素材内容..."
                   rows={6}
                 />
+              </div>
+
+              {/* 行业标识 */}
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>行业标识</Label>
+                  <Select value={formData.industry || 'none'} onValueChange={(v) => setFormData({ ...formData, industry: v === 'none' ? '' : v })}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="选择行业" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">未指定</SelectItem>
+                      {Object.entries(INDUSTRY_MAP).map(([key, label]) => (
+                        <SelectItem key={key} value={key}>{label}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
 
               <Separator />

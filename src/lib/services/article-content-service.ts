@@ -6,7 +6,7 @@
  */
 
 import { db } from '@/lib/db';
-import { articleContent, agentSubTasks, agentSubTasksStepHistory, dailyTask } from '@/lib/db/schema';
+import { articleContent, agentSubTasks, agentSubTasksStepHistory, dailyTask, materialLibrary } from '@/lib/db/schema';
 import { eq, and, desc, like } from 'drizzle-orm';
 import { isWritingAgent } from '@/lib/agents/agent-registry';
 import { getCurrentBeijingTime } from '@/lib/utils/date-time';
@@ -27,6 +27,28 @@ export class ArticleContentService {
       ArticleContentService.instance = new ArticleContentService();
     }
     return ArticleContentService.instance;
+  }
+
+  /**
+   * 从子任务标题和关键词推断行业标识
+   */
+  private inferIndustry(subTask: typeof agentSubTasks.$inferSelect, keywords: string[]): string {
+    const title = (subTask.taskTitle || '').toLowerCase();
+    const allText = title + ' ' + keywords.join(' ');
+
+    if (/人寿|寿险|年金|增额寿|终身寿|定期寿|两全险|万能险|分红险/i.test(allText)) {
+      return 'insurance_life';
+    }
+    if (/重疾|医疗|百万医疗|意外|防癌|惠民保|特药|健康/i.test(allText)) {
+      return 'insurance_health';
+    }
+    if (/车险|财产|家财|责任险|工程险/i.test(allText)) {
+      return 'insurance_property';
+    }
+    if (/理财|投资|基金|信托|银行|储蓄/i.test(allText)) {
+      return 'finance';
+    }
+    return 'general';
   }
 
   /**
@@ -563,6 +585,9 @@ export class ArticleContentService {
         .where(eq(articleContent.taskId, subTask.commandResultId))
         .limit(1);
 
+      // 推断行业标识
+      const industry = this.inferIndustry(subTask, articleData.keywords);
+
       if (existingArticle.length > 0) {
         console.log('[ArticleContentService] 文章已存在，更新内容');
         const [updatedArticle] = await db
@@ -571,10 +596,14 @@ export class ArticleContentService {
             articleTitle: articleData.title,
             articleContent: articleData.content,
             coreKeywords: articleData.keywords,
+            industry,
             updateTime: getCurrentBeijingTime(),
           })
           .where(eq(articleContent.articleId, existingArticle[0].articleId))
           .returning();
+
+        // 回填素材库的 source_article_id
+        await this.backfillMaterialSourceArticle(subTask.commandResultId, existingArticle[0].articleId);
 
         console.log('[ArticleContentService] ========== 文章更新完成 ==========');
         return updatedArticle;
@@ -594,17 +623,46 @@ export class ArticleContentService {
           articleTitle: articleData.title,
           articleContent: articleData.content,
           coreKeywords: articleData.keywords,
+          industry,
           contentStatus: 'draft',
           createTime: getCurrentBeijingTime(),
           updateTime: getCurrentBeijingTime(),
         })
         .returning();
 
+      // 回填素材库的 source_article_id
+      await this.backfillMaterialSourceArticle(subTask.commandResultId, articleId);
+
       console.log('[ArticleContentService] ========== 文章保存完成 ==========');
       return newArticle;
     } catch (error) {
       console.error('[ArticleContentService] 保存文章内容失败:', error);
       return null;
+    }
+  }
+
+  /**
+   * 回填素材库的 source_article_id
+   * 当文章保存后，查找同一任务下从该文章提取的素材，关联文章ID
+   */
+  private async backfillMaterialSourceArticle(
+    commandResultId: string,
+    articleId: string
+  ): Promise<void> {
+    try {
+      // 查找 source_type='article' 且 source_article_id 为空的素材
+      await db
+        .update(materialLibrary)
+        .set({ sourceArticleId: articleId })
+        .where(
+          and(
+            eq(materialLibrary.sourceType, 'article'),
+            eq(materialLibrary.sourceArticleId, '') as any,
+          )
+        );
+      console.log('[ArticleContentService] 已回填素材库 source_article_id:', articleId);
+    } catch (err) {
+      console.warn('[ArticleContentService] 回填素材库 source_article_id 失败:', err);
     }
   }
 
@@ -680,6 +738,9 @@ export class ArticleContentService {
             .where(eq(articleContent.taskId, subTask.commandResultId))
             .limit(1);
 
+      // 推断行业标识
+      const industry = this.inferIndustry(subTask, []);
+
       if (existingArticle.length > 0) {
         console.log('[ArticleContentService] 文章已存在，更新内容');
         const [updatedArticle] = await db
@@ -687,10 +748,14 @@ export class ArticleContentService {
           .set({
             articleTitle: title,
             articleContent: fullArticleContent,
+            industry,
             updateTime: getCurrentBeijingTime(),
           })
           .where(eq(articleContent.articleId, existingArticle[0].articleId))
           .returning();
+
+        // 回填素材库的 source_article_id
+        await this.backfillMaterialSourceArticle(subTask.commandResultId, existingArticle[0].articleId);
 
         console.log('[ArticleContentService] ========== 文章更新完成 ==========');
         return updatedArticle;
@@ -711,11 +776,15 @@ export class ArticleContentService {
           articleTitle: title,
           articleContent: fullArticleContent,
           coreKeywords: [],
+          industry,
           contentStatus: 'draft',
           createTime: getCurrentBeijingTime(),
           updateTime: getCurrentBeijingTime(),
         })
         .returning();
+
+      // 回填素材库的 source_article_id
+      await this.backfillMaterialSourceArticle(subTask.commandResultId, articleId);
 
       console.log('[ArticleContentService] ========== 文章保存完成 ==========');
       return newArticle;

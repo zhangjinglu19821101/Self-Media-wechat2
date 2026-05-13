@@ -19,6 +19,10 @@ interface GenerateAndSaveRequest {
   context?: string;
   /** 是否保存到素材库（默认 true） */
   autoSave?: boolean;
+  /** 行业标识（如 insurance_life, insurance_health, finance 等） */
+  industry?: string;
+  /** 关联的原始文章ID */
+  sourceArticleId?: string;
 }
 
 function buildMythBustingPrompt(input: string, context?: string): string {
@@ -80,7 +84,7 @@ export async function POST(request: NextRequest) {
     const _accountId = await getAccountId(request);
 
     const body: GenerateAndSaveRequest = await request.json();
-    const { generateType, input, context, autoSave = true } = body;
+    const { generateType, input, context, autoSave = true, industry, sourceArticleId } = body;
 
     if (!generateType || !input) {
       return NextResponse.json({ error: '缺少必要参数' }, { status: 400 });
@@ -153,6 +157,10 @@ export async function POST(request: NextRequest) {
           topicTags: [],
           sceneTags: [generateType],
           emotionTags: [],
+          industry: industry || null,
+          sourceArticleId: sourceArticleId || null,
+          sceneType: generateType || null,
+          analysisText: content,
         }).returning();
 
         savedMaterial = inserted;

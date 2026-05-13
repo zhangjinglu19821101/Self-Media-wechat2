@@ -128,7 +128,8 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       'title', 'type', 'content',
       'sourceType', 'sourceDesc', 'sourceUrl',
       'topicTags', 'sceneTags', 'emotionTags',
-      'applicablePositions', 'status', 'vectorId'
+      'applicablePositions', 'status', 'vectorId',
+      'industry', 'sourceArticleId', 'sceneType', 'analysisText'
     ];
 
     for (const field of updatableFields) {

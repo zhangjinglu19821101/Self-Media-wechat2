@@ -339,7 +339,11 @@ export async function POST(request: NextRequest) {
       topicTags = [],
       sceneTags = [],
       emotionTags = [],
-      applicablePositions = []
+      applicablePositions = [],
+      industry,
+      sourceArticleId,
+      sceneType,
+      analysisText,
     } = body;
 
     // 参数校验
@@ -396,6 +400,10 @@ export async function POST(request: NextRequest) {
         sceneTags,
         emotionTags,
         applicablePositions,
+        industry: industry || null,
+        sourceArticleId: sourceArticleId || null,
+        sceneType: sceneType || null,
+        analysisText: analysisText || null,
         status: 'active',
         useCount: 0,
         effectiveCount: 0,

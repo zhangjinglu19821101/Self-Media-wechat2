@@ -946,6 +946,11 @@ export const articleContent = pgTable('article_content', {
    * 扩展信息（如字数、分段结构、配图ID等）
    */
   extInfo: jsonb('ext_info').default({}),
+
+  /**
+   * 行业标识（如 insurance_life, insurance_health, finance 等）
+   */
+  industry: text('industry'),
 }, (table) => {
   return {
     // 索引：task_id

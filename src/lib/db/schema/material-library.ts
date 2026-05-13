@@ -51,6 +51,20 @@ export const VALID_SOURCE_TYPES: string[] = [
 export const SYSTEM_SOURCE_TYPES: string[] = ['system_admin', 'system_crawl'];
 
 /**
+ * 行业标识选项
+ * 素材的行业归属，用于按行业筛选素材
+ */
+export const INDUSTRY_OPTIONS = [
+  { value: 'insurance_life', label: '人寿保险', icon: '🛡️' },
+  { value: 'insurance_health', label: '健康保险', icon: '🏥' },
+  { value: 'insurance_property', label: '财产保险', icon: '🏠' },
+  { value: 'finance', label: '金融理财', icon: '💰' },
+  { value: 'general', label: '通用', icon: '📋' },
+] as const;
+
+export type MaterialIndustryType = typeof INDUSTRY_OPTIONS[number]['value'];
+
+/**
  * 素材库表
  * 核心字段：标题、类型、内容、来源、标签、归属
  */
@@ -81,7 +95,13 @@ export const materialLibrary = pgTable('material_library', {
 
   // === AI分析/解读文本 ===
   analysisText: text('analysis_text'), // AI分析文本（类比映射、误区拆解、法规要点、事件启示）
-  
+
+  // === 行业标识 ===
+  industry: text('industry'), // 行业标识：insurance_life(人寿保险) / insurance_health(健康保险) / insurance_property(财产保险) / finance(金融理财) / general(通用)
+
+  // === 来源文章关联 ===
+  sourceArticleId: text('source_article_id'), // 来源文章ID（关联 article_content.article_id），追溯素材提取自哪篇原始文章
+
   // === 适用信息 ===
   applicablePositions: jsonb('applicable_positions').$type<string[]>().default([]), // 适用位置：opening/body/conclusion
   
@@ -113,6 +133,10 @@ export const materialLibrary = pgTable('material_library', {
   // GIN索引：支持JSONB数组查询
   topicTagsIdx: index('idx_material_topic_tags').using('gin', table.topicTags),
   sceneTagsIdx: index('idx_material_scene_tags').using('gin', table.sceneTags),
+  // 行业索引
+  industryIdx: index('idx_material_industry').on(table.industry),
+  // 来源文章关联索引
+  sourceArticleIdx: index('idx_material_source_article').on(table.sourceArticleId),
 }));
 
 /**
