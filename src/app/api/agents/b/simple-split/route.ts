@@ -85,6 +85,7 @@ export async function POST(request: NextRequest) {
       articleLength, // 🔥 Phase 2: 篇幅类型（short/medium/long）
       primaryMaterialId, // 🔥 Phase 2: 主素材ID（产品信息/法规原文等核心素材）
       auxiliaryMaterialIds, // 🔥 Phase 2: 辅素材ID列表（类比/案例/数据等支撑素材）
+      paradigmCode, // 🔥 范式代码（如 P001-标准错位破局）
       // useFlowTemplate 已移除：步骤来源由数据特征自动判断
       // 前端 subTasks 中包含 accountId 字段 → 使用前端编辑步骤
       // 否则 → 使用流程模板兜底
@@ -347,6 +348,7 @@ export async function POST(request: NextRequest) {
               ...(derivedImageCountMode ? { imageCountMode: derivedImageCountMode } : {}),
               ...(contentTemplateId ? { contentTemplateId } : {}),
               ...(taskCaseIds.length > 0 ? { caseIds: taskCaseIds } : {}),
+              ...(paradigmCode ? { paradigmCode } : {}), // 🔥 范式代码
             },
             createdAt: new Date(),
             updatedAt: new Date(),
@@ -422,6 +424,7 @@ export async function POST(request: NextRequest) {
                 adaptationPlatform: adaptAcc.platform, // 🔥 适配目标平台
                 ...(derivedImageCountMode ? { imageCountMode: derivedImageCountMode } : {}),
                 ...(contentTemplateId ? { contentTemplateId } : {}),
+                ...(paradigmCode ? { paradigmCode } : {}), // 🔥 范式代码
               },
               createdAt: new Date(),
               updatedAt: new Date(),
@@ -505,6 +508,7 @@ export async function POST(request: NextRequest) {
             ...(derivedImageCountMode ? { imageCountMode: derivedImageCountMode } : {}), // 🔥 小红书图片模式（从内容模板推导或前端传入）
             ...(contentTemplateId ? { contentTemplateId } : {}), // 🔥🔥 内容模板ID
             ...(taskCaseIds.length > 0 ? { caseIds: taskCaseIds } : {}), // 🔥 行业案例ID列表
+            ...(paradigmCode ? { paradigmCode } : {}), // 🔥 范式代码
           },
           createdAt: new Date(),
           updatedAt: new Date(),

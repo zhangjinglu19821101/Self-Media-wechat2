@@ -29,7 +29,6 @@ import { toast } from 'sonner';
 import { AgentTaskListNormal } from '@/components/agent-task-list-normal';
 import { XiaohongshuPreview } from '@/components/xiaohongshu-preview';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
-import { STRUCTURE_TEMPLATES, getDefaultStructure, type StructureTemplate } from '@/components/creation-guide/structure-templates';
 import { PLATFORM_CONFIG_FIELDS, type PlatformType, PLATFORM_LABELS } from '@/lib/db/schema/style-template';
 import { getFlowTemplate } from '@/lib/agents/flow-templates';
 import { HorizontalFlowDiagram } from '@/components/creation-guide/horizontal-flow-diagram';
@@ -94,8 +93,9 @@ interface SubTask {
   // 提交时临时使用的字段
   userOpinion?: string | null;
   materialIds?: string[];
-  structureName?: string | null;
-  structureDetail?: string | null;
+  paradigmCode?: string | null;
+  paradigmName?: string | null;
+  paradigmDetail?: string | null;
   // 多平台分组信息（前端注入，后端用于按平台筛选子任务）
   accountId?: string;
   platform?: string;
@@ -231,7 +231,7 @@ interface FormSnapshot {
     cardCountMode?: string;
     densityStyle?: string;
   } | null;
-  selectedStructureId: string;
+  selectedParadigmId: string;
   hasSplitResult: boolean;
   subTasks: SubTask[];
   // 🔥 只保存精简的案例快照，避免 sessionStorage 容量超限
@@ -291,7 +291,7 @@ function loadFormSnapshot(): FormSnapshot | null {
           : [],
         selectedAccountIds: (snapshot as any).selectedAccountIds || [],
         selectedContentTemplate: snapshot.selectedContentTemplate || null,
-        selectedStructureId: snapshot.selectedStructureId || '',
+        selectedParadigmId: snapshot.selectedParadigmId || '',
         hasSplitResult: snapshot.hasSplitResult || false,
         subTasks: snapshot.subTasks || [],
         recommendedCases: (snapshot.recommendedCases || []).map(toCaseItemSnapshot),
@@ -482,7 +482,7 @@ export default function HomePage() {
 
   // 🔥 创作引导相关状态
   const [showCreationGuide, setShowCreationGuide] = useState(true);
-  const [activeGuideCard, setActiveGuideCard] = useState<'content' | 'structure' | 'platform' | 'guide' | null>(null);
+  const [activeGuideCard, setActiveGuideCard] = useState<'content' | 'paradigm' | 'platform' | 'guide' | null>(null);
   const [activeGuideTab, setActiveGuideTab] = useState<'opinion' | 'emotion' | 'case' | 'articleType' | 'aiAssist' | 'aiGenerate'>('opinion');
   
   // 🔥 横向流程图节点选中状态（用于联动详情面板）
@@ -560,9 +560,31 @@ export default function HomePage() {
   const [caseFilterCrowd, setCaseFilterCrowd] = useState<string>('all'); // 人群筛选
   const [caseFilterType, setCaseFilterType] = useState<string>('all'); // 案例类型筛选
 
-  // 🔥 结构选择相关状态
-  const [selectedStructure, setSelectedStructure] = useState<StructureTemplate>(() => getDefaultStructure());
-  const [showAllStructures, setShowAllStructures] = useState(false);
+  // 🔥 范式选择相关状态（替代结构选择）
+  const [paradigms, setParadigms] = useState<Array<{
+    id: string;
+    name: string;
+    description: string;
+    sectionCount: number;
+    totalWordRange: { min: number; max: number };
+    applicableArticleTypes: string[];
+    applicableSceneKeywords: string[];
+    signaturePhrases: string[];
+    sortOrder: number;
+    structurePreview: Array<{
+      order: number;
+      name: string;
+      wordRange: { min: number; max: number };
+      contentRequirement: string;
+    }>;
+  }>>([]);
+  const [selectedParadigm, setSelectedParadigm] = useState<{
+    id: string;
+    name: string;
+    description: string;
+    sectionCount: number;
+  } | null>(null);
+  const [loadingParadigms, setLoadingParadigms] = useState(false);
   
   // 🔥 发布账号选择相关状态
   const [accountConfigs, setAccountConfigs] = useState<Array<{
@@ -751,9 +773,14 @@ export default function HomePage() {
       setSelectedAccountId(snapshot.selectedAccountIds[0]);
     }
     if (snapshot.selectedContentTemplate) setSelectedContentTemplate(snapshot.selectedContentTemplate);
-    if (snapshot.selectedStructureId) {
-      const structure = STRUCTURE_TEMPLATES.find(s => s.id === snapshot.selectedStructureId);
-      if (structure) setSelectedStructure(structure);
+    if (snapshot.selectedParadigmId && paradigms.length > 0) {
+      const paradigm = paradigms.find(p => p.id === snapshot.selectedParadigmId);
+      if (paradigm) setSelectedParadigm({
+        id: paradigm.id,
+        name: paradigm.name,
+        description: paradigm.description,
+        sectionCount: paradigm.sectionCount,
+      });
     }
     // 🔥 恢复提交表单字段
     if (snapshot.taskTitle) setTaskTitle(snapshot.taskTitle);
@@ -845,7 +872,7 @@ export default function HomePage() {
       selectedMaterials: selectedMaterials.map(toMaterialItemSnapshot),
       selectedAccountIds,
       selectedContentTemplate,
-      selectedStructureId: selectedStructure?.id || '',
+      selectedParadigmId: selectedParadigm?.id || '',
       hasSplitResult,
       subTasks,
       // 🔥 保存精简的案例快照，减少 sessionStorage 容量占用
@@ -857,7 +884,7 @@ export default function HomePage() {
       platformSubTaskGroups,
       savedAt: Date.now(),
     });
-  }, [mainInstruction, coreOpinion, emotionTone, selectedMaterialIds, selectedMaterials, selectedAccountIds, selectedContentTemplate, selectedStructure, hasSplitResult, subTasks, recommendedCases, selectedCases, taskTitle, executionDate, platformSubTaskGroups]);
+  }, [mainInstruction, coreOpinion, emotionTone, selectedMaterialIds, selectedMaterials, selectedAccountIds, selectedContentTemplate, selectedParadigm, hasSplitResult, subTasks, recommendedCases, selectedCases, taskTitle, executionDate, platformSubTaskGroups]);
 
   // 🔥 获取账号列表（AI拆解后自动加载）
   useEffect(() => {
@@ -865,6 +892,11 @@ export default function HomePage() {
       loadAccountConfigs();
     }
   }, [hasSplitResult]);
+
+  // 🔥 获取范式列表（页面加载时）
+  useEffect(() => {
+    loadParadigms();
+  }, []);
 
   // 🔥 当账号选择变化且已有AI拆解结果时，用流程模板初始化按平台分组的子任务
   // 注意：AI拆解结果仅用于展示，真正创建任务时使用固定流程模板
@@ -952,6 +984,30 @@ export default function HomePage() {
       console.error('获取账号列表失败:', error);
     } finally {
       setLoadingAccounts(false);
+    }
+  };
+
+  // 🔥 加载范式列表
+  const loadParadigms = async () => {
+    setLoadingParadigms(true);
+    try {
+      const data: any = await apiGet('/api/paradigms');
+      if (data?.success && data.data?.length > 0) {
+        setParadigms(data.data);
+        // 默认选中第一个范式
+        if (!selectedParadigm) {
+          setSelectedParadigm({
+            id: data.data[0].id,
+            name: data.data[0].name,
+            description: data.data[0].description,
+            sectionCount: data.data[0].sectionCount,
+          });
+        }
+      }
+    } catch (error) {
+      console.error('获取范式列表失败:', error);
+    } finally {
+      setLoadingParadigms(false);
     }
   };
 
@@ -2577,21 +2633,20 @@ export default function HomePage() {
     }
     
     // 🆕 为每个子任务根据 creationGuideConfig 组装独立的创作引导
-    // 🔥 结构详情（隐性继承，始终传递）
-    const structureDetailJson = selectedStructure ? JSON.stringify({
-      id: selectedStructure.id,
-      name: selectedStructure.name,
-      description: selectedStructure.description,
-      sections: selectedStructure.sections,
-      totalWordCount: selectedStructure.totalSuggestedWordCount || selectedStructure.sections.reduce((sum, s) => sum + s.suggestedWordCount, 0),
+    // 🔥 范式详情（隐性继承，始终传递）
+    const paradigmDetailJson = selectedParadigm ? JSON.stringify({
+      id: selectedParadigm.id,
+      name: selectedParadigm.name,
+      description: selectedParadigm.description,
+      sectionCount: selectedParadigm.sectionCount,
     }) : null;
     
     // 🔥 构建子任务的创作引导信息
     const buildTasksWithGuide = (tasks: SubTask[]) => tasks.filter(t => t.title.trim()).map(task => {
       const inheritFromGlobal = task.creationGuideConfig?.inheritFromGlobal ?? true;
 
-      const taskStructureName = selectedStructure?.name || null;
-      const taskStructureDetail = structureDetailJson;
+      const taskParadigmName = selectedParadigm?.name || null;
+      const taskParadigmDetail = paradigmDetailJson;
 
       if (inheritFromGlobal) {
         let taskUserOpinion = '';
@@ -2599,8 +2654,8 @@ export default function HomePage() {
           taskUserOpinion += `【核心观点】${coreOpinion.trim()}`;
         }
         taskUserOpinion += `${taskUserOpinion ? '\n' : ''}【情感基调】${emotionTone}`;
-        if (selectedStructure) {
-          taskUserOpinion += `${taskUserOpinion ? '\n' : ''}【文章结构】${selectedStructure.name}（${selectedStructure.sections.length}段，约${selectedStructure.totalSuggestedWordCount || selectedStructure.sections.reduce((sum, s) => sum + s.suggestedWordCount, 0)}字）`;
+        if (selectedParadigm) {
+          taskUserOpinion += `${taskUserOpinion ? '\n' : ''}【创作范式】${selectedParadigm.name}（${selectedParadigm.sectionCount}段）`;
         }
         // 🔥 原始指令不再拼入 userOpinion，改为独立传递 originalInstruction
 
@@ -2610,13 +2665,14 @@ export default function HomePage() {
           originalInstruction: mainInstruction.trim() || null, // 🔥 独立字段
           materialIds: selectedMaterialIds,
           caseIds: selectedCaseIds,
-          structureName: taskStructureName,
-          structureDetail: taskStructureDetail,
+          paradigmCode: selectedParadigm?.id || null,
+          paradigmName: taskParadigmName,
+          paradigmDetail: taskParadigmDetail,
         };
       } else {
         let taskUserOpinion = `【情感基调】${emotionTone}`;
-        if (selectedStructure) {
-          taskUserOpinion += `\n【文章结构】${selectedStructure.name}（${selectedStructure.sections.length}段，约${selectedStructure.totalSuggestedWordCount || selectedStructure.sections.reduce((sum, s) => sum + s.suggestedWordCount, 0)}字）`;
+        if (selectedParadigm) {
+          taskUserOpinion += `\n【创作范式】${selectedParadigm.name}（${selectedParadigm.sectionCount}段）`;
         }
         // 🔥 原始指令不再拼入 userOpinion，改为独立传递 originalInstruction
 
@@ -2626,8 +2682,9 @@ export default function HomePage() {
           originalInstruction: mainInstruction.trim() || null, // 🔥 独立字段
           materialIds: [],
           caseIds: [],
-          structureName: taskStructureName,
-          structureDetail: taskStructureDetail,
+          paradigmCode: selectedParadigm?.id || null,
+          paradigmName: taskParadigmName,
+          paradigmDetail: taskParadigmDetail,
         };
       }
     });
@@ -2644,9 +2701,10 @@ export default function HomePage() {
         originalInstruction: mainInstruction.trim() || null, // 🔥 独立字段：用户原始指令
         materialIds: selectedMaterialIds,
         caseIds: selectedCaseIds,
-        // 结构选择数据（隐性继承，始终传递）
-        structureName: selectedStructure?.name || null,
-        structureDetail: structureDetailJson,
+        // 范式选择数据（隐性继承，始终传递）
+        paradigmCode: selectedParadigm?.id || null,
+        paradigmName: selectedParadigm?.name || null,
+        paradigmDetail: paradigmDetailJson,
         // 发布账号（用于获取风格模板）
         accountId: selectedAccountId || null,
         // 多平台发布：选中的账号ID列表
@@ -3261,10 +3319,10 @@ export default function HomePage() {
                     </div>
                   </button>
 
-                  {/* 卡片2：结构选择（公众号特有） */}
+                  {/* 卡片2：范式选择 */}
                   <button
                     type="button"
-                    onClick={() => setActiveGuideCard('structure')}
+                    onClick={() => setActiveGuideCard('paradigm')}
                     className="group relative bg-white rounded-3xl border-2 border-slate-100 shadow-lg shadow-slate-200/50 hover:shadow-xl hover:shadow-emerald-200/70 hover:border-emerald-200 transition-all duration-300 overflow-hidden"
                   >
                     <div className="absolute inset-0 bg-gradient-to-br from-emerald-50 via-white to-slate-50 opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
@@ -3293,21 +3351,24 @@ export default function HomePage() {
 
                       {/* 标题 */}
                       <h3 className="text-xl md:text-2xl font-bold text-slate-900 text-center">
-                        结构选择
+                        范式选择
                       </h3>
 
-                      {/* 平台特有标识 */}
+                      {/* 描述 */}
                       <div className="mt-2 flex justify-center">
                         <Badge className="text-xs bg-emerald-100 text-emerald-700 border border-emerald-200">
-                          公众号专属
+                          10套固定范式
                         </Badge>
                       </div>
 
                       {/* 状态Badge */}
-                      {selectedStructure && (
-                        <div className="mt-2 flex justify-center">
+                      {selectedParadigm && (
+                        <div className="mt-2 flex justify-center gap-1">
                           <Badge className="text-xs bg-slate-100 text-slate-600 border border-slate-200">
-                            {selectedStructure.sections.length}段
+                            {selectedParadigm.name}
+                          </Badge>
+                          <Badge className="text-xs bg-emerald-100 text-emerald-700 border border-emerald-200">
+                            {selectedParadigm.sectionCount}段
                           </Badge>
                         </div>
                       )}
@@ -3510,19 +3571,19 @@ export default function HomePage() {
                     );
                   })()}
 
-                  {/* ② 文章结构选择（仅在 activeGuideCard === 'structure' 时显示） */}
-                  {activeGuideCard === 'structure' && (
+                  {/* ② 范式选择（仅在 activeGuideCard === 'paradigm' 时显示） */}
+                  {activeGuideCard === 'paradigm' && (
                   <div className="bg-white rounded-3xl border border-slate-200 shadow-lg overflow-hidden">
                     {/* 标题区域 */}
                     <div className="px-6 py-5 border-b border-slate-100 flex items-center justify-between">
                       <div>
                         <div className="flex items-center gap-3">
-                          <h2 className="text-2xl font-bold text-slate-900">文章结构</h2>
-                          <Badge className="text-xs text-blue-700 bg-blue-100 border border-blue-200">
-                            {selectedStructure.name}
+                          <h2 className="text-2xl font-bold text-slate-900">创作范式</h2>
+                          <Badge className="text-xs text-emerald-700 bg-emerald-100 border border-emerald-200">
+                            10套固定范式
                           </Badge>
                         </div>
-                        <p className="text-sm text-slate-500 mt-1">选择文章的段落结构模板，不同结构适合不同场景</p>
+                        <p className="text-sm text-slate-500 mt-1">选择创作范式，每套范式包含固定的段落结构、句式模板和情绪曲线</p>
                       </div>
                       <Button
                         variant="ghost"
@@ -3534,41 +3595,57 @@ export default function HomePage() {
                       </Button>
                     </div>
                     
-                    {/* 结构模板列表 */}
+                    {/* 范式列表 */}
                     <div className="p-6 bg-slate-50/50">
-                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                        {STRUCTURE_TEMPLATES.map((structure) => (
-                          <div
-                            key={structure.id}
-                            onClick={() => setSelectedStructure(structure)}
-                            className={`
-                              p-4 rounded-xl border-2 cursor-pointer transition-all duration-200
-                              ${selectedStructure.id === structure.id
-                                ? 'border-blue-500 bg-blue-50 shadow-md'
-                                : 'border-slate-200 bg-white hover:border-blue-300 hover:shadow-sm'
-                              }
-                            `}
-                          >
-                            <div className="flex items-center justify-between mb-2">
-                              <h3 className="font-semibold text-slate-900">{structure.name}</h3>
-                              {selectedStructure.id === structure.id && (
-                                <CheckCircle2 className="w-5 h-5 text-blue-500" />
-                              )}
+                      {loadingParadigms ? (
+                        <div className="flex justify-center py-8">
+                          <Loader2 className="w-6 h-6 animate-spin text-slate-400" />
+                        </div>
+                      ) : (
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                          {paradigms.map((paradigm) => (
+                            <div
+                              key={paradigm.id}
+                              onClick={() => setSelectedParadigm({
+                                id: paradigm.id,
+                                name: paradigm.name,
+                                description: paradigm.description,
+                                sectionCount: paradigm.sectionCount,
+                              })}
+                              className={`
+                                p-4 rounded-xl border-2 cursor-pointer transition-all duration-200
+                                ${selectedParadigm?.id === paradigm.id
+                                  ? 'border-emerald-500 bg-emerald-50 shadow-md'
+                                  : 'border-slate-200 bg-white hover:border-emerald-300 hover:shadow-sm'
+                                }
+                              `}
+                            >
+                              <div className="flex items-center justify-between mb-2">
+                                <h3 className="font-semibold text-slate-900">{paradigm.name}</h3>
+                                <div className="flex items-center gap-2">
+                                  <Badge className="text-xs bg-slate-100 text-slate-600">
+                                    {paradigm.sectionCount}段
+                                  </Badge>
+                                  {selectedParadigm?.id === paradigm.id && (
+                                    <CheckCircle2 className="w-5 h-5 text-emerald-500" />
+                                  )}
+                                </div>
+                              </div>
+                              <p className="text-sm text-slate-500 mb-3">{paradigm.description}</p>
+                              <div className="flex flex-wrap gap-1">
+                                {(paradigm.applicableTypes || []).slice(0, 3).map((type, idx) => (
+                                  <span
+                                    key={idx}
+                                    className="text-xs px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700"
+                                  >
+                                    {type}
+                                  </span>
+                                ))}
+                              </div>
                             </div>
-                            <p className="text-sm text-slate-500 mb-3">{structure.description}</p>
-                            <div className="flex flex-wrap gap-1">
-                              {structure.sections.map((section, idx) => (
-                                <span
-                                  key={idx}
-                                  className="text-xs px-2 py-0.5 rounded-full bg-slate-100 text-slate-600"
-                                >
-                                  {section.name}
-                                </span>
-                              ))}
-                            </div>
-                          </div>
-                        ))}
-                      </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   </div>
                   )}
