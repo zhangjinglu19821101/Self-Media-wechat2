@@ -305,11 +305,12 @@ function buildRelationalExtractionPrompt(
 
   return `# 关系型素材提取器
 
-## 核心原则
-1. **保留原文**：提取的内容必须是原文原话，不做任何改写、总结或润色
-2. **保留关系**：每个素材必须标注位置、上下文、情绪、与前文的关系
-3. **保留节奏**：标注情绪曲线和段落节奏，这些决定文章的"呼吸感"
-4. **只提有用的**：只提取7种类型的素材，不提取无用维度
+## 最高优先级规则（必须严格遵守）
+1. 绝对不提取单个的孤立句子，所有素材的最小单位是**2个连续的句子**，必须保留原文的所有换行、空行、标点、语气词和表情符号
+2. 所有提取的内容必须**一字不差**来自原文，不能有任何改写、缩写或润色
+3. 严格按照下面的7个维度提取，一个都不能少；如果某个维度在原文中没有，填写"未提取到"
+4. 每个维度下可以提取多条素材，只要符合定义就全部提取，不要遗漏
+5. 每个素材必须包含：【素材内容】+【功能标签】+【前文】+【后文】四个部分
 
 ## 已识别的范式
 ${paradigmInfo}
@@ -317,61 +318,116 @@ ${paradigmInfo}
 ## 结构映射
 ${structureMappingStr || '未识别到明确的结构映射'}
 
-## 7种素材类型定义（与设计方案严格对齐）
+## 7个提取维度的精确定义
 
-| 类型 | 说明 | 提取规则 |
-|------|------|----------|
-| misconception（错误认知） | 大众的错误观点原话，以及后面紧跟的第一句共情接纳的话 | 必须包含2个以上连续句子，一字不差保留原文，保留换行和空行 |
-| analogy（生活类比） | 生活化的比喻，以及前面一句引出比喻的话 | 必须包含2个以上连续句子，保留类比逻辑和前后节奏 |
-| case（真实案例） | 完整的案例，以及前面一句引出案例的话 | 保留完整因果链：起因→经过→结果，保留换行和空行 |
-| data（权威数据） | 行业数据、官方统计，以及后面一句基于数据得出的结论 | 必须标注数据来源和年份，保留数据和结论的搭配 |
-| golden_sentence（金句） | 结尾的总结性金句，以及前面一句引出金句的话 | 必须包含2个以上连续句子，保留换行和节奏 |
-| fixed_phrase（固定句式组合） | 不可分割的2-3个连续标志性句子 | 完整保留，不能拆开使用，保留换行和空行 |
-| personal_fragment（个人碎片） | 作者的小吐槽、小自嘲、小停顿等个人化表达 | 保留完整个人化表达，包括语气词和停顿 |
+### 1. 错误认知
+- 定义：原文中引用的大众对保险的错误观点原话，以及紧跟在错误观点后面的第一句共情/接纳的话
+- 提取规则：只要出现"有人说"、"很多人认为"、"我觉得"、"XX就是骗钱的"等表述，就提取错误观点+后面第一句回应
+- 功能标签示例：分析问题根源、承接前文引出下一个误区、共情+理性引导
+
+### 2. 生活类比
+- 定义：所有用生活化事物解释保险概念的比喻，以及**引出比喻的前一句话**
+- 提取规则：只要出现"就像"、"好比"、"和...一样"、"举个例子"等关键词，就提取前一句+比喻句
+- 注意：即使比喻嵌入在其他段落中，也要单独提取出来
+- 功能标签示例：区分工具与人、通俗引导、用类比讲透本质
+
+### 3. 真实案例
+- 定义：所有真实发生的事情，包括三类：
+  1. 作者本人的亲身经历
+  2. 作者见过的客户案例
+  3. 行业普遍存在的现象
+- 提取规则：只要出现"我"、"我见过"、"很多人"、"有这样的情况"、"去年"、"2025年"等关键词，就提取完整的案例内容
+- 功能标签示例：用个人经历强化观点、用反面案例归谬、行业现象佐证
+
+### 4. 权威数据
+- 定义：所有行业数据、官方统计、政策文件，以及**基于数据得出的结论句**
+- 提取规则：只要出现数字、百分比、"统计"、"数据显示"等表述，就提取数据句+后面第一句结论
+- 功能标签示例：理性客观、用数据纠正以偏概全、权威佐证
+
+### 5. 金句
+- 定义：所有简短有力、表达核心观点、可以独立使用的句子，包括：
+  1. 文章结尾的总结性金句
+  2. 文章中间的核心观点句
+  3. 作者常说的口头禅式观点
+- 提取规则：只要是单独成段、前后有空行、包含"我常说"、"所以说"、"归根结底"等关键词的句子，全部提取
+- 功能标签示例：收尾升华、核心观点、灵魂拷问
+
+### 6. 固定句式组合
+- 定义：作者标志性的、不可分割的2-3个连续句子，在多篇文章中重复出现
+- 提取规则：重点匹配以下标志性句式（只要出现就必须提取）：
+  - "这种算法，逻辑上没问题。但它犯了一个错误："
+  - "XX年的我...XX年的我..."
+  - "如果按'XX'的逻辑算，我'赚了'……好吧，如果这事发生在你身上，你真会觉得XX是'赚到'了吗？"
+- 功能标签示例：标准错位破局、自我反思、反问强化
+
+### 7. 个人碎片
+- 定义：只有作者本人才会说的、独一无二的个人化表达，包括：
+  1. 小吐槽、小自嘲
+  2. 括号里的补充说明、题外话
+  3. 语气词、停顿词、表情符号
+- 提取规则：只要是看起来"没用"、不能通用、只有作者会说的话，全部提取
+- 功能标签示例：自嘲、个人IP强化、插入式补充说明
 
 ## 输出格式
-严格按照下面的JSON格式输出，不添加任何额外内容：
+严格按照下面的JSON格式输出，不添加任何额外的说明、注释或markdown格式：
 {
-  "articleTitle": "文章标题",
-  "articleType": "客户误区型/事件驱动型/行业新认知型",
-  "coreTheme": "核心主题（如增额寿回本逻辑）",
-  "targetAudience": "目标人群",
-  "emotionalTone": "共情式破局/理性客观/踩坑警醒/专业权威",
-  "platform": "公众号/小红书/抖音/朋友圈",
-  "relationalMaterials": [
+  "错误认知": [
     {
-      "id": "m1",
-      "materialType": "misconception",
-      "content": "原文原话（一字不差）",
-      "position": 0,
-      "contextBefore": "前一句原文",
-      "contextAfter": "后一句原文",
-      "emotion": "警醒",
-      "relationToPrevious": "首句，无前文",
-      "paradigmStep": "错误认知",
-      "topicTags": ["港险", "增额寿"],
-      "sceneTags": ["误区反驳"]
+      "内容": "完整的2句原文，保留所有换行和空行",
+      "功能标签": ["标签1", "标签2"],
+      "前文": "这个素材前面紧挨着的原文内容",
+      "后文": "这个素材后面紧挨着的原文内容"
     }
   ],
-  "emotionCurve": [
-    {"paragraphIndex": 0, "paragraphPreview": "段落前20字", "emotion": "警醒", "intensity": 7}
+  "生活类比": [
+    {
+      "内容": "完整的2句原文，保留所有换行和空行",
+      "功能标签": ["标签1", "标签2"],
+      "前文": "这个素材前面紧挨着的原文内容",
+      "后文": "这个素材后面紧挨着的原文内容"
+    }
   ],
-  "paragraphRhythm": [
-    {"paragraphIndex": 0, "charCount": 45, "hasBlankLineAfter": true, "isShortSentence": false}
+  "真实案例": [
+    {
+      "内容": "完整的案例内容，保留所有换行和空行",
+      "功能标签": ["标签1", "标签2"],
+      "前文": "这个素材前面紧挨着的原文内容",
+      "后文": "这个素材后面紧挨着的原文内容"
+    }
+  ],
+  "权威数据": [
+    {
+      "内容": "完整的数据+结论句，保留所有换行和空行",
+      "功能标签": ["标签1", "标签2"],
+      "前文": "这个素材前面紧挨着的原文内容",
+      "后文": "这个素材后面紧挨着的原文内容"
+    }
+  ],
+  "金句": [
+    {
+      "内容": "完整的金句，保留所有换行和空行",
+      "功能标签": ["标签1", "标签2"],
+      "前文": "这个素材前面紧挨着的原文内容",
+      "后文": "这个素材后面紧挨着的原文内容"
+    }
+  ],
+  "固定句式组合": [
+    {
+      "内容": "完整的2-3句标志性句子，保留所有换行和空行",
+      "功能标签": ["标签1", "标签2"],
+      "前文": "这个素材前面紧挨着的原文内容",
+      "后文": "这个素材后面紧挨着的原文内容"
+    }
+  ],
+  "个人碎片": [
+    {
+      "内容": "完整的个人化表达，保留所有换行、空行和表情符号",
+      "功能标签": ["标签1", "标签2"],
+      "前文": "这个素材前面紧挨着的原文内容",
+      "后文": "这个素材后面紧挨着的原文内容"
+    }
   ]
 }
-
-## 提取注意事项
-1. 绝对不提取单个的孤立句子，所有素材的最小单位是2个连续的句子
-2. misconception必须包含"错误观点+共情接纳句"的组合
-3. analogy必须保留类比逻辑和引出比喻的前一句
-4. case必须保留完整因果链和引出案例的前一句
-5. data必须标注来源和年份，且包含基于数据得出的结论
-6. golden_sentence保留金句+引出金句的前一句
-7. fixed_phrase必须完整保留2-3个标志性句子，不能拆开
-8. personal_fragment保留作者的小吐槽、小自嘲等个人化表达
-9. 严格保留原文的所有换行、空行、标点和语气词
-10. 所有提取的内容必须一字不差来自原文，不能有任何改写
 
 ## 待提取文章全文
 ${articleContent}`;
@@ -451,6 +507,52 @@ export async function extractRelationalMaterials(
 
   const parsed = parseLLMJsonResponse(llmResult);
 
+  // 中文键名到英文materialType的映射
+  const dimensionMap: Record<string, string> = {
+    '错误认知': 'misconception',
+    '生活类比': 'analogy',
+    '真实案例': 'case',
+    '权威数据': 'data',
+    '金句': 'golden_sentence',
+    '固定句式组合': 'fixed_phrase',
+    '个人碎片': 'personal_fragment',
+  };
+
+  // 解析中文键名格式的素材
+  const relationalMaterials: RelationalMaterial[] = [];
+  let materialIndex = 0;
+
+  for (const [chineseKey, materialType] of Object.entries(dimensionMap)) {
+    const items = parsed[chineseKey];
+    if (Array.isArray(items)) {
+      for (const item of items) {
+        // 检查是否是"未提取到"的情况
+        if (typeof item === 'string' && item === '未提取到') {
+          continue;
+        }
+        if (typeof item === 'object' && item !== null) {
+          const m = item as Record<string, unknown>;
+          relationalMaterials.push({
+            id: `m${materialIndex + 1}`,
+            materialType: materialType as RelationalMaterial['materialType'],
+            content: String(m['内容'] || m.content || ''),
+            position: materialIndex,
+            contextBefore: String(m['前文'] || m.contextBefore || ''),
+            contextAfter: String(m['后文'] || m.contextAfter || ''),
+            emotion: '', // 新格式不单独标注情绪，从功能标签推断
+            relationToPrevious: '',
+            paradigmStep: chineseKey,
+            topicTags: [],
+            sceneTags: Array.isArray(m['功能标签']) 
+              ? (m['功能标签'] as string[]).map(String) 
+              : (Array.isArray(m.functionTags) ? m.functionTags.map(String) : []),
+          });
+          materialIndex++;
+        }
+      }
+    }
+  }
+
   return {
     articleTitle: String(parsed.articleTitle || ''),
     articleType: String(parsed.articleType || ''),
@@ -458,19 +560,7 @@ export async function extractRelationalMaterials(
     targetAudience: String(parsed.targetAudience || ''),
     emotionalTone: String(parsed.emotionalTone || ''),
     platform: String(parsed.platform || '公众号'),
-    relationalMaterials: Array.isArray(parsed.relationalMaterials) ? parsed.relationalMaterials.map((m: Record<string, unknown>, i: number) => ({
-      id: String(m.id || `m${i + 1}`),
-      materialType: validateMaterialType(String(m.materialType || '')),
-      content: String(m.content || ''),
-      position: typeof m.position === 'number' ? m.position : i,
-      contextBefore: String(m.contextBefore || ''),
-      contextAfter: String(m.contextAfter || ''),
-      emotion: String(m.emotion || ''),
-      relationToPrevious: String(m.relationToPrevious || ''),
-      paradigmStep: String(m.paradigmStep || ''),
-      topicTags: Array.isArray(m.topicTags) ? m.topicTags.map(String) : [],
-      sceneTags: Array.isArray(m.sceneTags) ? m.sceneTags.map(String) : [],
-    })) : [],
+    relationalMaterials,
     emotionCurve: Array.isArray(parsed.emotionCurve) ? parsed.emotionCurve as ArticleExtractionResultV2['emotionCurve'] : [],
     paragraphRhythm: Array.isArray(parsed.paragraphRhythm) ? parsed.paragraphRhythm as ArticleExtractionResultV2['paragraphRhythm'] : [],
   };
