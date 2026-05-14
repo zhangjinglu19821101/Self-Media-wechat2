@@ -1759,6 +1759,21 @@
    - **P2-5 修复（pool stats 类型安全）**:
      - 修复：使用精确类型 `{ pool?: { size?: number } }` 替代 `as any`
 82. **素材库归属区分 + 收藏功能**: 实现系统素材与用户素材的归属区分，支持用户收藏管理
+83. **文章提取系统重构（5层21维→两步拆解法）**: 从全量拆解改造为"范式识别+关系型素材提取"两步法
+   - **核心架构**: Step1 范式自动识别(10套标准范式+5维匹配) → Step2 关系型素材提取(7维精简)
+   - **10套标准范式**: 标准错位破局/行业反思/案例归谬/本质定义/热点事件/产品解读/个人经历/避坑指南/对比分析/年终总结
+   - **5维匹配权重**: 文章结构顺序40%/固定衔接句式30%/情绪节奏曲线15%/段落换行规则10%/文章类型5%
+   - **7维关系型素材**: misconception(错误认知)/analogy(生活类比)/case(真实案例)/data(权威数据)/golden_sentence(金句)/hook_sentence(钩子句)/value_reconstruction(价值重构)
+   - **关系型素材核心特征**: 带上下文(precedingText/followingText)、位置(paragraphIndex/sentenceIndex)、情绪(emotion)、关系(relations)的素材，不再是孤立原子
+   - **修改文件**:
+     - `src/lib/services/article-extraction-service.ts`: 完全重写，新增recognizeParadigm()/extractRelationalMaterials()/extractArticleV2()，保留V1兼容
+     - `src/lib/db/schema/article-extractions.ts`: 新增paradigmName/paradigmType/paradigmMatchScore/paradigmDiffNote/emotionCurve/paragraphRhythm/relationalMaterials/extractionVersion字段
+     - `src/app/api/article-extraction/extract/route.ts`: 重构为V2两步提取，新增范式识别结果存储和关系型素材保存
+     - `src/components/article-extraction/extraction-panel.tsx`: 前端面板重构，范式匹配可视化+7种素材Tab+关系上下文展示
+     - `src/app/api/article-extraction/[id]/save-to-library/route.ts`: 修复字段引用，适配V2格式
+     - `src/app/api/article-extraction/[id]/route.ts`: 新增返回范式识别字段
+     - `src/app/api/article-extraction/list/route.ts`: 新增返回paradigmName/paradigmMatchScore/materialCount
+     - `src/app/api/db/create-article-extractions/route.ts`: 迁移SQL新增所有V2字段
    - **数据模型升级** (`src/lib/db/schema/material-library.ts`):
      - 新增 `ownerType` 字段（'system' | 'user'），默认 'user'
      - 新增 `materialBookmarks` 收藏表（workspaceId + materialId + userTags + notes）
