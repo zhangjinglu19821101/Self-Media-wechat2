@@ -64,7 +64,7 @@ ${instruction.slice(0, 500)}` }
     );
 
     const result = await Promise.race([
-      llm.invoke(messages, { model: 'doubao-seed-1-6-lite', temperature: 0.3 }),
+      llm.invoke(messages, { model: 'doubao-seed-2-0-mini-260215', temperature: 0.3 }),
       timeoutPromise
     ]);
     

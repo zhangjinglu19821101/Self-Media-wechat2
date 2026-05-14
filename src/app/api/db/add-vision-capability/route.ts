@@ -30,7 +30,7 @@ const VISION_CAPABILITIES = [
     status: 'available',
     requiresOnSiteExecution: false,
     metadata: {
-      model: 'doubao-seed-1-6-lite-251015',
+      model: 'doubao-seed-2-0-mini-260215',
       supportedFormats: ['jpg', 'jpeg', 'png', 'webp', 'gif'],
       maxSizeMB: 5,
       timeoutSeconds: 30,
@@ -95,7 +95,7 @@ const VISION_CAPABILITIES = [
     status: 'available',
     requiresOnSiteExecution: false,
     metadata: {
-      model: 'doubao-seed-1-6-lite-251015',
+      model: 'doubao-seed-2-0-mini-260215',
       supportedFormats: ['jpg', 'jpeg', 'png', 'webp', 'gif'],
       maxSizeMB: 5,
       timeoutSeconds: 30,

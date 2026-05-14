@@ -732,7 +732,7 @@ ${articleText.substring(0, 6000)}
 
       const result = await llm.invoke(
         [{ role: 'user', content: prompt }],
-        { model: 'doubao-seed-1-6-lite-251015', temperature: 0.2 }
+        { model: 'doubao-seed-2-0-mini-260215', temperature: 0.2 }
       );
       const text = typeof result === 'string' ? result : (result as any).content || JSON.stringify(result);
       const cleaned = text.replace(/```(?:json)?\s*([\s\S]*?)```/g, '$1').trim();

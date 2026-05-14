@@ -268,7 +268,7 @@ export class LLMAssistedRuleService {
           { role: 'user', content: `${PROMPTS.classifyEmotion}\n${truncatedText}` },
         ],
         {
-          model: options?.model || 'doubao-seed-1-6-lite-251015',
+          model: options?.model || 'doubao-seed-2-0-mini-260215',
           temperature: 0.3, // 低温度保证输出稳定
         }
       );
@@ -317,7 +317,7 @@ export class LLMAssistedRuleService {
       const response = await client.invoke(
         [{ role: 'user', content: prompt }],
         {
-          model: options?.model || 'doubao-seed-1-6-lite-251015',
+          model: options?.model || 'doubao-seed-2-0-mini-260215',
           temperature: 0.2, // 更低温度确保精确提取
         }
       );

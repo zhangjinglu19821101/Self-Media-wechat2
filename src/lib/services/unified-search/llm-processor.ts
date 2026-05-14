@@ -98,7 +98,7 @@ ${batch.map((item, i) => `${i + 1}. [${item.siteName}] ${item.title}
       // P0-4: 传递 signal 给 llm.invoke()，超时后真正中断 HTTP 请求
       // 使用 Record<string, unknown> 绕过 LLMConfig 类型限制（SDK 底层 fetch 支持 signal）
       const llmConfig: Record<string, unknown> = {
-        model: 'doubao-seed-1-6-lite',
+        model: 'doubao-seed-2-0-mini-260215',
         temperature: 0.2,
         signal: abortController.signal,
       };

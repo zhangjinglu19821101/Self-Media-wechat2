@@ -53,7 +53,7 @@ ${instruction}`;
         { role: 'system', content: systemPrompt },
         { role: 'user', content: userPrompt },
       ], {
-        model: 'doubao-seed-1-6-lite-251015',
+        model: 'doubao-seed-2-0-mini-260215',
         temperature: 0.7,
       });
 

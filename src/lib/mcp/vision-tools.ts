@@ -154,7 +154,7 @@ async function imageOcr(params: ImageOcrParams, workspaceId?: string): Promise<V
         },
       ],
       {
-        model: 'doubao-seed-1-6-lite-251015',
+        model: 'doubao-seed-2-0-mini-260215',
         temperature: 0.1,
       }
     );
@@ -259,7 +259,7 @@ async function imageAnalyze(params: ImageAnalyzeParams, workspaceId?: string): P
         },
       ],
       {
-        model: 'doubao-seed-1-6-lite-251015',
+        model: 'doubao-seed-2-0-mini-260215',
         temperature: 0.2,
       }
     );

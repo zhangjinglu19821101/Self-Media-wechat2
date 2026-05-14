@@ -309,7 +309,7 @@ export async function parseReminderInput(
         { role: 'user', content: userMessage },
       ],
       {
-        model: 'doubao-seed-1-6-lite-251015',
+        model: 'doubao-seed-2-0-mini-260215',
         temperature: 0.3,
       }
     );

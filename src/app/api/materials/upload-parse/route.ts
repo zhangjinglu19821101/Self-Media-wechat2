@@ -74,7 +74,7 @@ async function extractTextFromImage(
       },
     ],
     {
-      model: 'doubao-seed-1-6-lite-251015',
+      model: 'doubao-seed-2-0-mini-260215',
       temperature: 0.1, // 低温度保证提取准确性
     }
   );

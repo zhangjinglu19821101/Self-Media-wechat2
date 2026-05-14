@@ -132,7 +132,7 @@ ${note.content}
     const response = await llmClient.invoke(
       [{ role: 'user', content: prompt }],
       {
-        model: 'doubao-seed-1-6-lite-251015',
+        model: 'doubao-seed-2-0-mini-260215',
         temperature: 0.3,
       }
     );
