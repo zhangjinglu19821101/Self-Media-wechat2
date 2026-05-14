@@ -44,12 +44,32 @@ export async function POST(request: NextRequest) {
       .limit(1);
 
     if (existing.length > 0) {
+      // 查询已有的完整提取结果
+      const [existingRecord] = await db
+        .select()
+        .from(articleExtractions)
+        .where(eq(articleExtractions.id, existing[0].id))
+        .limit(1);
+
       return NextResponse.json({
         success: true,
         data: {
           extractionId: existing[0].id,
           isDuplicate: true,
-          message: '该文章已提取过，直接返回已有结果',
+          message: '该文章已提取过，返回已有结果',
+          // 返回已有的提取结果
+          articleTitle: existingRecord.articleTitle,
+          paradigmRecognition: {
+            matchedParadigmName: existingRecord.paradigmName,
+            matchedParadigmId: existingRecord.paradigmType,
+            matchScore: existingRecord.paradigmMatchScore,
+            structureDifference: existingRecord.paradigmDiffNote,
+          },
+          relationalMaterials: existingRecord.relationalMaterials || [],
+          emotionCurve: existingRecord.emotionCurve || [],
+          paragraphRhythm: existingRecord.paragraphRhythm || [],
+          assetValueScore: existingRecord.assetValueScore,
+          reusableDimensionCount: existingRecord.reusableDimensionCount,
         },
       });
     }
