@@ -23,37 +23,37 @@ interface ParadigmRecognition {
   structureDifference: string;
 }
 
-/** 关系型素材项 */
+/** 关系型素材项（与后端 RelationalMaterial 接口对齐） */
 interface RelationalMaterial {
+  id: string;
+  materialType: 'misconception' | 'analogy' | 'case' | 'data' | 'golden_sentence' | 'fixed_phrase' | 'personal_fragment';
   content: string;
-  context: string;
-  position: string;
-  emotionTag: string;
-  relation: string;
+  position: number;
+  contextBefore: string;
+  contextAfter: string;
+  emotion: string;
+  relationToPrevious: string;
+  paradigmStep: string;
+  topicTags: string[];
+  sceneTags: string[];
 }
 
-/** 7维关系型素材提取结果 */
-interface RelationalExtraction {
-  /** 错误认知素材 */
-  misconceptions: RelationalMaterial[];
-  /** 类比素材 */
-  analogies: RelationalMaterial[];
-  /** 案例素材 */
-  cases: RelationalMaterial[];
-  /** 数据素材 */
+/** 7维素材分组（前端展示用，从扁平数组转换而来） */
+interface GroupedMaterials {
+  misconception: RelationalMaterial[];
+  analogy: RelationalMaterial[];
+  case: RelationalMaterial[];
   data: RelationalMaterial[];
-  /** 金句素材 */
-  goldenQuotes: RelationalMaterial[];
-  /** 情绪接纳素材 */
-  emotionalAcceptance: RelationalMaterial[];
-  /** 收尾升华素材 */
-  closingElevation: RelationalMaterial[];
+  golden_sentence: RelationalMaterial[];
+  fixed_phrase: RelationalMaterial[];
+  personal_fragment: RelationalMaterial[];
 }
 
 /** 完整提取结果 */
 interface ExtractionResult {
   paradigmRecognition: ParadigmRecognition;
-  relationalMaterials: RelationalExtraction;
+  relationalMaterials: RelationalMaterial[];
+  groupedMaterials: GroupedMaterials;
   extractionSummary: string;
   assetValueScore: number;
   totalMaterialCount: number;
@@ -75,15 +75,15 @@ const PARADIGM_OPTIONS = [
   { key: 'year_end_review', name: '年终总结范式', desc: '回顾变化→感悟→展望→建议→收尾' },
 ];
 
-/** 7维素材配置 */
+/** 7维素材配置（与设计方案严格对齐） */
 const MATERIAL_DIMENSIONS = [
-  { key: 'misconceptions', name: '错误认知', icon: AlertTriangle, color: 'red', desc: '大众的错误观点（带上下文）', sceneType: 'misconception' },
-  { key: 'analogies', name: '生活类比', icon: Lightbulb, color: 'amber', desc: '生活化比喻和同构场景', sceneType: 'analogy' },
-  { key: 'cases', name: '真实案例', icon: FileText, color: 'blue', desc: '个人经历/客户案例/新闻事件', sceneType: 'case' },
-  { key: 'data', name: '权威数据', icon: Database, color: 'emerald', desc: '行业数据/官方统计/政策文件', sceneType: 'data' },
-  { key: 'goldenQuotes', name: '金句', icon: Quote, color: 'purple', desc: '简短有力、让人印象深刻的句子', sceneType: 'quote' },
-  { key: 'emotionalAcceptance', name: '情绪接纳', icon: MessageSquare, color: 'sky', desc: '消除对立感、建立信任的句式', sceneType: 'opening' },
-  { key: 'closingElevation', name: '收尾升华', icon: TrendingUp, color: 'rose', desc: '结尾金句和灵魂拷问', sceneType: 'ending' },
+  { key: 'misconception' as const, name: '错误认知', icon: AlertTriangle, color: 'red', desc: '大众的错误观点 + 共情接纳句' },
+  { key: 'analogy' as const, name: '生活类比', icon: Lightbulb, color: 'amber', desc: '生活化比喻 + 引出比喻的前一句' },
+  { key: 'case' as const, name: '真实案例', icon: FileText, color: 'blue', desc: '完整案例 + 引出案例的前一句' },
+  { key: 'data' as const, name: '权威数据', icon: Database, color: 'emerald', desc: '数据 + 基于数据得出的结论' },
+  { key: 'golden_sentence' as const, name: '金句', icon: Quote, color: 'purple', desc: '总结性金句 + 引出金句的前一句' },
+  { key: 'fixed_phrase' as const, name: '固定句式组合', icon: MessageSquare, color: 'sky', desc: '不可分割的2-3个连续标志性句子' },
+  { key: 'personal_fragment' as const, name: '个人碎片', icon: TrendingUp, color: 'rose', desc: '小吐槽/小自嘲/小停顿等个人化表达' },
 ] as const;
 
 const COLOR_MAP: Record<string, { bg: string; border: string; text: string; badge: string; headerBg: string; tag: string }> = {
@@ -104,6 +104,24 @@ const EMOTION_COLORS: Record<string, string> = {
   '专业': 'bg-indigo-100 text-indigo-700',
   '中性': 'bg-gray-100 text-gray-700',
 };
+
+// ====== 工具函数 ======
+
+/** 将后端返回的扁平 RelationalMaterial[] 数组按 materialType 分组为 GroupedMaterials */
+function groupMaterialsByType(materials: RelationalMaterial[]): GroupedMaterials {
+  const empty: GroupedMaterials = {
+    misconception: [], analogy: [], case: [], data: [],
+    golden_sentence: [], fixed_phrase: [], personal_fragment: [],
+  };
+  if (!Array.isArray(materials) || materials.length === 0) return empty;
+  for (const m of materials) {
+    const key = m.materialType as keyof GroupedMaterials;
+    if (key in empty) {
+      empty[key].push(m);
+    }
+  }
+  return empty;
+}
 
 // ====== 子组件 ======
 
@@ -205,32 +223,37 @@ function RelationalMaterialItem({ material, index, color }: { material: Relation
       {/* 核心内容 */}
       <div className="flex items-start gap-2">
         <span className={`text-xs font-bold ${c.text} min-w-[20px]`}>{index}.</span>
-        <p className="text-sm font-medium text-slate-800 flex-1">{material.content}</p>
+        <p className="text-sm font-medium text-slate-800 flex-1 whitespace-pre-wrap">{material.content}</p>
       </div>
 
       {/* 元信息标签行 */}
       <div className="flex flex-wrap gap-1.5 pl-7">
-        {material.position && (
+        {material.paradigmStep && (
           <span className="text-xs px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-600 border border-indigo-100">
-            {material.position}
+            {material.paradigmStep}
           </span>
         )}
-        {material.emotionTag && (
-          <span className={`text-xs px-1.5 py-0.5 rounded border ${EMOTION_COLORS[material.emotionTag] || 'bg-gray-100 text-gray-700 border-gray-200'}`}>
-            {material.emotionTag}
+        {material.emotion && (
+          <span className={`text-xs px-1.5 py-0.5 rounded border ${EMOTION_COLORS[material.emotion] || 'bg-gray-100 text-gray-700 border-gray-200'}`}>
+            {material.emotion}
           </span>
         )}
-        {material.relation && (
+        {material.relationToPrevious && (
           <span className="text-xs px-1.5 py-0.5 rounded bg-violet-50 text-violet-600 border border-violet-100">
-            {material.relation}
+            {material.relationToPrevious}
           </span>
         )}
       </div>
 
       {/* 上下文 */}
-      {material.context && (
-        <div className="pl-7">
-          <p className="text-xs text-slate-500 italic">上下文：{material.context}</p>
+      {(material.contextBefore || material.contextAfter) && (
+        <div className="pl-7 space-y-1">
+          {material.contextBefore && (
+            <p className="text-xs text-slate-400">前文：{material.contextBefore}</p>
+          )}
+          {material.contextAfter && (
+            <p className="text-xs text-slate-400">后文：{material.contextAfter}</p>
+          )}
         </div>
       )}
     </div>
@@ -279,19 +302,24 @@ export default function ArticleExtractionPanel() {
       }
 
       const resultData = resp.data;
+      const materials: RelationalMaterial[] = Array.isArray(resultData.relationalMaterials)
+        ? resultData.relationalMaterials
+        : [];
+      const grouped = groupMaterialsByType(materials);
+
+      // 从后端范式识别结果构建前端格式（后端返回 matchedParadigmId + matchedParadigmName）
+      const paradigmRec = resultData.paradigmRecognition;
       const extractionResult: ExtractionResult = {
-        paradigmRecognition: resultData.paradigmRecognition || {
-          matchedParadigm: resultData.matchedParadigm || '',
-          matchScore: resultData.matchScore ?? 0,
-          structureDifference: resultData.structureDifference || '',
+        paradigmRecognition: {
+          matchedParadigm: paradigmRec?.matchedParadigmId || paradigmRec?.matchedParadigmName || '',
+          matchScore: paradigmRec?.matchScore ?? resultData.paradigmMatchScore ?? 0,
+          structureDifference: paradigmRec?.structureDifference || '',
         },
-        relationalMaterials: resultData.relationalMaterials || resultData.materials || {
-          misconceptions: [], analogies: [], cases: [], data: [],
-          goldenQuotes: [], emotionalAcceptance: [], closingElevation: [],
-        },
+        relationalMaterials: materials,
+        groupedMaterials: grouped,
         extractionSummary: resultData.extractionSummary || '',
         assetValueScore: resultData.assetValueScore ?? 0,
-        totalMaterialCount: resultData.totalMaterialCount ?? 0,
+        totalMaterialCount: resultData.totalMaterialCount ?? materials.length,
       };
 
       setExtraction(extractionResult);
@@ -354,17 +382,23 @@ export default function ArticleExtractionPanel() {
       const resp = await res.json();
       if (resp.success && resp.data) {
         const detail = resp.data;
+        const materials: RelationalMaterial[] = Array.isArray(detail.relationalMaterials)
+          ? detail.relationalMaterials
+          : [];
+        const grouped = groupMaterialsByType(materials);
+        // 从详情API构建范式识别结果（详情API从独立字段重构 paradigmRecognition）
+        const paradigmRec = detail.paradigmRecognition;
         const extractionResult: ExtractionResult = {
-          paradigmRecognition: detail.paradigmRecognition || detail.extraction?.paradigmRecognition || {
-            matchedParadigm: '', matchScore: 0, structureDifference: '',
+          paradigmRecognition: {
+            matchedParadigm: paradigmRec?.matchedParadigmId || paradigmRec?.matchedParadigmName || detail.paradigmName || '',
+            matchScore: paradigmRec?.matchScore ?? detail.paradigmMatchScore ?? 0,
+            structureDifference: paradigmRec?.structureDifference || '',
           },
-          relationalMaterials: detail.relationalMaterials || detail.extraction?.relationalMaterials || {
-            misconceptions: [], analogies: [], cases: [], data: [],
-            goldenQuotes: [], emotionalAcceptance: [], closingElevation: [],
-          },
+          relationalMaterials: materials,
+          groupedMaterials: grouped,
           extractionSummary: detail.extractionSummary || '',
           assetValueScore: detail.assetValueScore ?? 0,
-          totalMaterialCount: detail.totalMaterialCount ?? 0,
+          totalMaterialCount: detail.materialCount ?? materials.length,
         };
         setExtraction(extractionResult);
         setExtractionId(id);
@@ -430,7 +464,7 @@ export default function ArticleExtractionPanel() {
             className="bg-white"
           />
           <Textarea
-            placeholder={"在此粘贴文章内容...\n\n建议粘贴完整的保险科普文章（至少200字），系统将：\n1. 自动识别文章属于10套标准范式中的哪一套\n2. 提取7维关系型素材（错误认知/类比/案例/数据/金句/情绪接纳/收尾升华）\n3. 每条素材保留上下文、位置、情绪标签和搭配关系"}
+            placeholder={"在此粘贴文章内容...\n\n建议粘贴完整的保险科普文章（至少200字），系统将：\n1. 自动识别文章属于10套标准范式中的哪一套\n2. 提取7维关系型素材（错误认知/类比/案例/数据/金句/固定句式组合/个人碎片）\n3. 每条素材保留上下文、位置、情绪标签和搭配关系"}
             value={articleText}
             onChange={(e) => setArticleText(e.target.value)}
             className="min-h-[200px] bg-white"
@@ -473,7 +507,7 @@ export default function ArticleExtractionPanel() {
             <CardContent>
               <div className="grid grid-cols-7 gap-2">
                 {MATERIAL_DIMENSIONS.map((dim) => {
-                  const count = extraction.relationalMaterials[dim.key as keyof RelationalExtraction]?.length ?? 0;
+                  const count = extraction.groupedMaterials[dim.key]?.length ?? 0;
                   const c = COLOR_MAP[dim.color];
                   const Icon = dim.icon;
                   return (
@@ -513,7 +547,7 @@ export default function ArticleExtractionPanel() {
               <MaterialDimensionCard
                 key={dim.key}
                 dimension={dim}
-                materials={extraction.relationalMaterials[dim.key as keyof RelationalExtraction] ?? []}
+                materials={extraction.groupedMaterials[dim.key] ?? []}
               />
             ))}
           </div>

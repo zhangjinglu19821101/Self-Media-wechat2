@@ -150,7 +150,7 @@ export interface RelationalMaterial {
   /** 素材唯一ID */
   id: string;
   /** 素材类型（7种） */
-  materialType: 'misconception' | 'analogy' | 'case' | 'data' | 'golden_sentence' | 'emotion_point' | 'transition';
+  materialType: 'misconception' | 'analogy' | 'case' | 'data' | 'golden_sentence' | 'fixed_phrase' | 'personal_fragment';
   /** 素材内容（保留原文，不做改写） */
   content: string;
   /** 在原文中的位置（段落索引） */
@@ -177,18 +177,18 @@ export const MATERIAL_TYPE_LABELS: Record<RelationalMaterial['materialType'], st
   case: '真实案例',
   data: '权威数据',
   golden_sentence: '金句',
-  emotion_point: '情绪锚点',
-  transition: '衔接关系',
+  fixed_phrase: '固定句式组合',
+  personal_fragment: '个人碎片',
 };
 
 export const MATERIAL_TYPE_DESCRIPTIONS: Record<RelationalMaterial['materialType'], string> = {
-  misconception: '大众的错误观点原话，保留完整语境',
-  analogy: '生活化的比喻和同构场景，保留类比前后文',
-  case: '个人经历、客户案例、新闻事件，保留因果链',
-  data: '行业数据、官方统计、政策文件，标注来源',
-  golden_sentence: '简短有力、让人印象深刻的句子，保留前后节奏',
-  emotion_point: '文章中情绪转折的关键句子，决定文章的呼吸感',
-  transition: '段落/句子之间的衔接方式，决定文章的流畅度',
+  misconception: '大众的错误观点原话，以及后面紧跟的第一句共情接纳的话',
+  analogy: '生活化的比喻，以及前面一句引出比喻的话',
+  case: '完整的案例，以及前面一句引出案例的话',
+  data: '行业数据、官方统计，以及后面一句基于数据得出的结论',
+  golden_sentence: '结尾的总结性金句，以及前面一句引出金句的话',
+  fixed_phrase: '不可分割的2-3个连续标志性句子，保留换行和空行',
+  personal_fragment: '作者的小吐槽、小自嘲、小停顿等个人化表达',
 };
 
 // ============================================================
@@ -317,17 +317,17 @@ ${paradigmInfo}
 ## 结构映射
 ${structureMappingStr || '未识别到明确的结构映射'}
 
-## 7种素材类型定义
+## 7种素材类型定义（与设计方案严格对齐）
 
 | 类型 | 说明 | 提取规则 |
 |------|------|----------|
-| misconception（错误认知） | 大众的错误观点原话 | 必须一字不差保留原文，包含说这句话的语境 |
-| analogy（生活类比） | 生活化的比喻和同构场景 | 保留类比对象+被类比对象+类比逻辑，保留前后文 |
-| case（真实案例） | 个人经历、客户案例、新闻事件 | 保留完整的因果链：起因→经过→结果 |
-| data（权威数据） | 行业数据、官方统计、政策文件 | 必须标注数据来源和年份 |
-| golden_sentence（金句） | 简短有力、印象深刻的句子 | 保留前后各1句，维持节奏感 |
-| emotion_point（情绪锚点） | 情绪转折的关键句子 | 标注转折方向（如"从警醒到共情"）|
-| transition（衔接关系） | 段落/句子之间的衔接方式 | 标注衔接类型（因果/转折/递进/并列/对比）|
+| misconception（错误认知） | 大众的错误观点原话，以及后面紧跟的第一句共情接纳的话 | 必须包含2个以上连续句子，一字不差保留原文，保留换行和空行 |
+| analogy（生活类比） | 生活化的比喻，以及前面一句引出比喻的话 | 必须包含2个以上连续句子，保留类比逻辑和前后节奏 |
+| case（真实案例） | 完整的案例，以及前面一句引出案例的话 | 保留完整因果链：起因→经过→结果，保留换行和空行 |
+| data（权威数据） | 行业数据、官方统计，以及后面一句基于数据得出的结论 | 必须标注数据来源和年份，保留数据和结论的搭配 |
+| golden_sentence（金句） | 结尾的总结性金句，以及前面一句引出金句的话 | 必须包含2个以上连续句子，保留换行和节奏 |
+| fixed_phrase（固定句式组合） | 不可分割的2-3个连续标志性句子 | 完整保留，不能拆开使用，保留换行和空行 |
+| personal_fragment（个人碎片） | 作者的小吐槽、小自嘲、小停顿等个人化表达 | 保留完整个人化表达，包括语气词和停顿 |
 
 ## 输出格式
 严格按照下面的JSON格式输出，不添加任何额外内容：
@@ -362,13 +362,16 @@ ${structureMappingStr || '未识别到明确的结构映射'}
 }
 
 ## 提取注意事项
-1. misconception必须包含"谁说的+什么场景+原话"，不能只提取观点本身
-2. analogy必须保留类比逻辑：A像B，因为C
-3. case必须保留完整因果链，不能只有结论
-4. data必须标注来源和年份
-5. golden_sentence前后各保留1句维持节奏
-6. emotion_point标注情绪转折方向
-7. transition标注衔接类型和效果
+1. 绝对不提取单个的孤立句子，所有素材的最小单位是2个连续的句子
+2. misconception必须包含"错误观点+共情接纳句"的组合
+3. analogy必须保留类比逻辑和引出比喻的前一句
+4. case必须保留完整因果链和引出案例的前一句
+5. data必须标注来源和年份，且包含基于数据得出的结论
+6. golden_sentence保留金句+引出金句的前一句
+7. fixed_phrase必须完整保留2-3个标志性句子，不能拆开
+8. personal_fragment保留作者的小吐槽、小自嘲等个人化表达
+9. 严格保留原文的所有换行、空行、标点和语气词
+10. 所有提取的内容必须一字不差来自原文，不能有任何改写
 
 ## 待提取文章全文
 ${articleContent}`;
@@ -505,21 +508,30 @@ export async function extractArticleV2(
 // 工具方法
 // ============================================================
 
-const VALID_MATERIAL_TYPES = ['misconception', 'analogy', 'case', 'data', 'golden_sentence', 'emotion_point', 'transition'];
+const VALID_MATERIAL_TYPES = ['misconception', 'analogy', 'case', 'data', 'golden_sentence', 'fixed_phrase', 'personal_fragment'];
 
 function validateMaterialType(type: string): RelationalMaterial['materialType'] {
   if (VALID_MATERIAL_TYPES.includes(type)) {
     return type as RelationalMaterial['materialType'];
   }
-  // 智能映射旧类型到新类型
+  // 智能映射中文名到英文类型（与设计方案严格对齐）
   const mapping: Record<string, RelationalMaterial['materialType']> = {
     '错误认知': 'misconception',
     '生活类比': 'analogy',
     '真实案例': 'case',
     '权威数据': 'data',
     '金句': 'golden_sentence',
-    '情绪锚点': 'emotion_point',
-    '衔接关系': 'transition',
+    '固定句式组合': 'fixed_phrase',
+    '个人碎片': 'personal_fragment',
+    // 兼容旧类型映射
+    'emotion_point': 'personal_fragment',
+    'transition': 'fixed_phrase',
+    '情绪锚点': 'personal_fragment',
+    '衔接关系': 'fixed_phrase',
+    'hook': 'fixed_phrase',
+    'closing': 'golden_sentence',
+    '钩子引入': 'fixed_phrase',
+    '收尾升华': 'golden_sentence',
   };
   return mapping[type] || 'case';
 }
@@ -644,8 +656,8 @@ export function extractionV2ToMaterialInputs(
     case: 'case',
     data: 'data',
     golden_sentence: 'quote',
-    emotion_point: 'quote',
-    transition: 'quote',
+    fixed_phrase: 'quote',
+    personal_fragment: 'quote',
   };
 
   // 素材类型 → material_library.sceneType 映射
@@ -655,8 +667,8 @@ export function extractionV2ToMaterialInputs(
     case: 'real_case',
     data: 'authority_data',
     golden_sentence: 'golden_sentence',
-    emotion_point: 'emotion_anchor',
-    transition: 'transition_relation',
+    fixed_phrase: 'fixed_phrase',
+    personal_fragment: 'personal_fragment',
   };
 
   for (const m of result.relationalMaterials) {
@@ -671,7 +683,7 @@ export function extractionV2ToMaterialInputs(
       topicTags: [...baseTopicTags, ...m.topicTags],
       sceneTags: [...m.sceneTags, typeLabel],
       emotionTags: [...baseEmotionTags, m.emotion].filter(Boolean),
-      sourceType: 'article_extraction',
+      sourceType: 'article',
       structuredData: {
         materialType: m.materialType,
         position: m.position,

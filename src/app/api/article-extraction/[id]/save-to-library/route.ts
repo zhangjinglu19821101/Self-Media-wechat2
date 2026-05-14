@@ -10,29 +10,39 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getWorkspaceId } from '@/lib/auth/context';
 import { db } from '@/lib/db';
 import { articleExtractions, materialLibrary } from '@/lib/db/schema';
-import { extractionV2ToMaterialInputs } from '@/lib/services/article-extraction-service';
 import { eq, and } from 'drizzle-orm';
 
-/** 关系型素材类型 → 素材库类型映射 */
+/** V2 关系型素材类型 → 素材库类型映射 */
 const MATERIAL_TYPE_MAP: Record<string, string> = {
-  misconception: 'case',       // 误区 → 案例
-  analogy: 'case',             // 类比 → 案例
-  case: 'case',                // 案例 → 案例
-  data: 'data',                // 数据 → 数据
-  golden_sentence: 'quote',    // 金句 → 引用
-  transition: 'opening',       // 衔接 → 开头素材
-  structure: 'opening',        // 结构 → 开头素材
+  misconception: 'case',           // 错误认知 → 案例
+  analogy: 'case',                 // 生活类比 → 案例
+  case: 'case',                    // 真实案例 → 案例
+  data: 'data',                    // 权威数据 → 数据
+  golden_sentence: 'quote',        // 金句 → 引用
+  hook_sentence: 'opening',        // 钩子句 → 开头素材
+  value_reconstruction: 'ending',  // 价值重构 → 结尾素材
 };
 
-/** 关系型素材类型 → 场景类型映射 */
+/** V2 关系型素材类型 → 中文标签 */
+const MATERIAL_TYPE_LABELS: Record<string, string> = {
+  misconception: '错误认知',
+  analogy: '生活类比',
+  case: '真实案例',
+  data: '权威数据',
+  golden_sentence: '金句',
+  hook_sentence: '钩子句',
+  value_reconstruction: '价值重构',
+};
+
+/** V2 关系型素材类型 → 场景类型映射 */
 const SCENE_TYPE_MAP: Record<string, string> = {
   misconception: 'misconception',
   analogy: 'analogy',
   case: 'real_case',
   data: 'authority_data',
   golden_sentence: 'golden_sentence',
-  transition: 'transition',
-  structure: 'structure',
+  hook_sentence: 'hook_sentence',
+  value_reconstruction: 'value_reconstruction',
 };
 
 export async function POST(
@@ -78,35 +88,41 @@ export async function POST(
 
     // 将关系型素材转为素材库记录
     const materialValues = filteredMaterials
-      .filter((material: any) => material.originalText && material.originalText.trim().length > 0)
+      .filter((material: any) => material.content && material.content.trim().length > 0)
       .map((material: any) => {
-        // 构建素材内容：包含上下文和关系信息
+        // 构建素材内容：包含原文、上下文和关系信息
         const contentParts: string[] = [];
-        contentParts.push(material.originalText);
-        if (material.contextBefore) contentParts.push(`\n[上文] ${material.contextBefore}`);
-        if (material.contextAfter) contentParts.push(`\n[下文] ${material.contextAfter}`);
-        if (material.emotionTag) contentParts.push(`\n[情绪] ${material.emotionTag}`);
-        if (material.paradigmStep) contentParts.push(`\n[范式步骤] ${material.paradigmStep}`);
+        contentParts.push(material.content);
+        if (material.precedingText) contentParts.push(`\n[上文] ${material.precedingText}`);
+        if (material.followingText) contentParts.push(`\n[下文] ${material.followingText}`);
+        if (material.emotion) contentParts.push(`\n[情绪] ${material.emotion}`);
+        if (material.relations?.shouldFollow) contentParts.push(`\n[后续应接] ${material.relations.shouldFollow}`);
+        if (material.relations?.shouldPrecede) contentParts.push(`\n[前置位置] ${material.relations.shouldPrecede}`);
+
+        // 提取位置信息
+        const paragraphIdx = material.position?.paragraphIndex;
+        const sentenceIdx = material.position?.sentenceIndex;
+        const positionLabel = paragraphIdx !== undefined
+          ? `P${paragraphIdx + 1}${sentenceIdx !== undefined ? `-S${sentenceIdx + 1}` : ''}`
+          : '?';
+
+        // 合并情绪标签
+        const emotionTags: string[] = [];
+        if (material.emotion) emotionTags.push(material.emotion);
+        if (material.relations?.emotionTransition) emotionTags.push(material.relations.emotionTransition);
 
         return {
           workspaceId: workspaceId as string,
-          title: `[提取] ${material.materialType === 'misconception' ? '误区' :
-            material.materialType === 'analogy' ? '类比' :
-            material.materialType === 'case' ? '案例' :
-            material.materialType === 'data' ? '数据' :
-            material.materialType === 'golden_sentence' ? '金句' :
-            material.materialType === 'transition' ? '衔接' :
-            material.materialType === 'structure' ? '结构' : material.materialType
-          } - P${material.position?.paragraphIndex + 1 || '?'}`,
+          title: `[提取] ${MATERIAL_TYPE_LABELS[material.materialType] || material.materialType} - ${positionLabel}`,
           content: contentParts.join(''),
           type: (MATERIAL_TYPE_MAP[material.materialType] || 'case') as any,
           sceneType: SCENE_TYPE_MAP[material.materialType] || material.materialType || null,
           ownerType: 'user' as const,
-          sourceType: 'article_extraction' as const,
+          sourceType: 'article' as const,
           sourceDesc: extraction.articleTitle || undefined,
           topicTags: material.topicTags || [],
           sceneTags: material.sceneTags || [],
-          emotionTags: material.emotionTag ? [material.emotionTag] : [],
+          emotionTags,
           status: 'active',
         };
       });

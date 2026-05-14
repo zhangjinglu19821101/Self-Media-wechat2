@@ -42,8 +42,28 @@ export async function GET(
       .from(extractionAssets)
       .where(eq(extractionAssets.extractionId, id));
 
-    // 构造响应：优先使用新范式（paradigmRecognition + relationalMaterials）
-    const hasNewFormat = !!(extraction as any).paradigmRecognition || !!(extraction as any).relationalMaterialsData;
+    // 构造响应：检测是否有V2新格式数据
+    const hasNewFormat = !!extraction.paradigmName || !!extraction.relationalMaterials;
+
+    // 计算素材数量（从 relationalMaterials 数组长度）
+    const relationalMaterials = extraction.relationalMaterials as Array<unknown> | null;
+    const materialCount = Array.isArray(relationalMaterials) ? relationalMaterials.length : (extraction.reusableDimensionCount ?? 0);
+
+    // 从独立字段重构范式识别结果（数据库不存 paradigmRecognition JSON，而是存独立字段）
+    const paradigmRecognition = extraction.paradigmName ? {
+      matchedParadigmId: extraction.paradigmType || '',
+      matchedParadigmName: extraction.paradigmName || '',
+      matchScore: extraction.paradigmMatchScore ?? 0,
+      structureDifference: extraction.paradigmDiffNote || '',
+      matchDetails: {
+        structureOrder: 0,
+        transitionPhrases: 0,
+        emotionCurve: 0,
+        paragraphRules: 0,
+        articleType: 0,
+      },
+      structureMapping: [],
+    } : null;
 
     return NextResponse.json({
       success: true,
@@ -52,11 +72,13 @@ export async function GET(
         layers,
         assets,
         // 新格式：范式识别 + 7维关系型素材
-        paradigmRecognition: (extraction as any).paradigmRecognition || null,
-        relationalMaterials: (extraction as any).relationalMaterialsData || null,
+        paradigmRecognition,
+        relationalMaterials: relationalMaterials || null,
+        paradigmName: extraction.paradigmName || null,
+        paradigmMatchScore: extraction.paradigmMatchScore ?? null,
         extractionSummary: extraction.extractionSummary || '',
         assetValueScore: extraction.assetValueScore ?? 0,
-        totalMaterialCount: (extraction as any).totalMaterialCount ?? extraction.reusableDimensionCount ?? 0,
+        materialCount,
         // 兼容旧5层格式
         extraction: hasNewFormat ? null : {
           layer1: extraction.layer1Data || (layers.find(l => l.layerName === 'meta_info')?.extractionData) || {},

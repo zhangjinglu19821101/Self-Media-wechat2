@@ -57,7 +57,7 @@ export async function POST(request: NextRequest) {
     // 3. 调用两步拆解服务（范式识别 + 关系型素材提取）
     const extractionResult: ArticleExtractionResultV2 = await extractArticleV2(
       articleContent.trim(),
-      articleTitle?.trim()
+      workspaceId as string
     );
 
     // 4. 存入数据库（V2 使用独立范式字段）
@@ -121,7 +121,7 @@ export async function POST(request: NextRequest) {
             content: input.content,
             type: input.type,
             sceneType: input.sceneType,
-            sourceType: 'article_extraction',
+            sourceType: 'article',
             sourceDesc: extractionResult.articleTitle || undefined,
             topicTags: input.topicTags,
             sceneTags: input.sceneTags,
