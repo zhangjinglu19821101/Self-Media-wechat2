@@ -1399,8 +1399,8 @@ export * from './schema/article-hashes';
 // 小红书卡片图片表
 export * from './schema/xhs-cards';
 
-// 行业案例库表
-export * from './schema/industry-case-library';
+// 行业案例库表（已废弃，案例数据统一存储在 material_library type='case'）
+// export * from './schema/industry-case-library';
 
 // 信息速记哈希表（去重检测）
 export * from './schema/snippet-hashes';

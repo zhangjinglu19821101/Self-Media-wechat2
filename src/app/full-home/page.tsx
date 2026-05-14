@@ -174,7 +174,7 @@ interface RecommendedSnippet {
   complianceLevel: string | null;
 }
 
-// 🔥 行业案例项类型定义
+// 🔥 行业素材项类型定义
 interface CaseItem {
   id: string;
   title: string;
@@ -211,7 +211,7 @@ interface MaterialItemSnapshot {
 const FORM_SNAPSHOT_VERSION = 1; // v1: 初始版本，统一持久化 + 精简快照
 const FORM_SNAPSHOT_KEY = 'fullHome_formSnapshot';
 
-// 🔥 精简案例快照类型：只保存必要字段，减少 sessionStorage 容量占用
+// 🔥 精简素材快照类型：只保存必要字段，减少 sessionStorage 容量占用
 interface CaseItemSnapshot {
   id: string;
   title: string;
@@ -239,7 +239,7 @@ interface FormSnapshot {
   selectedParadigmId: string;
   hasSplitResult: boolean;
   subTasks: SubTask[];
-  // 🔥 只保存精简的案例快照，避免 sessionStorage 容量超限
+  // 🔥 只保存精简的素材快照，避免 sessionStorage 容量超限
   recommendedCases: CaseItemSnapshot[];
   selectedCases: CaseItemSnapshot[];
   // 提交表单字段
@@ -329,7 +329,7 @@ function loadFormSnapshot(): FormSnapshot | null {
   }
 }
 
-// 🔥 案例对象转为精简快照（只保留必要字段，减少存储体积）
+// 🔥 素材对象转为精简快照（只保留必要字段，减少存储体积）
 function toCaseItemSnapshot(item: CaseItem | CaseItemSnapshot): CaseItemSnapshot {
   return {
     id: item.id,
@@ -339,7 +339,7 @@ function toCaseItemSnapshot(item: CaseItem | CaseItemSnapshot): CaseItemSnapshot
   };
 }
 
-// 🔥 精简快照还原为完整案例对象（恢复时使用，补充缺失字段）
+// 🔥 精简快照还原为完整素材对象（恢复时使用，补充缺失字段）
 function toFullCaseItem(snapshot: CaseItemSnapshot): CaseItem {
   return {
     id: snapshot.id,
@@ -414,7 +414,7 @@ interface InfoSnippet {
   complianceLevel: string | null;
   materialStatus: string | null;
   materialId: string | null;
-  caseId: string | null;  // 已关联的案例 ID
+  caseId: string | null;  // 已关联的素材 ID
   status: string;
   createdAt: string;
 }
@@ -549,21 +549,21 @@ export default function HomePage() {
   // P1-2: AbortController 用于取消并发请求 + 竞态保护
   const webSearchAbortRef = useRef<AbortController | null>(null);
 
-  // 🔥 行业案例引用相关状态
+  // 🔥 行业素材引用相关状态
   const [selectedCaseIds, setSelectedCaseIds] = useState<string[]>([]);
   const [selectedCases, setSelectedCases] = useState<CaseItem[]>([]);
   const [recommendedCases, setRecommendedCases] = useState<CaseItem[]>([]);
   const [loadingRecommendedCases, setLoadingRecommendedCases] = useState(false);
-  const [hasSearchedCases, setHasSearchedCases] = useState(false); // 是否已搜索过案例
-  const [viewingCase, setViewingCase] = useState<CaseItem | null>(null); // 查看案例详情
+  const [hasSearchedCases, setHasSearchedCases] = useState(false); // 是否已搜索过素材
+  const [viewingCase, setViewingCase] = useState<CaseItem | null>(null); // 查看素材详情
   
-  // 🔥 案例搜索相关状态（完全替换模式）
+  // 🔥 素材搜索相关状态（完全替换模式）
   const [caseSearchMode, setCaseSearchMode] = useState<'recommend' | 'search'>('recommend'); // 当前模式
   const [caseSearchKeyword, setCaseSearchKeyword] = useState(''); // 搜索关键词
   const [caseSearchLoading, setCaseSearchLoading] = useState(false); // 搜索加载中
   const [caseFilterProduct, setCaseFilterProduct] = useState<string>('all'); // 险种筛选
   const [caseFilterCrowd, setCaseFilterCrowd] = useState<string>('all'); // 人群筛选
-  const [caseFilterType, setCaseFilterType] = useState<string>('all'); // 案例类型筛选
+  const [caseFilterType, setCaseFilterType] = useState<string>('all'); // 素材类型筛选
 
   // 🔥 范式选择相关状态（替代结构选择）
   const [paradigms, setParadigms] = useState<Array<{
@@ -693,7 +693,7 @@ export default function HomePage() {
   const [snippetTypeFilter, setSnippetTypeFilter] = useState('all');
   const [snippetStatusFilter, setSnippetStatusFilter] = useState('all');
 
-  // 🔥 速记转案例相关状态
+  // 🔥 速记转素材相关状态
   const [showCaseConversionDialog, setShowCaseConversionDialog] = useState(false);
   const [convertingSnippetId, setConvertingSnippetId] = useState<string | null>(null);
   const [caseExtracting, setCaseExtracting] = useState(false);
@@ -715,7 +715,7 @@ export default function HomePage() {
     industry: string;
     llmExtractedTitle?: string;  // LLM 提炼的原始标题（用于搜索关键词）
     searchKeywords?: string;  // LLM 从原文提取的搜索关键词
-    caseId: string | null;  // 已关联的案例 ID
+    caseId: string | null;  // 已关联的素材 ID
     searchPerformed: boolean;
     searchPending: boolean;
     searchSummary: string | null;
@@ -821,11 +821,11 @@ export default function HomePage() {
     // 🔥 恢复拆解状态，确保刷新后创作引导区可见
     if (snapshot.hasSplitResult) setHasSplitResult(true);
     if (snapshot.subTasks?.length) setSubTasks(snapshot.subTasks);
-    // 🔥 恢复推荐案例列表（CaseItemSnapshot[] → CaseItem[]）
+    // 🔥 恢复推荐素材列表（CaseItemSnapshot[] → CaseItem[]）
     if (snapshot.recommendedCases?.length) {
       setRecommendedCases(snapshot.recommendedCases.map(toFullCaseItem));
     }
-    // 🔥 恢复已选案例：直接使用 selectedCases（CaseItemSnapshot[] → CaseItem[]）
+    // 🔥 恢复已选素材：直接使用 selectedCases（CaseItemSnapshot[] → CaseItem[]）
     if (snapshot.selectedCases?.length) {
       const fullCases = snapshot.selectedCases.map(toFullCaseItem);
       setSelectedCases(fullCases);
@@ -902,7 +902,7 @@ export default function HomePage() {
       selectedParadigmId: selectedParadigm?.id || '',
       hasSplitResult,
       subTasks,
-      // 🔥 保存精简的案例快照，减少 sessionStorage 容量占用
+      // 🔥 保存精简的素材快照，减少 sessionStorage 容量占用
       recommendedCases: recommendedCases.map(toCaseItemSnapshot),
       selectedCases: selectedCases.map(toCaseItemSnapshot),
       // 提交表单字段
@@ -1682,7 +1682,7 @@ export default function HomePage() {
     };
   }, []);
 
-  // 🔥 行业案例：推荐相关案例（silent=true 时自动推荐，不弹 toast）
+  // 🔥 行业素材：推荐相关案例（silent=true 时自动推荐，不弹 toast）
   const handleRecommendCases = useCallback(async (silent = false) => {
     if (!mainInstruction.trim()) {
       if (!silent) toast.error('请先输入任务指令');
@@ -1696,20 +1696,20 @@ export default function HomePage() {
       setHasSearchedCases(true);
       if (!silent) {
         if (cases.length > 0) {
-          toast.success(`推荐了 ${cases.length} 条相关案例`);
+          toast.success(`推荐了相关素材`);
         } else {
-          toast.info('暂无匹配案例，当前案例库未覆盖该险种');
+          toast.info('暂无匹配素材');
         }
       }
     } catch (error) {
-      console.error('推荐案例失败:', error);
-      if (!silent) toast.error('推荐案例失败');
+      console.error('推荐素材失败:', error);
+      if (!silent) toast.error('推荐素材失败');
     } finally {
       setLoadingRecommendedCases(false);
     }
   }, [mainInstruction]);
 
-  // 🔥 行业案例：选择/取消选择
+  // 🔥 行业素材：选择/取消选择
   const toggleCaseSelection = (caseItem: CaseItem) => {
     const alreadySelected = selectedCaseIds.includes(caseItem.id);
     if (alreadySelected) {
@@ -1721,7 +1721,7 @@ export default function HomePage() {
     }
   };
 
-  // 🔥 行业案例：搜索案例（完全替换模式）
+  // 🔥 行业素材：搜索案例（完全替换模式）
   const handleSearchCases = useCallback(async (keyword?: string, filters?: { productTag?: string; crowdTag?: string; caseType?: string }) => {
     const searchKeyword = keyword ?? caseSearchKeyword;
     // 将 'all' 转换为空字符串用于 API 调用
@@ -1753,19 +1753,19 @@ export default function HomePage() {
       setHasSearchedCases(true);
       
       if (cases.length > 0) {
-        toast.success(`找到 ${cases.length} 条相关案例`);
+        toast.success(`找到相关素材`);
       } else {
-        toast.info('未找到匹配的案例');
+        toast.info('未找到匹配的素材');
       }
     } catch (error) {
-      console.error('搜索案例失败:', error);
-      toast.error('搜索案例失败');
+      console.error('搜索素材失败:', error);
+      toast.error('搜索素材失败');
     } finally {
       setCaseSearchLoading(false);
     }
   }, [caseSearchKeyword, caseFilterProduct, caseFilterCrowd, caseFilterType]);
 
-  // 🔥 行业案例：切换回推荐模式
+  // 🔥 行业素材：切换回推荐模式
   const handleSwitchToRecommend = useCallback(async () => {
     setCaseSearchMode('recommend');
     setCaseSearchKeyword('');
@@ -1777,8 +1777,8 @@ export default function HomePage() {
   }, []);
 
   // 🔥 核心观点：自动推荐受 prevInstructionRef 保护（见上方素材自动推荐 useEffect）
-  // 🔥 案例推荐：不由 mainInstruction 触发，仅由 handleAISplit（拆解后）和手动按钮触发
-  // 🔥 案例推荐的数据来自快照持久化，刷新后从 sessionStorage 恢复
+  // 🔥 素材推荐：不由 mainInstruction 触发，仅由 handleAISplit（拆解后）和手动按钮触发
+  // 🔥 素材推荐的数据来自快照持久化，刷新后从 sessionStorage 恢复
 
   // 🔥 自动推荐核心观点：指令变化后 800ms 自动触发观点推荐
   useEffect(() => {
@@ -2193,7 +2193,7 @@ export default function HomePage() {
     }
   };
 
-  // 🔥 速记转案例：提取结构化信息（或加载已有案例）
+  // 🔥 速记转素材：提取结构化信息（或加载已有素材）
   const handleConvertSnippetToCase = async (snippet: InfoSnippet) => {
     try {
       setConvertingSnippetId(snippet.id);
@@ -2202,18 +2202,18 @@ export default function HomePage() {
       setShowCaseConversionDialog(true);
       caseDialogActiveRef.current = true;
 
-      // === 情形1：snippet 已有 caseId → 加载已有案例 ===
+      // === 情形1：snippet 已有 caseId → 加载已有素材 ===
       if (snippet.caseId) {
         const existingCase: any = await apiGet(`/api/cases/${snippet.caseId}`);
         if (!caseDialogActiveRef.current) return;
 
         if (existingCase?.success && existingCase?.data) {
           const c = existingCase.data;
-          // 判断是否是系统预置案例
+          // 判断是否是系统预置素材
           const isSystemCase = c.workspaceId === 'system';
           const data = {
             snippetId: snippet.id,
-            caseId: isSystemCase ? undefined : c.id, // 系统预置案例不设置 caseId，作为新案例创建
+            caseId: isSystemCase ? undefined : c.id, // 系统预置素材不设置 caseId，作为新素材创建
             snippetTitle: snippet.title || '',
             title: c.title,
             eventFullStory: c.eventFullStory || '',
@@ -2243,12 +2243,12 @@ export default function HomePage() {
             industry: c.industry || 'insurance',
           });
           if (isSystemCase) {
-            toast.info('已加载系统预置案例作为模板，保存后将创建新案例');
+            toast.info('已加载系统预置素材作为模板，保存后将创建新素材');
           } else {
-            toast.info('已加载已有案例，可直接编辑保存');
+            toast.info('已加载已有素材，可直接编辑保存');
           }
         } else {
-          toast.error('加载已有案例失败，将重新提取');
+          toast.error('加载已有素材失败，将重新提取');
         }
         setCaseExtracting(false);
         return;
@@ -2298,17 +2298,17 @@ export default function HomePage() {
           searchSupplementForCase(snippet.id, data);
         }
       } else {
-        toast.error(result.error || '案例提取失败');
+        toast.error(result.error || '素材提取失败');
         setShowCaseConversionDialog(false);
         caseDialogActiveRef.current = false;
       }
     } catch (error: any) {
-      console.error('[InfoSnippets] 案例提取失败:', error);
+      console.error('[InfoSnippets] 素材提取失败:', error);
       if (caseExtractionTimeoutRef.current) {
         clearInterval(caseExtractionTimeoutRef.current);
         caseExtractionTimeoutRef.current = null;
       }
-      toast.error(error?.message || '案例提取失败');
+      toast.error(error?.message || '素材提取失败');
       setShowCaseConversionDialog(false);
       caseDialogActiveRef.current = false;
     } finally {
@@ -2316,7 +2316,7 @@ export default function HomePage() {
     }
   };
 
-// 🔥 速记转案例：取消提取
+// 🔥 速记转素材：取消提取
   const handleCancelCaseExtraction = () => {
     // 清除超时计时器
     if (caseExtractionTimeoutRef.current) {
@@ -2329,7 +2329,7 @@ export default function HomePage() {
     toast.info('已取消提取');
   };
 
-  // 🔥 速记转案例：异步搜索补充（Step 2，不阻塞用户编辑）
+  // 🔥 速记转素材：异步搜索补充（Step 2，不阻塞用户编辑）
   const searchSupplementForCase = async (snippetId: string, extractionResult: any) => {
     try {
       const supplementResult: any = await apiPost(
@@ -2371,7 +2371,7 @@ export default function HomePage() {
     }
   };
 
-  // 🔥 速记转案例：确认保存
+  // 🔥 速记转素材：确认保存
   const handleConfirmSaveCase = async () => {
     if (!caseExtractionResult) return;
 
@@ -2380,7 +2380,7 @@ export default function HomePage() {
 
       // 区分：已有 caseId → 更新，否则 → 创建
       if (caseExtractionResult.caseId) {
-        // === 更新已有案例 ===
+        // === 更新已有素材 ===
         const result: any = await apiPut(`/api/cases/${caseExtractionResult.caseId}`, {
           title: caseEditForm.title.trim(),
           eventFullStory: caseEditForm.eventFullStory.trim(),
@@ -2408,7 +2408,7 @@ export default function HomePage() {
           toast.error(result.error || '\u6848\u4f8b\u66f4\u65b0\u5931\u8d25');
         }
       } else {
-        // === 创建新案例 ===
+        // === 创建新素材 ===
         const result: any = await apiPost('/api/cases/create', {
           snippetId: caseExtractionResult.snippetId,
           title: caseEditForm.title.trim(),
@@ -3186,7 +3186,7 @@ export default function HomePage() {
                         🎯 领域：<span className="font-bold">{detectedDomain}</span>
                       </div>
                     )}
-                    {/* 产品标签 - 可交互，参考速记转案例样式 */}
+                    {/* 产品标签 - 可交互，参考速记转素材样式 */}
                     <div className="mt-1 space-y-1.5">
                       <Label className="text-xs text-slate-500 flex items-center gap-1">
                         <span>🏷️ 产品标签</span>
@@ -3240,7 +3240,7 @@ export default function HomePage() {
                         <span>•</span>
                         <span>{selectedMaterialIds.length}个素材</span>
                         <span>•</span>
-                        <span>{selectedCaseIds.length}个案例</span>
+                        <span>{selectedCaseIds.length}个素材</span>
                         <span>•</span>
                         <span>{selectedAccountIds.length}个平台</span>
                       </div>
@@ -4264,8 +4264,8 @@ export default function HomePage() {
                                 </SelectTrigger>
                                 <SelectContent>
                                   <SelectItem value="all">全部类型</SelectItem>
-                                  <SelectItem value="positive">正面案例</SelectItem>
-                                  <SelectItem value="warning">警示案例</SelectItem>
+                                  <SelectItem value="positive">正面素材</SelectItem>
+                                  <SelectItem value="warning">警示素材</SelectItem>
                                   <SelectItem value="milestone">里程碑</SelectItem>
                                 </SelectContent>
                               </Select>
@@ -5058,36 +5058,36 @@ export default function HomePage() {
         </DialogContent>
       </Dialog>
 
-      {/* 案例详情弹窗 - 按速记转案例样式展示 */}
+      {/* 素材详情弹窗 - 按速记转素材样式展示 */}
       <Dialog open={!!viewingCase} onOpenChange={(open) => !open && setViewingCase(null)}>
         <DialogContent className="sm:max-w-[640px] max-h-[85vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Briefcase className="h-5 w-5 text-amber-500" />
-              案例详情
+              素材详情
             </DialogTitle>
             <DialogDescription>
-              查看案例完整详情
+              查看素材完整详情
             </DialogDescription>
           </DialogHeader>
 
           {viewingCase && (
             <div className="space-y-4">
-              {/* 案例类型标识 */}
+              {/* 素材类型标识 */}
               <div className="flex items-center gap-2">
                 <Badge className={`${
                   viewingCase.caseType === 'positive' ? 'bg-green-100 text-green-700' :
                   viewingCase.caseType === 'warning' ? 'bg-amber-100 text-amber-700' :
                   'bg-blue-100 text-blue-700'
                 }`}>
-                  {viewingCase.caseType === 'positive' ? '正面案例' :
+                  {viewingCase.caseType === 'positive' ? '正面素材' :
                    viewingCase.caseType === 'warning' ? '反面警示' : '行业里程碑'}
                 </Badge>
               </div>
 
               {/* 标题 */}
               <div>
-                <Label className="text-xs text-slate-500 mb-1 block">案例标题</Label>
+                <Label className="text-xs text-slate-500 mb-1 block">素材标题</Label>
                 <p className="text-sm font-medium text-slate-900 bg-slate-50 rounded-md px-3 py-2 min-h-[36px] flex items-center">
                   {viewingCase.title}
                 </p>
@@ -5224,7 +5224,7 @@ export default function HomePage() {
               }}
               className={`flex-1 ${selectedCaseIds.includes(viewingCase?.id || '') ? 'bg-slate-500 hover:bg-slate-600' : 'bg-emerald-500 hover:bg-emerald-600'}`}
             >
-              {viewingCase && selectedCaseIds.includes(viewingCase.id) ? '取消选择' : '选择此案例'}
+              {viewingCase && selectedCaseIds.includes(viewingCase.id) ? '取消选择' : '选择此素材'}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -5412,7 +5412,7 @@ export default function HomePage() {
         </TooltipProvider>
       )}
 
-      {/* 🔥 速记转案例确认对话框 */}
+      {/* 🔥 速记转素材确认对话框 */}
       <Dialog open={showCaseConversionDialog} onOpenChange={(open) => {
         if (!open && !caseExtracting && !caseSaving) {
           // 清理超时计时器
@@ -5433,7 +5433,7 @@ export default function HomePage() {
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Briefcase className="h-5 w-5 text-amber-500" />
-              速记转案例
+              速记转素材
             </DialogTitle>
             <DialogDescription>
               {caseExtracting
@@ -5469,14 +5469,14 @@ export default function HomePage() {
             </div>
           ) : caseExtractionResult ? (
             <div className="space-y-4">
-              {/* 案例类型标识 */}
+              {/* 素材类型标识 */}
               <div className="flex items-center gap-2">
                 <Badge className={`${
                   caseExtractionResult.caseType === 'positive' ? 'bg-green-100 text-green-700' :
                   caseExtractionResult.caseType === 'warning' ? 'bg-amber-100 text-amber-700' :
                   'bg-blue-100 text-blue-700'
                 }`}>
-                  {caseExtractionResult.caseType === 'positive' ? '正面案例' :
+                  {caseExtractionResult.caseType === 'positive' ? '正面素材' :
                    caseExtractionResult.caseType === 'warning' ? '反面警示' : '行业里程碑'}
                 </Badge>
                 {caseExtractionResult.searchPerformed && (
@@ -5489,12 +5489,12 @@ export default function HomePage() {
 
               {/* 标题 */}
               <div>
-                <Label className="text-xs text-slate-500 mb-1 block">案例标题 *</Label>
+                <Label className="text-xs text-slate-500 mb-1 block">素材标题 *</Label>
                 <Input
                   value={caseEditForm.title}
                   onChange={(e) => setCaseEditForm(prev => ({ ...prev, title: e.target.value }))}
                   className="h-9 text-sm"
-                  placeholder="案例标题"
+                  placeholder="素材标题"
                 />
               </div>
 
@@ -6670,7 +6670,7 @@ export default function HomePage() {
                           </div>
 
                           <div className="flex items-center gap-1 shrink-0">
-                            {/* 转为案例按钮 — 所有分类均可转换，非 real_case 给出提示 */}
+                            {/* 转为素材按钮 — 所有分类均可转换，非 real_case 给出提示 */}
                             <TooltipProvider>
                               <Tooltip>
                                 <TooltipTrigger asChild>
@@ -6690,14 +6690,14 @@ export default function HomePage() {
                                     ) : (
                                       <Briefcase className="h-3 w-3" />
                                     )}
-                                    {snippet.caseId ? '转出案例' : '转入案例'}
+                                    {snippet.caseId ? '已入素材库' : '转入素材'}
                                   </button>
                                 </TooltipTrigger>
                                 <TooltipContent>
                                   {snippet.caseId
-                                    ? <p>查看/编辑此速记已转化的行业案例</p>
+                                    ? <p>查看/编辑此速记已转入的素材</p>
                                     : snippetCategories.includes('real_case')
-                                      ? <p>将此速记转化为行业案例</p>
+                                      ? <p>将此速记转化为素材入库</p>
                                       : <p>该速记未被识别为真实案例，转换效果可能不佳</p>
                                   }
                                 </TooltipContent>

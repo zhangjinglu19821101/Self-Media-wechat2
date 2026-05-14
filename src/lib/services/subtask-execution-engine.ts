@@ -8401,47 +8401,84 @@ export class SubtaskExecutionEngine {
           console.log('[SubtaskEngine] 📋 小红书平台默认使用 5-card 详尽模式');
         }
 
-        // 🔥🔥🔥 行业案例库：优先用户选择，其次自动推荐
-        // 1. 用户在前端「案例引用」tab 选择了案例 → 使用用户选择的案例（最高优先级）
-        // 2. 用户未选择 → 根据任务指令自动推荐相关案例
+        // 🔥🔥🔥 案例素材：统一从 material_library 查询 type='case' 的素材
+        // 原 industry_case_library 已废弃，案例数据统一存储在 material_library
+        // 1. 用户在前端「素材选择」中选了案例素材 → 使用用户选择的（最高优先级）
+        // 2. 用户未选择 → 根据任务指令自动推荐案例素材
         // 3. 无匹配 → 跳过注入，不污染提示词
         let _industryCasesText = '';
         try {
-          const { industryCaseService } = await import('./industry-case-service');
+          const { db } = await import('@/lib/db');
+          const { materialLibrary } = await import('@/lib/db/schema/material-library');
+          const { eq, and, or, desc, sql } = await import('drizzle-orm');
           const _metadata = (task as any).metadata || {};
           const _userCaseIds: string[] = _metadata.caseIds || [];
 
           if (_userCaseIds.length > 0) {
-            // 优先：用户手动选择的案例——直接按 ID 查询，不依赖 searchCases 的热门排序
-            const _selectedCases = await industryCaseService.getCasesByIds(_userCaseIds, task.workspaceId || undefined);
+            // 优先：用户手动选择的案例素材——直接按 ID 查询
+            const _selectedCases = await db
+              .select()
+              .from(materialLibrary)
+              .where(
+                and(
+                  sql`${materialLibrary.id} = ANY(${_userCaseIds})`,
+                  eq(materialLibrary.type, 'case'),
+                  or(
+                    eq(materialLibrary.ownerType, 'system'),
+                    eq(materialLibrary.workspaceId, task.workspaceId || '')
+                  )
+                )
+              )
+              .limit(10);
             if (_selectedCases.length > 0) {
-              _industryCasesText = industryCaseService.formatCasesForPrompt(_selectedCases, 'manual');
-              console.log('[SubtaskEngine] 📚 用户选择案例:', _selectedCases.length, '条');
+              _industryCasesText = _selectedCases.map((c: any, i: number) => {
+                const tags = [...(c.topicTags || []), ...(c.sceneTags || []), ...(c.emotionTags || [])].join('、');
+                return `案例${i + 1}：${c.title || '无标题'}${tags ? `（${tags}）` : ''}\n${c.content || c.summary || ''}`;
+              }).join('\n\n');
+              console.log('[SubtaskEngine] 📚 用户选择案例素材:', _selectedCases.length, '条');
             } else {
-              console.log('[SubtaskEngine] 📚 用户选择案例ID未命中数据库，降级为自动推荐');
+              console.log('[SubtaskEngine] 📚 用户选择案例ID未命中素材库，降级为自动推荐');
             }
           }
 
           if (!_industryCasesText) {
-            // 兜底：根据任务指令自动推荐
+            // 兜底：根据任务指令自动推荐案例素材
             const _caseInstruction = task.taskDescription || '';
             if (_caseInstruction.length > 5) {
-              const _matchedCases = await industryCaseService.recommendCases(
-                _caseInstruction,
-                task.fromParentsExecutor === 'insurance-xiaohongshu' ? 'xiaohongshu' : undefined,
-                5,
-                task.workspaceId || undefined  // 🔥 传递 workspaceId 用于可见性过滤
-              );
+              // 关键词匹配：从指令中提取关键词，匹配 topicTags/sceneTags
+              const _keywords = _caseInstruction.slice(0, 50);
+              const _matchedCases = await db
+                .select()
+                .from(materialLibrary)
+                .where(
+                  and(
+                    eq(materialLibrary.type, 'case'),
+                    or(
+                      eq(materialLibrary.ownerType, 'system'),
+                      eq(materialLibrary.workspaceId, task.workspaceId || '')
+                    ),
+                    or(
+                      sql`${materialLibrary.title} ILIKE ${'%' + _keywords.slice(0, 10) + '%'}`,
+                      sql`${materialLibrary.topicTags}::text ILIKE ${'%' + _keywords.slice(0, 6) + '%'}`,
+                      sql`${materialLibrary.sceneTags}::text ILIKE ${'%' + _keywords.slice(0, 6) + '%'}`
+                    )
+                  )
+                )
+                .orderBy(desc(materialLibrary.createdAt))
+                .limit(5);
               if (_matchedCases.length > 0) {
-                _industryCasesText = industryCaseService.formatCasesForPrompt(_matchedCases, 'auto');
-                console.log('[SubtaskEngine] 📚 自动推荐案例:', _matchedCases.length, '条');
+                _industryCasesText = _matchedCases.map((c: any, i: number) => {
+                  const tags = [...(c.topicTags || []), ...(c.sceneTags || []), ...(c.emotionTags || [])].join('、');
+                  return `案例${i + 1}：${c.title || '无标题'}${tags ? `（${tags}）` : ''}\n${c.content || c.summary || ''}`;
+                }).join('\n\n');
+                console.log('[SubtaskEngine] 📚 自动推荐案例素材:', _matchedCases.length, '条');
               } else {
                 console.log('[SubtaskEngine] 📚 自动推荐无匹配结果，跳过注入');
               }
             }
           }
         } catch (_caseErr) {
-          console.warn('[SubtaskEngine] 📚 行业案例检索失败（不影响主流程）:', _caseErr);
+          console.warn('[SubtaskEngine] 📚 案例素材检索失败（不影响主流程）:', _caseErr);
         }
 
         // 🔥🔥🔥 素材-类比设计：根据创作类型检索类比素材
