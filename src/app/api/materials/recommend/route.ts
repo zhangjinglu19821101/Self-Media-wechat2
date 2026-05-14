@@ -3,7 +3,6 @@ import { db } from '@/lib/db';
 import { materialLibrary, SYSTEM_WORKSPACE_ID } from '@/lib/db/schema/material-library';
 import { infoSnippets } from '@/lib/db/schema/info-snippets';
 import { or, like, desc, and, eq, sql, notInArray, inArray } from 'drizzle-orm';
-import { PARADIGM_TO_LEGACY_TYPE_MAP } from '@/lib/services/material-paradigm-mapper';
 import { getWorkspaceId } from '@/lib/auth/context';
 import { expandKeywordsWithSynonyms } from '@/lib/utils/synonym-dictionary';
 import { expandWithLLM } from '@/lib/services/semantic-expand-service';

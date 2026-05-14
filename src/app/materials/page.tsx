@@ -14,7 +14,8 @@ import {
   Search, Plus, Edit, Trash2, Eye, Tag, Filter, 
   FileText, BarChart2, BookOpen, Quote, Play, CheckCircle,
   ChevronLeft, ChevronRight, X, Layers, List,
-  Bookmark, BookmarkCheck, Shield, Star, Sparkles
+  Bookmark, BookmarkCheck, Shield, Star, Sparkles,
+  AlertCircle, Lightbulb
 } from 'lucide-react';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
@@ -53,7 +54,8 @@ interface Material {
   sourceArticleId: string | null;
 }
 
-type MaterialType = 'case' | 'data' | 'story' | 'quote' | 'opening' | 'ending';
+/** 素材类型 - 对齐范式 materialTypes */
+type MaterialType = 'misconception' | 'analogy' | 'case' | 'data' | 'golden_sentence' | 'hook_sentence' | 'value_reconstruction';
 
 interface Pagination {
   page: number;
@@ -63,13 +65,15 @@ interface Pagination {
 }
 
 // ==================== 常量定义 ====================
+/** 素材类型选项 - 对齐范式系统 7 大维度 */
 const MATERIAL_TYPES: { value: MaterialType; label: string; icon: React.ReactNode }[] = [
-  { value: 'case', label: '案例', icon: <FileText className="w-4 h-4" /> },
-  { value: 'data', label: '数据', icon: <BarChart2 className="w-4 h-4" /> },
-  { value: 'story', label: '故事', icon: <BookOpen className="w-4 h-4" /> },
-  { value: 'quote', label: '引用', icon: <Quote className="w-4 h-4" /> },
-  { value: 'opening', label: '开头', icon: <Play className="w-4 h-4" /> },
-  { value: 'ending', label: '结尾', icon: <CheckCircle className="w-4 h-4" /> },
+  { value: 'misconception', label: '错误认知', icon: <AlertCircle className="w-4 h-4" /> },
+  { value: 'analogy', label: '生活类比', icon: <Lightbulb className="w-4 h-4" /> },
+  { value: 'case', label: '真实案例', icon: <FileText className="w-4 h-4" /> },
+  { value: 'data', label: '权威数据', icon: <BarChart2 className="w-4 h-4" /> },
+  { value: 'golden_sentence', label: '金句', icon: <Quote className="w-4 h-4" /> },
+  { value: 'hook_sentence', label: '钩子句', icon: <Play className="w-4 h-4" /> },
+  { value: 'value_reconstruction', label: '价值重构', icon: <CheckCircle className="w-4 h-4" /> },
 ];
 
 const STATUS_OPTIONS = [

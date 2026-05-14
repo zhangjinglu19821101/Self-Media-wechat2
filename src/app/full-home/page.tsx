@@ -55,14 +55,15 @@ const SNIPPET_CATEGORY_LABELS: Record<string, string> = {
   quick_note: '简要速记',
 };
 
-// 🔥 素材类型标签映射（提取常量，消除硬编码三元表达式）
+// 🔥 素材类型标签映射 - 对齐范式系统 7 大维度
 const MATERIAL_TYPE_LABELS: Record<string, string> = {
-  case: '案例',
-  data: '数据',
-  story: '故事',
-  quote: '引用',
-  opening: '开头',
-  ending: '结尾',
+  misconception: '错误认知',
+  analogy: '生活类比',
+  case: '真实案例',
+  data: '权威数据',
+  golden_sentence: '金句',
+  hook_sentence: '钩子句',
+  value_reconstruction: '价值重构',
 };
 
 // 🔥 提醒中心类型定义
@@ -4103,17 +4104,8 @@ export default function HomePage() {
                                 if (m.sceneType && requiredTypes.includes(m.sceneType)) {
                                   return true;
                                 }
-                                // 桥接匹配：素材 type 通过映射表可桥接到 requiredTypes
-                                const LEGACY_MAP: Record<string, string[]> = {
-                                  'opening': ['misconception', 'case'],
-                                  'ending': ['golden_sentence', 'fixed_phrase'],
-                                  'story': ['case', 'personal_fragment'],
-                                  'quote': ['golden_sentence', 'fixed_phrase'],
-                                  'case': ['case'],
-                                  'data': ['data'],
-                                };
-                                const mappedTypes = LEGACY_MAP[m.type] || [];
-                                return mappedTypes.some((mt: string) => requiredTypes.includes(mt));
+                                // 类型匹配：素材 type 直接匹配 requiredTypes（已统一使用范式 materialTypes）
+                                return m.type && requiredTypes.includes(m.type);
                               });
                               return {
                                 order: slot.order,

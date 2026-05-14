@@ -8687,7 +8687,43 @@ export class SubtaskExecutionEngine {
         // 🔥🔥 改造：用户素材优先融入范式，系统素材补位
         try {
           const { recognizeParadigm, generateParadigmPrompt } = await import('./paradigm-creation-service');
-          const { buildParadigmRequirementList, getUserFilledParagraphOrders } = await import('./material-paradigm-mapper');
+          const { recognizeParadigm, generateParadigmPrompt } = await import('./paradigm-creation-service');
+
+          // 🔥🔥 简化版：素材直接按 type 匹配范式位置（无需类型桥接）
+          const buildParadigmRequirementListSimple = (params: {
+            paradigmCode: string;
+            paradigmName: string;
+            paradigmSlots: any[];
+            userMaterials: Array<{ id: string; title: string; type: string; sceneType?: string }>;
+          }) => {
+            const { paradigmCode, paradigmName, paradigmSlots, userMaterials } = params;
+            const slots = paradigmSlots.map((slot, idx) => {
+              // 直接按 type 精确匹配（无需桥接转换）
+              const matchedMaterial = userMaterials.find(m => 
+                slot.materialTypes?.includes(m.type) || m.type === slot.materialType
+              );
+              return {
+                paragraphOrder: slot.paragraphOrder || idx + 1,
+                paragraphRole: slot.paragraphRole,
+                materialType: slot.materialType || slot.materialTypes?.[0],
+                materialTypes: slot.materialTypes || [slot.materialType],
+                required: slot.required !== false,
+                filledByUserMaterial: !!matchedMaterial,
+                userMaterial: matchedMaterial ? {
+                  id: matchedMaterial.id,
+                  title: matchedMaterial.title,
+                  type: matchedMaterial.type,
+                } : undefined,
+              };
+            });
+            const filledSlotIds = slots.filter(s => s.filledByUserMaterial).map(s => s.paragraphOrder);
+            const unmatchedUserMaterials = userMaterials.filter(m => 
+              !slots.some(s => s.userMaterial?.id === m.id)
+            );
+            return { paradigmCode, paradigmName, slots, filledSlotIds, unmatchedUserMaterials };
+          };
+          const getUserFilledParagraphOrdersSimple = (requirementList: any) => 
+            requirementList?.filledSlotIds || [];
 
           // 从任务元数据中获取创作类型和行业
           const _articleType = (taskMetadata as any)?.creationType || (taskMetadata as any)?.articleType;
@@ -8712,7 +8748,7 @@ export class SubtaskExecutionEngine {
             const _positionMap = await getParadigmPositionMap(_recognitionResult.paradigmCode);
 
             try {
-              _requirementList = buildParadigmRequirementList({
+              _requirementList = buildParadigmRequirementListSimple({
                 paradigmCode: _recognitionResult.paradigmCode,
                 paradigmName: _recognitionResult.paradigmName,
                 paradigmSlots: _positionMap,
@@ -8729,7 +8765,7 @@ export class SubtaskExecutionEngine {
                   totalUserMaterials: _userMaterials.length,
                   filledSlots: _requirementList.slots.filter((s: any) => s.filledByUserMaterial).length,
                   totalSlots: _requirementList.slots.length,
-                  filledParagraphs: getUserFilledParagraphOrders(_requirementList),
+                  filledParagraphs: getUserFilledParagraphOrdersSimple(_requirementList),
                   unmatchedCount: _requirementList.unmatchedUserMaterials.length,
                 });
               }

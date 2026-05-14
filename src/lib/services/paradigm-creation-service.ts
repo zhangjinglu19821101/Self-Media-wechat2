@@ -15,7 +15,6 @@ import { paradigmLibrary } from '@/lib/db/schema/paradigm-library';
 import { materialLibrary } from '@/lib/db/schema/material-library';
 import { eq, and, or, desc, asc, sql, lte, notInArray } from 'drizzle-orm';
 import { PARADIGM_SEED_DATA, PARADIGM_CODE_NAME_MAP, PARADIGM_ARTICLE_TYPE_MAP } from '@/lib/db/schema/paradigm-seed-data';
-import { formatParadigmRequirementForPrompt } from './material-paradigm-mapper';
 
 // ============================================================
 // 类型定义
@@ -998,8 +997,8 @@ export async function generateParadigmPrompt(params: {
     type: string;
     sceneType?: string;
   }>;
-  /** 范式需求清单（由外部构建，避免重复计算） */
-  requirementList?: import('./material-paradigm-mapper').ParadigmRequirementList;
+  /** 范式需求清单（简化版：用户素材直接映射） */
+  requirementList?: { paradigmName: string; slots: Array<{ paragraphOrder: number; stepName: string; materialTypes: string[]; filledBy?: { title: string; type: string } }> };
 }): Promise<string> {
   const { paradigmCode, industry, topicTags, userMaterials, requirementList } = params;
 
@@ -1027,22 +1026,31 @@ export async function generateParadigmPrompt(params: {
     return '';
   }).filter(Boolean).join('\n');
 
-  // 🔥 素材-范式融合：如果有用户素材，构建融合指令
+  // 🔥 素材-范式融合：如果有用户素材，构建融合指令（简化版：直接匹配type）
   let fusionGuide = '';
   if (requirementList) {
-    // 外部已构建需求清单，直接使用
-    const { formatParadigmRequirementForPrompt } = await import('./material-paradigm-mapper');
-    fusionGuide = '\n\n' + formatParadigmRequirementForPrompt(requirementList);
+    // 外部已构建需求清单，直接格式化
+    fusionGuide = '\n\n## 素材填充要求\n\n' + requirementList.slots.map(slot => {
+      const filled = slot.filledBy ? `✅ 已填充：${slot.filledBy.title}（${slot.filledBy.type}）` : '❌ 未填充';
+      return `段落${slot.paragraphOrder}【${slot.stepName}】：需要 ${slot.materialTypes.join('/')} → ${filled}`;
+    }).join('\n');
+    fusionGuide += `\n\n范式：${requirementList.paradigmName}`;
   } else if (userMaterials && userMaterials.length > 0) {
-    // 外部未构建，内部构建
-    const { buildParadigmRequirementList } = await import('./material-paradigm-mapper');
-    const reqList = buildParadigmRequirementList({
-      paradigmCode,
-      paradigmName,
-      paradigmSlots: positionMap,
-      userMaterials,
+    // 简化版：直接按type匹配段落槽位
+    const slots = positionMap.map((slot: any) => {
+      const matched = userMaterials.find(m => slot.materialTypes.includes(m.type));
+      return {
+        paragraphOrder: slot.paragraphOrder,
+        stepName: slot.stepName,
+        materialTypes: slot.materialTypes,
+        filledBy: matched ? { title: matched.title, type: matched.type } : undefined,
+      };
     });
-    fusionGuide = '\n\n' + formatParadigmRequirementForPrompt(reqList);
+    fusionGuide = '\n\n## 素材填充要求\n\n' + slots.map(slot => {
+      const filled = slot.filledBy ? `✅ 已填充：${slot.filledBy.title}（${slot.filledBy.type}）` : '❌ 未填充';
+      return `段落${slot.paragraphOrder}【${slot.stepName}】：需要 ${slot.materialTypes.join('/')} → ${filled}`;
+    }).join('\n');
+    fusionGuide += `\n\n范式：${paradigmName}`;
   }
 
   return `# 创作范式：${paradigmName}（${paradigmCode}）
