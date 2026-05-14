@@ -1763,7 +1763,7 @@
    - **核心架构**: Step1 范式自动识别(10套标准范式+5维匹配) → Step2 关系型素材提取(7维精简)
    - **10套标准范式**: 标准错位破局/行业反思/案例归谬/本质定义/热点事件/产品解读/个人经历/避坑指南/对比分析/年终总结
    - **5维匹配权重**: 文章结构顺序40%/固定衔接句式30%/情绪节奏曲线15%/段落换行规则10%/文章类型5%
-   - **7维关系型素材**: misconception(错误认知)/analogy(生活类比)/case(真实案例)/data(权威数据)/golden_sentence(金句)/hook_sentence(钩子句)/value_reconstruction(价值重构)
+   - **7维关系型素材**: misconception(错误认知)/analogy(生活类比)/case(真实案例)/data(权威数据)/golden_sentence(金句)/fixed_phrase(固定句式组合)/personal_fragment(个人碎片)
    - **关系型素材核心特征**: 带上下文(precedingText/followingText)、位置(paragraphIndex/sentenceIndex)、情绪(emotion)、关系(relations)的素材，不再是孤立原子
    - **修改文件**:
      - `src/lib/services/article-extraction-service.ts`: 完全重写，新增recognizeParadigm()/extractRelationalMaterials()/extractArticleV2()，保留V1兼容

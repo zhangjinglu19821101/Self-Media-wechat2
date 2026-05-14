@@ -354,12 +354,12 @@ export async function POST(request: NextRequest) {
       }, { status: 400 });
     }
 
-    // 验证类型 - 对齐范式系统 7 大维度
-    const validTypes = ['misconception', 'analogy', 'case', 'data', 'golden_sentence', 'hook_sentence', 'value_reconstruction'];
+    // 验证类型 - 对齐范式系统 7 大 materialTypes
+    const validTypes = ['misconception', 'analogy', 'case', 'data', 'golden_sentence', 'fixed_phrase', 'personal_fragment'];
     if (!validTypes.includes(type)) {
       return NextResponse.json({
         success: false,
-        error: `无效的素材类型，有效值为：misconception/analogy/case/data/golden_sentence/hook_sentence/value_reconstruction`
+        error: `无效的素材类型，有效值为：misconception/analogy/case/data/golden_sentence/fixed_phrase/personal_fragment`
       }, { status: 400 });
     }
 

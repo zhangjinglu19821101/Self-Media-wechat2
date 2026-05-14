@@ -55,15 +55,15 @@ const SNIPPET_CATEGORY_LABELS: Record<string, string> = {
   quick_note: '简要速记',
 };
 
-// 🔥 素材类型标签映射 - 对齐范式系统 7 大维度
+// 🔥 素材类型标签映射 - 对齐范式系统 7 大 materialTypes（与 paradigm-seed-data.ts 严格一致）
 const MATERIAL_TYPE_LABELS: Record<string, string> = {
   misconception: '错误认知',
   analogy: '生活类比',
   case: '真实案例',
   data: '权威数据',
   golden_sentence: '金句',
-  hook_sentence: '钩子句',
-  value_reconstruction: '价值重构',
+  fixed_phrase: '固定句式组合',
+  personal_fragment: '个人碎片',
 };
 
 // 🔥 提醒中心类型定义

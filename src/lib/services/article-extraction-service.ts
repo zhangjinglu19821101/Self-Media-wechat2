@@ -739,23 +739,23 @@ export function extractionV2ToMaterialInputs(
   const baseTopicTags = [result.coreTheme].filter(Boolean);
   const baseEmotionTags = [result.emotionalTone].filter(Boolean);
 
-  // 素材类型 → material_library.type 映射
+  // 素材类型 → material_library.type 映射（直接一一对应，无需转换）
   const materialTypeToLibType: Record<string, string> = {
-    misconception: 'story',
-    analogy: 'case',
+    misconception: 'misconception',
+    analogy: 'analogy',
     case: 'case',
     data: 'data',
-    golden_sentence: 'quote',
-    fixed_phrase: 'quote',
-    personal_fragment: 'quote',
+    golden_sentence: 'golden_sentence',
+    fixed_phrase: 'fixed_phrase',
+    personal_fragment: 'personal_fragment',
   };
 
   // 素材类型 → material_library.sceneType 映射
   const materialTypeToSceneType: Record<string, string> = {
     misconception: 'misconception',
     analogy: 'analogy',
-    case: 'real_case',
-    data: 'authority_data',
+    case: 'case',
+    data: 'data',
     golden_sentence: 'golden_sentence',
     fixed_phrase: 'fixed_phrase',
     personal_fragment: 'personal_fragment',
@@ -766,8 +766,8 @@ export function extractionV2ToMaterialInputs(
     const contentPreview = m.content.substring(0, 30);
 
     materials.push({
-      type: materialTypeToLibType[m.materialType] || 'case',
-      sceneType: materialTypeToSceneType[m.materialType] || 'real_case',
+      type: materialTypeToLibType[m.materialType] || 'personal_fragment',
+      sceneType: materialTypeToSceneType[m.materialType] || 'personal_fragment',
       title: `${typeLabel}: ${contentPreview}...`,
       content: m.content,
       topicTags: [...baseTopicTags, ...m.topicTags],

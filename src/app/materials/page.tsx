@@ -54,8 +54,8 @@ interface Material {
   sourceArticleId: string | null;
 }
 
-/** 素材类型 - 对齐范式 materialTypes */
-type MaterialType = 'misconception' | 'analogy' | 'case' | 'data' | 'golden_sentence' | 'hook_sentence' | 'value_reconstruction';
+/** 素材类型 - 对齐范式 materialTypes（与 paradigm-seed-data.ts 严格一致） */
+type MaterialType = 'misconception' | 'analogy' | 'case' | 'data' | 'golden_sentence' | 'fixed_phrase' | 'personal_fragment';
 
 interface Pagination {
   page: number;
@@ -65,15 +65,15 @@ interface Pagination {
 }
 
 // ==================== 常量定义 ====================
-/** 素材类型选项 - 对齐范式系统 7 大维度 */
+/** 素材类型选项 - 对齐范式系统 7 大 materialTypes */
 const MATERIAL_TYPES: { value: MaterialType; label: string; icon: React.ReactNode }[] = [
   { value: 'misconception', label: '错误认知', icon: <AlertCircle className="w-4 h-4" /> },
   { value: 'analogy', label: '生活类比', icon: <Lightbulb className="w-4 h-4" /> },
   { value: 'case', label: '真实案例', icon: <FileText className="w-4 h-4" /> },
   { value: 'data', label: '权威数据', icon: <BarChart2 className="w-4 h-4" /> },
   { value: 'golden_sentence', label: '金句', icon: <Quote className="w-4 h-4" /> },
-  { value: 'hook_sentence', label: '钩子句', icon: <Play className="w-4 h-4" /> },
-  { value: 'value_reconstruction', label: '价值重构', icon: <CheckCircle className="w-4 h-4" /> },
+  { value: 'fixed_phrase', label: '固定句式组合', icon: <Play className="w-4 h-4" /> },
+  { value: 'personal_fragment', label: '个人碎片', icon: <CheckCircle className="w-4 h-4" /> },
 ];
 
 const STATUS_OPTIONS = [

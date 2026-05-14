@@ -12,15 +12,15 @@ import { db } from '@/lib/db';
 import { articleExtractions, materialLibrary } from '@/lib/db/schema';
 import { eq, and } from 'drizzle-orm';
 
-/** V2 关系型素材类型 → 素材库类型映射 */
+/** V2 关系型素材类型 → 素材库类型映射（直接一一对应，无需转换） */
 const MATERIAL_TYPE_MAP: Record<string, string> = {
-  misconception: 'case',           // 错误认知 → 案例
-  analogy: 'case',                 // 生活类比 → 案例
-  case: 'case',                    // 真实案例 → 案例
-  data: 'data',                    // 权威数据 → 数据
-  golden_sentence: 'quote',        // 金句 → 引用
-  hook_sentence: 'opening',        // 钩子句 → 开头素材
-  value_reconstruction: 'ending',  // 价值重构 → 结尾素材
+  misconception: 'misconception',   // 错误认知
+  analogy: 'analogy',               // 生活类比
+  case: 'case',                     // 真实案例
+  data: 'data',                     // 权威数据
+  golden_sentence: 'golden_sentence', // 金句
+  fixed_phrase: 'fixed_phrase',     // 固定句式组合
+  personal_fragment: 'personal_fragment', // 个人碎片
 };
 
 /** V2 关系型素材类型 → 中文标签 */
@@ -30,19 +30,19 @@ const MATERIAL_TYPE_LABELS: Record<string, string> = {
   case: '真实案例',
   data: '权威数据',
   golden_sentence: '金句',
-  hook_sentence: '钩子句',
-  value_reconstruction: '价值重构',
+  fixed_phrase: '固定句式组合',
+  personal_fragment: '个人碎片',
 };
 
 /** V2 关系型素材类型 → 场景类型映射 */
 const SCENE_TYPE_MAP: Record<string, string> = {
   misconception: 'misconception',
   analogy: 'analogy',
-  case: 'real_case',
-  data: 'authority_data',
+  case: 'case',
+  data: 'data',
   golden_sentence: 'golden_sentence',
-  hook_sentence: 'hook_sentence',
-  value_reconstruction: 'value_reconstruction',
+  fixed_phrase: 'fixed_phrase',
+  personal_fragment: 'personal_fragment',
 };
 
 export async function POST(
@@ -115,7 +115,7 @@ export async function POST(
           workspaceId: workspaceId as string,
           title: `[提取] ${MATERIAL_TYPE_LABELS[material.materialType] || material.materialType} - ${positionLabel}`,
           content: contentParts.join(''),
-          type: (MATERIAL_TYPE_MAP[material.materialType] || 'case') as any,
+          type: (MATERIAL_TYPE_MAP[material.materialType] || 'personal_fragment') as any,
           sceneType: SCENE_TYPE_MAP[material.materialType] || material.materialType || null,
           ownerType: 'user' as const,
           sourceType: 'article' as const,

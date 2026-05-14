@@ -73,7 +73,7 @@ export const materialLibrary = pgTable('material_library', {
   
   // === 核心内容（必须） ===
   title: text('title').notNull(),                    // 素材标题
-  type: text('type').notNull(),                      // 素材类型：case/data/story/quote/opening/ending
+  type: text('type').notNull(),                      // 素材类型：misconception/analogy/case/data/golden_sentence/fixed_phrase/personal_fragment（对齐范式 materialTypes）
   content: text('content').notNull(),                // 素材内容
   
   // === 归属信息 ===

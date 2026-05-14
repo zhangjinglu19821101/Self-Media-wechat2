@@ -8687,7 +8687,6 @@ export class SubtaskExecutionEngine {
         // 🔥🔥 改造：用户素材优先融入范式，系统素材补位
         try {
           const { recognizeParadigm, generateParadigmPrompt } = await import('./paradigm-creation-service');
-          const { recognizeParadigm, generateParadigmPrompt } = await import('./paradigm-creation-service');
 
           // 🔥🔥 简化版：素材直接按 type 匹配范式位置（无需类型桥接）
           const buildParadigmRequirementListSimple = (params: {
