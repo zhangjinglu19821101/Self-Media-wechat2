@@ -15,6 +15,7 @@ import { paradigmLibrary } from '@/lib/db/schema/paradigm-library';
 import { materialLibrary } from '@/lib/db/schema/material-library';
 import { eq, and, or, desc, asc, sql, lte, notInArray } from 'drizzle-orm';
 import { PARADIGM_SEED_DATA, PARADIGM_CODE_NAME_MAP, PARADIGM_ARTICLE_TYPE_MAP } from '@/lib/db/schema/paradigm-seed-data';
+import { formatParadigmRequirementForPrompt } from './material-paradigm-mapper';
 
 // ============================================================
 // 类型定义
@@ -289,8 +290,12 @@ export async function matchMaterials(params: {
   topicTags?: string[];           // 主题标签
   excludeIds?: string[];          // 排除的素材ID（防重复）
   paradigmPositionMap?: any[];    // 范式的素材位置映射
+  /** 🔥 用户素材已填充的段落序号（跳过这些段落，避免重复填充） */
+  userFilledParagraphOrders?: number[];
+  /** 🔥 用户素材ID列表（从自动匹配中排除，避免与用户素材重复） */
+  userMaterialIds?: string[];
 }): Promise<Map<number, MaterialMatchResult[]>> {
-  const { paradigmCode, industry, topicTags, excludeIds = [], paradigmPositionMap } = params;
+  const { paradigmCode, industry, topicTags, excludeIds = [], paradigmPositionMap, userFilledParagraphOrders = [], userMaterialIds = [] } = params;
   
   const result = new Map<number, MaterialMatchResult[]>();
   
@@ -309,6 +314,15 @@ export async function matchMaterials(params: {
     const materialTypes = slot.materialTypes as string[];
     const paragraphOrder = slot.paragraphOrder as number;
 
+    // 🔥 跳过用户素材已填充的段落（用户素材优先，系统素材补位）
+    if (userFilledParagraphOrders.includes(paragraphOrder)) {
+      console.log(`[matchMaterials] 段落${paragraphOrder}已由用户素材填充，跳过自动匹配`);
+      continue;
+    }
+
+    // 🔥 合并排除ID：原有排除 + 用户素材ID
+    const allExcludeIds = [...excludeIds, ...userMaterialIds];
+
     // 策略1：精确匹配 paradigmId + paradigmPosition
     const exactMatches = await db
       .select()
@@ -322,7 +336,7 @@ export async function matchMaterials(params: {
             sql`${materialLibrary.lastUsedAt} IS NULL`,
             sql`${materialLibrary.lastUsedAt} <= ${sevenDaysAgo}`
           ),
-          ...buildExcludeCondition(excludeIds)
+          ...buildExcludeCondition(allExcludeIds)
         )
       )
       .orderBy(asc(materialLibrary.useCount))
@@ -345,7 +359,7 @@ export async function matchMaterials(params: {
     if (materials.length < 2) {
       const sceneTypes = materialTypes.map(t => SCENE_TYPE_TO_MATERIAL_TYPE[t] || t);
       const existingIds = materials.map(m => m.materialId);
-      const allExcludeIds = [...excludeIds, ...existingIds];
+      const strategy2ExcludeIds = [...allExcludeIds, ...existingIds];
 
       const sceneMatches = await db
         .select()
@@ -359,7 +373,7 @@ export async function matchMaterials(params: {
               sql`${materialLibrary.lastUsedAt} IS NULL`,
               sql`${materialLibrary.lastUsedAt} <= ${sevenDaysAgo}`
             ),
-            ...buildExcludeCondition(allExcludeIds)
+            ...buildExcludeCondition(strategy2ExcludeIds)
           )
         )
         .orderBy(asc(materialLibrary.useCount))
@@ -382,7 +396,7 @@ export async function matchMaterials(params: {
     // 策略3：如果仍然不足，按 topicTags 匹配
     if (materials.length < 1 && topicTags && topicTags.length > 0) {
       const existingIds = materials.map(m => m.materialId);
-      const allExcludeIds = [...excludeIds, ...existingIds];
+      const strategy3ExcludeIds = [...allExcludeIds, ...existingIds];
       
       const tagMatches = await db
         .select()
@@ -395,7 +409,7 @@ export async function matchMaterials(params: {
               sql`${materialLibrary.lastUsedAt} IS NULL`,
               sql`${materialLibrary.lastUsedAt} <= ${sevenDaysAgo}`
             ),
-            ...buildExcludeCondition(allExcludeIds)
+            ...buildExcludeCondition(strategy3ExcludeIds)
           )
         )
         .orderBy(asc(materialLibrary.useCount))
@@ -977,8 +991,17 @@ export async function generateParadigmPrompt(params: {
   paradigmCode: string;
   industry?: string;
   topicTags?: string[];
+  /** 用户选择的素材（用于素材-范式融合） */
+  userMaterials?: Array<{
+    id: string;
+    title: string;
+    type: string;
+    sceneType?: string;
+  }>;
+  /** 范式需求清单（由外部构建，避免重复计算） */
+  requirementList?: import('./material-paradigm-mapper').ParadigmRequirementList;
 }): Promise<string> {
-  const { paradigmCode, industry, topicTags } = params;
+  const { paradigmCode, industry, topicTags, userMaterials, requirementList } = params;
 
   const structure = await getParadigmStructure(paradigmCode);
   const positionMap = await getParadigmPositionMap(paradigmCode);
@@ -1004,6 +1027,24 @@ export async function generateParadigmPrompt(params: {
     return '';
   }).filter(Boolean).join('\n');
 
+  // 🔥 素材-范式融合：如果有用户素材，构建融合指令
+  let fusionGuide = '';
+  if (requirementList) {
+    // 外部已构建需求清单，直接使用
+    const { formatParadigmRequirementForPrompt } = await import('./material-paradigm-mapper');
+    fusionGuide = '\n\n' + formatParadigmRequirementForPrompt(requirementList);
+  } else if (userMaterials && userMaterials.length > 0) {
+    // 外部未构建，内部构建
+    const { buildParadigmRequirementList } = await import('./material-paradigm-mapper');
+    const reqList = buildParadigmRequirementList({
+      paradigmCode,
+      paradigmName,
+      paradigmSlots: positionMap,
+      userMaterials,
+    });
+    fusionGuide = '\n\n' + formatParadigmRequirementForPrompt(reqList);
+  }
+
   return `# 创作范式：${paradigmName}（${paradigmCode}）
 
 ## 范式结构（严格按此顺序创作，不可调换段落顺序）
@@ -1025,7 +1066,7 @@ ${emotionGuide}
 ## 推荐固定句式
 
 ${phraseGuide || '无固定句式要求'}
-
+${fusionGuide}
 ## 创作纪律（必须严格遵守）
 
 1. **只填素材，不写内容**：AI不新增任何原创句子，仅从素材库中调取内容填充
@@ -1034,6 +1075,7 @@ ${phraseGuide || '无固定句式要求'}
 4. **防重复调用**：同一素材7天内不重复使用，优先调用使用次数少的素材
 5. **不改动范式结构**：不增减段落、不调换顺序、不修改换行和空行
 6. **衔接词自然化**：避免「因此」「然而」「综上所述」等AI味衔接词
-${industry ? `7. **行业限定**：当前创作行业为「${industry}」，素材选择需对齐行业` : ''}
+7. **用户素材优先**：用户指定的素材必须使用且放在对应段落，同一段落不重复填充
+${industry ? `8. **行业限定**：当前创作行业为「${industry}」，素材选择需对齐行业` : ''}
 `;
 }

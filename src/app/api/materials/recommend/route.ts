@@ -2,16 +2,18 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { materialLibrary, SYSTEM_WORKSPACE_ID } from '@/lib/db/schema/material-library';
 import { infoSnippets } from '@/lib/db/schema/info-snippets';
-import { or, like, desc, and, eq, sql, notInArray } from 'drizzle-orm';
+import { or, like, desc, and, eq, sql, notInArray, inArray } from 'drizzle-orm';
+import { PARADIGM_TO_LEGACY_TYPE_MAP } from '@/lib/services/material-paradigm-mapper';
 import { getWorkspaceId } from '@/lib/auth/context';
 import { expandKeywordsWithSynonyms } from '@/lib/utils/synonym-dictionary';
 import { expandWithLLM } from '@/lib/services/semantic-expand-service';
 
 /**
- * GET /api/materials/recommend?instruction=xxx&limit=5
+ * GET /api/materials/recommend?instruction=xxx&limit=5&paradigmCode=P001
  *
  * 多路召回 + 同义词扩展 + 综合分排序（关键词×3 + 标签×2 + 热度×1）
  * 同时召回信息速记中未入库的相关内容
+ * 🔥 支持按范式筛选：paradigmCode 参数会优先推荐与范式素材需求匹配的素材
  */
 export async function GET(request: NextRequest) {
   try {
@@ -19,6 +21,7 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const instruction = searchParams.get('instruction') || '';
     const limit = parseInt(searchParams.get('limit') || '5');
+    const paradigmCode = searchParams.get('paradigmCode') || '';
 
     if (!instruction.trim()) {
       return NextResponse.json({ success: true, data: [], snippets: [] });
@@ -33,6 +36,17 @@ export async function GET(request: NextRequest) {
 
     if (keywords.length === 0 && tagCandidates.length === 0) {
       return NextResponse.json({ success: true, data: [], snippets: [] });
+    }
+
+    // ─── 🔥 范式优先召回 ───
+    // 如果指定了范式代码，额外召回匹配该范式素材需求的素材
+    let paradigmResults: any[] = [];
+    if (paradigmCode) {
+      try {
+        paradigmResults = await recallByParadigm(workspaceId, paradigmCode);
+      } catch (e) {
+        console.warn('[materials/recommend] 范式召回失败:', e instanceof Error ? e.message : String(e));
+      }
     }
 
     // ─── 多路召回（并行） ───
@@ -62,6 +76,7 @@ export async function GET(request: NextRequest) {
         sceneTags: string[] | null;
         emotionTags: string[] | null;
         useCount: number;
+        paradigmId?: string | null; // 🔥 范式关联ID
       },
     ) => {
       if (seen.has(item.id)) return;
@@ -79,12 +94,14 @@ export async function GET(request: NextRequest) {
         keywordHitCount: 0,
         tagHitCount: 0,
         score: 0,
+        paradigmId: item.paradigmId || null, // 🔥 传递范式关联
       });
     };
 
     keywordResults.forEach(addCandidate);
     tagResults.forEach(addCandidate);
     hotResults.forEach(addCandidate);
+    paradigmResults.forEach(addCandidate); // 🔥 范式匹配素材
 
     // ─── LLM 语义扩展兜底 ───
     // 当关键词+同义词+标签都搜不到任何素材时，用 LLM 提取语义相关词再搜一轮
@@ -113,6 +130,10 @@ export async function GET(request: NextRequest) {
 
     candidates.forEach((c) => {
       c.score = c.keywordHitCount * 3 + c.tagHitCount * 2 + (c.useCount / maxUseCount) * 1;
+      // 🔥 范式匹配加分：素材关联了当前范式时额外+5分（确保优先推荐）
+      if (paradigmCode && (c as any).paradigmId === paradigmCode) {
+        c.score += 5;
+      }
     });
 
     candidates.sort((a, b) => b.score - a.score);
@@ -131,6 +152,9 @@ export async function GET(request: NextRequest) {
       matchLevel: computeMatchLevel(c, candidates),
       keywordHitCount: c.keywordHitCount,
       tagHitCount: c.tagHitCount,
+      sceneType: (c as any).sceneType || null, // 🔥 场景类型（范式映射用）
+      paradigmId: c.paradigmId || null, // 🔥 关联范式
+      paradigmPosition: (c as any).paradigmPosition || null, // 🔥 范式段落位置
     }));
 
     // ─── 信息速记结果 ───
@@ -175,6 +199,7 @@ interface CandidateItem {
   keywordHitCount: number;
   tagHitCount: number;
   score: number;
+  paradigmId?: string | null; // 🔥 范式关联ID，用于匹配加分
 }
 
 // ─── P1-2: LIKE 通配符转义 ───
@@ -438,4 +463,59 @@ function computeMatchLevel(item: CandidateItem, allCandidates: CandidateItem[]):
 
   const highThreshold = sortedScores[Math.floor(sortedScores.length * 0.3)];
   return item.score >= highThreshold ? 'high' : 'medium';
+}
+
+// ─── 🔥 路径5：范式匹配召回 ───
+// 根据范式代码召回与范式素材需求匹配的素材
+async function recallByParadigm(workspaceId: string, paradigmCode: string): Promise<any[]> {
+  const visibilityCondition = or(
+    eq(materialLibrary.ownerType, 'system'),
+    eq(materialLibrary.workspaceId, workspaceId),
+  );
+
+  // 策略1：素材直接关联了该范式（paradigmId = paradigmCode）
+  const directMatch = await db
+    .select()
+    .from(materialLibrary)
+    .where(
+      and(
+        eq(materialLibrary.status, 'active'),
+        visibilityCondition,
+        eq(materialLibrary.paradigmId, paradigmCode),
+      ),
+    )
+    .limit(10);
+
+  if (directMatch.length > 0) {
+    return directMatch.map((item) => ({
+      ...item,
+      keywordHitCount: 0,
+      tagHitCount: 0,
+      useCount: item.useCount || 0,
+    }));
+  }
+
+  // 策略2：通过 sceneType 间接匹配
+  // 获取所有有效的 sceneType 值（数据库中实际存储的值）
+  const validSceneTypes = ['analogy', 'mistake', 'regulation', 'event'];
+
+  // 查询有 sceneType 且值在有效列表中的素材
+  const sceneMatch = await db
+    .select()
+    .from(materialLibrary)
+    .where(
+      and(
+        eq(materialLibrary.status, 'active'),
+        visibilityCondition,
+        inArray(materialLibrary.sceneType, validSceneTypes),
+      ),
+    )
+    .limit(10);
+
+  return sceneMatch.map((item) => ({
+    ...item,
+    keywordHitCount: 0,
+    tagHitCount: 0,
+    useCount: item.useCount || 0,
+  }));
 }

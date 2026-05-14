@@ -8684,8 +8684,10 @@ export class SubtaskExecutionEngine {
 
         // Phase 7: inject paradigm creation context into insurance-d Prompt
         // 「10套固定范式 + 5大素材库」创作体系：范式锁骨架 + 素材填血肉
+        // 🔥🔥 改造：用户素材优先融入范式，系统素材补位
         try {
           const { recognizeParadigm, generateParadigmPrompt } = await import('./paradigm-creation-service');
+          const { buildParadigmRequirementList, getUserFilledParagraphOrders } = await import('./material-paradigm-mapper');
 
           // 从任务元数据中获取创作类型和行业
           const _articleType = (taskMetadata as any)?.creationType || (taskMetadata as any)?.articleType;
@@ -8701,11 +8703,52 @@ export class SubtaskExecutionEngine {
           });
 
           if (_recognitionResult && _recognitionResult.paradigmCode) {
-            // 生成范式创作提示词
+            // 🔥🔥 构建范式需求清单 + 映射用户素材到范式位置（用户素材优先，系统素材补位）
+            let _requirementList: any = undefined;
+            const _userMaterials = _execCtx?.userOpinionAndMaterials?.materials;
+
+            // 获取范式素材位置映射（用于构建需求清单）
+            const { getParadigmPositionMap } = await import('./paradigm-creation-service');
+            const _positionMap = await getParadigmPositionMap(_recognitionResult.paradigmCode);
+
+            try {
+              _requirementList = buildParadigmRequirementList({
+                paradigmCode: _recognitionResult.paradigmCode,
+                paradigmName: _recognitionResult.paradigmName,
+                paradigmSlots: _positionMap,
+                userMaterials: _userMaterials?.map((m: any) => ({
+                  id: m.id,
+                  title: m.title,
+                  type: m.type,
+                  sceneType: m.sceneType,
+                })) || [],
+              });
+
+              if (_userMaterials && _userMaterials.length > 0) {
+                console.log('[SubtaskEngine] 🔥 用户素材范式映射:', {
+                  totalUserMaterials: _userMaterials.length,
+                  filledSlots: _requirementList.slots.filter((s: any) => s.filledByUserMaterial).length,
+                  totalSlots: _requirementList.slots.length,
+                  filledParagraphs: getUserFilledParagraphOrders(_requirementList),
+                  unmatchedCount: _requirementList.unmatchedUserMaterials.length,
+                });
+              }
+            } catch (_mapErr) {
+              console.warn('[SubtaskEngine] 用户素材范式映射失败，降级为纯自动匹配:', _mapErr);
+            }
+
+            // 生成范式创作提示词（传入用户素材和需求清单，自动匹配时跳过用户已填充的段落）
             const _paradigmPrompt = await generateParadigmPrompt({
               paradigmCode: _recognitionResult.paradigmCode,
               industry: _industry,
               topicTags: _topicTags,
+              userMaterials: _userMaterials?.map((m: any) => ({
+                id: m.id,
+                title: m.title,
+                type: m.type,
+                sceneType: m.sceneType,
+              })),
+              requirementList: _requirementList,
             });
 
             if (_paradigmPrompt) {
@@ -8714,6 +8757,8 @@ export class SubtaskExecutionEngine {
               console.log('[SubtaskEngine] 🎯 范式创作上下文已注入 insurance-d Prompt:', {
                 paradigmCode: _recognitionResult.paradigmCode,
                 confidence: _recognitionResult.confidence,
+                hasUserMaterialFusion: !!_requirementList,
+                userFilledSlots: _requirementList?.slots?.filter((s: any) => s.filledByUserMaterial).length || 0,
               });
             }
           }

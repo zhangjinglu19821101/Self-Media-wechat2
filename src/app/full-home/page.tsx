@@ -157,6 +157,10 @@ interface MaterialItem {
   matchLevel?: 'high' | 'medium' | 'low';
   keywordHitCount?: number;
   tagHitCount?: number;
+  // 🔥 范式映射所需字段
+  sceneType?: string;
+  paradigmId?: string;
+  paradigmPosition?: string;
 }
 
 // 推荐速记项类型
@@ -1420,7 +1424,7 @@ export default function HomePage() {
     setLoadingRecommendedMaterials(true);
     try {
       const data: any = await apiGet(
-        `/api/materials/recommend?instruction=${encodeURIComponent(mainInstruction)}&limit=5`,
+        `/api/materials/recommend?instruction=${encodeURIComponent(mainInstruction)}&limit=5${selectedParadigm ? `&paradigmCode=${encodeURIComponent(selectedParadigm.paradigmCode)}` : ''}`,
         { signal: controller.signal },
       );
       // P1-9: 如果请求已被取消，不更新状态
@@ -4080,14 +4084,100 @@ export default function HomePage() {
                       {/* Tab 3: 素材选择 */}
                       {activeGuideTab === 'material' && (
                         <div className="space-y-4">
-                          {/* 范式素材需求提示 */}
-                          {selectedParadigm && (
-                            <div className="p-3 bg-amber-50 rounded-lg border border-amber-200">
-                              <p className="text-sm font-medium text-amber-700">
-                                范式「{selectedParadigm.name}」素材需求
-                              </p>
-                              <p className="text-xs text-amber-600 mt-1">
-                                {selectedParadigm.materialRequirements || '案例 + 类比 + 数据'}
+                          {/* 🔥🔥 范式素材需求清单（升级版：段落级 + 匹配状态） */}
+                          {selectedParadigm && (() => {
+                            // 获取范式的素材位置映射
+                            const positionMap = selectedParadigm.structurePreview || [];
+                            // 已选素材ID集合
+                            const selectedIds = new Set(selectedMaterials.map(m => m.id));
+                            // 段落级匹配状态
+                            const paragraphStatuses = positionMap.map((slot: any) => {
+                              const requiredTypes: string[] = slot.materialTypes || [];
+                              // 检查用户已选素材中是否有映射到该段落的
+                              const matchedMaterials = selectedMaterials.filter(m => {
+                                // 精确匹配：素材的 paradigmId + paradigmPosition
+                                if (m.paradigmId === selectedParadigm.paradigmCode && m.paradigmPosition === `${selectedParadigm.paradigmCode}-段落${slot.order}`) {
+                                  return true;
+                                }
+                                // 类型匹配：素材 sceneType 在 requiredTypes 中
+                                if (m.sceneType && requiredTypes.includes(m.sceneType)) {
+                                  return true;
+                                }
+                                // 桥接匹配：素材 type 通过映射表可桥接到 requiredTypes
+                                const LEGACY_MAP: Record<string, string[]> = {
+                                  'opening': ['misconception', 'case'],
+                                  'ending': ['golden_sentence', 'fixed_phrase'],
+                                  'story': ['case', 'personal_fragment'],
+                                  'quote': ['golden_sentence', 'fixed_phrase'],
+                                  'case': ['case'],
+                                  'data': ['data'],
+                                };
+                                const mappedTypes = LEGACY_MAP[m.type] || [];
+                                return mappedTypes.some((mt: string) => requiredTypes.includes(mt));
+                              });
+                              return {
+                                order: slot.order,
+                                name: slot.name,
+                                requiredTypes,
+                                matchedMaterials,
+                                status: matchedMaterials.length > 0 ? 'matched' as const : requiredTypes.length > 0 ? 'unmatched' as const : 'auto' as const,
+                              };
+                            });
+
+                            return (
+                              <div className="p-3 bg-gradient-to-r from-amber-50 to-orange-50 rounded-xl border border-amber-200">
+                                <div className="flex items-center gap-2 mb-2">
+                                  <span className="text-sm font-semibold text-amber-800">
+                                    范式「{selectedParadigm.name}」素材需求
+                                  </span>
+                                  <span className="text-[10px] bg-amber-200/60 text-amber-700 px-1.5 py-0.5 rounded-full">
+                                    {paragraphStatuses.filter((p: any) => p.status === 'matched').length}/{paragraphStatuses.filter((p: any) => p.requiredTypes.length > 0).length} 已覆盖
+                                  </span>
+                                </div>
+                                <div className="space-y-1.5">
+                                  {paragraphStatuses.map((ps: any) => (
+                                    <div key={ps.order} className="flex items-center gap-2 text-xs">
+                                      {/* 状态图标 */}
+                                      {ps.status === 'matched' ? (
+                                        <span className="w-4 h-4 flex items-center justify-center rounded-full bg-green-100 text-green-600">✓</span>
+                                      ) : ps.status === 'unmatched' ? (
+                                        <span className="w-4 h-4 flex items-center justify-center rounded-full bg-amber-100 text-amber-500">○</span>
+                                      ) : (
+                                        <span className="w-4 h-4 flex items-center justify-center rounded-full bg-slate-100 text-slate-400">—</span>
+                                      )}
+                                      {/* 段落名 */}
+                                      <span className="text-slate-600 w-16 shrink-0">段落{ps.order}</span>
+                                      {/* 类型标签 */}
+                                      <div className="flex gap-1 flex-wrap">
+                                        {ps.requiredTypes.map((t: string) => (
+                                          <span key={t} className="px-1.5 py-0.5 rounded bg-amber-100/80 text-amber-700 font-mono">{t}</span>
+                                        ))}
+                                      </div>
+                                      {/* 匹配信息 */}
+                                      {ps.status === 'matched' && (
+                                        <span className="text-green-600 text-[10px] ml-auto">
+                                          ← {ps.matchedMaterials.map((m: any) => m.title || m.caseTitle).join(', ')}
+                                        </span>
+                                      )}
+                                      {ps.status === 'unmatched' && (
+                                        <span className="text-amber-500 text-[10px] ml-auto">自动匹配</span>
+                                      )}
+                                    </div>
+                                  ))}
+                                </div>
+                                {/* 底部提示 */}
+                                <p className="text-[10px] text-amber-600 mt-2 border-t border-amber-200/60 pt-1.5">
+                                  ✓ 用户素材优先填充 &nbsp;|&nbsp; ○ 系统自动补充 &nbsp;|&nbsp; — 无需素材
+                                </p>
+                              </div>
+                            );
+                          })()}
+
+                          {/* 无范式时的默认提示 */}
+                          {!selectedParadigm && (
+                            <div className="p-3 bg-slate-50 rounded-lg border border-slate-200">
+                              <p className="text-sm text-slate-500">
+                                请先选择创作范式，系统将显示对应素材需求
                               </p>
                             </div>
                           )}
