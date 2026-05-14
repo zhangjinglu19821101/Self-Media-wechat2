@@ -78,6 +78,18 @@ export async function GET() {
       `CREATE INDEX IF NOT EXISTS idx_extraction_assets_layer ON extraction_assets(layer_name)`,
       `CREATE INDEX IF NOT EXISTS idx_extraction_assets_template ON extraction_assets(template_id)`,
       `CREATE INDEX IF NOT EXISTS idx_extraction_assets_active ON extraction_assets(is_active)`,
+      
+      // v2: 范式识别 + 关系型素材字段迁移
+      `ALTER TABLE article_extractions ADD COLUMN IF NOT EXISTS paradigm_name VARCHAR(80)`,
+      `ALTER TABLE article_extractions ADD COLUMN IF NOT EXISTS paradigm_type VARCHAR(50)`,
+      `ALTER TABLE article_extractions ADD COLUMN IF NOT EXISTS paradigm_match_score INTEGER`,
+      `ALTER TABLE article_extractions ADD COLUMN IF NOT EXISTS paradigm_diff_note TEXT`,
+      `ALTER TABLE article_extractions ADD COLUMN IF NOT EXISTS relational_materials JSONB`,
+      `ALTER TABLE article_extractions ADD COLUMN IF NOT EXISTS emotion_curve JSONB`,
+      `ALTER TABLE article_extractions ADD COLUMN IF NOT EXISTS paragraph_rhythm JSONB`,
+      `ALTER TABLE article_extractions ADD COLUMN IF NOT EXISTS fixed_transitions JSONB`,
+      `ALTER TABLE article_extractions ADD COLUMN IF NOT EXISTS sentence_patterns JSONB`,
+      `CREATE INDEX IF NOT EXISTS idx_article_extractions_paradigm ON article_extractions(paradigm_type)`,
     ];
     
     const results: string[] = [];

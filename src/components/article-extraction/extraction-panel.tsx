@@ -1,300 +1,240 @@
 'use client';
 
 import { useState, useCallback } from 'react';
-import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Textarea } from '@/components/ui/textarea';
+import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
-import { Upload, FileText, ChevronDown, ChevronRight, Loader2, Sparkles, Map, BookOpen, Layers, Type, Atom, BarChart3 } from 'lucide-react';
 import { toast } from 'sonner';
+import {
+  Sparkles, Upload, Loader2, Layers, BookOpen, Target, Quote,
+  TrendingUp, AlertTriangle, FileText, ChevronDown, ChevronRight,
+  BarChart3, Save, CheckCircle2, ArrowRight, Lightbulb, MessageSquare,
+  Database, BookmarkCheck, GitBranch, Search
+} from 'lucide-react';
 
-// ====== 类型定义（与后端 article-extraction-service.ts 保持一致）======
+// ====== 类型定义 ======
 
-/** 5层提取结果（后端 ArticleExtractionResult 展平） */
-export interface FiveLayerExtraction {
-  layer1: Layer1MetaInfo;
-  layer2: Layer2CoreLogic;
-  layer3: Layer3ContentModules;
-  layer4: Layer4LanguageStyle;
-  layer5: Layer5AtomicMaterials;
+/** 范式识别结果 */
+interface ParadigmRecognition {
+  matchedParadigm: string;
+  matchScore: number;
+  structureDifference: string;
+}
+
+/** 关系型素材项 */
+interface RelationalMaterial {
+  content: string;
+  context: string;
+  position: string;
+  emotionTag: string;
+  relation: string;
+}
+
+/** 7维关系型素材提取结果 */
+interface RelationalExtraction {
+  /** 错误认知素材 */
+  misconceptions: RelationalMaterial[];
+  /** 类比素材 */
+  analogies: RelationalMaterial[];
+  /** 案例素材 */
+  cases: RelationalMaterial[];
+  /** 数据素材 */
+  data: RelationalMaterial[];
+  /** 金句素材 */
+  goldenQuotes: RelationalMaterial[];
+  /** 情绪接纳素材 */
+  emotionalAcceptance: RelationalMaterial[];
+  /** 收尾升华素材 */
+  closingElevation: RelationalMaterial[];
+}
+
+/** 完整提取结果 */
+interface ExtractionResult {
+  paradigmRecognition: ParadigmRecognition;
+  relationalMaterials: RelationalExtraction;
   extractionSummary: string;
   assetValueScore: number;
-  reusableDimensionCount: number;
+  totalMaterialCount: number;
 }
 
-/** 第一层：文章元信息层 */
-export interface Layer1MetaInfo {
-  articleTitle: string;
-  subtitle?: string;
-  alternativeTitles?: string[];
-  articleType: string;
-  coreTheme: string;
-  targetAudience: string;
-  emotionalTone: string;
-  publishPlatform: string;
-  publishTime?: string;
-}
+// ====== 常量配置 ======
 
-/** 第二层：核心逻辑层 */
-export interface Layer2CoreLogic {
-  coreArgument: string;
-  breakthroughLogic: string;
-  argumentStructure: string;
-  valueProposition: string;
-  actionGuide: string;
-}
+/** 10套标准范式 */
+const PARADIGM_OPTIONS = [
+  { key: 'standard_misalignment', name: '标准错位破局范式', desc: '抛出错误认知→共情→点破错位→类比→案例→反问→重构→金句' },
+  { key: 'industry_reflection', name: '行业反思范式', desc: '引出行业问题→承认不足→区分工具与人→分析根源→改进方向→升华' },
+  { key: 'case_reductio', name: '案例归谬范式', desc: '抛出错误观点→反面案例→归谬→正确结论→收尾' },
+  { key: 'essence_definition', name: '本质定义范式', desc: '错误定义→拆解问题→正确本质→类比解释→案例佐证→收尾' },
+  { key: 'hot_event', name: '热点事件范式', desc: '引出热点→分析保险问题→正确应对→延伸普遍→收尾' },
+  { key: 'product_review', name: '产品解读范式', desc: '产品信息→优势→不足→适合人群→不适合人群→购买建议' },
+  { key: 'personal_experience', name: '个人经历范式', desc: '亲身经历→感悟→延伸保险价值→升华' },
+  { key: 'pitfall_guide', name: '避坑指南范式', desc: '常见问题→逐条坑的表现危害→避坑方法→收尾' },
+  { key: 'comparison', name: '对比分析范式', desc: '两种选择→各自优缺点→不同情况建议→收尾' },
+  { key: 'year_end_review', name: '年终总结范式', desc: '回顾变化→感悟→展望→建议→收尾' },
+];
 
-/** 第三层：内容模块层 */
-export interface Layer3ContentModules {
-  hookIntro: string;
-  emotionalAcceptance: string;
-  cognitiveBreakthrough: string;
-  plainExplanation: string;
-  valueReconstruction: string;
-  closingElevation: string;
-}
-
-/** 第四层：语言风格层 */
-export interface Layer4LanguageStyle {
-  fixedPatterns: string[];
-  toneCharacteristics: string[];
-  catchphrases: string[];
-  forbiddenWords: string[];
-  paragraphRhythm: string;
-}
-
-/** 第五层：原子素材单元层 */
-export interface Layer5AtomicMaterials {
-  misconceptions: string[];
-  lifeAnalogies: string[];
-  realCases: string[];
-  authorityData: string[];
-  goldenSentences: string[];
-}
-
-// ====== 层配置 ======
-
-const LAYER_CONFIG = [
-  { key: 'layer1', name: '文章元信息层', icon: BookOpen, color: 'blue', desc: '基础属性，用于分类与检索' },
-  { key: 'layer2', name: '核心逻辑层', icon: Layers, color: 'purple', desc: '文章骨架，决定论证路径' },
-  { key: 'layer3', name: '内容模块层', icon: FileText, color: 'emerald', desc: '文章血肉，可独立复用' },
-  { key: 'layer4', name: '语言风格层', icon: Type, color: 'amber', desc: '文章灵魂，个人签名' },
-  { key: 'layer5', name: '原子素材层', icon: Atom, color: 'rose', desc: '最小价值单元，数字乐高' },
+/** 7维素材配置 */
+const MATERIAL_DIMENSIONS = [
+  { key: 'misconceptions', name: '错误认知', icon: AlertTriangle, color: 'red', desc: '大众的错误观点（带上下文）', sceneType: 'misconception' },
+  { key: 'analogies', name: '生活类比', icon: Lightbulb, color: 'amber', desc: '生活化比喻和同构场景', sceneType: 'analogy' },
+  { key: 'cases', name: '真实案例', icon: FileText, color: 'blue', desc: '个人经历/客户案例/新闻事件', sceneType: 'case' },
+  { key: 'data', name: '权威数据', icon: Database, color: 'emerald', desc: '行业数据/官方统计/政策文件', sceneType: 'data' },
+  { key: 'goldenQuotes', name: '金句', icon: Quote, color: 'purple', desc: '简短有力、让人印象深刻的句子', sceneType: 'quote' },
+  { key: 'emotionalAcceptance', name: '情绪接纳', icon: MessageSquare, color: 'sky', desc: '消除对立感、建立信任的句式', sceneType: 'opening' },
+  { key: 'closingElevation', name: '收尾升华', icon: TrendingUp, color: 'rose', desc: '结尾金句和灵魂拷问', sceneType: 'ending' },
 ] as const;
 
-// ====== 数字资产地图组件 ======
+const COLOR_MAP: Record<string, { bg: string; border: string; text: string; badge: string; headerBg: string; tag: string }> = {
+  red: { bg: 'bg-red-50', border: 'border-red-200', text: 'text-red-800', badge: 'bg-red-100 text-red-700', headerBg: 'bg-red-100', tag: 'bg-red-100 text-red-700 border-red-200' },
+  amber: { bg: 'bg-amber-50', border: 'border-amber-200', text: 'text-amber-800', badge: 'bg-amber-100 text-amber-700', headerBg: 'bg-amber-100', tag: 'bg-amber-100 text-amber-700 border-amber-200' },
+  blue: { bg: 'bg-blue-50', border: 'border-blue-200', text: 'text-blue-800', badge: 'bg-blue-100 text-blue-700', headerBg: 'bg-blue-100', tag: 'bg-blue-100 text-blue-700 border-blue-200' },
+  emerald: { bg: 'bg-emerald-50', border: 'border-emerald-200', text: 'text-emerald-800', badge: 'bg-emerald-100 text-emerald-700', headerBg: 'bg-emerald-100', tag: 'bg-emerald-100 text-emerald-700 border-emerald-200' },
+  purple: { bg: 'bg-purple-50', border: 'border-purple-200', text: 'text-purple-800', badge: 'bg-purple-100 text-purple-700', headerBg: 'bg-purple-100', tag: 'bg-purple-100 text-purple-700 border-purple-200' },
+  sky: { bg: 'bg-sky-50', border: 'border-sky-200', text: 'text-sky-800', badge: 'bg-sky-100 text-sky-700', headerBg: 'bg-sky-100', tag: 'bg-sky-100 text-sky-700 border-sky-200' },
+  rose: { bg: 'bg-rose-50', border: 'border-rose-200', text: 'text-rose-800', badge: 'bg-rose-100 text-rose-700', headerBg: 'bg-rose-100', tag: 'bg-rose-100 text-rose-700 border-rose-200' },
+};
 
-function DigitalAssetMap({ extraction }: { extraction: FiveLayerExtraction }) {
-  const l5ArrayCount = Object.values(extraction.layer5).reduce(
-    (sum: number, arr) => sum + (Array.isArray(arr) ? arr.length : 0), 0
-  );
+const EMOTION_COLORS: Record<string, string> = {
+  '共情': 'bg-blue-100 text-blue-700',
+  '理性': 'bg-slate-100 text-slate-700',
+  '警示': 'bg-red-100 text-red-700',
+  '温情': 'bg-pink-100 text-pink-700',
+  '专业': 'bg-indigo-100 text-indigo-700',
+  '中性': 'bg-gray-100 text-gray-700',
+};
 
-  const assetCounts = [
-    { layer: '元信息', count: countNonEmptyFields(extraction.layer1), color: 'bg-blue-500' },
-    { layer: '核心逻辑', count: countNonEmptyFields(extraction.layer2), color: 'bg-purple-500' },
-    { layer: '内容模块', count: countNonEmptyFields(extraction.layer3), color: 'bg-emerald-500' },
-    { layer: '语言风格', count: countNonEmptyFields(extraction.layer4), color: 'bg-amber-500' },
-    { layer: '原子素材', count: l5ArrayCount, color: 'bg-rose-500' },
-  ];
+// ====== 子组件 ======
 
-  const totalAssets = assetCounts.reduce((sum, a) => sum + a.count, 0);
+/** 范式匹配结果卡片 */
+function ParadigmMatchCard({ recognition }: { recognition: ParadigmRecognition }) {
+  const paradigm = PARADIGM_OPTIONS.find(p => p.key === recognition.matchedParadigm);
+  const scoreColor = recognition.matchScore >= 90 ? 'text-emerald-600' : recognition.matchScore >= 80 ? 'text-amber-600' : 'text-red-600';
+  const scoreBg = recognition.matchScore >= 90 ? 'bg-emerald-50 border-emerald-200' : recognition.matchScore >= 80 ? 'bg-amber-50 border-amber-200' : 'bg-red-50 border-red-200';
 
   return (
-    <Card className="border-2 border-indigo-200 bg-gradient-to-br from-indigo-50 to-purple-50">
-      <CardHeader className="pb-3">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Map className="w-5 h-5 text-indigo-600" />
-            <CardTitle className="text-lg text-indigo-800">数字资产地图</CardTitle>
-          </div>
-          <div className="flex items-center gap-2">
-            <Badge className="bg-indigo-600 text-white text-sm px-3 py-1">
-              共 {totalAssets} 项
-            </Badge>
-            <Badge className="bg-amber-500 text-white text-sm px-2 py-1">
-              价值 {extraction.assetValueScore}分
-            </Badge>
-          </div>
-        </div>
-        <CardDescription>可复用维度 {extraction.reusableDimensionCount}/21 — {extraction.extractionSummary}</CardDescription>
+    <Card className={`border-2 ${scoreBg}`}>
+      <CardHeader className="pb-2">
+        <CardTitle className="text-base flex items-center gap-2">
+          <Target className="w-5 h-5 text-indigo-500" />
+          范式识别结果
+        </CardTitle>
       </CardHeader>
-      <CardContent>
-        <div className="grid grid-cols-5 gap-3">
-          {assetCounts.map((asset) => (
-            <div key={asset.layer} className="text-center">
-              <div className="relative mx-auto w-16 h-16 mb-2">
-                <svg viewBox="0 0 36 36" className="w-full h-full -rotate-90">
-                  <circle cx="18" cy="18" r="15.9" fill="none" stroke="#e5e7eb" strokeWidth="3" />
-                  <circle cx="18" cy="18" r="15.9" fill="none" className={asset.color.replace('bg-', 'stroke-')} strokeWidth="3" strokeDasharray={`${totalAssets > 0 ? (asset.count / totalAssets) * 100 : 0} 100`} strokeLinecap="round" />
-                </svg>
-                <span className="absolute inset-0 flex items-center justify-center text-lg font-bold text-slate-700">{asset.count}</span>
-              </div>
-              <p className="text-xs font-medium text-slate-600">{asset.layer}</p>
-            </div>
-          ))}
+      <CardContent className="space-y-3">
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="font-semibold text-slate-800">
+              {paradigm?.name || recognition.matchedParadigm}
+            </p>
+            <p className="text-xs text-slate-500 mt-0.5">{paradigm?.desc}</p>
+          </div>
+          <div className="text-right">
+            <p className={`text-2xl font-bold ${scoreColor}`}>{recognition.matchScore}</p>
+            <p className="text-xs text-slate-500">匹配度</p>
+          </div>
         </div>
-        <div className="mt-4 p-3 bg-white/60 rounded-lg border border-indigo-100">
-          <p className="text-xs text-indigo-700">
-            每积累一个提取单元，你的写作能力就变强一分。提取后的资产可直接喂给写作Agent，实现"写一篇，赚N篇"的复利效应。
-          </p>
-        </div>
+        {recognition.structureDifference && recognition.structureDifference !== '完全符合' && (
+          <div className="bg-white/80 rounded-lg p-3 border">
+            <p className="text-xs font-medium text-slate-600 mb-1">结构差异说明</p>
+            <p className="text-sm text-slate-700">{recognition.structureDifference}</p>
+          </div>
+        )}
+        {recognition.matchScore >= 90 && (
+          <div className="flex items-center gap-1.5 text-emerald-600 text-sm">
+            <CheckCircle2 className="w-4 h-4" />
+            <span>文章结构完全符合该范式</span>
+          </div>
+        )}
       </CardContent>
     </Card>
   );
 }
 
-// ====== 单层展开组件 ======
-
-function LayerCard({ layerKey, name, icon: Icon, color, desc, data }: {
-  layerKey: string; name: string; icon: any; color: string; desc: string;
-  data: any;
+/** 关系型素材卡片 */
+function MaterialDimensionCard({
+  dimension,
+  materials,
+}: {
+  dimension: typeof MATERIAL_DIMENSIONS[number];
+  materials: RelationalMaterial[];
 }) {
   const [expanded, setExpanded] = useState(false);
-
-  const colorMap: Record<string, { bg: string; border: string; text: string; badge: string; headerBg: string }> = {
-    blue: { bg: 'bg-blue-50', border: 'border-blue-200', text: 'text-blue-800', badge: 'bg-blue-100 text-blue-700', headerBg: 'bg-blue-100' },
-    purple: { bg: 'bg-purple-50', border: 'border-purple-200', text: 'text-purple-800', badge: 'bg-purple-100 text-purple-700', headerBg: 'bg-purple-100' },
-    emerald: { bg: 'bg-emerald-50', border: 'border-emerald-200', text: 'text-emerald-800', badge: 'bg-emerald-100 text-emerald-700', headerBg: 'bg-emerald-100' },
-    amber: { bg: 'bg-amber-50', border: 'border-amber-200', text: 'text-amber-800', badge: 'bg-amber-100 text-amber-700', headerBg: 'bg-amber-100' },
-    rose: { bg: 'bg-rose-50', border: 'border-rose-200', text: 'text-rose-800', badge: 'bg-rose-100 text-rose-700', headerBg: 'bg-rose-100' },
-  };
-  const c = colorMap[color] || colorMap.blue;
-
-  const renderFields = () => {
-    if (!data) return <p className="text-sm text-slate-400">暂无数据</p>;
-
-    switch (layerKey) {
-      case 'layer1':
-        return (
-          <div className="space-y-3">
-            <FieldRow label="文章标题" value={data.articleTitle} highlight />
-            {data.subtitle && <FieldRow label="副标题" value={data.subtitle} />}
-            {data.alternativeTitles?.length > 0 && (
-              <TagRow label="备选标题" values={data.alternativeTitles} />
-            )}
-            <FieldRow label="文章类型" value={data.articleType} badge />
-            <FieldRow label="核心主题" value={data.coreTheme} />
-            <FieldRow label="目标人群" value={data.targetAudience} />
-            <FieldRow label="情感基调" value={data.emotionalTone} badge />
-            <FieldRow label="发布平台" value={data.publishPlatform} badge />
-            {data.publishTime && <FieldRow label="发布时间" value={data.publishTime} />}
-          </div>
-        );
-      case 'layer2':
-        return (
-          <div className="space-y-3">
-            <FieldRow label="核心论点" value={data.coreArgument} highlight />
-            <FieldRow label="破局逻辑" value={data.breakthroughLogic} />
-            <FieldRow label="论证结构" value={data.argumentStructure} />
-            <FieldRow label="价值主张" value={data.valueProposition} />
-            <FieldRow label="行动指引" value={data.actionGuide} />
-          </div>
-        );
-      case 'layer3':
-        return (
-          <div className="space-y-3">
-            <FieldRow label="钩子引入" value={data.hookIntro} />
-            <FieldRow label="情绪接纳" value={data.emotionalAcceptance} />
-            <FieldRow label="认知破局" value={data.cognitiveBreakthrough} highlight />
-            <FieldRow label="通俗解释" value={data.plainExplanation} />
-            <FieldRow label="价值重构" value={data.valueReconstruction} />
-            <FieldRow label="收尾升华" value={data.closingElevation} />
-          </div>
-        );
-      case 'layer4':
-        return (
-          <div className="space-y-3">
-            <TagRow label="固定句式" values={data.fixedPatterns} />
-            <TagRow label="语气特征" values={data.toneCharacteristics} />
-            <TagRow label="个人口头禅" values={data.catchphrases} variant="highlight" />
-            <TagRow label="禁忌词汇" values={data.forbiddenWords} variant="danger" />
-            <FieldRow label="段落节奏" value={data.paragraphRhythm} />
-          </div>
-        );
-      case 'layer5':
-        return (
-          <div className="space-y-3">
-            <TagRow label="错误认知" values={data.misconceptions} variant="danger" />
-            <TagRow label="生活类比" values={data.lifeAnalogies} variant="highlight" />
-            <TagRow label="真实案例" values={data.realCases} />
-            <TagRow label="权威数据" values={data.authorityData} />
-            <TagRow label="金句提炼" values={data.goldenSentences} />
-          </div>
-        );
-      default:
-        return <pre className="text-xs bg-white/50 p-2 rounded overflow-auto max-h-60">{JSON.stringify(data, null, 2)}</pre>;
-    }
-  };
+  const c = COLOR_MAP[dimension.color] || COLOR_MAP.blue;
+  const Icon = dimension.icon;
 
   return (
     <div className={`rounded-xl border-2 ${c.border} overflow-hidden transition-all duration-300`}>
-      <div className={`flex items-center justify-between p-4 cursor-pointer ${c.headerBg} hover:opacity-90`} onClick={() => setExpanded(!expanded)}>
-        <div className="flex items-center gap-3">
-          <Icon className={`w-5 h-5 ${c.text}`} />
+      <div
+        className={`flex items-center justify-between p-3 cursor-pointer ${c.headerBg} hover:opacity-90`}
+        onClick={() => setExpanded(!expanded)}
+      >
+        <div className="flex items-center gap-2">
+          <Icon className={`w-4 h-4 ${c.text}`} />
           <div>
-            <h3 className={`font-semibold ${c.text}`}>{name}</h3>
-            <p className="text-xs text-slate-500">{desc}</p>
+            <h4 className={`font-semibold text-sm ${c.text}`}>{dimension.name}</h4>
+            <p className="text-xs text-slate-500">{dimension.desc}</p>
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <Badge className={c.badge}>{countNonEmptyFields(data)} 项</Badge>
+          <Badge className={c.badge}>{materials?.length ?? 0} 条</Badge>
           {expanded ? <ChevronDown className="w-4 h-4 text-slate-400" /> : <ChevronRight className="w-4 h-4 text-slate-400" />}
         </div>
       </div>
       {expanded && (
-        <div className={`p-4 ${c.bg} space-y-2 animate-in slide-in-from-top-2 duration-200`}>
-          {renderFields()}
+        <div className={`p-3 ${c.bg} space-y-2`}>
+          {(!materials || materials.length === 0) ? (
+            <p className="text-sm text-slate-400">未提取到相关素材</p>
+          ) : (
+            materials.map((m, i) => (
+              <RelationalMaterialItem key={i} material={m} index={i + 1} color={dimension.color} />
+            ))
+          )}
         </div>
       )}
     </div>
   );
 }
 
-// ====== 辅助组件 ======
+/** 单条关系型素材展示 */
+function RelationalMaterialItem({ material, index, color }: { material: RelationalMaterial; index: number; color: string }) {
+  const c = COLOR_MAP[color] || COLOR_MAP.blue;
 
-function FieldRow({ label, value, sub, badge, highlight }: { label: string; value?: string; sub?: string; badge?: boolean; highlight?: boolean }) {
-  if (!value || value === '未检测到') return null;
   return (
-    <div className="flex items-start gap-2">
-      <span className="text-xs font-medium text-slate-500 min-w-[80px] shrink-0 pt-0.5">{label}</span>
-      {badge ? (
-        <Badge variant="secondary" className="text-xs">{value}</Badge>
-      ) : (
-        <span className={`text-sm ${highlight ? 'font-semibold text-slate-800' : 'text-slate-700'}`}>
-          {value}
-          {sub && <span className="text-xs text-slate-400 ml-1">({sub})</span>}
-        </span>
+    <div className="bg-white/80 rounded-lg p-3 border border-slate-100 space-y-2">
+      {/* 核心内容 */}
+      <div className="flex items-start gap-2">
+        <span className={`text-xs font-bold ${c.text} min-w-[20px]`}>{index}.</span>
+        <p className="text-sm font-medium text-slate-800 flex-1">{material.content}</p>
+      </div>
+
+      {/* 元信息标签行 */}
+      <div className="flex flex-wrap gap-1.5 pl-7">
+        {material.position && (
+          <span className="text-xs px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-600 border border-indigo-100">
+            {material.position}
+          </span>
+        )}
+        {material.emotionTag && (
+          <span className={`text-xs px-1.5 py-0.5 rounded border ${EMOTION_COLORS[material.emotionTag] || 'bg-gray-100 text-gray-700 border-gray-200'}`}>
+            {material.emotionTag}
+          </span>
+        )}
+        {material.relation && (
+          <span className="text-xs px-1.5 py-0.5 rounded bg-violet-50 text-violet-600 border border-violet-100">
+            {material.relation}
+          </span>
+        )}
+      </div>
+
+      {/* 上下文 */}
+      {material.context && (
+        <div className="pl-7">
+          <p className="text-xs text-slate-500 italic">上下文：{material.context}</p>
+        </div>
       )}
     </div>
   );
-}
-
-function TagRow({ label, values, variant }: { label: string; values?: string[]; variant?: 'default' | 'danger' | 'highlight' }) {
-  if (!values || values.length === 0) return null;
-  const tagClass = variant === 'danger' ? 'bg-red-100 text-red-700 border-red-200' : variant === 'highlight' ? 'bg-amber-100 text-amber-700 border-amber-200' : 'bg-white text-slate-700 border-slate-200';
-  return (
-    <div className="flex items-start gap-2">
-      <span className="text-xs font-medium text-slate-500 min-w-[80px] shrink-0 pt-0.5">{label}</span>
-      <div className="flex flex-wrap gap-1.5">
-        {values.map((v, i) => (
-          <span key={i} className={`text-xs px-2 py-0.5 rounded border ${tagClass}`}>{v}</span>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-/** 统计非空字段数量 */
-function countNonEmptyFields(data: any): number {
-  if (!data) return 0;
-  let count = 0;
-  for (const val of Object.values(data)) {
-    if (Array.isArray(val)) count += val.length;
-    else if (typeof val === 'object' && val !== null) count += countNonEmptyFields(val);
-    else if (val && val !== '未检测到') count++;
-  }
-  return count;
 }
 
 // ====== 主组件 ======
@@ -303,7 +243,7 @@ export default function ArticleExtractionPanel() {
   const [articleText, setArticleText] = useState('');
   const [articleTitle, setArticleTitle] = useState('');
   const [extracting, setExtracting] = useState(false);
-  const [extraction, setExtraction] = useState<FiveLayerExtraction | null>(null);
+  const [extraction, setExtraction] = useState<ExtractionResult | null>(null);
   const [extractionId, setExtractionId] = useState<string>('');
   const [history, setHistory] = useState<Array<{ id: string; title: string; createdAt: string }>>([]);
   const [savingToLibrary, setSavingToLibrary] = useState(false);
@@ -338,24 +278,26 @@ export default function ArticleExtractionPanel() {
         return;
       }
 
-      // 后端返回: { success, data: { extractionId, layer1, layer2, ..., extractionSummary, assetValueScore, reusableDimensionCount, savedMaterialCount } }
       const resultData = resp.data;
-      const extractionResult: FiveLayerExtraction = {
-        layer1: resultData.layer1,
-        layer2: resultData.layer2,
-        layer3: resultData.layer3,
-        layer4: resultData.layer4,
-        layer5: resultData.layer5,
+      const extractionResult: ExtractionResult = {
+        paradigmRecognition: resultData.paradigmRecognition || {
+          matchedParadigm: resultData.matchedParadigm || '',
+          matchScore: resultData.matchScore ?? 0,
+          structureDifference: resultData.structureDifference || '',
+        },
+        relationalMaterials: resultData.relationalMaterials || resultData.materials || {
+          misconceptions: [], analogies: [], cases: [], data: [],
+          goldenQuotes: [], emotionalAcceptance: [], closingElevation: [],
+        },
         extractionSummary: resultData.extractionSummary || '',
         assetValueScore: resultData.assetValueScore ?? 0,
-        reusableDimensionCount: resultData.reusableDimensionCount ?? 0,
+        totalMaterialCount: resultData.totalMaterialCount ?? 0,
       };
 
       setExtraction(extractionResult);
       setExtractionId(resultData.extractionId);
 
-      const totalAssets = extractionResult.reusableDimensionCount;
-      toast.success(`提取完成！可复用维度 ${totalAssets}/21，资产价值 ${extractionResult.assetValueScore}分`);
+      toast.success(`提取完成！匹配范式: ${extractionResult.paradigmRecognition.matchedParadigm}，${extractionResult.totalMaterialCount} 条关系型素材`);
     } catch (err: any) {
       toast.error(err.message || '网络错误');
     } finally {
@@ -395,7 +337,6 @@ export default function ArticleExtractionPanel() {
       const data = await res.json();
       if (data.success) {
         const items = data.data?.items || data.data?.list || [];
-        // 后端返回 articleTitle，前端统一映射为 title
         const mapped = items.map((item: any) => ({
           id: item.id,
           title: item.articleTitle || item.title || '未命名文章',
@@ -412,28 +353,20 @@ export default function ArticleExtractionPanel() {
       const res = await fetch(`/api/article-extraction/${id}`);
       const resp = await res.json();
       if (resp.success && resp.data) {
-        // 详情 API 返回格式可能不同，需要兼容
         const detail = resp.data;
-        // 尝试从 extraction_layers 重建 FiveLayerExtraction
-        if (detail.extraction) {
-          setExtraction(detail.extraction);
-        } else if (detail.layers) {
-          const layersMap: Record<string, any> = {};
-          for (const layer of detail.layers) {
-            layersMap[layer.layerName] = layer.extractionData;
-          }
-          const extractionResult: FiveLayerExtraction = {
-            layer1: layersMap['meta_info'] || {},
-            layer2: layersMap['core_logic'] || {},
-            layer3: layersMap['content_module'] || {},
-            layer4: layersMap['language_style'] || {},
-            layer5: layersMap['atomic_material'] || {},
-            extractionSummary: detail.extractionSummary || '',
-            assetValueScore: detail.assetValueScore ?? 0,
-            reusableDimensionCount: detail.reusableDimensionCount ?? 0,
-          };
-          setExtraction(extractionResult);
-        }
+        const extractionResult: ExtractionResult = {
+          paradigmRecognition: detail.paradigmRecognition || detail.extraction?.paradigmRecognition || {
+            matchedParadigm: '', matchScore: 0, structureDifference: '',
+          },
+          relationalMaterials: detail.relationalMaterials || detail.extraction?.relationalMaterials || {
+            misconceptions: [], analogies: [], cases: [], data: [],
+            goldenQuotes: [], emotionalAcceptance: [], closingElevation: [],
+          },
+          extractionSummary: detail.extractionSummary || '',
+          assetValueScore: detail.assetValueScore ?? 0,
+          totalMaterialCount: detail.totalMaterialCount ?? 0,
+        };
+        setExtraction(extractionResult);
         setExtractionId(id);
       }
     } catch { /* ignore */ }
@@ -446,16 +379,39 @@ export default function ArticleExtractionPanel() {
         <div>
           <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">
             <Sparkles className="w-5 h-5 text-indigo-500" />
-            全维度文章提取
+            文章拆解提取器
           </h2>
           <p className="text-sm text-slate-500 mt-1">
-            5层21维结构化提取，将单篇文章拆解为可无限复用的数字资产
+            范式识别 + 关系型素材提取，保留上下文和情绪关系
           </p>
         </div>
         <Button variant="outline" size="sm" onClick={loadHistory}>
           <BarChart3 className="w-4 h-4 mr-1" /> 提取历史
         </Button>
       </div>
+
+      {/* 方法论说明 */}
+      <Card className="border-2 border-indigo-200 bg-indigo-50/30">
+        <CardContent className="p-4">
+          <h4 className="font-semibold text-indigo-800 mb-2 flex items-center gap-2">
+            <GitBranch className="w-4 h-4" />
+            两步拆解法
+          </h4>
+          <div className="flex items-center gap-3 text-sm">
+            <div className="flex items-center gap-1.5 bg-white px-3 py-1.5 rounded-lg border border-indigo-200">
+              <Search className="w-3.5 h-3.5 text-indigo-500" />
+              <span className="font-medium text-indigo-700">范式识别</span>
+              <span className="text-xs text-slate-500">（10套标准范式匹配）</span>
+            </div>
+            <ArrowRight className="w-4 h-4 text-indigo-400" />
+            <div className="flex items-center gap-1.5 bg-white px-3 py-1.5 rounded-lg border border-indigo-200">
+              <BookmarkCheck className="w-3.5 h-3.5 text-indigo-500" />
+              <span className="font-medium text-indigo-700">7维关系型素材提取</span>
+              <span className="text-xs text-slate-500">（保留上下文+情绪+关系）</span>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
 
       {/* 输入区 */}
       <Card className="border-2 border-sky-200 bg-sky-50/50">
@@ -464,7 +420,7 @@ export default function ArticleExtractionPanel() {
             <Upload className="w-4 h-4 text-sky-600" />
             输入文章
           </CardTitle>
-          <CardDescription>粘贴一篇代表性文章，系统将自动提取5层21维数字资产</CardDescription>
+          <CardDescription>粘贴一篇代表性文章，系统将自动识别范式并提取关系型素材</CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
           <Input
@@ -474,7 +430,7 @@ export default function ArticleExtractionPanel() {
             className="bg-white"
           />
           <Textarea
-            placeholder={"在此粘贴文章内容...\n\n建议粘贴完整的保险科普文章（至少200字），系统将提取：\n• 文章元信息（标题、类型、情感基调等）\n• 核心逻辑（论点、破局逻辑、论证结构等）\n• 内容模块（钩子引入、情绪接纳、认知破局等）\n• 语言风格（固定句式、口头禅、禁忌词等）\n• 原子素材（错误认知、生活类比、真实案例等）"}
+            placeholder={"在此粘贴文章内容...\n\n建议粘贴完整的保险科普文章（至少200字），系统将：\n1. 自动识别文章属于10套标准范式中的哪一套\n2. 提取7维关系型素材（错误认知/类比/案例/数据/金句/情绪接纳/收尾升华）\n3. 每条素材保留上下文、位置、情绪标签和搭配关系"}
             value={articleText}
             onChange={(e) => setArticleText(e.target.value)}
             className="min-h-[200px] bg-white"
@@ -487,26 +443,57 @@ export default function ArticleExtractionPanel() {
               className="bg-gradient-to-r from-indigo-500 to-purple-500 hover:from-indigo-600 hover:to-purple-600 text-white"
             >
               {extracting ? (
-                <><Loader2 className="w-4 h-4 mr-2 animate-spin" />AI 正在提取...</>
+                <><Loader2 className="w-4 h-4 mr-2 animate-spin" />AI 正在拆解...</>
               ) : (
-                <><Sparkles className="w-4 h-4 mr-2" />开始提取</>
+                <><Sparkles className="w-4 h-4 mr-2" />开始拆解</>
               )}
             </Button>
           </div>
         </CardContent>
       </Card>
 
-      {/* 数字资产地图（提取后显示） */}
+      {/* 提取结果 */}
       {extraction && (
         <>
-          <DigitalAssetMap extraction={extraction} />
+          {/* 范式识别结果 */}
+          <ParadigmMatchCard recognition={extraction.paradigmRecognition} />
 
-          {/* 5层展开卡片 */}
+          {/* 概览统计 */}
+          <Card className="border-2 border-slate-200">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base flex items-center gap-2">
+                <BookOpen className="w-4 h-4 text-indigo-500" />
+                关系型素材概览
+                <Badge variant="secondary" className="ml-2">{extraction.totalMaterialCount} 条</Badge>
+              </CardTitle>
+              {extraction.extractionSummary && (
+                <CardDescription className="mt-1">{extraction.extractionSummary}</CardDescription>
+              )}
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-7 gap-2">
+                {MATERIAL_DIMENSIONS.map((dim) => {
+                  const count = extraction.relationalMaterials[dim.key as keyof RelationalExtraction]?.length ?? 0;
+                  const c = COLOR_MAP[dim.color];
+                  const Icon = dim.icon;
+                  return (
+                    <div key={dim.key} className={`text-center p-2 rounded-lg border ${c.border} ${c.bg}`}>
+                      <Icon className={`w-4 h-4 mx-auto ${c.text}`} />
+                      <p className={`text-lg font-bold mt-1 ${c.text}`}>{count}</p>
+                      <p className="text-xs text-slate-500">{dim.name}</p>
+                    </div>
+                  );
+                })}
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* 7维素材展开卡片 */}
           <div className="space-y-3">
             <div className="flex items-center justify-between">
               <h3 className="text-base font-semibold text-slate-700 flex items-center gap-2">
                 <Layers className="w-4 h-4 text-indigo-500" />
-                5层提取详情
+                7维关系型素材详情
               </h3>
               <Button
                 variant="outline"
@@ -518,19 +505,15 @@ export default function ArticleExtractionPanel() {
                 {savingToLibrary ? (
                   <><Loader2 className="w-3 h-3 mr-1 animate-spin" />保存中...</>
                 ) : (
-                  <>保存到素材库</>
+                  <><Save className="w-3 h-3 mr-1" />保存到素材库</>
                 )}
               </Button>
             </div>
-            {LAYER_CONFIG.map((layer) => (
-              <LayerCard
-                key={layer.key}
-                layerKey={layer.key}
-                name={layer.name}
-                icon={layer.icon}
-                color={layer.color}
-                desc={layer.desc}
-                data={(extraction as any)[layer.key]}
+            {MATERIAL_DIMENSIONS.map((dim) => (
+              <MaterialDimensionCard
+                key={dim.key}
+                dimension={dim}
+                materials={extraction.relationalMaterials[dim.key as keyof RelationalExtraction] ?? []}
               />
             ))}
           </div>
@@ -538,22 +521,22 @@ export default function ArticleExtractionPanel() {
           {/* 资产复用提示 */}
           <Card className="border-2 border-amber-200 bg-amber-50/50">
             <CardContent className="p-4">
-              <h4 className="font-semibold text-amber-800 mb-2">资产复用路径</h4>
+              <h4 className="font-semibold text-amber-800 mb-2">关系型素材优势</h4>
               <div className="grid grid-cols-2 gap-3 text-sm">
                 <div className="space-y-1">
-                  <p className="text-amber-700 font-medium">写作Agent自动消费</p>
+                  <p className="text-amber-700 font-medium">保留人味</p>
                   <ul className="text-amber-600 text-xs space-y-0.5">
-                    <li>• 核心逻辑层 → 自动匹配论证结构</li>
-                    <li>• 内容模块层 → 快速组合写作零件</li>
-                    <li>• 语言风格层 → 消除AI感，保持个人签名</li>
+                    <li>• 每条素材携带上下文 → 不丢失语境</li>
+                    <li>• 情绪标签 → 保持情感流动</li>
+                    <li>• 搭配关系 → 维持句子节奏</li>
                   </ul>
                 </div>
                 <div className="space-y-1">
-                  <p className="text-amber-700 font-medium">素材库自动沉淀</p>
+                  <p className="text-amber-700 font-medium">精准复用</p>
                   <ul className="text-amber-600 text-xs space-y-0.5">
-                    <li>• 原子素材层 → 类比/案例/数据素材库</li>
-                    <li>• 元信息层 → 标签化分类管理</li>
-                    <li>• 错误认知 → 反驳类文章一键生成</li>
+                    <li>• 范式模板 → 自动匹配写作结构</li>
+                    <li>• 位置标注 → 素材放在正确位置</li>
+                    <li>• 7维覆盖 → 仅积累有用素材</li>
                   </ul>
                 </div>
               </div>
@@ -562,7 +545,7 @@ export default function ArticleExtractionPanel() {
         </>
       )}
 
-      {/* 历史记录弹窗 */}
+      {/* 历史记录 */}
       {history.length > 0 && (
         <Card className="border-2 border-slate-200">
           <CardHeader className="pb-2">

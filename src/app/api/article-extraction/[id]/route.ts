@@ -33,15 +33,17 @@ export async function GET(
       );
     }
 
-    // 获取5层提取数据
+    // 获取关联层和资产数据（兼容旧5层数据）
     const layers = await db.select()
       .from(extractionLayers)
       .where(eq(extractionLayers.extractionId, id));
 
-    // 获取21维数字资产
     const assets = await db.select()
       .from(extractionAssets)
       .where(eq(extractionAssets.extractionId, id));
+
+    // 构造响应：优先使用新范式（paradigmRecognition + relationalMaterials）
+    const hasNewFormat = !!(extraction as any).paradigmRecognition || !!(extraction as any).relationalMaterialsData;
 
     return NextResponse.json({
       success: true,
@@ -49,8 +51,14 @@ export async function GET(
         ...extraction,
         layers,
         assets,
-        // 构造前端期望的 extraction 对象（从 layer1Data~layer5Data 直接读取）
-        extraction: {
+        // 新格式：范式识别 + 7维关系型素材
+        paradigmRecognition: (extraction as any).paradigmRecognition || null,
+        relationalMaterials: (extraction as any).relationalMaterialsData || null,
+        extractionSummary: extraction.extractionSummary || '',
+        assetValueScore: extraction.assetValueScore ?? 0,
+        totalMaterialCount: (extraction as any).totalMaterialCount ?? extraction.reusableDimensionCount ?? 0,
+        // 兼容旧5层格式
+        extraction: hasNewFormat ? null : {
           layer1: extraction.layer1Data || (layers.find(l => l.layerName === 'meta_info')?.extractionData) || {},
           layer2: extraction.layer2Data || (layers.find(l => l.layerName === 'core_logic')?.extractionData) || {},
           layer3: extraction.layer3Data || (layers.find(l => l.layerName === 'content_module')?.extractionData) || {},

@@ -26,6 +26,8 @@ export async function GET(request: NextRequest) {
         reusableDimensionCount: articleExtractions.reusableDimensionCount,
         extractionSummary: articleExtractions.extractionSummary,
         templateId: articleExtractions.templateId,
+        paradigmName: (articleExtractions as any).paradigmName,
+        totalMaterialCount: (articleExtractions as any).totalMaterialCount,
         createdAt: articleExtractions.createdAt,
       })
         .from(articleExtractions)

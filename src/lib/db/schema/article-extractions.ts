@@ -1,17 +1,95 @@
 /**
- * 文章全维度提取体系 - 数据库 Schema
+ * 文章提取 Schema v2 — 范式识别 + 关系型素材提取
  * 
- * 5层21维提取结果存储，将文章从"不可复用的单篇内容"
- * 拆解为可标准化提取、可无限复用的数字资产。
- * 
- * 设计原则：
- * - article_extractions: 一篇文章一次提取的主记录
- * - extraction_layers: 5个层级的提取结果（每层一条记录）
- * - extraction_assets: 从提取结果转化的可复用数字资产
+ * 核心升级：
+ * - 从5层21维全量拆解 → 两步拆解法（范式识别 + 7维关系型素材）
+ * - 新增 paradigm 字段：范式识别结果
+ * - 新增 relationalMaterials 字段：7维关系型素材
+ * - 新增 emotionCurve / paragraphRhythm：情绪曲线和段落节奏
+ * - 保留 layer1Data~layer5Data 做向后兼容
  */
 import { pgTable, uuid, text, timestamp, jsonb, integer, boolean, varchar, index } from 'drizzle-orm/pg-core';
 
-// ==================== 类型常量 ====================
+// ==================== 范式识别常量（v2） ====================
+
+/** 10套标准范式 */
+export const PARADIGM_TYPES = [
+  'standard_misalignment_breakthrough',  // 标准错位破局范式
+  'industry_reflection',                 // 行业反思范式
+  'case_reductio_ad_absurdum',           // 案例归谬范式
+  'essential_definition',                // 本质定义范式
+  'hot_event_analysis',                  // 热点事件范式
+  'product_interpretation',              // 产品解读范式
+  'personal_experience',                 // 个人经历范式
+  'pitfall_guide',                       // 避坑指南范式
+  'comparative_analysis',                // 对比分析范式
+  'annual_summary',                      // 年终总结范式
+] as const;
+
+export type ParadigmType = typeof PARADIGM_TYPES[number];
+
+/** 范式中文名映射 */
+export const PARADIGM_LABELS: Record<ParadigmType, string> = {
+  standard_misalignment_breakthrough: '标准错位破局',
+  industry_reflection: '行业反思',
+  case_reductio_ad_absurdum: '案例归谬',
+  essential_definition: '本质定义',
+  hot_event_analysis: '热点事件',
+  product_interpretation: '产品解读',
+  personal_experience: '个人经历',
+  pitfall_guide: '避坑指南',
+  comparative_analysis: '对比分析',
+  annual_summary: '年终总结',
+};
+
+/** 范式描述映射 */
+export const PARADIGM_DESCRIPTIONS: Record<ParadigmType, string> = {
+  standard_misalignment_breakthrough: '先抛出错误认知→共情接纳→点破标准错位→通俗类比→真实案例→反问→价值重构→金句收尾',
+  industry_reflection: '引出行业问题→承认行业不足→区分工具与人→分析问题根源→提出改进方向→收尾升华',
+  case_reductio_ad_absurdum: '抛出错误观点→讲述反面案例→用案例归谬错误观点→给出正确结论→收尾',
+  essential_definition: '抛出常见错误定义→拆解错误定义的问题→给出正确的本质定义→用类比解释→案例佐证→收尾',
+  hot_event_analysis: '引出热点事件→分析事件中的保险相关问题→给出正确的应对方式→延伸到普遍情况→收尾',
+  product_interpretation: '介绍产品基本信息→分析产品优势→分析产品不足→适合人群→不适合人群→购买建议',
+  personal_experience: '讲述自己的亲身经历→从经历中得到的感悟→延伸到保险的价值→收尾升华',
+  pitfall_guide: '引出某类保险的常见问题→逐条讲解每个坑的表现和危害→给出避坑方法→收尾',
+  comparative_analysis: '介绍两种不同的选择→分别分析各自的优缺点→给出不同情况下的选择建议→收尾',
+  annual_summary: '回顾过去一年的行业变化→总结自己的感悟→对未来的展望→给读者的建议→收尾',
+};
+
+/** 7维关系型素材类型 */
+export const RELATIONAL_MATERIAL_TYPES = [
+  'misconception',    // 错误认知
+  'analogy',          // 类比
+  'case',             // 真实案例
+  'data',             // 权威数据
+  'golden_sentence',  // 金句
+  'hook',             // 钩子引入
+  'closing',          // 收尾升华
+] as const;
+
+export type RelationalMaterialType = typeof RELATIONAL_MATERIAL_TYPES[number];
+
+/** 关系型素材中文名映射 */
+export const MATERIAL_TYPE_LABELS: Record<RelationalMaterialType, string> = {
+  misconception: '错误认知',
+  analogy: '类比',
+  case: '真实案例',
+  data: '权威数据',
+  golden_sentence: '金句',
+  hook: '钩子引入',
+  closing: '收尾升华',
+};
+
+/** 范式匹配5维度权重 */
+export const PARADIGM_MATCH_WEIGHTS = {
+  structureOrder: 0.40,      // 文章结构顺序
+  fixedTransitions: 0.30,    // 固定衔接句式
+  emotionCurve: 0.15,        // 情绪节奏曲线
+  paragraphRhythm: 0.10,     // 段落换行规则
+  articleType: 0.05,         // 文章类型
+} as const;
+
+// ==================== 类型常量（向后兼容） ====================
 
 /** 5大层级 */
 export const EXTRACTION_LAYERS = [
@@ -109,6 +187,21 @@ export const articleExtractions = pgTable('article_extractions', {
   extractionSummary: text('extraction_summary'),
   assetValueScore: integer('asset_value_score').default(0),
   reusableDimensionCount: integer('reusable_dimension_count').default(0),
+  
+  // v2: 范式识别结果（两步拆解法第一步）
+  paradigmName: varchar('paradigm_name', { length: 80 }), // 匹配到的范式名称
+  paradigmType: varchar('paradigm_type', { length: 50 }), // PARADIGM_TYPES 枚举值
+  paradigmMatchScore: integer('paradigm_match_score'),     // 匹配度 0-100
+  paradigmDiffNote: text('paradigm_diff_note'),            // 结构差异说明
+  
+  // v2: 关系型素材（两步拆解法第二步，7维）
+  relationalMaterials: jsonb('relational_materials').$type<Record<string, any>>(),
+  
+  // v2: 写作特征（怎么写的）
+  emotionCurve: jsonb('emotion_curve').$type<Array<{ position: number; emotion: string; intensity: number }>>(),
+  paragraphRhythm: jsonb('paragraph_rhythm').$type<Array<{ position: number; length: number; type: string }>>(),
+  fixedTransitions: jsonb('fixed_transitions').$type<string[]>(), // 固定衔接句式
+  sentencePatterns: jsonb('sentence_patterns').$type<string[]>(), // 标志性句式
   
   // 元信息层快捷字段（高频查询）
   articleType: varchar('article_type', { length: 50 }),

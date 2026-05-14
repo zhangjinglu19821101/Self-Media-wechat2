@@ -1,23 +1,19 @@
-/**
- * 文章全维度提取 API
- * POST /api/article-extraction/extract
- * 
- * 接收文章内容，调用AI进行5层21维结构化提取
- */
-
 import { NextRequest, NextResponse } from 'next/server';
-import { getWorkspaceId } from '@/lib/auth/context';
-import { db } from '@/lib/db';
-import { articleExtractions, extractionLayers, extractionAssets } from '@/lib/db/schema';
-import { extractArticleDimensions, extractionToMaterialInputs } from '@/lib/services/article-extraction-service';
 import { createHash } from 'crypto';
-import { eq } from 'drizzle-orm';
+import { getDatabase } from '@/lib/db';
+import { articleExtractions } from '@/lib/db/schema';
+import { eq, and } from 'drizzle-orm';
+import {
+  extractArticleV2,
+  extractionV2ToMaterialInputs,
+  type ArticleExtractionResultV2,
+} from '@/lib/services/article-extraction-service';
+import { getWorkspaceId } from '@/lib/auth/context';
 
 export async function POST(request: NextRequest) {
   try {
-    const workspaceId = await getWorkspaceId(request);
     const body = await request.json();
-    const { articleContent, articleTitle, saveToLibrary, templateId } = body;
+    const { articleContent, articleTitle, saveToLibrary = false, templateId } = body;
 
     if (!articleContent || articleContent.trim().length < 50) {
       return NextResponse.json(
@@ -26,236 +22,139 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    console.log(`[ArticleExtraction] 开始提取文章: ${articleTitle || '未命名'} (${articleContent.length}字)`);
+    const workspaceId = await getWorkspaceId(request);
+    if (!workspaceId) {
+      return NextResponse.json({ success: false, error: '未授权' }, { status: 401 });
+    }
 
-    // 计算文章哈希（用于去重）
+    // 1. 计算文章哈希用于去重
     const articleHash = createHash('sha256').update(articleContent.trim()).digest('hex');
 
-    // 调用AI提取服务
-    const extractionResult = await extractArticleDimensions(articleContent, articleTitle, {
-      workspaceId: workspaceId as string,
-    });
+    // 2. 去重检查
+    const db = getDatabase();
+    const existing = await db
+      .select({ id: articleExtractions.id })
+      .from(articleExtractions)
+      .where(
+        and(
+          eq(articleExtractions.workspaceId, workspaceId),
+          eq(articleExtractions.articleHash, articleHash)
+        )
+      )
+      .limit(1);
 
-    // 保存提取结果到数据库（字段名与 Schema 保持一致）
-    const [savedExtraction] = await db.insert(articleExtractions).values({
-      workspaceId: workspaceId as string,
-      articleTitle: extractionResult.layer1.articleTitle || articleTitle || '未命名文章',
-      articleText: articleContent, // Schema 字段名是 articleText
-      articleHash: articleHash,
-      layer1Data: extractionResult.layer1,
-      layer2Data: extractionResult.layer2,
-      layer3Data: extractionResult.layer3,
-      layer4Data: extractionResult.layer4,
-      layer5Data: extractionResult.layer5,
-      extractionSummary: extractionResult.extractionSummary,
-      assetValueScore: extractionResult.assetValueScore,
-      reusableDimensionCount: extractionResult.reusableDimensionCount,
-      // 快捷字段（从 layer1 提取）
-      articleType: extractionResult.layer1.articleType || null,
-      coreTheme: extractionResult.layer1.coreTheme || null,
-      emotionTone: extractionResult.layer1.emotionalTone || null,
-      targetAudience: extractionResult.layer1.targetAudience || null,
-      publishPlatform: extractionResult.layer1.publishPlatform || null,
-      templateId: templateId || null,
-    }).returning();
-
-    // 保存各层提取结果到 extraction_layers 表
-    const layerRecords = buildLayerRecords(savedExtraction.id, workspaceId as string, extractionResult);
-    if (layerRecords.length > 0) {
-      await db.insert(extractionLayers).values(layerRecords);
+    if (existing.length > 0) {
+      return NextResponse.json({
+        success: true,
+        data: {
+          extractionId: existing[0].id,
+          isDuplicate: true,
+          message: '该文章已提取过，直接返回已有结果',
+        },
+      });
     }
 
-    // 保存各维度提取的数字资产到 extraction_assets 表
-    const assetRecords = buildAssetRecords(savedExtraction.id, workspaceId as string, extractionResult, articleTitle);
-    if (assetRecords.length > 0) {
-      await db.insert(extractionAssets).values(assetRecords);
-    }
+    // 3. 调用两步拆解服务（范式识别 + 关系型素材提取）
+    const extractionResult: ArticleExtractionResultV2 = await extractArticleV2(
+      articleContent.trim(),
+      articleTitle?.trim()
+    );
 
-    // 更新资产数量统计
-    await db
-      .update(articleExtractions)
-      .set({ totalAssetsCreated: assetRecords.length })
-      .where(eq(articleExtractions.id, savedExtraction.id));
+    // 4. 存入数据库（V2 使用独立范式字段）
+    const [inserted] = await db
+      .insert(articleExtractions)
+      .values({
+        workspaceId,
+        articleTitle: extractionResult.articleTitle || articleTitle || '未命名文章',
+        articleText: articleContent.trim(),
+        articleHash,
+        // V2 范式识别结果（独立字段存储）
+        paradigmName: extractionResult.paradigmRecognition.matchedParadigmName,
+        paradigmType: extractionResult.paradigmRecognition.matchedParadigmId,
+        paradigmMatchScore: extractionResult.paradigmRecognition.matchScore,
+        paradigmDiffNote: extractionResult.paradigmRecognition.structureDifference,
+        // V2 关系型素材
+        relationalMaterials: extractionResult.relationalMaterials as any,
+        // V2 情绪曲线和段落节奏
+        emotionCurve: extractionResult.emotionCurve as any,
+        paragraphRhythm: extractionResult.paragraphRhythm as any,
+        // 元信息快捷字段
+        articleType: extractionResult.articleType,
+        coreTheme: extractionResult.coreTheme,
+        emotionTone: extractionResult.emotionalTone,
+        targetAudience: extractionResult.targetAudience,
+        publishPlatform: extractionResult.platform,
+        // 兼容旧字段（V1 的 layer1 保留元信息，layer2-5 设为 null）
+        layer1Data: {
+          articleTitle: extractionResult.articleTitle,
+          articleType: extractionResult.articleType,
+          coreTheme: extractionResult.coreTheme,
+          targetAudience: extractionResult.targetAudience,
+          emotionalTone: extractionResult.emotionalTone,
+          platform: extractionResult.platform,
+        } as any,
+        layer2Data: null,
+        layer3Data: null,
+        layer4Data: null,
+        layer5Data: null,
+        // 汇总
+        extractionSummary: `范式：${extractionResult.paradigmRecognition.matchedParadigmName}（${extractionResult.paradigmRecognition.matchScore}分），素材${extractionResult.relationalMaterials.length}个`,
+        assetValueScore: extractionResult.assetValueScore,
+        reusableDimensionCount: extractionResult.reusableDimensionCount,
+        templateId: templateId || null,
+      } as any)
+      .returning();
 
-    // 如果选择保存到素材库，实际执行保存
+    // 5. 如果 saveToLibrary=true，自动将素材写入 material_library
     let savedMaterialCount = 0;
     if (saveToLibrary) {
       try {
-        const materialInputs = extractionToMaterialInputs(
+        const materialInputs = extractionV2ToMaterialInputs(
           extractionResult,
-          extractionResult.layer1.articleTitle || articleTitle || '未命名文章'
+          extractionResult.articleTitle || articleTitle || '未命名文章'
         );
-        const sourceTitle = extractionResult.layer1.articleTitle || articleTitle || '未命名文章';
-        
-        // 实际写入 material_library 表
         const { materialLibrary } = await import('@/lib/db/schema/material-library');
         for (const input of materialInputs) {
-          try {
-            await db.insert(materialLibrary).values({
-              title: input.title,
-              content: input.content,
-              type: input.type as any,
-              sceneType: (input.sceneType as string) || null,
-              sourceType: 'article_extraction' as any,
-              ownerType: 'user' as const,
-              topicTags: input.topicTags || [],
-              sceneTags: input.sceneTags || [],
-              emotionTags: input.emotionTags || [],
-              workspaceId: workspaceId as string,
-              status: 'active',
-              sourceDesc: sourceTitle,
-            });
-            savedMaterialCount++;
-          } catch (insertErr) {
-            console.warn('[ArticleExtraction] 素材插入跳过（可能重复）:', input.title, insertErr);
-          }
+          await db.insert(materialLibrary).values({
+            workspaceId,
+            title: input.title,
+            content: input.content,
+            type: input.type,
+            sceneType: input.sceneType,
+            sourceType: 'article_extraction',
+            sourceDesc: extractionResult.articleTitle || undefined,
+            topicTags: input.topicTags,
+            sceneTags: input.sceneTags,
+            emotionTags: input.emotionTags,
+            ownerType: 'user',
+            analysisText: JSON.stringify(input.structuredData),
+          } as any);
+          savedMaterialCount++;
         }
-        console.log(`[ArticleExtraction] saveToLibrary: 成功保存 ${savedMaterialCount}/${materialInputs.length} 条素材到素材库`);
-      } catch (e) {
-        console.error('[ArticleExtraction] saveToLibrary 失败:', e);
+      } catch (saveErr) {
+        console.error('[extract] saveToLibrary failed:', saveErr);
       }
     }
-
-    console.log(`[ArticleExtraction] 提取完成: 资产价值=${extractionResult.assetValueScore}, 可复用维度=${extractionResult.reusableDimensionCount}/21`);
 
     return NextResponse.json({
       success: true,
       data: {
-        extractionId: savedExtraction.id,
-        layer1: extractionResult.layer1,
-        layer2: extractionResult.layer2,
-        layer3: extractionResult.layer3,
-        layer4: extractionResult.layer4,
-        layer5: extractionResult.layer5,
-        extractionSummary: extractionResult.extractionSummary,
+        extractionId: inserted.id,
+        articleTitle: extractionResult.articleTitle,
+        paradigmRecognition: extractionResult.paradigmRecognition,
+        relationalMaterials: extractionResult.relationalMaterials,
+        emotionCurve: extractionResult.emotionCurve,
+        paragraphRhythm: extractionResult.paragraphRhythm,
         assetValueScore: extractionResult.assetValueScore,
         reusableDimensionCount: extractionResult.reusableDimensionCount,
         savedMaterialCount,
       },
     });
-  } catch (error) {
-    console.error('[ArticleExtraction] 提取失败:', error);
+  } catch (error: any) {
+    console.error('[article-extraction/extract] Error:', error);
     return NextResponse.json(
-      { success: false, error: `提取失败: ${error instanceof Error ? error.message : String(error)}` },
+      { success: false, error: error.message || '提取失败' },
       { status: 500 }
     );
-  }
-}
-
-/**
- * 构建5层提取记录
- */
-function buildLayerRecords(
-  extractionId: string,
-  workspaceId: string,
-  result: Awaited<ReturnType<typeof extractArticleDimensions>>
-) {
-  const layers: Array<{
-    extractionId: string;
-    workspaceId: string;
-    layerName: string;
-    layerIndex: number;
-    extractionData: Record<string, any>;
-    confidence: number;
-  }> = [];
-
-  layers.push({ extractionId, workspaceId, layerName: 'meta_info', layerIndex: 1, extractionData: result.layer1, confidence: 85 });
-  layers.push({ extractionId, workspaceId, layerName: 'core_logic', layerIndex: 2, extractionData: result.layer2, confidence: 80 });
-  layers.push({ extractionId, workspaceId, layerName: 'content_module', layerIndex: 3, extractionData: result.layer3, confidence: 85 });
-  layers.push({ extractionId, workspaceId, layerName: 'language_style', layerIndex: 4, extractionData: result.layer4, confidence: 75 });
-  layers.push({ extractionId, workspaceId, layerName: 'atomic_material', layerIndex: 5, extractionData: result.layer5, confidence: 90 });
-
-  return layers;
-}
-
-/**
- * 构建21维数字资产记录
- */
-function buildAssetRecords(
-  extractionId: string,
-  workspaceId: string,
-  result: Awaited<ReturnType<typeof extractArticleDimensions>>,
-  articleTitle?: string
-) {
-  const assets: Array<{
-    extractionId: string;
-    workspaceId: string;
-    layerName: string;
-    dimensionName: string;
-    assetType: string;
-    assetName: string;
-    assetContent: string;
-    sourceArticleTitle: string | null;
-  }> = [];
-
-  const srcTitle = articleTitle || result.layer1.articleTitle || '未命名文章';
-
-  // 第一层
-  const l1 = result.layer1;
-  addAsset(assets, extractionId, workspaceId, 'meta_info', 'articleTitle', '爆款标题素材库', '标题素材', l1.articleTitle, srcTitle);
-  addAsset(assets, extractionId, workspaceId, 'meta_info', 'articleType', '文章结构模板库', '结构模板', l1.articleType, srcTitle);
-  addAsset(assets, extractionId, workspaceId, 'meta_info', 'coreTheme', '主题标签体系', '主题标签', l1.coreTheme, srcTitle);
-  addAsset(assets, extractionId, workspaceId, 'meta_info', 'targetAudience', '用户画像库', '用户画像', l1.targetAudience, srcTitle);
-  addAsset(assets, extractionId, workspaceId, 'meta_info', 'emotionalTone', '风格规则库', '风格规则', l1.emotionalTone, srcTitle);
-  addAsset(assets, extractionId, workspaceId, 'meta_info', 'publishPlatform', '多平台适配规则库', '适配规则', l1.publishPlatform, srcTitle);
-
-  // 第二层
-  const l2 = result.layer2;
-  addAsset(assets, extractionId, workspaceId, 'core_logic', 'coreArgument', '核心论点库', '论点素材', l2.coreArgument, srcTitle);
-  addAsset(assets, extractionId, workspaceId, 'core_logic', 'breakthroughLogic', '逻辑错位模型库', '逻辑模型', l2.breakthroughLogic, srcTitle);
-  addAsset(assets, extractionId, workspaceId, 'core_logic', 'argumentStructure', '标准论证结构库', '论证结构', l2.argumentStructure, srcTitle);
-  addAsset(assets, extractionId, workspaceId, 'core_logic', 'valueProposition', '价值主张库', '价值主张', l2.valueProposition, srcTitle);
-  addAsset(assets, extractionId, workspaceId, 'core_logic', 'actionGuide', '转化话术库', '转化话术', l2.actionGuide, srcTitle);
-
-  // 第三层
-  const l3 = result.layer3;
-  addAsset(assets, extractionId, workspaceId, 'content_module', 'hookIntro', '钩子素材库', '钩子素材', l3.hookIntro, srcTitle);
-  addAsset(assets, extractionId, workspaceId, 'content_module', 'emotionalAcceptance', '情绪接纳句式库', '接纳句式', l3.emotionalAcceptance, srcTitle);
-  addAsset(assets, extractionId, workspaceId, 'content_module', 'cognitiveBreakthrough', '破局句式库', '破局句式', l3.cognitiveBreakthrough, srcTitle);
-  addAsset(assets, extractionId, workspaceId, 'content_module', 'plainExplanation', '解释模板库', '解释模板', l3.plainExplanation, srcTitle);
-  addAsset(assets, extractionId, workspaceId, 'content_module', 'valueReconstruction', '价值重构句式库', '重构句式', l3.valueReconstruction, srcTitle);
-  addAsset(assets, extractionId, workspaceId, 'content_module', 'closingElevation', '收尾金句库', '收尾金句', l3.closingElevation, srcTitle);
-
-  // 第四层
-  const l4 = result.layer4;
-  addAsset(assets, extractionId, workspaceId, 'language_style', 'fixedPatterns', '个人句式库', '个人句式', l4.fixedPatterns.join('\n'), srcTitle);
-  addAsset(assets, extractionId, workspaceId, 'language_style', 'toneCharacteristics', '风格特征库', '风格特征', l4.toneCharacteristics.join('\n'), srcTitle);
-  addAsset(assets, extractionId, workspaceId, 'language_style', 'catchphrases', '口头禅库', '口头禅', l4.catchphrases.join('\n'), srcTitle);
-  addAsset(assets, extractionId, workspaceId, 'language_style', 'forbiddenWords', '合规禁忌库', '合规禁忌', l4.forbiddenWords.join('\n'), srcTitle);
-  addAsset(assets, extractionId, workspaceId, 'language_style', 'paragraphRhythm', '排版规则库', '排版规则', l4.paragraphRhythm, srcTitle);
-
-  // 第五层
-  const l5 = result.layer5;
-  addAsset(assets, extractionId, workspaceId, 'atomic_material', 'misconceptions', '误区素材包库', '误区素材', l5.misconceptions.join('\n'), srcTitle);
-  addAsset(assets, extractionId, workspaceId, 'atomic_material', 'lifeAnalogies', '类比素材库', '类比素材', l5.lifeAnalogies.join('\n'), srcTitle);
-  addAsset(assets, extractionId, workspaceId, 'atomic_material', 'realCases', '案例素材库', '案例素材', l5.realCases.join('\n'), srcTitle);
-  addAsset(assets, extractionId, workspaceId, 'atomic_material', 'authorityData', '数据素材库', '数据素材', l5.authorityData.join('\n'), srcTitle);
-  addAsset(assets, extractionId, workspaceId, 'atomic_material', 'goldenSentences', '金句素材库', '金句素材', l5.goldenSentences.join('\n'), srcTitle);
-
-  return assets;
-}
-
-function addAsset(
-  assets: Array<{
-    extractionId: string;
-    workspaceId: string;
-    layerName: string;
-    dimensionName: string;
-    assetType: string;
-    assetName: string;
-    assetContent: string;
-    sourceArticleTitle: string | null;
-  }>,
-  extractionId: string,
-  workspaceId: string,
-  layerName: string,
-  dimensionName: string,
-  assetType: string,
-  assetName: string,
-  content: string,
-  sourceArticleTitle: string
-) {
-  if (content && content !== '未检测到' && content.trim().length > 0) {
-    assets.push({ extractionId, workspaceId, layerName, dimensionName, assetType, assetName, assetContent: content, sourceArticleTitle });
   }
 }
