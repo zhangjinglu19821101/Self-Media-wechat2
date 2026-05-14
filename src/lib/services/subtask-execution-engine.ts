@@ -8682,6 +8682,46 @@ export class SubtaskExecutionEngine {
           }
         }
 
+        // Phase 7: inject paradigm creation context into insurance-d Prompt
+        // 「10套固定范式 + 5大素材库」创作体系：范式锁骨架 + 素材填血肉
+        try {
+          const { recognizeParadigm, generateParadigmPrompt } = await import('./paradigm-creation-service');
+
+          // 从任务元数据中获取创作类型和行业
+          const _articleType = (taskMetadata as any)?.creationType || (taskMetadata as any)?.articleType;
+          const _industry = (taskMetadata as any)?.industry;
+          const _topicTags = (taskMetadata as any)?.topicTags;
+
+          // 范式识别
+          const _recognitionResult = await recognizeParadigm({
+            articleType: _articleType,
+            industry: _industry,
+            topic: task.taskTitle,
+            taskDescription: task.taskDescription,
+          });
+
+          if (_recognitionResult && _recognitionResult.paradigmCode) {
+            // 生成范式创作提示词
+            const _paradigmPrompt = await generateParadigmPrompt({
+              paradigmCode: _recognitionResult.paradigmCode,
+              industry: _industry,
+              topicTags: _topicTags,
+            });
+
+            if (_paradigmPrompt) {
+              const _paradigmInjection = `\n\n【🎯 创作范式指导（必须严格遵守）】\n已识别到当前任务适用创作范式：${_recognitionResult.paradigmName}（${_recognitionResult.paradigmCode}），置信度 ${Math.round(_recognitionResult.confidence * 100)}%\n匹配原因：${_recognitionResult.matchReason}\n\n${_paradigmPrompt}\n请严格按照以上范式结构创作，不要偏离范式定义的段落顺序和情绪节奏。`;
+              agentPrompt = agentPrompt + _paradigmInjection;
+              console.log('[SubtaskEngine] 🎯 范式创作上下文已注入 insurance-d Prompt:', {
+                paradigmCode: _recognitionResult.paradigmCode,
+                confidence: _recognitionResult.confidence,
+              });
+            }
+          }
+        } catch (_paradigmErr) {
+          // 范式注入失败不影响主流程
+          console.warn('[SubtaskEngine] 范式创作上下文注入失败（不影响主流程）:', _paradigmErr);
+        }
+
         console.log('[SubtaskEngine] PromptAssemblerService assembled (single call):', {
           rule_count: insuranceDAssembledResult.assemblyMetadata.ruleCount,
           style_rule_count: insuranceDAssembledResult.assemblyMetadata.styleRuleCount,

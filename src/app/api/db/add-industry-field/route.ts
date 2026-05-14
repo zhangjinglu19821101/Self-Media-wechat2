@@ -21,7 +21,7 @@ export async function GET() {
       SELECT column_name, data_type 
       FROM information_schema.columns 
       WHERE table_name = 'material_library' 
-        AND column_name IN ('industry', 'source_article_id', 'scene_type', 'analysis_text')
+        AND column_name IN ('industry', 'source_article_id', 'scene_type', 'analysis_text', 'paradigm_id', 'paradigm_position')
       ORDER BY column_name
     `);
 
@@ -45,6 +45,8 @@ export async function GET() {
           source_article_id: mlColumns.includes('source_article_id') ? 'exists' : 'missing',
           scene_type: mlColumns.includes('scene_type') ? 'exists' : 'missing',
           analysis_text: mlColumns.includes('analysis_text') ? 'exists' : 'missing',
+          paradigm_id: mlColumns.includes('paradigm_id') ? 'exists' : 'missing',
+          paradigm_position: mlColumns.includes('paradigm_position') ? 'exists' : 'missing',
         },
         article_content: {
           industry: acColumns.includes('industry') ? 'exists' : 'missing',
@@ -92,7 +94,21 @@ export async function POST() {
     `);
     console.log('[add-industry-field] material_library.analysis_text 字段已添加');
 
-    // 5. article_content: 新增 industry 字段
+    // 5. material_library: 新增 paradigm_id 字段（范式关联）
+    await db.execute(sql`
+      ALTER TABLE material_library 
+      ADD COLUMN IF NOT EXISTS paradigm_id TEXT
+    `);
+    console.log('[add-industry-field] material_library.paradigm_id 字段已添加');
+
+    // 6. material_library: 新增 paradigm_position 字段（范式段落位置）
+    await db.execute(sql`
+      ALTER TABLE material_library 
+      ADD COLUMN IF NOT EXISTS paradigm_position TEXT
+    `);
+    console.log('[add-industry-field] material_library.paradigm_position 字段已添加');
+
+    // 7. article_content: 新增 industry 字段
     await db.execute(sql`
       ALTER TABLE article_content 
       ADD COLUMN IF NOT EXISTS industry TEXT
@@ -111,6 +127,12 @@ export async function POST() {
     `);
     await db.execute(sql`
       CREATE INDEX IF NOT EXISTS idx_article_content_industry ON article_content(industry)
+    `);
+    await db.execute(sql`
+      CREATE INDEX IF NOT EXISTS idx_material_paradigm_id ON material_library(paradigm_id)
+    `);
+    await db.execute(sql`
+      CREATE INDEX IF NOT EXISTS idx_material_paradigm_position ON material_library(paradigm_position)
     `);
     console.log('[add-industry-field] 索引已创建');
 
@@ -153,7 +175,7 @@ export async function POST() {
 
     return NextResponse.json({
       success: true,
-      message: '迁移完成：material_library(industry/source_article_id/scene_type/analysis_text) + article_content(industry) 字段已添加，索引已创建，已有素材已自动标记行业',
+      message: '迁移完成：material_library(industry/source_article_id/scene_type/analysis_text/paradigm_id/paradigm_position) + article_content(industry) 字段已添加，索引已创建，已有素材已自动标记行业',
     });
   } catch (error) {
     console.error('[add-industry-field] 迁移失败:', error);

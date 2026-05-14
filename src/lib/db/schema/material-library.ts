@@ -99,6 +99,10 @@ export const materialLibrary = pgTable('material_library', {
   // === 行业标识 ===
   industry: text('industry'), // 行业标识：insurance_life(人寿保险) / insurance_health(健康保险) / insurance_property(财产保险) / finance(金融理财) / general(通用)
 
+  // === 范式关联（10套范式体系） ===
+  paradigmId: text('paradigm_id'),                         // 适用范式ID（如 P001），关联 paradigm_library.paradigm_code
+  paradigmPosition: text('paradigm_position'),             // 在范式中的段落位置（如 "P001-段落1"），对应 materialPositionMap.paragraphOrder
+
   // === 来源文章关联 ===
   sourceArticleId: text('source_article_id'), // 来源文章ID（关联 article_content.article_id），追溯素材提取自哪篇原始文章
 
@@ -137,6 +141,9 @@ export const materialLibrary = pgTable('material_library', {
   industryIdx: index('idx_material_industry').on(table.industry),
   // 来源文章关联索引
   sourceArticleIdx: index('idx_material_source_article').on(table.sourceArticleId),
+  // 范式关联索引
+  paradigmIdIdx: index('idx_material_paradigm_id').on(table.paradigmId),
+  paradigmPositionIdx: index('idx_material_paradigm_position').on(table.paradigmPosition),
 }));
 
 /**
