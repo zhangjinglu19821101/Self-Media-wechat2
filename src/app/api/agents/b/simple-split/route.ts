@@ -86,6 +86,8 @@ export async function POST(request: NextRequest) {
       primaryMaterialId, // 🔥 Phase 2: 主素材ID（产品信息/法规原文等核心素材）
       auxiliaryMaterialIds, // 🔥 Phase 2: 辅素材ID列表（类比/案例/数据等支撑素材）
       paradigmCode, // 🔥 范式代码（如 P001-标准错位破局）
+      paradigmName, // 🔥 范式名称（如 标准错位破局范式）
+      paradigmDetail, // 🔥 范式详情（JSON字符串，含结构/情绪/素材需求）
       // useFlowTemplate 已移除：步骤来源由数据特征自动判断
       // 前端 subTasks 中包含 accountId 字段 → 使用前端编辑步骤
       // 否则 → 使用流程模板兜底
@@ -348,7 +350,7 @@ export async function POST(request: NextRequest) {
               ...(derivedImageCountMode ? { imageCountMode: derivedImageCountMode } : {}),
               ...(contentTemplateId ? { contentTemplateId } : {}),
               ...(taskCaseIds.length > 0 ? { caseIds: taskCaseIds } : {}),
-              ...(paradigmCode ? { paradigmCode } : {}), // 🔥 范式代码
+              ...(paradigmCode ? { paradigmCode, paradigmName, paradigmDetail } : {}), // 🔥 范式数据
             },
             createdAt: new Date(),
             updatedAt: new Date(),
@@ -424,7 +426,7 @@ export async function POST(request: NextRequest) {
                 adaptationPlatform: adaptAcc.platform, // 🔥 适配目标平台
                 ...(derivedImageCountMode ? { imageCountMode: derivedImageCountMode } : {}),
                 ...(contentTemplateId ? { contentTemplateId } : {}),
-                ...(paradigmCode ? { paradigmCode } : {}), // 🔥 范式代码
+                ...(paradigmCode ? { paradigmCode, paradigmName, paradigmDetail } : {}), // 🔥 范式数据
               },
               createdAt: new Date(),
               updatedAt: new Date(),

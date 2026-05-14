@@ -18,7 +18,18 @@ export async function GET(request: NextRequest) {
         ? p.xiaohongshuStructure 
         : p.officialAccountStructure;
       
+      // 从情绪曲线提取主导情绪作为情感基调
+      const dominantEmotion = p.emotionCurve?.reduce((prev, curr) => 
+        curr.intensity > prev.intensity ? curr : prev
+      , p.emotionCurve[0])?.emotion || '理性客观';
+
+      // 从素材位置映射提取所需素材类型
+      const materialTypes = [...new Set(
+        p.materialPositionMap?.flatMap(m => m.materialTypes) || []
+      )];
+      
       return {
+        paradigmCode: p.paradigmCode,
         id: p.paradigmCode,
         name: p.paradigmName,
         description: p.description,
@@ -28,9 +39,15 @@ export async function GET(request: NextRequest) {
           max: structure.reduce((sum, s) => sum + s.wordRange.max, 0),
         },
         applicableArticleTypes: p.applicableArticleTypes,
-        applicableSceneKeywords: p.applicableSceneKeywords.slice(0, 5), // 只取前5个关键词
-        signaturePhrases: p.signaturePhrases.slice(0, 3), // 只取前3个标志性句式
+        applicableTypes: p.applicableArticleTypes,
+        applicableSceneKeywords: p.applicableSceneKeywords.slice(0, 5),
+        signaturePhrases: p.signaturePhrases.slice(0, 3),
         sortOrder: p.sortOrder,
+        emotionTone: dominantEmotion,
+        structureName: `${structure.length}段${p.paradigmName.replace('范式', '')}结构`,
+        materialRequirements: materialTypes.length > 0 
+          ? `需要: ${materialTypes.join(' + ')}` 
+          : '案例 + 类比 + 数据',
         // 结构预览（用于面板展开）
         structurePreview: structure.map(s => ({
           order: s.order,

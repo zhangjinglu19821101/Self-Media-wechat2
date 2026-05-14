@@ -24,7 +24,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { Loader2, Plus, Trash2, Send, Sparkles, ListTodo, CheckCircle2, XCircle, GripVertical, MoveUp, MoveDown, Maximize2, Minimize2, AlertTriangle, GitCompare, RefreshCw, FileText, Save, Eye, Home, BookmarkPlus, ExternalLink, BookOpen, Clock, Building2, X, HelpCircle, Settings, Rocket, Layers, ChevronDown, ChevronUp, Cpu, Brain, Bell, Workflow, Palette, PenTool, ArrowRight, ArrowLeft, Briefcase, Shield, Users, Download, Copy, ImageIcon, Check, AlertCircle, Calendar, Lock, Search, Globe, Edit3, Lightbulb } from 'lucide-react';
+import { Loader2, Plus, Trash2, Send, Sparkles, ListTodo, CheckCircle2, XCircle, GripVertical, MoveUp, MoveDown, Maximize2, Minimize2, AlertTriangle, GitCompare, RefreshCw, FileText, Save, Eye, Home, BookmarkPlus, ExternalLink, BookOpen, Clock, Building2, X, HelpCircle, Settings, Rocket, Layers, ChevronDown, ChevronUp, Cpu, Brain, Bell, Workflow, Palette, PenTool, ArrowRight, ArrowLeft, Briefcase, Shield, Users, Download, Copy, ImageIcon, Check, AlertCircle, Calendar, Lock, Search, Globe, Edit3, Lightbulb, MessageSquare } from 'lucide-react';
 import { toast } from 'sonner';
 import { AgentTaskListNormal } from '@/components/agent-task-list-normal';
 import { XiaohongshuPreview } from '@/components/xiaohongshu-preview';
@@ -483,7 +483,7 @@ export default function HomePage() {
   // 🔥 创作引导相关状态
   const [showCreationGuide, setShowCreationGuide] = useState(true);
   const [activeGuideCard, setActiveGuideCard] = useState<'content' | 'paradigm' | 'platform' | 'guide' | null>(null);
-  const [activeGuideTab, setActiveGuideTab] = useState<'opinion' | 'emotion' | 'case' | 'articleType' | 'aiAssist' | 'aiGenerate'>('opinion');
+  const [activeGuideTab, setActiveGuideTab] = useState<'paradigm' | 'opinion' | 'material' | 'aiGenerate'>('paradigm');
   
   // 🔥 横向流程图节点选中状态（用于联动详情面板）
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
@@ -562,15 +562,20 @@ export default function HomePage() {
 
   // 🔥 范式选择相关状态（替代结构选择）
   const [paradigms, setParadigms] = useState<Array<{
+    paradigmCode: string;
     id: string;
     name: string;
     description: string;
     sectionCount: number;
     totalWordRange: { min: number; max: number };
     applicableArticleTypes: string[];
+    applicableTypes: string[];
     applicableSceneKeywords: string[];
     signaturePhrases: string[];
     sortOrder: number;
+    emotionTone: string;
+    structureName: string;
+    materialRequirements: string;
     structurePreview: Array<{
       order: number;
       name: string;
@@ -583,6 +588,16 @@ export default function HomePage() {
     name: string;
     description: string;
     sectionCount: number;
+    paradigmCode?: string;
+    emotionTone?: string;
+    structureName?: string;
+    materialRequirements?: string;
+    structurePreview?: Array<{
+      order: number;
+      name: string;
+      wordRange: { min: number; max: number };
+      contentRequirement: string;
+    }>;
   } | null>(null);
   const [loadingParadigms, setLoadingParadigms] = useState(false);
   
@@ -780,7 +795,14 @@ export default function HomePage() {
         name: paradigm.name,
         description: paradigm.description,
         sectionCount: paradigm.sectionCount,
+        paradigmCode: paradigm.paradigmCode,
+        emotionTone: paradigm.emotionTone,
+        structureName: paradigm.structureName,
+        materialRequirements: paradigm.materialRequirements,
+        structurePreview: paradigm.structurePreview,
       });
+      // 恢复范式时同步情感基调
+      if (paradigm.emotionTone && snapshot.selectedParadigmId) setEmotionTone(paradigm.emotionTone);
     }
     // 🔥 恢复提交表单字段
     if (snapshot.taskTitle) setTaskTitle(snapshot.taskTitle);
@@ -1001,7 +1023,14 @@ export default function HomePage() {
             name: data.data[0].name,
             description: data.data[0].description,
             sectionCount: data.data[0].sectionCount,
+            paradigmCode: data.data[0].paradigmCode,
+            emotionTone: data.data[0].emotionTone,
+            structureName: data.data[0].structureName,
+            materialRequirements: data.data[0].materialRequirements,
+            structurePreview: data.data[0].structurePreview,
           });
+          // 默认范式的情感基调自动同步
+          if (data.data[0].emotionTone) setEmotionTone(data.data[0].emotionTone);
         }
       }
     } catch (error) {
@@ -1042,13 +1071,6 @@ export default function HomePage() {
   );
 
   // 🔥 情感基调配置（集中管理，避免硬编码）
-  const EMOTION_TONES = [
-    { value: '理性客观', label: '理性客观', icon: '🧊', desc: '中立对比，让读者自己判断' },
-    { value: '踩坑警醒', label: '踩坑警醒', icon: '⚠️', desc: '指出常见误区，提醒避坑' },
-    { value: '温情共情', label: '温情共情', icon: '💛', desc: '理解读者处境，温暖建议' },
-    { value: '专业权威', label: '专业权威', icon: '📊', desc: '数据说话，专家视角' },
-  ] as const;
-
   const addSubTask = () => {
     const newId = Date.now().toString();
     setSubTasks([
@@ -2723,6 +2745,9 @@ export default function HomePage() {
           ...(primaryMaterialId ? { primaryMaterialId } : {}),
           ...(auxiliaryMaterialIds.length > 0 ? { auxiliaryMaterialIds } : {}),
         } : null,
+        // 🔥 结构信息（从范式推导）
+        structureName: selectedParadigm?.structureName || null,
+        structureDetail: selectedParadigm?.structurePreview ? JSON.stringify(selectedParadigm.structurePreview) : null,
         // 🔥 Phase 2: 传递到 metadata（执行引擎从 metadata 读取）
         articleLength: articleLength !== 'medium' ? articleLength : null,
         primaryMaterialId: primaryMaterialId || null,
@@ -3606,12 +3631,21 @@ export default function HomePage() {
                           {paradigms.map((paradigm) => (
                             <div
                               key={paradigm.id}
-                              onClick={() => setSelectedParadigm({
-                                id: paradigm.id,
-                                name: paradigm.name,
-                                description: paradigm.description,
-                                sectionCount: paradigm.sectionCount,
-                              })}
+                              onClick={() => {
+                                setSelectedParadigm({
+                                  id: paradigm.id,
+                                  name: paradigm.name,
+                                  description: paradigm.description,
+                                  sectionCount: paradigm.sectionCount,
+                                  paradigmCode: paradigm.paradigmCode,
+                                  emotionTone: paradigm.emotionTone,
+                                  structureName: paradigm.structureName,
+                                  materialRequirements: paradigm.materialRequirements,
+                                  structurePreview: paradigm.structurePreview,
+                                });
+                                // 范式自带情感基调，自动同步
+                                if (paradigm.emotionTone) setEmotionTone(paradigm.emotionTone);
+                              }}
                               className={`
                                 p-4 rounded-xl border-2 cursor-pointer transition-all duration-200
                                 ${selectedParadigm?.id === paradigm.id
@@ -3836,19 +3870,23 @@ export default function HomePage() {
                       <ChevronDown className="w-5 h-5 text-slate-500" />
                     </div>
                     
-                    {/* Tab 标签页导航 */}
+                    {/* Tab 标签页导航 - 对齐10套范式+5大素材库体系 */}
                     <div className="flex items-center border-b border-slate-100 bg-slate-50/30">
                       <button
                         type="button"
-                        onClick={() => setActiveGuideTab('type' as any)}
+                        onClick={() => setActiveGuideTab('paradigm')}
                         className={`px-6 py-3 text-sm font-medium transition-all relative ${
-                          (activeGuideTab as string) === 'type'
+                          activeGuideTab === 'paradigm'
                             ? 'text-sky-600 bg-white'
                             : 'text-slate-500 hover:text-slate-700 hover:bg-slate-100/50'
                         }`}
                       >
-                        创作类型
-                        {(activeGuideTab as string) === 'type' && (
+                        <Layers className="w-3.5 h-3.5 inline mr-1" />
+                        范式选择
+                        {selectedParadigm && (
+                          <span className="ml-1 text-xs bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded-full">1</span>
+                        )}
+                        {activeGuideTab === 'paradigm' && (
                           <div className="absolute bottom-0 left-0 right-0 h-[2px] bg-sky-500 rounded-t-full" />
                         )}
                       </button>
@@ -3861,58 +3899,30 @@ export default function HomePage() {
                             : 'text-slate-500 hover:text-slate-700 hover:bg-slate-100/50'
                         }`}
                       >
+                        <MessageSquare className="w-3.5 h-3.5 inline mr-1" />
                         核心观点
+                        {coreOpinion && (
+                          <span className="ml-1 text-xs bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded-full">1</span>
+                        )}
                         {activeGuideTab === 'opinion' && (
                           <div className="absolute bottom-0 left-0 right-0 h-[2px] bg-sky-500 rounded-t-full" />
                         )}
                       </button>
                       <button
                         type="button"
-                        onClick={() => setActiveGuideTab('emotion')}
+                        onClick={() => setActiveGuideTab('material')}
                         className={`px-6 py-3 text-sm font-medium transition-all relative ${
-                          activeGuideTab === 'emotion'
-                            ? 'text-sky-600 bg-white'
-                            : 'text-slate-500 hover:text-slate-700 hover:bg-slate-100/50'
-                        }`}
-                      >
-                        情感基调
-                        {activeGuideTab === 'emotion' && (
-                          <div className="absolute bottom-0 left-0 right-0 h-[2px] bg-sky-500 rounded-t-full" />
-                        )}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setActiveGuideTab('articleType')}
-                        className={`px-6 py-3 text-sm font-medium transition-all relative ${
-                          activeGuideTab === 'articleType'
-                            ? 'text-sky-600 bg-white'
-                            : 'text-slate-500 hover:text-slate-700 hover:bg-slate-100/50'
-                        }`}
-                      >
-                        <Lightbulb className="w-3.5 h-3.5 inline mr-1" />
-                        创作类型
-                        {articleType && (
-                          <span className="ml-1 text-xs bg-violet-100 text-violet-700 px-1.5 py-0.5 rounded-full">1</span>
-                        )}
-                        {activeGuideTab === 'articleType' && (
-                          <div className="absolute bottom-0 left-0 right-0 h-[2px] bg-sky-500 rounded-t-full" />
-                        )}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setActiveGuideTab('case')}
-                        className={`px-6 py-3 text-sm font-medium transition-all relative ${
-                          activeGuideTab === 'case'
+                          activeGuideTab === 'material'
                             ? 'text-sky-600 bg-white'
                             : 'text-slate-500 hover:text-slate-700 hover:bg-slate-100/50'
                         }`}
                       >
                         <Briefcase className="w-3.5 h-3.5 inline mr-1" />
-                        案例引用
-                        {selectedCases.length > 0 && (
-                          <span className="ml-1 text-xs bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded-full">{selectedCases.length}</span>
+                        素材选择
+                        {selectedMaterials.length > 0 && (
+                          <span className="ml-1 text-xs bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded-full">{selectedMaterials.length}</span>
                         )}
-                        {activeGuideTab === 'case' && (
+                        {activeGuideTab === 'material' && (
                           <div className="absolute bottom-0 left-0 right-0 h-[2px] bg-sky-500 rounded-t-full" />
                         )}
                       </button>
@@ -3926,7 +3936,7 @@ export default function HomePage() {
                         }`}
                       >
                         <Sparkles className="w-3.5 h-3.5 inline mr-1" />
-                        AI生成
+                        AI辅助
                         {activeGuideTab === 'aiGenerate' && (
                           <div className="absolute bottom-0 left-0 right-0 h-[2px] bg-sky-500 rounded-t-full" />
                         )}
@@ -3935,45 +3945,70 @@ export default function HomePage() {
                     
                     {/* Tab 内容区域 */}
                     <div className="p-6 bg-white">
-                      {/* 创作类型 Tab */}
-                      {activeGuideTab === 'articleType' && (
+                      {/* Tab 1: 范式选择 */}
+                      {activeGuideTab === 'paradigm' && (
                         <div className="space-y-4">
-                          <p className="text-sm text-gray-500 mb-3">选择创作类型，系统将自动推荐对应的类比素材</p>
-                          <div className="grid grid-cols-2 gap-3">
-                            {ARTICLE_TYPE_OPTIONS.map(opt => (
-                              <button
-                                key={opt.key}
-                                onClick={() => { setArticleType(opt.key); if (opt.key === 'free_creation') { setPrimaryMaterialId(''); setAuxiliaryMaterialIds([]); } }}
-                                className={`p-3 rounded-lg border-2 text-left transition-all ${
-                                  articleType === opt.key
-                                    ? 'border-indigo-500 bg-indigo-50'
-                                    : 'border-gray-200 hover:border-gray-300'
-                                }`}
-                              >
-                                <div className="font-medium text-sm">{opt.label}</div>
-                                <div className="text-xs text-gray-500 mt-1">{opt.description}</div>
-                              </button>
-                            ))}
-                          </div>
-                          {articleType && ARTICLE_TYPE_REQUIREMENTS[articleType] && (
-                            <div className="mt-4 p-3 bg-blue-50 rounded-lg border border-blue-200">
-                              <p className="text-sm font-medium text-blue-700">
-                                必选素材: {ARTICLE_TYPE_REQUIREMENTS[articleType].required.join('、')}
+                          <p className="text-sm text-gray-500 mb-3">选择创作范式，系统将自动匹配文章结构、情感基调与素材需求</p>
+                          {paradigms.length > 0 ? (
+                            <div className="grid grid-cols-2 gap-3">
+                              {paradigms.map(p => (
+                                <button
+                                  key={p.paradigmCode}
+                                  onClick={() => {
+                                    setSelectedParadigm({
+                                      id: p.id,
+                                      name: p.name,
+                                      description: p.description,
+                                      sectionCount: p.sectionCount,
+                                      paradigmCode: p.paradigmCode,
+                                      emotionTone: p.emotionTone,
+                                      structureName: p.structureName,
+                                      materialRequirements: p.materialRequirements,
+                                      structurePreview: p.structurePreview,
+                                    });
+                                    // 范式自带情感基调，自动同步
+                                    if (p.emotionTone) setEmotionTone(p.emotionTone);
+                                  }}
+                                  className={`p-3 rounded-lg border-2 text-left transition-all ${
+                                    selectedParadigm?.paradigmCode === p.paradigmCode
+                                      ? 'border-indigo-500 bg-indigo-50'
+                                      : 'border-gray-200 hover:border-gray-300'
+                                  }`}
+                                >
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-xs px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700">{p.paradigmCode}</span>
+                                    <span className="font-medium text-sm">{p.name}</span>
+                                  </div>
+                                  <div className="text-xs text-gray-500 mt-1">{p.description}</div>
+                                  <div className="flex flex-wrap gap-1 mt-2">
+                                    {p.applicableTypes.slice(0, 3).map(t => (
+                                      <span key={t} className="text-[10px] px-1.5 py-0.5 rounded bg-blue-50 text-blue-600">{t}</span>
+                                    ))}
+                                  </div>
+                                </button>
+                              ))}
+                            </div>
+                          ) : (
+                            <div className="text-center py-6 text-sm text-slate-400">加载范式中...</div>
+                          )}
+                          {selectedParadigm && (
+                            <div className="mt-4 p-3 bg-green-50 rounded-lg border border-green-200">
+                              <p className="text-sm font-medium text-green-700">
+                                已选范式: {selectedParadigm.name}
                               </p>
-                              {ARTICLE_TYPE_REQUIREMENTS[articleType].optional.length > 0 && (
-                                <p className="text-xs text-blue-600 mt-1">
-                                  可选素材: {ARTICLE_TYPE_REQUIREMENTS[articleType].optional.join('、')}
-                                </p>
-                              )}
+                              <p className="text-xs text-green-600 mt-1">
+                                文章结构: {selectedParadigm.structureName || '7段标准结构'}
+                                {selectedParadigm.emotionTone && ` | 情感基调: ${selectedParadigm.emotionTone}`}
+                              </p>
                             </div>
                           )}
 
-                          {/* 🔥 Phase 2: 篇幅选择（选了创作类型后显示） */}
-                          {articleType && articleType !== 'general' && (
+                          {/* 篇幅选择 */}
+                          {selectedParadigm && (
                             <div className="mt-4 space-y-3">
                               <div className="flex items-center gap-2">
                                 <span className="text-sm font-medium text-slate-700">文章篇幅</span>
-                                <span className="text-xs text-slate-400">影响段落结构和深度</span>
+                                <span className="text-xs text-slate-400">影响段落深度</span>
                               </div>
                               <div className="flex gap-3">
                                 {[
@@ -3999,84 +4034,16 @@ export default function HomePage() {
                               </div>
                             </div>
                           )}
-
-                          {/* 🔥 Phase 2: 主素材选择（产品测评/投保指南专用） */}
-                          {articleType && (articleType === 'product_eval' || articleType === 'insurance_guide') && (
-                            <div className="mt-4 space-y-3">
-                              <div className="flex items-center gap-2">
-                                <span className="text-sm font-medium text-slate-700">
-                                  {articleType === 'product_eval' ? '测评产品（主素材）' : '指南主题（主素材）'}
-                                </span>
-                                <span className="text-xs text-red-400">必选</span>
-                              </div>
-                              {primaryMaterialId ? (
-                                <div className="p-3 bg-indigo-50 border border-indigo-200 rounded-lg flex items-center justify-between">
-                                  <span className="text-sm text-indigo-700 font-medium">
-                                    已选择主素材
-                                  </span>
-                                  <button
-                                    type="button"
-                                    onClick={() => setPrimaryMaterialId('')}
-                                    className="text-xs text-red-500 hover:text-red-700"
-                                  >
-                                    清除
-                                  </button>
-                                </div>
-                              ) : (
-                                <div className="space-y-2">
-                                  <p className="text-xs text-gray-400">
-                                    {articleType === 'product_eval'
-                                      ? '请切换到"素材"标签页，选择要测评的产品素材作为主素材'
-                                      : '请切换到"素材"标签页，选择投保指南的核心主题素材'}
-                                  </p>
-                                  <button
-                                    type="button"
-                                    onClick={() => setActiveGuideTab('case')}
-                                    className="text-xs text-indigo-500 hover:text-indigo-700 underline"
-                                  >
-                                    前往选择素材 →
-                                  </button>
-                                </div>
-                              )}
-                            </div>
-                          )}
-
-                          {/* 🔥 Phase 2: 辅素材选择（产品测评/投保指南专用） */}
-                          {articleType && (articleType === 'product_eval' || articleType === 'insurance_guide') && (
-                            <div className="mt-4 space-y-3">
-                              <div className="flex items-center gap-2">
-                                <span className="text-sm font-medium text-slate-700">辅助素材</span>
-                                <span className="text-xs text-slate-400">可选，提供对比数据或支撑论据</span>
-                              </div>
-                              {auxiliaryMaterialIds.length > 0 ? (
-                                <div className="p-3 bg-green-50 border border-green-200 rounded-lg flex items-center justify-between">
-                                  <span className="text-sm text-green-700 font-medium">
-                                    已选择 {auxiliaryMaterialIds.length} 条辅助素材
-                                  </span>
-                                  <button
-                                    type="button"
-                                    onClick={() => setAuxiliaryMaterialIds([])}
-                                    className="text-xs text-red-500 hover:text-red-700"
-                                  >
-                                    清除全部
-                                  </button>
-                                </div>
-                              ) : (
-                                <p className="text-xs text-gray-400">
-                                  在素材标签页选择素材后，点击"设为辅助素材"即可添加
-                                </p>
-                              )}
-                            </div>
-                          )}
                         </div>
                       )}
-                      {/* 核心观点 Tab */}
+
+                      {/* Tab 2: 核心观点 */}
                       {activeGuideTab === 'opinion' && (
                         <div className="space-y-4">
                           <div className="flex items-center justify-between mb-1">
                             <div className="flex items-center gap-2">
                               <span className="text-sm font-medium text-slate-700">输入你的核心观点</span>
-                              <span className="text-xs text-slate-400">insurance-d 会将此作为文章灵魂</span>
+                              <span className="text-xs text-slate-400">写作Agent会将此作为文章灵魂</span>
                             </div>
                             <Button variant="ghost" size="sm" onClick={() => handleSuggestOpinions(false)} disabled={loadingSuggestedOpinions || !mainInstruction.trim()} className="h-8 px-3 text-xs text-indigo-500 hover:text-indigo-700">
                               {loadingSuggestedOpinions ? <Loader2 className="w-3.5 h-3.5 animate-spin mr-1.5" /> : <Sparkles className="w-3.5 h-3.5 mr-1.5" />}
@@ -4109,53 +4076,29 @@ export default function HomePage() {
                           )}
                         </div>
                       )}
-                      
-                      {/* 情感基调 Tab */}
-                      {activeGuideTab === 'emotion' && (
-                        <div className="space-y-4">
-                          <div className="flex items-center gap-2 mb-1">
-                            <span className="text-sm font-medium text-slate-700">选择文章的情感基调</span>
-                            <span className="text-xs text-slate-400">影响文章的语气风格</span>
-                          </div>
-                          <div className="grid grid-cols-2 gap-3">
-                            {EMOTION_TONES.map((tone) => (
-                              <button
-                                key={tone.value}
-                                type="button"
-                                onClick={() => setEmotionTone(tone.value)}
-                                className={`p-4 rounded-xl border-2 text-left transition-all ${
-                                  emotionTone === tone.value
-                                    ? 'border-indigo-400 bg-indigo-50'
-                                    : 'border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50'
-                                }`}
-                                title={tone.desc}
-                              >
-                                <div className={`text-2xl mb-2 ${emotionTone === tone.value ? 'text-indigo-600' : 'text-slate-400'}`}>
-                                  {tone.icon}
-                                </div>
-                                <div className={`font-medium ${emotionTone === tone.value ? 'text-indigo-700' : 'text-slate-700'}`}>
-                                  {tone.label}
-                                </div>
-                                <div className="text-xs text-slate-400 mt-0.5">
-                                  {tone.desc}
-                                </div>
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-                      )}
 
-                      {/* 案例引用 Tab */}
-                      {activeGuideTab === 'case' && (
+                      {/* Tab 3: 素材选择 */}
+                      {activeGuideTab === 'material' && (
                         <div className="space-y-4">
+                          {/* 范式素材需求提示 */}
+                          {selectedParadigm && (
+                            <div className="p-3 bg-amber-50 rounded-lg border border-amber-200">
+                              <p className="text-sm font-medium text-amber-700">
+                                范式「{selectedParadigm.name}」素材需求
+                              </p>
+                              <p className="text-xs text-amber-600 mt-1">
+                                {selectedParadigm.materialRequirements || '案例 + 类比 + 数据'}
+                              </p>
+                            </div>
+                          )}
+
                           {/* 搜索区域 */}
                           <div className="space-y-3">
                             <div className="flex items-center gap-2">
-                              {/* 搜索框 */}
                               <div className="flex-1 relative">
                                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
                                 <Input
-                                  placeholder="搜索案例关键词..."
+                                  placeholder="搜索素材关键词..."
                                   value={caseSearchKeyword}
                                   onChange={(e) => setCaseSearchKeyword(e.target.value)}
                                   onKeyDown={(e) => {
@@ -4166,22 +4109,21 @@ export default function HomePage() {
                                   className="pl-9 h-9 text-sm"
                                 />
                               </div>
-                              {/* AI 推荐按钮 */}
-                              <Button 
-                                variant="outline" 
-                                size="sm" 
+                              <Button
+                                variant="outline"
+                                size="sm"
                                 onClick={() => {
                                   handleRecommendCases(false);
                                   setCaseSearchMode('recommend');
-                                }} 
-                                disabled={loadingRecommendedCases || !mainInstruction.trim()} 
+                                }}
+                                disabled={loadingRecommendedCases || !mainInstruction.trim()}
                                 className="h-9 px-3 text-xs text-emerald-600 hover:text-emerald-700 border-emerald-200 hover:border-emerald-300"
                               >
                                 {loadingRecommendedCases ? <Loader2 className="w-3.5 h-3.5 animate-spin mr-1.5" /> : <Sparkles className="w-3.5 h-3.5 mr-1.5" />}
                                 AI推荐
                               </Button>
                             </div>
-                            
+
                             {/* 筛选器 */}
                             <div className="flex items-center gap-2 flex-wrap">
                               <Select value={caseFilterProduct} onValueChange={(v) => {
@@ -4206,7 +4148,7 @@ export default function HomePage() {
                                   <SelectItem value="财产险">财产险</SelectItem>
                                 </SelectContent>
                               </Select>
-                              
+
                               <Select value={caseFilterCrowd} onValueChange={(v) => {
                                 setCaseFilterCrowd(v);
                                 const apiValue = v === 'all' ? '' : v;
@@ -4227,7 +4169,7 @@ export default function HomePage() {
                                   <SelectItem value="高净值">高净值</SelectItem>
                                 </SelectContent>
                               </Select>
-                              
+
                               <Select value={caseFilterType} onValueChange={(v) => {
                                 setCaseFilterType(v);
                                 const apiValue = v === 'all' ? '' : v;
@@ -4245,10 +4187,9 @@ export default function HomePage() {
                                   <SelectItem value="milestone">里程碑</SelectItem>
                                 </SelectContent>
                               </Select>
-                              
-                              {/* 搜索按钮 */}
-                              <Button 
-                                size="sm" 
+
+                              <Button
+                                size="sm"
                                 onClick={() => handleSearchCases()}
                                 disabled={caseSearchLoading || (!caseSearchKeyword && caseFilterProduct === 'all' && caseFilterCrowd === 'all' && caseFilterType === 'all')}
                                 className="h-8 px-3 text-xs"
@@ -4256,12 +4197,11 @@ export default function HomePage() {
                                 {caseSearchLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin mr-1" /> : <Search className="w-3.5 h-3.5 mr-1" />}
                                 搜索
                               </Button>
-                              
-                              {/* 清空筛选 */}
+
                               {(caseSearchKeyword || caseFilterProduct !== 'all' || caseFilterCrowd !== 'all' || caseFilterType !== 'all') && (
-                                <Button 
-                                  variant="ghost" 
-                                  size="sm" 
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
                                   onClick={() => {
                                     setCaseSearchKeyword('');
                                     setCaseFilterProduct('all');
@@ -4280,7 +4220,7 @@ export default function HomePage() {
                             </div>
                           </div>
 
-                          {/* 当前模式提示 */}
+                          {/* 模式提示 */}
                           {caseSearchMode === 'search' && recommendedCases.length > 0 && (
                             <div className="text-xs text-slate-500 flex items-center gap-1">
                               <Search className="w-3 h-3" />
@@ -4295,7 +4235,7 @@ export default function HomePage() {
                             </div>
                           )}
 
-                          {/* 已选案例 Badge */}
+                          {/* 已选素材 Badge */}
                           {selectedCases.length > 0 && (
                             <div className="flex flex-wrap gap-2 p-3 bg-emerald-50 rounded-lg">
                               {selectedCases.map(c => (
@@ -4312,7 +4252,7 @@ export default function HomePage() {
                             </div>
                           )}
 
-                          {/* 案例列表 */}
+                          {/* 素材列表 */}
                           {recommendedCases.length > 0 && (
                             <div className="space-y-2">
                               {recommendedCases.map((c) => {
@@ -4327,7 +4267,7 @@ export default function HomePage() {
                                     }`}
                                   >
                                     <div className="flex items-start justify-between gap-2">
-                                      <div 
+                                      <div
                                         className="flex-1 min-w-0 cursor-pointer"
                                         onClick={() => setViewingCase(c)}
                                       >
@@ -4358,7 +4298,6 @@ export default function HomePage() {
                                           ))}
                                         </div>
                                       </div>
-                                      {/* 操作按钮 */}
                                       <div className="flex flex-col gap-1.5 flex-shrink-0">
                                         <button
                                           type="button"
@@ -4378,39 +4317,6 @@ export default function HomePage() {
                                         >
                                           {isSelected ? '已选' : '选择'}
                                         </button>
-                                        {/* 🔥 Phase 2: 主素材/辅素材按钮（产品测评/投保指南时显示） */}
-                                        {(articleType === 'product_eval' || articleType === 'insurance_guide') && (
-                                          <>
-                                            <button
-                                              type="button"
-                                              onClick={() => setPrimaryMaterialId(c.id)}
-                                              className={`text-[10px] px-2 py-1 rounded transition-colors ${
-                                                primaryMaterialId === c.id
-                                                  ? 'bg-indigo-100 text-indigo-700 border border-indigo-300'
-                                                  : 'bg-indigo-500 text-white hover:bg-indigo-600'
-                                              }`}
-                                            >
-                                              {primaryMaterialId === c.id ? '已设主素材' : '设为主素材'}
-                                            </button>
-                                            <button
-                                              type="button"
-                                              onClick={() => {
-                                                if (auxiliaryMaterialIds.includes(c.id)) {
-                                                  setAuxiliaryMaterialIds(auxiliaryMaterialIds.filter(id => id !== c.id));
-                                                } else {
-                                                  setAuxiliaryMaterialIds([...auxiliaryMaterialIds, c.id]);
-                                                }
-                                              }}
-                                              className={`text-[10px] px-2 py-1 rounded transition-colors ${
-                                                auxiliaryMaterialIds.includes(c.id)
-                                                  ? 'bg-green-100 text-green-700 border border-green-300'
-                                                  : 'bg-green-500 text-white hover:bg-green-600'
-                                              }`}
-                                            >
-                                              {auxiliaryMaterialIds.includes(c.id) ? '已设辅助' : '设为辅助'}
-                                            </button>
-                                          </>
-                                        )}
                                       </div>
                                     </div>
                                   </div>
@@ -4423,12 +4329,11 @@ export default function HomePage() {
                           {!loadingRecommendedCases && !caseSearchLoading && recommendedCases.length === 0 && (
                             <div className="text-center py-8 text-sm text-slate-400">
                               {caseSearchMode === 'search' && hasSearchedCases
-                                ? '未找到匹配的案例，请尝试其他关键词或筛选条件'
-                                : '请输入关键词搜索，或点击「AI推荐」获取智能推荐案例'}
+                                ? '未找到匹配的素材，请尝试其他关键词或筛选条件'
+                                : '请输入关键词搜索，或点击「AI推荐」获取智能推荐素材'}
                             </div>
                           )}
-                          
-                          {/* 加载中提示 */}
+
                           {(loadingRecommendedCases || caseSearchLoading) && (
                             <div className="text-center py-8 text-sm text-slate-500 flex items-center justify-center gap-2">
                               <Loader2 className="w-4 h-4 animate-spin" />
@@ -4438,7 +4343,7 @@ export default function HomePage() {
                         </div>
                       )}
 
-                      {/* 🔥 Phase 3: AI 辅助生成 Tab */}
+                      {/* Tab 4: AI辅助 */}
                       {activeGuideTab === 'aiGenerate' && (
                         <div className="space-y-5">
                           {/* 误区素材生成 */}
@@ -4483,7 +4388,6 @@ export default function HomePage() {
                                 )}
                               </div>
                             </div>
-                            {/* 生成结果展示 */}
                             {aiMisconceptionResult && (
                               <div className="mt-3 p-4 bg-amber-50 border border-amber-200 rounded-lg space-y-3">
                                 <div>
@@ -4552,7 +4456,6 @@ export default function HomePage() {
                                 )}
                               </div>
                             </div>
-                            {/* 生成结果展示 */}
                             {aiRegulationResult && (
                               <div className="mt-3 p-4 bg-blue-50 border border-blue-200 rounded-lg space-y-3">
                                 <div>
