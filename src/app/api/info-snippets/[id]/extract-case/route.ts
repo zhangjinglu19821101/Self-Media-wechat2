@@ -8,7 +8,7 @@ import { HeaderUtils } from 'coze-coding-dev-sdk';
 
 /**
  * POST /api/info-snippets/[id]/extract-case
- * Step 1: LLM 提取案例结构化信息（仅一次 LLM 调用，尽快返回）
+ * Step 1: LLM 提取素材结构化信息（仅一次 LLM 调用，尽快返回）
  * 
  * 搜索补充由 Step 2 (/extract-case/search-supplement) 异步完成
  */
@@ -37,7 +37,7 @@ export async function POST(
     const rawContent = snippet.rawContent || snippet.summary || snippet.title || '';
 
     if (!rawContent.trim()) {
-      return NextResponse.json({ error: '速记内容为空，无法提取案例' }, { status: 400 });
+      return NextResponse.json({ error: '速记内容为空，无法提取素材' }, { status: 400 });
     }
 
     // Step 1: 仅 LLM 提取，不含搜索（搜索由前端异步调用 Step 2）
@@ -54,7 +54,7 @@ export async function POST(
   } catch (error) {
     console.error('[extract-case] 提取失败:', error);
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : '案例提取失败' },
+      { error: error instanceof Error ? error.message : '素材提取失败' },
       { status: 500 }
     );
   }

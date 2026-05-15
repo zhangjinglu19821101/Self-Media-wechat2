@@ -1,11 +1,11 @@
 /**
- * 案例素材检索 API
+ * 素材检索 API
  * 
- * 统一从 material_library (type='case') 查询，替代原 industry_case_library
+ * 统一从 material_library 查询，替代原 industry_case_library
  * 
  * GET /api/cases/recommend?productTags=意外险,重疾险&crowdTags=上班族&limit=5
- * POST /api/cases/recommend - 根据指令推荐案例素材
- * POST /api/cases/recommend - 创建案例素材（写入 material_library）
+ * POST /api/cases/recommend - 根据指令推荐素材
+ * POST /api/cases/recommend - 创建素材（写入 material_library）
  */
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -15,9 +15,9 @@ import { getWorkspaceId } from '@/lib/auth/context';
 import { eq, and, or, desc, sql } from 'drizzle-orm';
 
 /**
- * 从 material_library 查询 case 类型素材，格式化为前端 CaseItem 格式
+ * 从 material_library 查询素材，格式化为前端 MaterialItem 格式
  */
-function formatMaterialAsCase(m: any) {
+function formatMaterialAsItem(m: any) {
   return {
     id: m.id,
     title: m.title || '',
@@ -52,9 +52,8 @@ export async function GET(request: NextRequest) {
     const limit = parseInt(searchParams.get('limit') || '10');
     const offset = parseInt(searchParams.get('offset') || '0');
 
-    // 构建查询条件：type='case' + 可见性
+    // 构建查询条件：可见性（系统素材 + 用户素材）
     const conditions = [
-      eq(materialLibrary.type, 'case'),
       or(
         eq(materialLibrary.ownerType, 'system'),
         eq(materialLibrary.workspaceId, workspaceId || '')
@@ -79,7 +78,7 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const cases = await db
+    const items = await db
       .select()
       .from(materialLibrary)
       .where(and(...conditions))
@@ -87,7 +86,7 @@ export async function GET(request: NextRequest) {
       .limit(limit)
       .offset(offset);
 
-    const formatted = cases.map(formatMaterialAsCase);
+    const formatted = items.map(formatMaterialAsItem);
 
     return NextResponse.json({
       success: true,
@@ -95,7 +94,7 @@ export async function GET(request: NextRequest) {
       total: formatted.length,
     });
   } catch (error) {
-    console.error('[API] 案例素材检索失败:', error);
+    console.error('[API] 素材检索失败:', error);
     return NextResponse.json({
       success: false,
       error: error instanceof Error ? error.message : '未知错误',
@@ -105,26 +104,26 @@ export async function GET(request: NextRequest) {
 
 /**
  * POST 方法支持两种模式：
- * 1. 推荐案例素材：传递 instruction 参数
- * 2. 创建案例素材：传递 caseData 参数（写入 material_library）
+ * 1. 推荐素材：传递 instruction 参数
+ * 2. 创建素材：传递 caseData 参数（写入 material_library）
  */
 export async function POST(request: NextRequest) {
   try {
     const workspaceId = await getWorkspaceId(request);
     const body = await request.json();
 
-    // 模式1：创建案例素材（写入 material_library）
+    // 模式1：创建素材（写入 material_library）
     if (body.caseData) {
       if (!workspaceId) {
         return NextResponse.json({
           success: false,
-          error: '创建案例需要登录',
+          error: '创建素材需要登录',
         }, { status: 401 });
       }
 
       const caseData = body.caseData;
       const newMaterial = await db.insert(materialLibrary).values({
-        title: caseData.title || '未命名案例',
+        title: caseData.title || '未命名素材',
         type: 'case',
         content: caseData.eventFullStory || caseData.content || '',
         analysisText: caseData.result || '',
@@ -136,16 +135,16 @@ export async function POST(request: NextRequest) {
         workspaceId: workspaceId,
       }).returning();
 
-      const formatted = formatMaterialAsCase(newMaterial[0]);
+      const formatted = formatMaterialAsItem(newMaterial[0]);
 
       return NextResponse.json({
         success: true,
         data: formatted,
-        message: '案例素材创建成功',
+        message: '素材创建成功',
       });
     }
 
-    // 模式2：推荐案例素材
+    // 模式2：推荐素材
     const { instruction, limit } = body;
     if (!instruction) {
       return NextResponse.json({
@@ -154,14 +153,13 @@ export async function POST(request: NextRequest) {
       }, { status: 400 });
     }
 
-    // 从指令提取关键词，匹配 material_library 的 case 类型素材
+    // 从指令提取关键词，匹配 material_library 素材
     const keywords = instruction.slice(0, 50);
-    const cases = await db
+    const items = await db
       .select()
       .from(materialLibrary)
       .where(
         and(
-          eq(materialLibrary.type, 'case'),
           or(
             eq(materialLibrary.ownerType, 'system'),
             eq(materialLibrary.workspaceId, workspaceId || '')
@@ -177,12 +175,12 @@ export async function POST(request: NextRequest) {
       .orderBy(desc(materialLibrary.createdAt))
       .limit(limit || 10);
 
-    const formatted = cases.map(formatMaterialAsCase);
+    const formatted = items.map(formatMaterialAsItem);
 
     // 格式化为提示词文本
     const promptText = formatted.map((c, i) => {
       const tags = [...(c.productTags || []), ...(c.sceneTags || []), ...(c.emotionTags || [])].join('、');
-      return `案例${i + 1}：${c.title}${tags ? `（${tags}）` : ''}\n${c.eventFullStory}`;
+      return `素材${i + 1}：${c.title}${tags ? `（${tags}）` : ''}\n${c.eventFullStory}`;
     }).join('\n\n');
 
     return NextResponse.json({
@@ -193,7 +191,7 @@ export async function POST(request: NextRequest) {
       },
     });
   } catch (error) {
-    console.error('[API] 案例素材操作失败:', error);
+    console.error('[API] 素材操作失败:', error);
     return NextResponse.json({
       success: false,
       error: error instanceof Error ? error.message : '未知错误',

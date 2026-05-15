@@ -1,10 +1,10 @@
 'use client';
 
 /**
- * 案例标签管理页面
+ * 素材标签管理页面（案例类素材）
  * 
  * 功能：
- * - 查看所有案例及其标签状态
+ * - 查看所有案例类素材及其标签状态
  * - 筛选：待人工确认 / AI生成 / 已完成 / 全部
  * - 编辑标签：修改 productTags / crowdTags / emotionTags
  * - 确认标签：移除"待人工确认"标记，标记为已确认
@@ -89,8 +89,8 @@ export default function CaseManagementPage() {
         setStats(data.data.stats || { total: 0, needs_review: 0, auto_tagged: 0, has_content: 0 });
       }
     } catch (err) {
-      console.error('查询案例失败:', err);
-      toast.error('查询案例失败');
+      console.error('查询素材失败:', err);
+      toast.error('查询素材失败');
     } finally {
       setLoading(false);
     }
@@ -193,8 +193,8 @@ export default function CaseManagementPage() {
         {/* 页面标题 */}
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">案例标签管理</h1>
-            <p className="text-sm text-gray-500 mt-1">管理案例的产品/人群/情感标签，确认AI自动生成的标签</p>
+            <h1 className="text-2xl font-bold text-gray-900">素材标签管理</h1>
+            <p className="text-sm text-gray-500 mt-1">管理案例类素材的产品/人群/情感标签，确认AI自动生成的标签</p>
           </div>
           <Button variant="outline" onClick={fetchCases} disabled={loading}>
             <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
@@ -209,7 +209,7 @@ export default function CaseManagementPage() {
               <div className="flex items-center gap-3">
                 <div className="p-2 bg-blue-100 rounded-lg"><Tag className="h-5 w-5 text-blue-600" /></div>
                 <div>
-                  <p className="text-sm text-gray-500">全部案例</p>
+                  <p className="text-sm text-gray-500">全部案例素材</p>
                   <p className="text-2xl font-bold">{stats.total}</p>
                 </div>
               </div>
@@ -242,7 +242,7 @@ export default function CaseManagementPage() {
               <div className="flex items-center gap-3">
                 <div className="p-2 bg-green-100 rounded-lg"><CheckCircle className="h-5 w-5 text-green-600" /></div>
                 <div>
-                  <p className="text-sm text-gray-500">有内容案例</p>
+                  <p className="text-sm text-gray-500">有内容素材</p>
                   <p className="text-2xl font-bold text-green-600">{stats.has_content}</p>
                 </div>
               </div>
@@ -270,7 +270,7 @@ export default function CaseManagementPage() {
               <div className="relative w-64">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
                 <Input
-                  placeholder="搜索案例标题或人物..."
+                  placeholder="搜索素材标题或人物..."
                   value={keyword}
                   onChange={(e) => { setKeyword(e.target.value); setPage(1); }}
                   className="pl-9"
@@ -280,11 +280,11 @@ export default function CaseManagementPage() {
           </CardContent>
         </Card>
 
-        {/* 案例表格 */}
+        {/* 素材表格 */}
         <Card>
           <CardHeader>
             <CardTitle className="text-base">
-              案例列表 ({total} 条)
+              素材列表 ({total} 条)
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -294,13 +294,13 @@ export default function CaseManagementPage() {
                 <span className="ml-2 text-gray-500">加载中...</span>
               </div>
             ) : cases.length === 0 ? (
-              <div className="text-center py-12 text-gray-500">暂无案例数据</div>
+              <div className="text-center py-12 text-gray-500">暂无素材数据</div>
             ) : (
               <>
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead className="w-[300px]">案例标题</TableHead>
+                      <TableHead className="w-[300px]">素材标题</TableHead>
                       <TableHead>产品标签</TableHead>
                       <TableHead>人群标签</TableHead>
                       <TableHead>情感标签</TableHead>
@@ -529,7 +529,7 @@ export default function CaseManagementPage() {
                     <Bot className="h-4 w-4" />
                     <span className="font-medium">AI 自动生成标签</span>
                   </div>
-                  <p className="text-xs text-purple-600 mt-1">此案例的标签由 LLM 自动生成，建议人工确认准确性</p>
+                  <p className="text-xs text-purple-600 mt-1">此素材的标签由 LLM 自动生成，建议人工确认准确性</p>
                 </div>
               )}
             </div>
@@ -583,7 +583,7 @@ export default function CaseManagementPage() {
                 <div className="bg-orange-50 border border-orange-200 rounded-lg p-3">
                   <p className="text-sm text-orange-700">
                     <AlertTriangle className="h-4 w-4 inline mr-1" />
-                    此案例包含"待人工确认"标签，保存时将自动移除该标记
+                    此素材包含"待人工确认"标签，保存时将自动移除该标记
                   </p>
                 </div>
               )}

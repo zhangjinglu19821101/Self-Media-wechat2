@@ -1,5 +1,5 @@
 /**
- * 速记转案例提取服务
+ * 速记转素材提取服务
  * 
  * 流程（两步拆分，降低用户感知延迟）：
  * Step 1 (extractCaseFromSnippet): 仅 LLM 提取结构化字段，立即返回给前端展示
@@ -16,7 +16,7 @@ import { readFileSync, existsSync } from 'fs';
 import { join } from 'path';
 
 /**
- * 案例提取结果
+ * 素材提取结果
  */
 export interface CaseExtractionResult {
   // 展示字段（6个）
@@ -70,7 +70,7 @@ export function clearPromptCache(): void {
 }
 
 /**
- * 加载速记转案例提取提示词
+ * 加载速记转素材提取提示词
  */
 function loadPrompt(): string {
   const isDev = process.env.NODE_ENV === 'development';
@@ -140,7 +140,7 @@ function loadSearchSummarizePrompt(): string {
 }
 
 /**
- * Step 1: 使用 LLM 从速记内容提取案例结构化信息（不含搜索补充）
+ * Step 1: 使用 LLM 从速记内容提取素材结构化信息（不含搜索补充）
  * 仅做一次 LLM 调用，尽快返回给前端展示
  */
 export async function extractCaseFromSnippet(
@@ -521,7 +521,7 @@ const SEARCHABLE_EVENT_KEYWORDS = [
 const PERSON_NAME_PATTERN = /[\u4e00-\u9fa5]{1,2}(先生|女士|总|董|局|处长|科长|经理|律师|医生|护士|老师)/;
 
 /**
- * 解析 LLM 返回的案例提取结果
+ * 解析 LLM 返回的素材提取结果
  */
 function parseCaseExtractionResponse(content: string): CaseExtractionResult {
   try {

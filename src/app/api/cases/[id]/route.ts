@@ -5,9 +5,9 @@ import { getWorkspaceId } from '@/lib/auth/context';
 import { and, eq, or } from 'drizzle-orm';
 
 /**
- * 从 material_library 的 case 类型素材格式化为前端 CaseItem 格式
+ * 从 material_library 的素材格式化为前端 MaterialItem 格式（兼容旧前端）
  */
-function formatMaterialAsCase(m: any) {
+function formatMaterialAsItem(m: any) {
   // 从 content 中解析结构化段落
   const content = m.content || '';
   const sections: Record<string, string> = {};
@@ -42,7 +42,7 @@ function formatMaterialAsCase(m: any) {
 
 /**
  * GET /api/cases/[id]
- * 根据 ID 获取案例素材详情（从 material_library 查询）
+ * 根据 ID 获取素材详情（从 material_library 查询）
  */
 export async function GET(
   request: NextRequest,
@@ -58,7 +58,6 @@ export async function GET(
       .where(
         and(
           eq(materialLibrary.id, id),
-          eq(materialLibrary.type, 'case'),
           or(
             eq(materialLibrary.ownerType, 'system'),
             eq(materialLibrary.workspaceId, workspaceId || '')
@@ -68,10 +67,10 @@ export async function GET(
       .limit(1);
 
     if (!result[0]) {
-      return NextResponse.json({ error: '案例素材不存在' }, { status: 404 });
+      return NextResponse.json({ error: '素材不存在' }, { status: 404 });
     }
 
-    return NextResponse.json({ success: true, data: formatMaterialAsCase(result[0]) });
+    return NextResponse.json({ success: true, data: formatMaterialAsItem(result[0]) });
   } catch (error) {
     console.error('[cases/[id] GET] 查询失败:', error);
     return NextResponse.json(
@@ -83,7 +82,7 @@ export async function GET(
 
 /**
  * PUT /api/cases/[id]
- * 更新案例素材内容（更新 material_library）
+ * 更新素材内容（更新 material_library）
  */
 export async function PUT(
   request: NextRequest,
@@ -102,7 +101,7 @@ export async function PUT(
       .limit(1);
 
     if (!existing[0]) {
-      return NextResponse.json({ error: '案例素材不存在' }, { status: 404 });
+      return NextResponse.json({ error: '素材不存在' }, { status: 404 });
     }
 
     // 系统素材不允许普通用户修改
@@ -126,7 +125,7 @@ export async function PUT(
       ? (Array.isArray(body.crowdTags) ? body.crowdTags : [])
       : undefined;
 
-    // 重建 content（从案例结构化字段）
+    // 重建 content（从结构化字段）
     const contentParts = [
       body.eventFullStory?.trim() ? `【事件经过】\n${body.eventFullStory.trim()}` : '',
       body.background?.trim() ? `【核心背景】\n${body.background.trim()}` : '',
@@ -160,7 +159,7 @@ export async function PUT(
       .where(eq(materialLibrary.id, id))
       .limit(1);
 
-    return NextResponse.json({ success: true, data: formatMaterialAsCase(updated[0]) });
+    return NextResponse.json({ success: true, data: formatMaterialAsItem(updated[0]) });
   } catch (error) {
     console.error('[cases/[id] PUT] 更新失败:', error);
     return NextResponse.json(

@@ -162,6 +162,18 @@ interface MaterialItem {
   sceneType?: string;
   paradigmId?: string;
   paradigmPosition?: string;
+  // 🔥 行业素材推荐字段（来自 /api/cases/recommend）
+  productTags?: string[];
+  crowdTags?: string[];
+  relevanceScore?: number;
+  caseType?: string;
+  eventFullStory?: string;
+  protagonist?: string;
+  background?: string;
+  insuranceAction?: string;
+  result?: string;
+  applicableScenarios?: string[];
+  applicableProducts?: string[];
 }
 
 // 推荐速记项类型
@@ -172,26 +184,6 @@ interface RecommendedSnippet {
   categories: string[];
   materialId: string | null;
   complianceLevel: string | null;
-}
-
-// 🔥 行业素材项类型定义
-interface CaseItem {
-  id: string;
-  title: string;
-  caseType: string;
-  eventFullStory: string;
-  protagonist: string;
-  background: string;
-  insuranceAction: string;
-  result: string;
-  applicableProducts: string[];
-  applicableScenarios: string[];
-  productTags: string[];
-  crowdTags: string[];
-  sceneTags: string[];
-  emotionTags: string[];
-  relevanceScore: number;
-  productTagMatchCount: number;
 }
 
 // 🔥🔥🔥 精简素材快照类型：只保存必要字段，大幅减少 sessionStorage 容量占用
@@ -212,7 +204,7 @@ const FORM_SNAPSHOT_VERSION = 1; // v1: 初始版本，统一持久化 + 精简�
 const FORM_SNAPSHOT_KEY = 'fullHome_formSnapshot';
 
 // 🔥 精简素材快照类型：只保存必要字段，减少 sessionStorage 容量占用
-interface CaseItemSnapshot {
+interface MaterialItemSnapshotV2 {
   id: string;
   title: string;
   productTags: string[];
@@ -240,8 +232,8 @@ interface FormSnapshot {
   hasSplitResult: boolean;
   subTasks: SubTask[];
   // 🔥 只保存精简的素材快照，避免 sessionStorage 容量超限
-  recommendedCases: CaseItemSnapshot[];
-  selectedCases: CaseItemSnapshot[];
+  recommendedMaterials: MaterialItemSnapshotV2[];
+  selectedMaterialsV2: MaterialItemSnapshotV2[];
   // 提交表单字段
   taskTitle: string;
   executionDate: string;
@@ -282,7 +274,7 @@ function loadFormSnapshot(): FormSnapshot | null {
     // 🔥 版本兼容迁移：v0/v1 缺少 version 字段
     if (!snapshot.version) {
       // 旧快照迁移：v0 没有 selectedAccountId（现在统一用 selectedAccountIds）
-      // 旧快照有 selectedCaseIds 而无 selectedCases 时，需要特殊处理
+      // 旧快照有 selectedMaterialIdsV2 而无 selectedMaterialsV2List 时，需要特殊处理
       const migrated: FormSnapshot = {
         version: FORM_SNAPSHOT_VERSION,
         mainInstruction: snapshot.mainInstruction || '',
@@ -299,13 +291,13 @@ function loadFormSnapshot(): FormSnapshot | null {
         selectedParadigmId: snapshot.selectedParadigmId || '',
         hasSplitResult: snapshot.hasSplitResult || false,
         subTasks: snapshot.subTasks || [],
-        recommendedCases: (snapshot.recommendedCases || []).map(toCaseItemSnapshot),
-        // 🔥 关键迁移：如果有 selectedCaseIds 但无 selectedCases，尝试从 recommendedCases 匹配
-        // 注意：v0 的 recommendedCases/selectedCases 可能是 CaseItem[]（完整对象），toCaseItemSnapshot 兼容两种输入
-        selectedCases: (snapshot.selectedCases || []).length > 0
-          ? (snapshot.selectedCases as (CaseItem | CaseItemSnapshot)[]).map(toCaseItemSnapshot)
-          : ((snapshot as any).selectedCaseIds?.length > 0 && snapshot.recommendedCases?.length > 0)
-            ? (snapshot.recommendedCases as (CaseItem | CaseItemSnapshot)[]).filter((c) => (snapshot as any).selectedCaseIds.includes(c.id)).map(toCaseItemSnapshot)
+        recommendedMaterials: ((snapshot as any).recommendedMaterials || []).map(toMaterialSnapshotV2),
+        // 🔥 关键迁移：如果有 selectedMaterialIdsV2 但无 selectedMaterialsV2List，尝试从 recommendedMaterials 匹配
+        // 注意：v0 的 recommendedMaterials/selectedMaterialsV2List 可能是完整对象，toMaterialSnapshotV2 兼容两种输入
+        selectedMaterialsV2: ((snapshot as any).selectedMaterialsV2List || []).length > 0
+          ? ((snapshot as any).selectedMaterialsV2List as (MaterialItem | MaterialItemSnapshotV2)[]).map(toMaterialSnapshotV2)
+          : ((snapshot as any).selectedMaterialIdsV2?.length > 0 && (snapshot as any).recommendedMaterials?.length > 0)
+            ? ((snapshot as any).recommendedMaterials as (MaterialItem | MaterialItemSnapshotV2)[]).filter((c: any) => (snapshot as any).selectedMaterialIdsV2.includes(c.id)).map(toMaterialSnapshotV2)
             : [],
         // 提交表单字段
         taskTitle: snapshot.taskTitle || '',
@@ -330,34 +322,12 @@ function loadFormSnapshot(): FormSnapshot | null {
 }
 
 // 🔥 素材对象转为精简快照（只保留必要字段，减少存储体积）
-function toCaseItemSnapshot(item: CaseItem | CaseItemSnapshot): CaseItemSnapshot {
+function toMaterialSnapshotV2(item: MaterialItem | MaterialItemSnapshotV2): MaterialItemSnapshotV2 {
   return {
     id: item.id,
     title: item.title,
-    productTags: (item as CaseItem).productTags || (item as CaseItemSnapshot).productTags || [],
-    relevanceScore: (item as CaseItem).relevanceScore || (item as CaseItemSnapshot).relevanceScore || 0,
-  };
-}
-
-// 🔥 精简快照还原为完整素材对象（恢复时使用，补充缺失字段）
-function toFullCaseItem(snapshot: CaseItemSnapshot): CaseItem {
-  return {
-    id: snapshot.id,
-    title: snapshot.title,
-    caseType: 'positive',
-    eventFullStory: '',
-    protagonist: '',
-    background: '',
-    insuranceAction: '',
-    result: '',
-    applicableProducts: [],
-    applicableScenarios: [],
-    productTags: snapshot.productTags || [],
-    crowdTags: [],
-    sceneTags: [],
-    emotionTags: [],
-    relevanceScore: snapshot.relevanceScore || 0,
-    productTagMatchCount: 0,
+    productTags: item.productTags || [],
+    relevanceScore: item.relevanceScore || 0,
   };
 }
 
@@ -373,21 +343,34 @@ function toMaterialItemSnapshot(item: MaterialItem | MaterialItemSnapshot): Mate
   };
 }
 
-// 🔥 精简快照还原为完整素材对象（恢复时使用，content 字段通过推荐列表重新匹配获取）
-function toFullMaterialItem(snapshot: MaterialItemSnapshot, fallback?: MaterialItem): MaterialItem {
+// 🔥 精简快照V2还原为完整素材对象（恢复时使用，兼容旧快照格式）
+function toFullMaterialItem(snapshot: MaterialItemSnapshotV2 | MaterialItemSnapshot, fallback?: MaterialItem): MaterialItem {
+  // MaterialItemSnapshot 格式（新）
+  if ('type' in snapshot) {
+    return {
+      id: snapshot.id,
+      title: snapshot.title,
+      type: (snapshot as MaterialItemSnapshot).type,
+      content: fallback?.content || '',
+      sourceDesc: fallback?.sourceDesc,
+      topicTags: (snapshot as MaterialItemSnapshot).topicTags || [],
+      sceneTags: (snapshot as MaterialItemSnapshot).sceneTags || [],
+      emotionTags: (snapshot as MaterialItemSnapshot).emotionTags || [],
+      useCount: fallback?.useCount,
+      matchLevel: fallback?.matchLevel,
+      keywordHitCount: fallback?.keywordHitCount,
+      tagHitCount: fallback?.tagHitCount,
+    };
+  }
+  // MaterialItemSnapshotV2 格式（兼容旧快照）
   return {
     id: snapshot.id,
     title: snapshot.title,
-    type: snapshot.type,
-    content: fallback?.content || '',
-    sourceDesc: fallback?.sourceDesc,
-    topicTags: snapshot.topicTags || [],
-    sceneTags: snapshot.sceneTags || [],
-    emotionTags: snapshot.emotionTags || [],
-    useCount: fallback?.useCount,
-    matchLevel: fallback?.matchLevel,
-    keywordHitCount: fallback?.keywordHitCount,
-    tagHitCount: fallback?.tagHitCount,
+    type: 'case',
+    content: '',
+    topicTags: (snapshot as MaterialItemSnapshotV2).productTags || [],
+    sceneTags: [],
+    emotionTags: [],
   };
 }
 
@@ -414,7 +397,7 @@ interface InfoSnippet {
   complianceLevel: string | null;
   materialStatus: string | null;
   materialId: string | null;
-  caseId: string | null;  // 已关联的素材 ID
+  libraryMaterialId: string | null;  // 已关联的素材库ID（material_library.id）
   status: string;
   createdAt: string;
 }
@@ -550,12 +533,10 @@ export default function HomePage() {
   const webSearchAbortRef = useRef<AbortController | null>(null);
 
   // 🔥 行业素材引用相关状态
-  const [selectedCaseIds, setSelectedCaseIds] = useState<string[]>([]);
-  const [selectedCases, setSelectedCases] = useState<CaseItem[]>([]);
-  const [recommendedCases, setRecommendedCases] = useState<CaseItem[]>([]);
-  const [loadingRecommendedCases, setLoadingRecommendedCases] = useState(false);
-  const [hasSearchedCases, setHasSearchedCases] = useState(false); // 是否已搜索过素材
-  const [viewingCase, setViewingCase] = useState<CaseItem | null>(null); // 查看素材详情
+  const [selectedMaterialIdsV2, setSelectedMaterialIdsV2] = useState<string[]>([]);
+  const [selectedMaterialsV2List, setSelectedMaterialsV2List] = useState<MaterialItem[]>([]);
+  const [hasSearchedMaterials, setHasSearchedMaterials] = useState(false); // 是否已搜索过素材
+  const [viewingMaterial, setViewingMaterial] = useState<MaterialItem | null>(null); // 查看素材详情
   
   // 🔥 素材搜索相关状态（完全替换模式）
   const [caseSearchMode, setCaseSearchMode] = useState<'recommend' | 'search'>('recommend'); // 当前模式
@@ -715,7 +696,7 @@ export default function HomePage() {
     industry: string;
     llmExtractedTitle?: string;  // LLM 提炼的原始标题（用于搜索关键词）
     searchKeywords?: string;  // LLM 从原文提取的搜索关键词
-    caseId: string | null;  // 已关联的素材 ID
+    libraryMaterialId: string | null;  // 已关联的素材 ID
     searchPerformed: boolean;
     searchPending: boolean;
     searchSummary: string | null;
@@ -821,16 +802,15 @@ export default function HomePage() {
     // 🔥 恢复拆解状态，确保刷新后创作引导区可见
     if (snapshot.hasSplitResult) setHasSplitResult(true);
     if (snapshot.subTasks?.length) setSubTasks(snapshot.subTasks);
-    // 🔥 恢复推荐素材列表（CaseItemSnapshot[] → CaseItem[]）
-    if (snapshot.recommendedCases?.length) {
-      setRecommendedCases(snapshot.recommendedCases.map(toFullCaseItem));
+    // 🔥 恢复推荐素材列表
+    if (snapshot.recommendedMaterials?.length) {
+      setRecommendedMaterials(snapshot.recommendedMaterials.map((s) => toFullMaterialItem(s)));
     }
-    // 🔥 恢复已选素材：直接使用 selectedCases（CaseItemSnapshot[] → CaseItem[]）
-    if (snapshot.selectedCases?.length) {
-      const fullCases = snapshot.selectedCases.map(toFullCaseItem);
-      setSelectedCases(fullCases);
-      // 从 selectedCases 推导 selectedCaseIds（消除冗余字段）
-      setSelectedCaseIds(fullCases.map(c => c.id));
+    // 🔥 恢复已选素材
+    if (snapshot.selectedMaterialsV2?.length) {
+      const fullItems = snapshot.selectedMaterialsV2.map((s) => toFullMaterialItem(s));
+      setSelectedMaterialsV2List(fullItems);
+      setSelectedMaterialIdsV2(fullItems.map(c => c.id));
     }
 
     toast.success('已恢复您之前填写的内容');
@@ -903,15 +883,15 @@ export default function HomePage() {
       hasSplitResult,
       subTasks,
       // 🔥 保存精简的素材快照，减少 sessionStorage 容量占用
-      recommendedCases: recommendedCases.map(toCaseItemSnapshot),
-      selectedCases: selectedCases.map(toCaseItemSnapshot),
+      recommendedMaterials: recommendedMaterials.map(toMaterialSnapshotV2),
+      selectedMaterialsV2: selectedMaterialsV2List.map(toMaterialSnapshotV2),
       // 提交表单字段
       taskTitle,
       executionDate,
       platformSubTaskGroups,
       savedAt: Date.now(),
     });
-  }, [mainInstruction, coreOpinion, emotionTone, selectedMaterialIds, selectedMaterials, selectedAccountIds, selectedContentTemplate, selectedParadigm, hasSplitResult, subTasks, recommendedCases, selectedCases, taskTitle, executionDate, platformSubTaskGroups]);
+  }, [mainInstruction, coreOpinion, emotionTone, selectedMaterialIds, selectedMaterials, selectedAccountIds, selectedContentTemplate, selectedParadigm, hasSplitResult, subTasks, recommendedMaterials, selectedMaterialsV2List, taskTitle, executionDate, platformSubTaskGroups]);
 
   // 🔥 获取账号列表（AI拆解后自动加载）
   useEffect(() => {
@@ -1317,12 +1297,12 @@ export default function HomePage() {
       
       // 🔥 重新拆解时清空所有推荐数据，防止旧指令的推荐残留
       setRecommendedMaterials([]);
-      setRecommendedCases([]);
+      setRecommendedMaterials([]);
       setSuggestedOpinions([]);
       setSelectedMaterialIds([]);
       setSelectedMaterials([]);
-      setSelectedCaseIds([]);
-      setSelectedCases([]);
+      setSelectedMaterialIdsV2([]);
+      setSelectedMaterialsV2List([]);
       setCoreOpinion('');
       setEmotionTone('');
       // 🔥 严重问题 3.1 修复：重新拆解时清空 FormSnapshot，防止旧数据被恢复
@@ -1478,10 +1458,10 @@ export default function HomePage() {
       setAutoOpinionFetched(false);
       setRecommendedMaterials([]);
       setRecommendedSnippets([]);
-      setRecommendedCases([]);
+      setRecommendedMaterials([]);
       setSuggestedOpinions([]);
       setSelectedMaterialIds([]);
-      setSelectedCaseIds([]);
+      setSelectedMaterialIdsV2([]);
       setCoreOpinion('');
       prevInstructionRef.current = '';
       return;
@@ -1496,8 +1476,8 @@ export default function HomePage() {
     if (isUserChangingInstruction) {
       setSelectedMaterialIds([]);
       setSelectedMaterials([]);
-      setSelectedCaseIds([]);
-      setSelectedCases([]);
+      setSelectedMaterialIdsV2([]);
+      setSelectedMaterialsV2List([]);
       setCoreOpinion('');
       setEmotionTone('');
     }
@@ -1508,7 +1488,7 @@ export default function HomePage() {
     return () => clearTimeout(timer);
   }, [mainInstruction, handleRecommendMaterials]);
 
-  // 🔥 页面刷新恢复：从推荐结果中重建 selectedMaterials / selectedCases
+  // 🔥 页面刷新恢复：从推荐结果中重建 selectedMaterials / selectedMaterialsV2List
   // 快照只保存了 ID 列表，对象数组需要从推荐数据中匹配重建
   useEffect(() => {
     if (selectedMaterialIds.length > 0 && selectedMaterials.length === 0 && recommendedMaterials.length > 0) {
@@ -1520,13 +1500,13 @@ export default function HomePage() {
   }, [selectedMaterialIds, recommendedMaterials]);
 
   useEffect(() => {
-    if (selectedCaseIds.length > 0 && selectedCases.length === 0 && recommendedCases.length > 0) {
-      const matched = selectedCaseIds
-        .map(id => recommendedCases.find(c => c.id === id))
-        .filter((c): c is CaseItem => c != null);
-      if (matched.length > 0) setSelectedCases(matched);
+    if (selectedMaterialIdsV2.length > 0 && selectedMaterialsV2List.length === 0 && recommendedMaterials.length > 0) {
+      const matched = selectedMaterialIdsV2
+        .map(id => recommendedMaterials.find(c => c.id === id))
+        .filter((c): c is MaterialItem => c != null);
+      if (matched.length > 0) setSelectedMaterialsV2List(matched);
     }
-  }, [selectedCaseIds, recommendedCases]);
+  }, [selectedMaterialIdsV2, recommendedMaterials]);
 
   // 🔥 互联网搜索：搜索权威站点的保险相关信息
   // P1-2: AbortController 竞态取消 + P1-6: workspaceId 空值保护
@@ -1688,12 +1668,12 @@ export default function HomePage() {
       if (!silent) toast.error('请先输入任务指令');
       return;
     }
-    setLoadingRecommendedCases(true);
+    setLoadingRecommendedMaterials(true);
     try {
       const data: any = await apiPost('/api/cases/recommend', { instruction: mainInstruction });
-      const cases: CaseItem[] = data?.data?.cases || [];
-      setRecommendedCases(cases);
-      setHasSearchedCases(true);
+      const cases: MaterialItem[] = data?.data?.cases || [];
+      setRecommendedMaterials(cases);
+      setHasSearchedMaterials(true);
       if (!silent) {
         if (cases.length > 0) {
           toast.success(`推荐了相关素材`);
@@ -1705,24 +1685,24 @@ export default function HomePage() {
       console.error('推荐素材失败:', error);
       if (!silent) toast.error('推荐素材失败');
     } finally {
-      setLoadingRecommendedCases(false);
+      setLoadingRecommendedMaterials(false);
     }
   }, [mainInstruction]);
 
   // 🔥 行业素材：选择/取消选择
-  const toggleCaseSelection = (caseItem: CaseItem) => {
-    const alreadySelected = selectedCaseIds.includes(caseItem.id);
+  const toggleIndustryMaterialSelection = (materialItem: MaterialItem) => {
+    const alreadySelected = selectedMaterialIdsV2.includes(materialItem.id);
     if (alreadySelected) {
-      setSelectedCaseIds(prev => prev.filter(id => id !== caseItem.id));
-      setSelectedCases(prev => prev.filter(c => c.id !== caseItem.id));
+      setSelectedMaterialIdsV2(prev => prev.filter(id => id !== materialItem.id));
+      setSelectedMaterialsV2List(prev => prev.filter(c => c.id !== materialItem.id));
     } else {
-      setSelectedCaseIds(prev => [...prev, caseItem.id]);
-      setSelectedCases(prev => [...prev, caseItem]);
+      setSelectedMaterialIdsV2(prev => [...prev, materialItem.id]);
+      setSelectedMaterialsV2List(prev => [...prev, materialItem]);
     }
   };
 
-  // 🔥 行业素材：搜索案例（完全替换模式）
-  const handleSearchCases = useCallback(async (keyword?: string, filters?: { productTag?: string; crowdTag?: string; caseType?: string }) => {
+  // 🔥 行业素材：搜索素材（完全替换模式）
+  const handleSearchIndustryMaterials = useCallback(async (keyword?: string, filters?: { productTag?: string; crowdTag?: string; caseType?: string }) => {
     const searchKeyword = keyword ?? caseSearchKeyword;
     // 将 'all' 转换为空字符串用于 API 调用
     const productTag = (filters?.productTag ?? caseFilterProduct) === 'all' ? '' : (filters?.productTag ?? caseFilterProduct);
@@ -1746,11 +1726,11 @@ export default function HomePage() {
       params.set('limit', '10');
       
       const data: any = await apiGet(`/api/cases/recommend?${params.toString()}`);
-      const cases: CaseItem[] = data?.data || [];
+      const cases: MaterialItem[] = data?.data || [];
       
       // 完全替换：搜索结果直接替换推荐结果
-      setRecommendedCases(cases);
-      setHasSearchedCases(true);
+      setRecommendedMaterials(cases);
+      setHasSearchedMaterials(true);
       
       if (cases.length > 0) {
         toast.success(`找到相关素材`);
@@ -1772,8 +1752,8 @@ export default function HomePage() {
     setCaseFilterProduct('all');
     setCaseFilterCrowd('all');
     setCaseFilterType('all');
-    setRecommendedCases([]);
-    setHasSearchedCases(false);
+    setRecommendedMaterials([]);
+    setHasSearchedMaterials(false);
   }, []);
 
   // 🔥 核心观点：自动推荐受 prevInstructionRef 保护（见上方素材自动推荐 useEffect）
@@ -2202,9 +2182,9 @@ export default function HomePage() {
       setShowCaseConversionDialog(true);
       caseDialogActiveRef.current = true;
 
-      // === 情形1：snippet 已有 caseId → 加载已有素材 ===
-      if (snippet.caseId) {
-        const existingCase: any = await apiGet(`/api/cases/${snippet.caseId}`);
+      // === 情形1：snippet 已有 libraryMaterialId → 加载已有素材 ===
+      if (snippet.libraryMaterialId) {
+        const existingCase: any = await apiGet(`/api/cases/${snippet.libraryMaterialId}`);
         if (!caseDialogActiveRef.current) return;
 
         if (existingCase?.success && existingCase?.data) {
@@ -2213,7 +2193,7 @@ export default function HomePage() {
           const isSystemCase = c.workspaceId === 'system';
           const data = {
             snippetId: snippet.id,
-            caseId: isSystemCase ? undefined : c.id, // 系统预置素材不设置 caseId，作为新素材创建
+            libraryMaterialId: isSystemCase ? undefined : c.id, // 系统预置素材不设置 libraryMaterialId，作为新素材创建
             snippetTitle: snippet.title || '',
             title: c.title,
             eventFullStory: c.eventFullStory || '',
@@ -2254,7 +2234,7 @@ export default function HomePage() {
         return;
       }
 
-      // === 情形2：无 caseId → 正常 LLM 提取流程 ===
+      // === 情形2：无 libraryMaterialId → 正常 LLM 提取流程 ===
       const TIMEOUT_SECONDS = 60;
       caseExtractionTimeoutRef.current = setInterval(() => {
         setCaseExtractionElapsed(prev => {
@@ -2378,10 +2358,10 @@ export default function HomePage() {
     try {
       setCaseSaving(true);
 
-      // 区分：已有 caseId → 更新，否则 → 创建
-      if (caseExtractionResult.caseId) {
+      // 区分：已有 libraryMaterialId → 更新，否则 → 创建
+      if (caseExtractionResult.libraryMaterialId) {
         // === 更新已有素材 ===
-        const result: any = await apiPut(`/api/cases/${caseExtractionResult.caseId}`, {
+        const result: any = await apiPut(`/api/cases/${caseExtractionResult.libraryMaterialId}`, {
           title: caseEditForm.title.trim(),
           eventFullStory: caseEditForm.eventFullStory.trim(),
           background: caseEditForm.background.trim(),
@@ -2691,7 +2671,6 @@ export default function HomePage() {
           userOpinion: taskUserOpinion,
           originalInstruction: mainInstruction.trim() || null, // 🔥 独立字段
           materialIds: selectedMaterialIds,
-          caseIds: selectedCaseIds,
           paradigmCode: selectedParadigm?.id || null,
           paradigmName: taskParadigmName,
           paradigmDetail: taskParadigmDetail,
@@ -2708,7 +2687,6 @@ export default function HomePage() {
           userOpinion: taskUserOpinion,
           originalInstruction: mainInstruction.trim() || null, // 🔥 独立字段
           materialIds: [],
-          caseIds: [],
           paradigmCode: selectedParadigm?.id || null,
           paradigmName: taskParadigmName,
           paradigmDetail: taskParadigmDetail,
@@ -2727,7 +2705,6 @@ export default function HomePage() {
         userOpinion: coreOpinion.trim() || null,
         originalInstruction: mainInstruction.trim() || null, // 🔥 独立字段：用户原始指令
         materialIds: selectedMaterialIds,
-        caseIds: selectedCaseIds,
         // 范式选择数据（隐性继承，始终传递）
         paradigmCode: selectedParadigm?.id || null,
         paradigmName: selectedParadigm?.name || null,
@@ -3240,7 +3217,7 @@ export default function HomePage() {
                         <span>•</span>
                         <span>{selectedMaterialIds.length}个素材</span>
                         <span>•</span>
-                        <span>{selectedCaseIds.length}个素材</span>
+                        <span>{selectedMaterialIdsV2.length}个素材</span>
                         <span>•</span>
                         <span>{selectedAccountIds.length}个平台</span>
                       </div>
@@ -3494,7 +3471,7 @@ export default function HomePage() {
                               coreOpinion.trim() && '通用输入',
                               emotionTone !== '理性客观' && emotionTone,
                               selectedMaterials.length > 0 && `${selectedMaterials.length}素材`,
-                              selectedCases.length > 0 && `${selectedCases.length}案例`,
+                              selectedMaterialsV2List.length > 0 && `${selectedMaterialsV2List.length}行业素材`,
                             ].filter(Boolean).join('·')}
                           </Badge>
                         </div>
@@ -4185,7 +4162,7 @@ export default function HomePage() {
                                   onChange={(e) => setCaseSearchKeyword(e.target.value)}
                                   onKeyDown={(e) => {
                                     if (e.key === 'Enter') {
-                                      handleSearchCases();
+                                      handleSearchIndustryMaterials();
                                     }
                                   }}
                                   className="pl-9 h-9 text-sm"
@@ -4198,10 +4175,10 @@ export default function HomePage() {
                                   handleRecommendCases(false);
                                   setCaseSearchMode('recommend');
                                 }}
-                                disabled={loadingRecommendedCases || !mainInstruction.trim()}
+                                disabled={loadingRecommendedMaterials || !mainInstruction.trim()}
                                 className="h-9 px-3 text-xs text-emerald-600 hover:text-emerald-700 border-emerald-200 hover:border-emerald-300"
                               >
-                                {loadingRecommendedCases ? <Loader2 className="w-3.5 h-3.5 animate-spin mr-1.5" /> : <Sparkles className="w-3.5 h-3.5 mr-1.5" />}
+                                {loadingRecommendedMaterials ? <Loader2 className="w-3.5 h-3.5 animate-spin mr-1.5" /> : <Sparkles className="w-3.5 h-3.5 mr-1.5" />}
                                 AI推荐
                               </Button>
                             </div>
@@ -4212,7 +4189,7 @@ export default function HomePage() {
                                 setCaseFilterProduct(v);
                                 const apiValue = v === 'all' ? '' : v;
                                 if (apiValue || caseSearchKeyword || (caseFilterCrowd !== 'all' ? caseFilterCrowd : '') || (caseFilterType !== 'all' ? caseFilterType : '')) {
-                                  setTimeout(() => handleSearchCases(undefined, { productTag: apiValue }), 100);
+                                  setTimeout(() => handleSearchIndustryMaterials(undefined, { productTag: apiValue }), 100);
                                 }
                               }}>
                                 <SelectTrigger className="h-8 w-[120px] text-xs">
@@ -4235,7 +4212,7 @@ export default function HomePage() {
                                 setCaseFilterCrowd(v);
                                 const apiValue = v === 'all' ? '' : v;
                                 if (apiValue || caseSearchKeyword || (caseFilterProduct !== 'all' ? caseFilterProduct : '') || (caseFilterType !== 'all' ? caseFilterType : '')) {
-                                  setTimeout(() => handleSearchCases(undefined, { crowdTag: apiValue }), 100);
+                                  setTimeout(() => handleSearchIndustryMaterials(undefined, { crowdTag: apiValue }), 100);
                                 }
                               }}>
                                 <SelectTrigger className="h-8 w-[120px] text-xs">
@@ -4256,7 +4233,7 @@ export default function HomePage() {
                                 setCaseFilterType(v);
                                 const apiValue = v === 'all' ? '' : v;
                                 if (apiValue || caseSearchKeyword || (caseFilterProduct !== 'all' ? caseFilterProduct : '') || (caseFilterCrowd !== 'all' ? caseFilterCrowd : '')) {
-                                  setTimeout(() => handleSearchCases(undefined, { caseType: apiValue }), 100);
+                                  setTimeout(() => handleSearchIndustryMaterials(undefined, { caseType: apiValue }), 100);
                                 }
                               }}>
                                 <SelectTrigger className="h-8 w-[100px] text-xs">
@@ -4272,7 +4249,7 @@ export default function HomePage() {
 
                               <Button
                                 size="sm"
-                                onClick={() => handleSearchCases()}
+                                onClick={() => handleSearchIndustryMaterials()}
                                 disabled={caseSearchLoading || (!caseSearchKeyword && caseFilterProduct === 'all' && caseFilterCrowd === 'all' && caseFilterType === 'all')}
                                 className="h-8 px-3 text-xs"
                               >
@@ -4289,8 +4266,8 @@ export default function HomePage() {
                                     setCaseFilterProduct('all');
                                     setCaseFilterCrowd('all');
                                     setCaseFilterType('all');
-                                    setRecommendedCases([]);
-                                    setHasSearchedCases(false);
+                                    setRecommendedMaterials([]);
+                                    setHasSearchedMaterials(false);
                                     setCaseSearchMode('recommend');
                                   }}
                                   className="h-8 px-2 text-xs text-slate-500"
@@ -4303,29 +4280,29 @@ export default function HomePage() {
                           </div>
 
                           {/* 模式提示 */}
-                          {caseSearchMode === 'search' && recommendedCases.length > 0 && (
+                          {caseSearchMode === 'search' && recommendedMaterials.length > 0 && (
                             <div className="text-xs text-slate-500 flex items-center gap-1">
                               <Search className="w-3 h-3" />
-                              搜索结果（{recommendedCases.length} 条）
+                              搜索结果（{recommendedMaterials.length} 条）
                               <span className="text-slate-400 ml-2">| 点击「AI推荐」切换回智能推荐</span>
                             </div>
                           )}
-                          {caseSearchMode === 'recommend' && recommendedCases.length > 0 && (
+                          {caseSearchMode === 'recommend' && recommendedMaterials.length > 0 && (
                             <div className="text-xs text-emerald-600 flex items-center gap-1">
                               <Sparkles className="w-3 h-3" />
-                              AI 推荐结果（{recommendedCases.length} 条）
+                              AI 推荐结果（{recommendedMaterials.length} 条）
                             </div>
                           )}
 
                           {/* 已选素材 Badge */}
-                          {selectedCases.length > 0 && (
+                          {selectedMaterialsV2List.length > 0 && (
                             <div className="flex flex-wrap gap-2 p-3 bg-emerald-50 rounded-lg">
-                              {selectedCases.map(c => (
+                              {selectedMaterialsV2List.map(c => (
                                 <Badge
                                   key={c.id}
                                   variant="secondary"
                                   className="text-sm bg-emerald-100 text-emerald-700 border-emerald-200 cursor-pointer hover:bg-emerald-200 gap-1.5 pr-2"
-                                  onClick={() => toggleCaseSelection(c)}
+                                  onClick={() => toggleIndustryMaterialSelection(c)}
                                 >
                                   {c.title.length > 15 ? c.title.slice(0, 15) + '...' : c.title}
                                   <span className="text-emerald-400 hover:text-red-400 text-sm">×</span>
@@ -4335,10 +4312,10 @@ export default function HomePage() {
                           )}
 
                           {/* 素材列表 */}
-                          {recommendedCases.length > 0 && (
+                          {recommendedMaterials.length > 0 && (
                             <div className="space-y-2">
-                              {recommendedCases.map((c) => {
-                                const isSelected = selectedCaseIds.includes(c.id);
+                              {recommendedMaterials.map((c) => {
+                                const isSelected = selectedMaterialIdsV2.includes(c.id);
                                 return (
                                   <div
                                     key={c.id}
@@ -4351,7 +4328,7 @@ export default function HomePage() {
                                     <div className="flex items-start justify-between gap-2">
                                       <div
                                         className="flex-1 min-w-0 cursor-pointer"
-                                        onClick={() => setViewingCase(c)}
+                                        onClick={() => setViewingMaterial(c)}
                                       >
                                         <div className="flex items-center gap-2">
                                           <Badge className={`text-[10px] px-1.5 py-0 ${
@@ -4383,14 +4360,14 @@ export default function HomePage() {
                                       <div className="flex flex-col gap-1.5 flex-shrink-0">
                                         <button
                                           type="button"
-                                          onClick={() => setViewingCase(c)}
+                                          onClick={() => setViewingMaterial(c)}
                                           className="text-[10px] px-2 py-1 rounded border border-slate-200 text-slate-500 hover:bg-slate-50 transition-colors"
                                         >
                                           详情
                                         </button>
                                         <button
                                           type="button"
-                                          onClick={() => toggleCaseSelection(c)}
+                                          onClick={() => toggleIndustryMaterialSelection(c)}
                                           className={`text-[10px] px-2 py-1 rounded transition-colors ${
                                             isSelected
                                               ? 'bg-emerald-100 text-emerald-700 border border-emerald-300'
@@ -4408,15 +4385,15 @@ export default function HomePage() {
                           )}
 
                           {/* 无结果提示 */}
-                          {!loadingRecommendedCases && !caseSearchLoading && recommendedCases.length === 0 && (
+                          {!loadingRecommendedMaterials && !caseSearchLoading && recommendedMaterials.length === 0 && (
                             <div className="text-center py-8 text-sm text-slate-400">
-                              {caseSearchMode === 'search' && hasSearchedCases
+                              {caseSearchMode === 'search' && hasSearchedMaterials
                                 ? '未找到匹配的素材，请尝试其他关键词或筛选条件'
                                 : '请输入关键词搜索，或点击「AI推荐」获取智能推荐素材'}
                             </div>
                           )}
 
-                          {(loadingRecommendedCases || caseSearchLoading) && (
+                          {(loadingRecommendedMaterials || caseSearchLoading) && (
                             <div className="text-center py-8 text-sm text-slate-500 flex items-center justify-center gap-2">
                               <Loader2 className="w-4 h-4 animate-spin" />
                               {caseSearchMode === 'search' ? '搜索中...' : 'AI 推荐中...'}
@@ -5059,7 +5036,7 @@ export default function HomePage() {
       </Dialog>
 
       {/* 素材详情弹窗 - 按速记转素材样式展示 */}
-      <Dialog open={!!viewingCase} onOpenChange={(open) => !open && setViewingCase(null)}>
+      <Dialog open={!!viewingMaterial} onOpenChange={(open) => !open && setViewingMaterial(null)}>
         <DialogContent className="sm:max-w-[640px] max-h-[85vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
@@ -5071,17 +5048,17 @@ export default function HomePage() {
             </DialogDescription>
           </DialogHeader>
 
-          {viewingCase && (
+          {viewingMaterial && (
             <div className="space-y-4">
               {/* 素材类型标识 */}
               <div className="flex items-center gap-2">
                 <Badge className={`${
-                  viewingCase.caseType === 'positive' ? 'bg-green-100 text-green-700' :
-                  viewingCase.caseType === 'warning' ? 'bg-amber-100 text-amber-700' :
+                  viewingMaterial.caseType === 'positive' ? 'bg-green-100 text-green-700' :
+                  viewingMaterial.caseType === 'warning' ? 'bg-amber-100 text-amber-700' :
                   'bg-blue-100 text-blue-700'
                 }`}>
-                  {viewingCase.caseType === 'positive' ? '正面素材' :
-                   viewingCase.caseType === 'warning' ? '反面警示' : '行业里程碑'}
+                  {viewingMaterial.caseType === 'positive' ? '正面素材' :
+                   viewingMaterial.caseType === 'warning' ? '反面警示' : '行业里程碑'}
                 </Badge>
               </div>
 
@@ -5089,56 +5066,56 @@ export default function HomePage() {
               <div>
                 <Label className="text-xs text-slate-500 mb-1 block">素材标题</Label>
                 <p className="text-sm font-medium text-slate-900 bg-slate-50 rounded-md px-3 py-2 min-h-[36px] flex items-center">
-                  {viewingCase.title}
+                  {viewingMaterial.title}
                 </p>
               </div>
 
               {/* 事件完整经过 */}
-              {viewingCase.eventFullStory && (
+              {viewingMaterial.eventFullStory && (
                 <div>
                   <Label className="text-xs text-slate-500 mb-1 block">事件完整经过</Label>
                   <p className="text-sm text-slate-700 bg-amber-50/50 rounded-md px-3 py-2.5 leading-relaxed whitespace-pre-wrap">
-                    {viewingCase.eventFullStory}
+                    {viewingMaterial.eventFullStory}
                   </p>
                 </div>
               )}
 
               {/* 核心背景 */}
-              {viewingCase.background && (
+              {viewingMaterial.background && (
                 <div>
                   <Label className="text-xs text-slate-500 mb-1 block">核心背景 *</Label>
                   <p className="text-sm text-slate-700 bg-amber-50/50 rounded-md px-3 py-2.5 leading-relaxed whitespace-pre-wrap">
-                    {viewingCase.background}
+                    {viewingMaterial.background}
                   </p>
                 </div>
               )}
 
               {/* 保险动作 */}
-              {viewingCase.insuranceAction && (
+              {viewingMaterial.insuranceAction && (
                 <div>
                   <Label className="text-xs text-slate-500 mb-1 block">保险动作</Label>
                   <p className="text-sm text-slate-700 bg-emerald-50/50 rounded-md px-3 py-2.5 leading-relaxed whitespace-pre-wrap">
-                    {viewingCase.insuranceAction}
+                    {viewingMaterial.insuranceAction}
                   </p>
                 </div>
               )}
 
               {/* 结果详情 */}
-              {viewingCase.result && (
+              {viewingMaterial.result && (
                 <div>
                   <Label className="text-xs text-slate-500 mb-1 block">结果详情 *</Label>
                   <p className="text-sm text-slate-700 bg-purple-50/50 rounded-md px-3 py-2.5 leading-relaxed whitespace-pre-wrap">
-                    {viewingCase.result}
+                    {viewingMaterial.result}
                   </p>
                 </div>
               )}
 
               {/* 产品标签 */}
-              {viewingCase.productTags.length > 0 && (
+              {viewingMaterial.productTags.length > 0 && (
                 <div>
                   <Label className="text-xs text-slate-500 mb-1.5 block">产品标签</Label>
                   <div className="flex flex-wrap gap-1.5">
-                    {viewingCase.productTags.map((tag, i) => (
+                    {viewingMaterial.productTags.map((tag, i) => (
                       <Badge key={i} className="bg-amber-50 text-amber-700 hover:bg-amber-100">
                         {tag}
                       </Badge>
@@ -5148,55 +5125,55 @@ export default function HomePage() {
               )}
 
               {/* AI 自动提取的标签（折叠区） */}
-              {(viewingCase.protagonist || viewingCase.crowdTags.length > 0 || viewingCase.emotionTags.length > 0 || viewingCase.sceneTags.length > 0 || viewingCase.applicableProducts.length > 0 || viewingCase.applicableScenarios.length > 0) && (
+              {(viewingMaterial.protagonist || viewingMaterial.crowdTags.length > 0 || viewingMaterial.emotionTags.length > 0 || viewingMaterial.sceneTags.length > 0 || viewingMaterial.applicableProducts.length > 0 || viewingMaterial.applicableScenarios.length > 0) && (
                 <details className="group">
                   <summary className="text-xs text-slate-400 cursor-pointer hover:text-slate-600 flex items-center gap-1">
                     <ChevronDown className="h-3 w-3 transition-transform group-open:rotate-180" />
                     AI 自动提取的标签
                   </summary>
                   <div className="mt-2 space-y-2 pl-4 border-l-2 border-slate-100">
-                    {viewingCase.protagonist && (
+                    {viewingMaterial.protagonist && (
                       <div className="flex items-center gap-2 text-xs">
                         <span className="text-slate-500">主人公：</span>
-                        <span className="text-slate-700">{viewingCase.protagonist}</span>
+                        <span className="text-slate-700">{viewingMaterial.protagonist}</span>
                       </div>
                     )}
-                    {viewingCase.crowdTags.length > 0 && (
+                    {viewingMaterial.crowdTags.length > 0 && (
                       <div className="flex items-center gap-2 text-xs flex-wrap">
                         <span className="text-slate-500">人群标签：</span>
-                        {viewingCase.crowdTags.map((tag, i) => (
+                        {viewingMaterial.crowdTags.map((tag, i) => (
                           <Badge key={i} className="bg-slate-100 text-slate-600 px-1.5 py-0.5 text-[10px]">{tag}</Badge>
                         ))}
                       </div>
                     )}
-                    {viewingCase.emotionTags.length > 0 && (
+                    {viewingMaterial.emotionTags.length > 0 && (
                       <div className="flex items-center gap-2 text-xs flex-wrap">
                         <span className="text-slate-500">情绪标签：</span>
-                        {viewingCase.emotionTags.map((tag, i) => (
+                        {viewingMaterial.emotionTags.map((tag, i) => (
                           <Badge key={i} className="bg-slate-100 text-slate-600 px-1.5 py-0.5 text-[10px]">{tag}</Badge>
                         ))}
                       </div>
                     )}
-                    {viewingCase.sceneTags.length > 0 && (
+                    {viewingMaterial.sceneTags.length > 0 && (
                       <div className="flex items-center gap-2 text-xs flex-wrap">
                         <span className="text-slate-500">场景标签：</span>
-                        {viewingCase.sceneTags.map((tag, i) => (
+                        {viewingMaterial.sceneTags.map((tag, i) => (
                           <Badge key={i} className="bg-slate-100 text-slate-600 px-1.5 py-0.5 text-[10px]">{tag}</Badge>
                         ))}
                       </div>
                     )}
-                    {viewingCase.applicableProducts.length > 0 && (
+                    {viewingMaterial.applicableProducts.length > 0 && (
                       <div className="flex items-center gap-2 text-xs flex-wrap">
                         <span className="text-slate-500">适用产品：</span>
-                        {viewingCase.applicableProducts.map((tag, i) => (
+                        {viewingMaterial.applicableProducts.map((tag, i) => (
                           <Badge key={i} className="bg-slate-100 text-slate-600 px-1.5 py-0.5 text-[10px]">{tag}</Badge>
                         ))}
                       </div>
                     )}
-                    {viewingCase.applicableScenarios.length > 0 && (
+                    {viewingMaterial.applicableScenarios.length > 0 && (
                       <div className="flex items-center gap-2 text-xs flex-wrap">
                         <span className="text-slate-500">适用场景：</span>
-                        {viewingCase.applicableScenarios.map((tag, i) => (
+                        {viewingMaterial.applicableScenarios.map((tag, i) => (
                           <Badge key={i} className="bg-slate-100 text-slate-600 px-1.5 py-0.5 text-[10px]">{tag}</Badge>
                         ))}
                       </div>
@@ -5210,21 +5187,21 @@ export default function HomePage() {
           <DialogFooter className="flex gap-2 sm:gap-2">
             <Button
               variant="outline"
-              onClick={() => setViewingCase(null)}
+              onClick={() => setViewingMaterial(null)}
               className="flex-1"
             >
               关闭
             </Button>
             <Button
               onClick={() => {
-                if (viewingCase) {
-                  toggleCaseSelection(viewingCase);
-                  setViewingCase(null);
+                if (viewingMaterial) {
+                  toggleIndustryMaterialSelection(viewingMaterial);
+                  setViewingMaterial(null);
                 }
               }}
-              className={`flex-1 ${selectedCaseIds.includes(viewingCase?.id || '') ? 'bg-slate-500 hover:bg-slate-600' : 'bg-emerald-500 hover:bg-emerald-600'}`}
+              className={`flex-1 ${selectedMaterialIdsV2.includes(viewingMaterial?.id || '') ? 'bg-slate-500 hover:bg-slate-600' : 'bg-emerald-500 hover:bg-emerald-600'}`}
             >
-              {viewingCase && selectedCaseIds.includes(viewingCase.id) ? '取消选择' : '选择此素材'}
+              {viewingMaterial && selectedMaterialIdsV2.includes(viewingMaterial.id) ? '取消选择' : '选择此素材'}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -5437,9 +5414,9 @@ export default function HomePage() {
             </DialogTitle>
             <DialogDescription>
               {caseExtracting
-                ? 'AI 正在从速记中提取案例信息...'
+                ? 'AI 正在从速记中提取素材信息...'
                 : caseExtractionResult
-                  ? '请确认提取的案例信息，可修改后确认入库'
+                  ? '请确认提取的素材信息，可修改后确认入库'
                   : '准备提取...'}
             </DialogDescription>
           </DialogHeader>
@@ -5451,7 +5428,7 @@ export default function HomePage() {
                 <Briefcase className="h-5 w-5 text-amber-400 absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2" />
               </div>
               <div className="text-center">
-                <p className="text-sm font-medium text-slate-700">AI 正在提取案例信息</p>
+                <p className="text-sm font-medium text-slate-700">AI 正在提取素材信息</p>
                 <p className="text-xs text-slate-500 mt-1">
                   自动识别结构化字段，通常 5-10 秒
                   {caseExtractionElapsed > 0 && (
@@ -6678,7 +6655,7 @@ export default function HomePage() {
                                     onClick={() => handleConvertSnippetToCase(snippet)}
                                     disabled={caseExtracting && convertingSnippetId === snippet.id}
                                     className={`h-7 px-2 rounded-md flex items-center justify-center text-xs font-medium gap-1 transition-colors disabled:opacity-50 ${
-                                      snippet.caseId
+                                      snippet.libraryMaterialId
                                         ? 'bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 hover:text-emerald-800'
                                         : snippetCategories.includes('real_case')
                                           ? 'bg-amber-50 text-amber-600 border border-amber-200 hover:bg-amber-100 hover:text-amber-700'
@@ -6690,11 +6667,11 @@ export default function HomePage() {
                                     ) : (
                                       <Briefcase className="h-3 w-3" />
                                     )}
-                                    {snippet.caseId ? '已入素材库' : '转入素材'}
+                                    {snippet.libraryMaterialId ? '已入素材库' : '转入素材'}
                                   </button>
                                 </TooltipTrigger>
                                 <TooltipContent>
-                                  {snippet.caseId
+                                  {snippet.libraryMaterialId
                                     ? <p>查看/编辑此速记已转入的素材</p>
                                     : snippetCategories.includes('real_case')
                                       ? <p>将此速记转化为素材入库</p>

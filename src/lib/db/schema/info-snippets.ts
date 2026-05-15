@@ -53,8 +53,8 @@ export const infoSnippets = pgTable('info_snippets', {
   materialStatus: text('material_status').default('draft'), // archived | expired | draft | disabled
   materialId: text('material_id'),                        // 唯一素材ID（格式：CAT-YYYYMMDD-NNN）
 
-  // 案例关联（一对一：每个速记最多对应一个案例）
-  caseId: uuid('case_id'),                              // 关联的行业案例ID
+  // 素材关联（一对一：每个速记最多对应一个素材库素材）
+  caseId: uuid('case_id'),                              // 关联的素材库ID（material_library.id，历史字段名caseId）
   
   // 提醒相关
   snippetType: text('snippet_type').default('memory'),     // memory(记忆) | reminder(提醒)

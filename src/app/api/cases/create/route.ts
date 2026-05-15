@@ -7,11 +7,11 @@ import { eq, and } from 'drizzle-orm';
 
 /**
  * POST /api/cases/create
- * 创建案例素材（写入 material_library，type='case'）
+ * 创建素材（写入 material_library，type='case'）
  * 
  * 改造说明：原写入 industry_case_library，现统一写入 material_library
  * - caseData → material_library(type='case')
- * - snippet.caseId → snippet.materialId（双向关联）
+ * - snippet.materialId → 双向关联
  * 
  * 幂等：相同 snippetId 不会重复创建
  */
@@ -22,7 +22,7 @@ export async function POST(request: NextRequest) {
 
     // 必填字段校验
     if (!body.title?.trim()) {
-      return NextResponse.json({ error: '案例标题不能为空' }, { status: 400 });
+      return NextResponse.json({ error: '素材标题不能为空' }, { status: 400 });
     }
 
     // === 快速路径：如果传了 snippetId，先检查是否已关联素材 ===
@@ -152,7 +152,7 @@ export async function POST(request: NextRequest) {
       },
     });
   } catch (error) {
-    console.error('[cases/create] 创建案例素材失败:', error);
+    console.error('[cases/create] 创建素材失败:', error);
     return NextResponse.json({
       success: false,
       error: error instanceof Error ? error.message : '未知错误',

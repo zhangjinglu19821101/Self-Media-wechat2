@@ -4,7 +4,7 @@ import { materialLibrary } from '@/lib/db/schema/material-library';
 import { eq, and, or, ilike, sql, desc } from 'drizzle-orm';
 import { getWorkspaceId } from '@/lib/auth/context';
 
-// GET /api/cases/manage - 查询案例素材列表（从 material_library 查询 type='case'）
+// GET /api/cases/manage - 查询案例类素材列表（从 material_library 查询 type='case'）
 export async function GET(request: NextRequest) {
   try {
     const workspaceId = await getWorkspaceId(request);

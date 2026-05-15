@@ -71,8 +71,7 @@ export async function POST(request: NextRequest) {
       tempSessionId, // 临时会话 ID，用于替换逻辑
       userOpinion, // 🔥 用户观点（仅创作引导结构化内容：核心观点+情感基调+文章结构）
       originalInstruction, // 🔥 用户原始指令（独立存储，不传给 insurance-d）
-      materialIds, // 🔥 素材ID列表
-      caseIds, // 🔥 行业案例ID列表（用户手动选择）
+      materialIds, // 🔥 素材ID列表（统一入口，包含案例/数据/故事等所有类型）
       relatedMaterials = '', // 🔥 关联素材补充区内容
       structureName, // 🔥 结构名称
       structureDetail, // 🔥 结构详情（JSON字符串）
@@ -294,9 +293,6 @@ export async function POST(request: NextRequest) {
           const taskMaterialIds = subTask.materialIds !== undefined
             ? subTask.materialIds
             : (materialIds || []);
-          const taskCaseIds = subTask.caseIds !== undefined
-            ? subTask.caseIds
-            : (caseIds || []);
 
           const resolvedExecutor = resolveExecutorForPlatform(baseAccountInfo.platform, subTask.executor);
           let taskTitleForDb = subTask.title;
@@ -349,7 +345,6 @@ export async function POST(request: NextRequest) {
               baseCommandResultId, // 🔥 基础组记录自己的 commandResultId
               ...(derivedImageCountMode ? { imageCountMode: derivedImageCountMode } : {}),
               ...(contentTemplateId ? { contentTemplateId } : {}),
-              ...(taskCaseIds.length > 0 ? { caseIds: taskCaseIds } : {}),
               ...(paradigmCode ? { paradigmCode, paradigmName, paradigmDetail } : {}), // 🔥 范式数据
             },
             createdAt: new Date(),
@@ -454,9 +449,6 @@ export async function POST(request: NextRequest) {
         const taskMaterialIds = subTask.materialIds !== undefined
           ? subTask.materialIds
           : (materialIds || []);
-        const taskCaseIds = subTask.caseIds !== undefined
-          ? subTask.caseIds
-          : (caseIds || []);
 
         // 🔥 单平台模式：如果有 accountId，也获取平台信息
         let platformLabel = '';
@@ -509,7 +501,6 @@ export async function POST(request: NextRequest) {
             ...(singlePlatform ? { platform: singlePlatform } : {}), // 🔴 平台标识（供虚拟执行器使用）
             ...(derivedImageCountMode ? { imageCountMode: derivedImageCountMode } : {}), // 🔥 小红书图片模式（从内容模板推导或前端传入）
             ...(contentTemplateId ? { contentTemplateId } : {}), // 🔥🔥 内容模板ID
-            ...(taskCaseIds.length > 0 ? { caseIds: taskCaseIds } : {}), // 🔥 行业案例ID列表
             ...(paradigmCode ? { paradigmCode } : {}), // 🔥 范式代码
           },
           createdAt: new Date(),

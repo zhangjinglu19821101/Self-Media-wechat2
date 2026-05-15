@@ -44,7 +44,6 @@ export interface PromptAssemblyOptions {
   cardCountMode?: '3-card' | '5-card' | '7-card'; // 🔥🔥🔥 小红书卡片数量模式（统一命名，与数据库字段一致）
   /** @deprecated 使用 cardCountMode 代替 */
   imageCountMode?: '3-card' | '5-card' | '7-card'; // 兼容旧字段
-  industryCases?: string;        // 🔥 行业案例预格式化文本（由执行引擎按需检索后传入）
   articleType?: string; // 🔥 创作类型（pitfall_guide/authority_analysis/story_driven/product_eval/insurance_guide/free_creation + 旧 key 兼容）
   analogyMaterials?: string;     // 🔥 类比素材预格式化文本（由执行引擎按创作类型检索后传入）
   // ===== Phase 2 新增字段 =====
@@ -619,12 +618,6 @@ export class PromptAssemblerService {
       result += `输出 JSON 中 platformData.points 数组长度必须为 ${cardConfig.count - 2}，不可多不可少。\n\n`;
     }
 
-    // 3.5 🔥 行业案例库（独立注入段，由执行引擎按需检索后传入）
-    // 案例文本在执行引擎中根据任务指令+前序分析结果按需检索，不在格式化函数中触发 DB 查询
-    if (options.industryCases) {
-      result += options.industryCases;
-      result += '\n';
-    }
 
     // 3.55 🔥 创作类型声明（告知写作 Agent 本次创作类型，影响写作策略）
     if (options.articleType) {
@@ -723,9 +716,6 @@ export class PromptAssemblerService {
    * 最终提示词 = 固定基础提示词 + 🔥合规规则（保险创作Agent） + 用户专属动态规则 + 本次创作需求
    */
   async assemblePrompt(options: PromptAssemblyOptions = {}): Promise<AssembledPrompt> {
-    // 🔥 行业案例由执行引擎按需检索后以预格式化文本传入（industryCases）
-    // 不在此处触发数据库查询，遵循"格式化函数无副作用"原则
-
     const resolvedExecutorType = options.executorType || DEFAULT_EXECUTOR_TYPE;
     const needsComplianceRules = COMPLIANCE_REQUIRED_AGENTS.has(resolvedExecutorType);
 
@@ -781,7 +771,6 @@ export class PromptAssemblerService {
         materialCount: (options.materials?.length ?? 0) || availableMaterials.length,
         hasConfirmedOutline: !!options.confirmedOutline, // Phase 3
         hasPriorStepOutput: !!options.priorStepOutput,    // 🔴 前序步骤结果
-        hasIndustryCases: !!options.industryCases,        // 🔥 是否有行业案例
         hasUniversalObjectiveWriting: !!universalObjectiveWritingText, // 🔥 是否有通用客观写作要求
       },
     };
