@@ -8697,6 +8697,20 @@ export class SubtaskExecutionEngine {
           });
 
           if (_recognitionResult && _recognitionResult.paradigmCode) {
+            // 🔥 将范式识别结果保存到任务元数据，供后续 deai-optimizer 等下游 Agent 读取
+            try {
+              const _currentMeta = (typeof task.metadata === 'object' && task.metadata !== null) ? { ...task.metadata as Record<string, unknown> } : {};
+              _currentMeta.paradigmCode = _recognitionResult.paradigmCode;
+              _currentMeta.paradigmName = _recognitionResult.paradigmName;
+              _currentMeta.paradigmConfidence = _recognitionResult.confidence;
+              await db.update(agentSubTasks)
+                .set({ metadata: _currentMeta, updatedAt: new Date() })
+                .where(eq(agentSubTasks.id, task.id));
+              console.log('[SubtaskEngine] 🎯 范式识别结果已保存到任务元数据:', _recognitionResult.paradigmCode);
+            } catch (_metaErr) {
+              console.warn('[SubtaskEngine] 范式元数据保存失败（不影响主流程）:', _metaErr);
+            }
+
             // 🔥🔥 构建范式需求清单 + 映射用户素材到范式位置（用户素材优先，系统素材补位）
             let _requirementList: any = undefined;
             const _userMaterials = _execCtx?.userOpinionAndMaterials?.materials;
@@ -8746,9 +8760,38 @@ export class SubtaskExecutionEngine {
             });
 
             if (_paradigmPrompt) {
-              const _paradigmInjection = `\n\n【🎯 创作范式指导（必须严格遵守）】\n已识别到当前任务适用创作范式：${_recognitionResult.paradigmName}（${_recognitionResult.paradigmCode}），置信度 ${Math.round(_recognitionResult.confidence * 100)}%\n匹配原因：${_recognitionResult.matchReason}\n\n${_paradigmPrompt}\n请严格按照以上范式结构创作，不要偏离范式定义的段落顺序和情绪节奏。`;
+              // 🔥🔥 小红书范式适配：小红书 Agent 使用范式的小红书版结构
+              let _paradigmInjection = '';
+              if (isInsuranceXhs) {
+                try {
+                  const { getParadigmDetail } = await import('./paradigm-creation-service');
+                  const _paradigmDetail = await getParadigmDetail(_recognitionResult.paradigmCode);
+                  if (_paradigmDetail?.xhsStructure) {
+                    const _xhsStructureText = _paradigmDetail.xhsStructure
+                      .map((s: any, i: number) => `  段落${i + 1}：${s.paragraphRole}（${s.fixedSentence || '自由表达'}）`)
+                      .join('\n');
+                    _paradigmInjection = `\n\n【🎯 小红书创作范式指导（必须严格遵守）】
+已识别到当前任务适用创作范式：${_recognitionResult.paradigmName}（${_recognitionResult.paradigmCode}）
+
+### 小红书版结构（按此结构适配内容）
+${_xhsStructureText}
+
+### 核心规则
+1. 用范式的「小红书版结构」把公众号内容按平台风格适配
+2. 按情绪节奏在关键位置添加emoji（如💡/⚠️）
+3. 保留所有核心素材和观点，不做任何改写，只调整形式
+4. 不改变核心观点和素材内容`;
+                  }
+                } catch (_xhsErr) {
+                  console.warn('[SubtaskEngine] 小红书范式适配失败，使用通用范式指导:', _xhsErr);
+                }
+              }
+              if (!_paradigmInjection) {
+                _paradigmInjection = `\n\n【🎯 创作范式指导（必须严格遵守）】\n已识别到当前任务适用创作范式：${_recognitionResult.paradigmName}（${_recognitionResult.paradigmCode}），置信度 ${Math.round(_recognitionResult.confidence * 100)}%\n匹配原因：${_recognitionResult.matchReason}\n\n${_paradigmPrompt}\n请严格按照以上范式结构创作，不要偏离范式定义的段落顺序和情绪节奏。`;
+              }
               agentPrompt = agentPrompt + _paradigmInjection;
-              console.log('[SubtaskEngine] 🎯 范式创作上下文已注入 insurance-d Prompt:', {
+              console.log('[SubtaskEngine] 🎯 范式创作上下文已注入 writing Agent Prompt:', {
+                executorType: task.fromParentsExecutor,
                 paradigmCode: _recognitionResult.paradigmCode,
                 confidence: _recognitionResult.confidence,
                 hasUserMaterialFusion: !!_requirementList,
@@ -8771,6 +8814,43 @@ export class SubtaskExecutionEngine {
         });
       } else {
         agentPrompt = loadAgentPrompt(task.fromParentsExecutor);
+
+        // 🔥 范式创作流程：deai-optimizer 注入「素材衔接轻优化」指令
+        // 当 deai-optimizer 在范式创作流程中执行时，替换通用深度改写为衔接轻优化
+        if (task.fromParentsExecutor === 'deai-optimizer') {
+          try {
+            // 从同组已完成的 insurance-d 任务中获取范式信息
+            const _siblingInsuranceD = currentStepTasks.find(t =>
+              t.fromParentsExecutor === 'insurance-d' && t.status === 'completed'
+            );
+            const _paradigmCode = (_siblingInsuranceD?.resultData as any)?.paradigmCode
+              || (taskMetadata as any)?.paradigmCode;
+
+            if (_paradigmCode) {
+              const { generateConnectionOptimizationPrompt } = await import('./paradigm-creation-service');
+              const _connOptPrompt = await generateConnectionOptimizationPrompt(_paradigmCode);
+              if (_connOptPrompt) {
+                const _connInjection = `\n\n【🔗 素材衔接轻优化模式（范式创作流程）】
+当前文章使用创作范式 ${_paradigmCode}，由素材库原位填充生成。
+请切换为「素材衔接轻优化」模式，严格遵守以下边界：
+
+1. **仅修改衔接词**：消除素材间的拼接感（如把「因此」改为「说实话」），不改动任何素材原文
+2. **仅插入1-2个个人碎片**：如括号补充、自嘲、语气词，不新增观点
+3. **不调整段落顺序**，不改变文章节奏，不重构叙事逻辑
+4. **不改动核心观点和素材内容**
+
+${_connOptPrompt}
+
+⚠️ 重要：本文由范式+素材库填充生成，素材已是真人风格内容，无需深度改写。仅做衔接微调即可。`;
+                agentPrompt = agentPrompt + _connInjection;
+                console.log('[SubtaskEngine] 🔗 范式衔接优化指令已注入 deai-optimizer, paradigmCode:', _paradigmCode);
+              }
+            }
+          } catch (_connErr) {
+            // 衔接优化注入失败不影响主流程
+            console.warn('[SubtaskEngine] 范式衔接优化注入失败（不影响主流程）:', _connErr);
+          }
+        }
       }
       
       console.log('[执行Agent调用] [阶段1/4] ✅ 系统提示词加载成功:', {

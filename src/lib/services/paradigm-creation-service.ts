@@ -720,6 +720,51 @@ export function optimizeConnectives(params: {
   return { optimizedArticle: optimized, changes };
 }
 
+/**
+ * 生成衔接优化指令文本（注入 deai-optimizer 提示词）
+ * 在范式创作流程中，让 deai-optimizer 切换为「素材衔接轻优化」模式
+ */
+export async function generateConnectionOptimizationPrompt(paradigmCode: string): Promise<string> {
+  // 获取范式的情绪节奏曲线
+  let emotionCurveText = '';
+  try {
+    const paradigm = await db
+      .select({ emotionCurve: paradigmLibrary.emotionCurve, paradigmName: paradigmLibrary.paradigmName })
+      .from(paradigmLibrary)
+      .where(eq(paradigmLibrary.paradigmCode, paradigmCode))
+      .limit(1);
+
+    if (paradigm.length > 0 && paradigm[0].emotionCurve) {
+      const curve = paradigm[0].emotionCurve as { emotion: string; intensity: number }[];
+      emotionCurveText = `\n情绪节奏曲线：${curve.map((c, i) => `段落${i + 1}(${c.emotion}，强度${c.intensity})`).join(' → ')}`;
+    } else {
+      // 从种子数据获取
+      const seed = PARADIGM_SEED_DATA.find(p => p.paradigmCode === paradigmCode);
+      if (seed?.emotionCurve) {
+        emotionCurveText = `\n情绪节奏曲线：${seed.emotionCurve.map((c, i) => `段落${i + 1}(${c.emotion}，强度${c.intensity})`).join(' → ')}`;
+      }
+    }
+  } catch {
+    // 数据库查询失败，降级为空
+  }
+
+  return `## 衔接词替换规则
+以下AI味衔接词必须替换为口语化表达：
+- 「因此」→「所以啊」「这就是为什么」「说到这」
+- 「然而」→「但问题是」「可实际上」「偏偏」
+- 「综上所述」→「说到底」「我总结一下」「最后想说的」
+- 「值得注意的是」→「有个事儿得说说」「注意了」
+- 「毋庸置疑」→「说真的」「不夸张地说」
+- 「笔者」→「我」，「读者」→「你」
+${emotionCurveText}
+
+## 个人碎片素材（选1-2个插入）
+在段落间自然插入括号补充/自嘲/语气词，例如：
+- 「（我之前也这么想）」
+- 「（说出来不怕你笑话）」
+- 「（这行干久了啥都见过）」`;
+}
+
 // ============================================================
 // 小红书范式适配 Agent
 // ============================================================
