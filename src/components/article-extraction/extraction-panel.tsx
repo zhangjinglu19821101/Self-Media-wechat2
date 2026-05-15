@@ -565,6 +565,14 @@ export default function ArticleExtractionPanel() {
       }
 
       const resultData = resp.data;
+
+      // 🔥 去重检测结果展示
+      if (resultData.fromCache) {
+        toast.info(`该文章已于 ${resultData.duplicateInfo?.analyzedAt ? new Date(resultData.duplicateInfo.analyzedAt).toLocaleString() : '之前'} 提取过，已返回缓存结果`);
+      } else if (resultData.duplicateInfo?.isDuplicate && resultData.duplicateInfo?.duplicateType === 'similar') {
+        toast.warning(`检测到近似文章（相似度 ${Math.round((resultData.duplicateInfo.similarity || 0) * 100)}%），已完成提取`);
+      }
+
       const materials: RelationalMaterial[] = Array.isArray(resultData.relationalMaterials)
         ? resultData.relationalMaterials
         : [];
