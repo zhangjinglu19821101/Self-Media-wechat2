@@ -289,3 +289,63 @@ export const extractionAssets = pgTable('extraction_assets', {
   index('idx_extraction_assets_template').on(table.templateId),
   index('idx_extraction_assets_active').on(table.isActive),
 ]);
+
+// ==================== 范式初始化状态表 ====================
+
+/**
+ * 范式初始化状态追踪
+ * 记录每个 workspace 中10套范式的初始化状态
+ * 
+ * 设计原则：
+ * - 一篇文章成功提取并匹配到某范式后，该范式标记为"已初始化"
+ * - 追踪每个范式的提取次数、素材数量、匹配均分等
+ * - 前端可据此展示哪些范式已有真实内容，避免AI同质化
+ */
+export const paradigmInitStatus = pgTable('paradigm_init_status', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  workspaceId: uuid('workspace_id').notNull(),
+  
+  /** 范式ID（与 STANDARD_PARADIGMS.id 对齐，如 standard_misalignment） */
+  paradigmId: varchar('paradigm_id', { length: 50 }).notNull(),
+  
+  /** 范式中文名（冗余存储，便于快速查询展示） */
+  paradigmName: varchar('paradigm_name', { length: 80 }).notNull(),
+  
+  /** 是否已初始化（至少有一篇文章匹配到该范式） */
+  isInitialized: boolean('is_initialized').default(false).notNull(),
+  
+  /** 首次初始化时间 */
+  initializedAt: timestamp('initialized_at'),
+  
+  /** 匹配到该范式的文章提取次数 */
+  extractionCount: integer('extraction_count').default(0).notNull(),
+  
+  /** 该范式下累计提取的关系型素材数量 */
+  totalMaterialCount: integer('total_material_count').default(0).notNull(),
+  
+  /** 该范式下所有提取的平均匹配分数 */
+  avgMatchScore: integer('avg_match_score').default(0),
+  
+  /** 该范式下匹配度最高的一次提取的分数 */
+  bestMatchScore: integer('best_match_score').default(0),
+  
+  /** 最近一次提取的ID（便于跳转查看） */
+  lastExtractionId: uuid('last_extraction_id'),
+  
+  /** 最近一次提取时间 */
+  lastExtractionAt: timestamp('last_extraction_at'),
+  
+  /** 范式覆盖的素材维度统计（7维中哪些维度已有素材） */
+  coveredDimensions: jsonb('covered_dimensions').$type<string[]>().default([]),
+  
+  /** 扩展元数据 */
+  metadata: jsonb('metadata').$type<Record<string, any>>(),
+  
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+}, (table) => [
+  index('idx_paradigm_init_workspace').on(table.workspaceId),
+  index('idx_paradigm_init_paradigm').on(table.paradigmId),
+  // 唯一约束：同一 workspace 下同一范式只有一条记录
+  index('idx_paradigm_init_workspace_paradigm').on(table.workspaceId, table.paradigmId),
+]);

@@ -9,6 +9,10 @@ import {
   type ArticleExtractionResultV2,
 } from '@/lib/services/article-extraction-service';
 import { getWorkspaceId } from '@/lib/auth/context';
+import {
+  markParadigmInitialized,
+  extractCoveredDimensions,
+} from '@/lib/services/paradigm-init-service';
 
 export async function POST(request: NextRequest) {
   try {
@@ -124,6 +128,24 @@ export async function POST(request: NextRequest) {
         templateId: templateId || null,
       } as any)
       .returning();
+
+    // 4.5 标记范式为已初始化（异步，不阻塞主流程）
+    if (extractionResult.paradigmRecognition.matchedParadigmId) {
+      const coveredDims = extractCoveredDimensions(
+        (extractionResult.relationalMaterials || []) as Array<{ materialType: string }>
+      );
+      markParadigmInitialized(
+        workspaceId,
+        extractionResult.paradigmRecognition.matchedParadigmId,
+        extractionResult.paradigmRecognition.matchedParadigmName,
+        extractionResult.paradigmRecognition.matchScore,
+        extractionResult.relationalMaterials?.length || 0,
+        inserted.id,
+        coveredDims
+      ).catch(err => {
+        console.error('[extract] markParadigmInitialized failed (non-blocking):', err);
+      });
+    }
 
     // 5. 如果 saveToLibrary=true，自动将素材写入 material_library
     let savedMaterialCount = 0;

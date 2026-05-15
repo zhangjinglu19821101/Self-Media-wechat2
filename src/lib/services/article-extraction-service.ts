@@ -290,9 +290,25 @@ ${articleContent}`;
 // 关系型素材提取提示词
 // ============================================================
 
+interface InitializedParadigmReference {
+  /** 范式ID */
+  paradigmId: string;
+  /** 范式名称 */
+  paradigmName: string;
+  /** 已有的关系型素材摘要（每种类型取前2条的content） */
+  existingMaterialSamples: Array<{
+    materialType: string;
+    materialTypeLabel: string;
+    samples: string[];
+  }>;
+  /** 已有文章数量 */
+  articleCount: number;
+}
+
 function buildRelationalExtractionPrompt(
   articleContent: string, 
-  paradigmRecognition: ParadigmRecognitionResult
+  paradigmRecognition: ParadigmRecognitionResult,
+  initializedReference?: InitializedParadigmReference
 ): string {
   const paradigm = STANDARD_PARADIGMS.find(p => p.id === paradigmRecognition.matchedParadigmId);
   const paradigmInfo = paradigm 
@@ -429,6 +445,20 @@ ${structureMappingStr || '未识别到明确的结构映射'}
   ]
 }
 
+## 已初始化范式参考（重要！避免AI感）
+${initializedReference ? (() => {
+  const samples = initializedReference.existingMaterialSamples
+    .filter(s => s.samples.length > 0)
+    .map(s => `### ${s.materialTypeLabel}（已有${s.samples.length}条参考）
+${s.samples.map((sample, i) => `  ${i + 1}. ${sample.substring(0, 120)}${sample.length > 120 ? '...' : ''}`).join('\n')}`)
+    .join('\n\n');
+  return `当前范式「${initializedReference.paradigmName}」已被${initializedReference.articleCount}篇文章初始化。以下是已有的真实素材参考：
+
+${samples}
+
+**提取要求**：请参考上述已有素材的语言风格和表达方式，保持与真人写作的一致性。新提取的素材应与已有素材在语气、用词、句式上保持协调，避免产生AI生成感。`
+})() : '当前范式尚未初始化，这是首次提取，请严格按照原文内容提取，不要添加任何原文中没有的内容。'}
+
 ## 待提取文章全文
 ${articleContent}`;
 }
@@ -489,9 +519,10 @@ export async function recognizeParadigm(
 export async function extractRelationalMaterials(
   articleContent: string,
   paradigmRecognition: ParadigmRecognitionResult,
-  workspaceId?: string
+  workspaceId?: string,
+  initializedReference?: InitializedParadigmReference
 ): Promise<Omit<ArticleExtractionResultV2, 'paradigmRecognition' | 'assetValueScore' | 'reusableDimensionCount'>> {
-  const prompt = buildRelationalExtractionPrompt(articleContent, paradigmRecognition);
+  const prompt = buildRelationalExtractionPrompt(articleContent, paradigmRecognition, initializedReference);
 
   const llmResult = await callLLM(
     'article-extractor',
@@ -576,11 +607,81 @@ export async function extractArticleV2(
   // Step 1: 范式识别
   const paradigmRecognition = await recognizeParadigm(articleContent, workspaceId);
 
-  // Step 2: 关系型素材提取
+  // 查询该范式是否已初始化，获取已有素材参考
+  let initializedReference: InitializedParadigmReference | undefined;
+  try {
+    const { getParadigmInitStatus } = await import('./paradigm-init-service');
+    const initStatus = await getParadigmInitStatus(paradigmRecognition.matchedParadigmId, workspaceId);
+    if (initStatus && initStatus.isInitialized) {
+      // 从已有提取记录中获取素材样本
+      const { db } = await import('@/lib/db');
+      const { articleExtractions } = await import('@/lib/db/schema');
+      const { eq, and } = await import('drizzle-orm');
+      const { sql } = await import('drizzle-orm');
+
+      const existingExtractions = await db
+        .select({
+          relationalMaterials: articleExtractions.relationalMaterials,
+        })
+        .from(articleExtractions)
+        .where(
+          and(
+            eq(articleExtractions.paradigmType, paradigmRecognition.matchedParadigmId),
+            eq(articleExtractions.workspaceId, workspaceId || 'default-workspace')
+          )
+        )
+        .limit(5);
+
+      // 按素材类型汇总样本
+      const materialSamplesByType: Record<string, string[]> = {};
+      const typeLabelMap: Record<string, string> = {
+        misconception: '错误认知',
+        analogy: '生活类比',
+        case: '真实案例',
+        data: '权威数据',
+        golden_sentence: '金句',
+        fixed_phrase: '固定句式组合',
+        personal_fragment: '个人碎片',
+      };
+
+      for (const ext of existingExtractions) {
+        const materials = ext.relationalMaterials as Array<{ materialType: string; content: string }> | null;
+        if (Array.isArray(materials)) {
+          for (const m of materials) {
+            if (m.materialType && m.content) {
+              if (!materialSamplesByType[m.materialType]) {
+                materialSamplesByType[m.materialType] = [];
+              }
+              // 每种类型最多保留4个样本
+              if (materialSamplesByType[m.materialType].length < 4) {
+                materialSamplesByType[m.materialType].push(m.content);
+              }
+            }
+          }
+        }
+      }
+
+      initializedReference = {
+        paradigmId: paradigmRecognition.matchedParadigmId,
+        paradigmName: paradigmRecognition.matchedParadigmName,
+        existingMaterialSamples: Object.entries(materialSamplesByType).map(([type, samples]) => ({
+          materialType: type,
+          materialTypeLabel: typeLabelMap[type] || type,
+          samples,
+        })),
+        articleCount: initStatus.extractionCount,
+      };
+    }
+  } catch (error) {
+    console.warn('[extractArticleV2] 获取范式初始化参考失败，继续无参考提取:', error);
+  }
+
+  // Step 2: 关系型素材提取（注入已初始化范式参考）
   const extractionResult = await extractRelationalMaterials(
     articleContent,
     paradigmRecognition,
-    workspaceId
+    workspaceId,
+    initializedReference
   );
 
   // 计算资产价值

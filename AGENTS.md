@@ -1804,3 +1804,31 @@
      - 收藏按钮：BookmarkCheck/Bookmark 切换
      - 管理员模式：琥珀色Badge + 系统素材创建/编辑/删除权限
      - 权限控制函数：canEdit(material)/canDelete(material)
+
+84. **范式初始化状态标签功能**: 为10套默认范式添加"已初始化"标签，解决全维度提取时无法感知已有范式状态导致AI感的问题
+   - **设计原则**:
+     - 范式初始化状态持久化：文章提取后自动标记对应范式为"已初始化"
+     - 已初始化范式的真实素材注入：提取时参考已有范式素材，减少AI感
+     - 前端可视化：展示10套范式的初始化状态、素材数量、匹配度分布
+   - **数据库表** (`src/lib/db/schema/article-extractions.ts`):
+     - `paradigm_init_status`: 范式初始化状态表（paradigmId/workspaceId/isInitialized/extractionCount/sampleTitles/avgMatchScore/lastExtractedAt）
+   - **迁移API**: `/api/db/create-paradigm-init-status`（建表 + 回填已有数据）
+   - **核心服务** (`src/lib/services/paradigm-init-service.ts`):
+     - `markParadigmInitialized()`: 提取完成后标记范式初始化（增量更新extractionCount/sampleTitles/avgMatchScore）
+     - `getParadigmInitStatus()`: 查询10套范式的完整初始化状态
+     - `getInitializedParadigmReferenceForExtraction()`: 获取已初始化范式的真实素材参考（注入提取提示词）
+     - `resetParadigmInitStatus()`: 重置单个范式状态
+   - **提取API集成** (`src/app/api/article-extraction/extract/route.ts`):
+     - V2提取完成后自动调用 `markParadigmInitialized()` 标记
+   - **提取服务集成** (`src/lib/services/article-extraction-service.ts`):
+     - `extractRelationalMaterials()`: 新增 `initializedReference` 参数
+     - 已初始化范式的真实素材片段注入到提取提示词中
+     - 提示词引导LLM参考真实素材而非凭空生成
+   - **范式状态查询API** (`src/app/api/article-extraction/paradigm-status/route.ts`):
+     - GET: 返回10套范式初始化状态 + 统计摘要
+     - DELETE: 重置单个范式初始化状态
+   - **前端展示** (`src/components/article-extraction/extraction-panel.tsx`):
+     - `ParadigmStatusPanel`: 范式初始化状态面板
+     - 10套范式卡片：已初始化(绿色)/未初始化(灰色) 标识
+     - 素材数量/平均匹配度/最近提取时间 展示
+     - 统计摘要：已初始化数/总数、各范式素材分布

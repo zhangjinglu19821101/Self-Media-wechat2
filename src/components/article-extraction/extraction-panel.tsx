@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -11,7 +11,8 @@ import {
   Sparkles, Upload, Loader2, Layers, BookOpen, Target, Quote,
   TrendingUp, AlertTriangle, FileText, ChevronDown, ChevronRight,
   BarChart3, Save, CheckCircle2, ArrowRight, Lightbulb, MessageSquare,
-  Database, BookmarkCheck, GitBranch, Search
+  Database, BookmarkCheck, GitBranch, Search, CircleCheck, Circle,
+  Flame, Eye, Clock
 } from 'lucide-react';
 
 // ====== 类型定义 ======
@@ -260,6 +261,245 @@ function RelationalMaterialItem({ material, index, color }: { material: Relation
   );
 }
 
+// ====== 范式初始化状态 ======
+
+/** 范式初始化状态信息（与后端 ParadigmInitInfo 对齐） */
+interface ParadigmInitInfo {
+  paradigmId: string;
+  paradigmName: string;
+  paradigmDescription: string;
+  paradigmStructure: string[];
+  signaturePhrases: string[];
+  applicableTypes: string[];
+  isInitialized: boolean;
+  initializedAt: string | null;
+  extractionCount: number;
+  totalMaterialCount: number;
+  avgMatchScore: number;
+  bestMatchScore: number;
+  lastExtractionId: string | null;
+  lastExtractionAt: string | null;
+  coveredDimensions: string[];
+}
+
+/** 范式初始化状态概览 */
+interface ParadigmStatusSummary {
+  total: number;
+  initialized: number;
+  uninitialized: number;
+  initializationRate: number;
+  totalExtractions: number;
+  totalMaterials: number;
+  coveredDimensions: string[];
+  totalCoveredDimensions: number;
+  totalPossibleDimensions: number;
+}
+
+/** 7维素材中文名映射 */
+const DIMENSION_LABELS: Record<string, string> = {
+  misconception: '错误认知',
+  analogy: '生活类比',
+  case: '真实案例',
+  data: '权威数据',
+  golden_sentence: '金句',
+  fixed_phrase: '固定句式',
+  personal_fragment: '个人碎片',
+};
+
+/** 范式初始化状态卡片 */
+function ParadigmStatusPanel({
+  paradigms,
+  summary,
+}: {
+  paradigms: ParadigmInitInfo[];
+  summary: ParadigmStatusSummary;
+}) {
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+
+  return (
+    <Card className="border-2 border-teal-200 bg-teal-50/20">
+      <CardHeader className="pb-3">
+        <div className="flex items-center justify-between">
+          <CardTitle className="text-base flex items-center gap-2">
+            <Flame className="w-5 h-5 text-teal-500" />
+            10套范式初始化状态
+          </CardTitle>
+          <div className="flex items-center gap-2">
+            <Badge className="bg-teal-100 text-teal-700 border-teal-200">
+              {summary.initialized}/{summary.total} 已初始化
+            </Badge>
+            <Badge variant="outline" className="text-slate-600">
+              覆盖率 {summary.initializationRate}%
+            </Badge>
+          </div>
+        </div>
+        <CardDescription className="mt-1">
+          已初始化的范式拥有真实素材积累，创作时可直接复用，摆脱AI同质化
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        {/* 进度条 */}
+        <div className="mb-4">
+          <div className="flex items-center justify-between text-xs text-slate-500 mb-1">
+            <span>初始化进度</span>
+            <span>{summary.initialized}/{summary.total} 范式 · {summary.totalExtractions} 次提取 · {summary.totalMaterials} 条素材</span>
+          </div>
+          <div className="w-full h-2.5 bg-slate-100 rounded-full overflow-hidden">
+            <div
+              className="h-full bg-gradient-to-r from-teal-400 to-emerald-500 rounded-full transition-all duration-500"
+              style={{ width: `${summary.initializationRate}%` }}
+            />
+          </div>
+        </div>
+
+        {/* 7维素材覆盖率 */}
+        <div className="mb-4 flex items-center gap-2 flex-wrap">
+          <span className="text-xs text-slate-500">素材维度覆盖:</span>
+          {['misconception', 'analogy', 'case', 'data', 'golden_sentence', 'fixed_phrase', 'personal_fragment'].map(dim => {
+            const covered = summary.coveredDimensions.includes(dim);
+            return (
+              <Badge
+                key={dim}
+                variant={covered ? 'default' : 'outline'}
+                className={`text-xs ${covered ? 'bg-emerald-100 text-emerald-700 border-emerald-200' : 'text-slate-400 border-slate-200'}`}
+              >
+                {covered ? <CircleCheck className="w-3 h-3 mr-1" /> : <Circle className="w-3 h-3 mr-1" />}
+                {DIMENSION_LABELS[dim] || dim}
+              </Badge>
+            );
+          })}
+        </div>
+
+        {/* 10套范式列表 */}
+        <div className="space-y-2">
+          {paradigms.map((p) => {
+            const isExpanded = expandedId === p.paradigmId;
+            return (
+              <div
+                key={p.paradigmId}
+                className={`rounded-lg border-2 transition-all ${
+                  p.isInitialized
+                    ? 'border-emerald-200 bg-emerald-50/30'
+                    : 'border-slate-200 bg-slate-50/30'
+                }`}
+              >
+                <div
+                  className="flex items-center justify-between p-3 cursor-pointer hover:bg-white/50"
+                  onClick={() => setExpandedId(isExpanded ? null : p.paradigmId)}
+                >
+                  <div className="flex items-center gap-3">
+                    {p.isInitialized ? (
+                      <div className="w-8 h-8 rounded-full bg-emerald-100 flex items-center justify-center">
+                        <CircleCheck className="w-4 h-4 text-emerald-600" />
+                      </div>
+                    ) : (
+                      <div className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center">
+                        <Circle className="w-4 h-4 text-slate-400" />
+                      </div>
+                    )}
+                    <div>
+                      <p className={`font-semibold text-sm ${p.isInitialized ? 'text-emerald-800' : 'text-slate-500'}`}>
+                        {p.paradigmName}
+                      </p>
+                      <p className="text-xs text-slate-400 line-clamp-1">{p.paradigmDescription}</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    {p.isInitialized ? (
+                      <>
+                        <div className="text-right">
+                          <p className="text-sm font-bold text-emerald-600">{p.extractionCount} 次</p>
+                          <p className="text-xs text-slate-400">提取</p>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-sm font-bold text-emerald-600">{p.totalMaterialCount}</p>
+                          <p className="text-xs text-slate-400">素材</p>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-sm font-bold text-amber-600">{p.avgMatchScore}</p>
+                          <p className="text-xs text-slate-400">均分</p>
+                        </div>
+                      </>
+                    ) : (
+                      <Badge variant="outline" className="text-slate-400 border-slate-200 text-xs">
+                        待初始化
+                      </Badge>
+                    )}
+                    {isExpanded ? (
+                      <ChevronDown className="w-4 h-4 text-slate-400" />
+                    ) : (
+                      <ChevronRight className="w-4 h-4 text-slate-400" />
+                    )}
+                  </div>
+                </div>
+                {isExpanded && (
+                  <div className="px-3 pb-3 border-t border-slate-100 pt-2 space-y-2">
+                    <div className="grid grid-cols-2 gap-3 text-xs">
+                      <div>
+                        <p className="text-slate-500 mb-1">结构步骤</p>
+                        <div className="flex flex-wrap gap-1">
+                          {p.paradigmStructure.map((step, i) => (
+                            <Badge key={i} variant="outline" className="text-xs py-0 px-1.5 border-slate-200">
+                              {step}
+                            </Badge>
+                          ))}
+                        </div>
+                      </div>
+                      <div>
+                        <p className="text-slate-500 mb-1">标志句式</p>
+                        <div className="flex flex-wrap gap-1">
+                          {p.signaturePhrases.map((phrase, i) => (
+                            <span key={i} className="text-xs text-slate-600 bg-slate-100 rounded px-1.5 py-0.5">
+                              &ldquo;{phrase}&rdquo;
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                    {p.isInitialized && (
+                      <>
+                        <div className="flex items-center gap-3 text-xs text-slate-500">
+                          <span className="flex items-center gap-1">
+                            <Clock className="w-3 h-3" />
+                            初始化于 {p.initializedAt ? new Date(p.initializedAt).toLocaleDateString() : '-'}
+                          </span>
+                          <span className="flex items-center gap-1">
+                            <Eye className="w-3 h-3" />
+                            最近提取 {p.lastExtractionAt ? new Date(p.lastExtractionAt).toLocaleDateString() : '-'}
+                          </span>
+                        </div>
+                        <div>
+                          <p className="text-slate-500 mb-1">已覆盖维度</p>
+                          <div className="flex flex-wrap gap-1">
+                            {p.coveredDimensions.length > 0 ? (
+                              p.coveredDimensions.map(dim => (
+                                <Badge key={dim} className="bg-emerald-100 text-emerald-700 border-emerald-200 text-xs py-0">
+                                  {DIMENSION_LABELS[dim] || dim}
+                                </Badge>
+                              ))
+                            ) : (
+                              <span className="text-xs text-slate-400">暂无</span>
+                            )}
+                          </div>
+                        </div>
+                      </>
+                    )}
+                    {!p.isInitialized && (
+                      <p className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded-lg p-2">
+                        提示：提交一篇符合该范式的文章即可自动初始化，积累真实素材，摆脱AI同质化
+                      </p>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
 // ====== 主组件 ======
 
 export default function ArticleExtractionPanel() {
@@ -270,6 +510,29 @@ export default function ArticleExtractionPanel() {
   const [extractionId, setExtractionId] = useState<string>('');
   const [history, setHistory] = useState<Array<{ id: string; title: string; createdAt: string }>>([]);
   const [savingToLibrary, setSavingToLibrary] = useState(false);
+  const [paradigmStatuses, setParadigmStatuses] = useState<ParadigmInitInfo[]>([]);
+  const [paradigmSummary, setParadigmSummary] = useState<ParadigmStatusSummary>({
+    total: 10, initialized: 0, uninitialized: 10, initializationRate: 0,
+    totalExtractions: 0, totalMaterials: 0, coveredDimensions: [],
+    totalCoveredDimensions: 0, totalPossibleDimensions: 7,
+  });
+
+  // 加载范式初始化状态
+  const loadParadigmStatus = useCallback(async () => {
+    try {
+      const res = await fetch('/api/article-extraction/paradigm-status');
+      const data = await res.json();
+      if (data.success && data.data) {
+        setParadigmStatuses(data.data.paradigms || []);
+        setParadigmSummary(data.data.summary || paradigmSummary);
+      }
+    } catch { /* ignore */ }
+  }, [paradigmSummary]);
+
+  // 初始化时加载范式状态
+  useEffect(() => {
+    loadParadigmStatus();
+  }, []);
 
   // 执行提取
   const handleExtract = useCallback(async () => {
@@ -324,6 +587,9 @@ export default function ArticleExtractionPanel() {
 
       setExtraction(extractionResult);
       setExtractionId(resultData.extractionId);
+
+      // 提取成功后刷新范式初始化状态
+      loadParadigmStatus();
 
       toast.success(`提取完成！匹配范式: ${extractionResult.paradigmRecognition.matchedParadigm}，${extractionResult.totalMaterialCount} 条关系型素材`);
     } catch (err: any) {
@@ -446,6 +712,9 @@ export default function ArticleExtractionPanel() {
           </div>
         </CardContent>
       </Card>
+
+      {/* 范式初始化状态 */}
+      <ParadigmStatusPanel paradigms={paradigmStatuses} summary={paradigmSummary} />
 
       {/* 输入区 */}
       <Card className="border-2 border-sky-200 bg-sky-50/50">
