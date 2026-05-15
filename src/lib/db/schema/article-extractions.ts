@@ -175,6 +175,7 @@ export const articleExtractions = pgTable('article_extractions', {
   articleTitle: text('article_title').notNull(),
   articleText: text('article_text').notNull(),
   articleHash: varchar('article_hash', { length: 64 }), // SHA-256 去重
+  normalizedHash: varchar('normalized_hash', { length: 64 }), // 标准化内容哈希（去标点/空格后），用于跨格式去重
   
   // 5层提取结果（JSONB 快照，与 extraction_layers 表冗余存储便于快速读取）
   layer1Data: jsonb('layer1_data').$type<Record<string, any>>(),
@@ -221,6 +222,7 @@ export const articleExtractions = pgTable('article_extractions', {
 }, (table) => [
   index('idx_article_extractions_workspace').on(table.workspaceId),
   index('idx_article_extractions_hash').on(table.articleHash),
+  index('idx_article_extractions_normalized_hash').on(table.normalizedHash),
   index('idx_article_extractions_template').on(table.templateId),
 ]);
 

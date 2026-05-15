@@ -93,6 +93,14 @@ export function calculateSHA256(text: string): string {
 }
 
 /**
+ * 计算文本的标准化哈希（用于跨格式去重）
+ */
+export function calculateNormalizedHash(text: string): string {
+  const normalized = normalizeText(text);
+  return calculateSHA256(normalized);
+}
+
+/**
  * 简单的分词函数（中英文混合）
  */
 function tokenize(text: string): string[] {
@@ -495,4 +503,5 @@ export const articleDedupService = {
   calculateSimHash,
   hammingDistance,
   calculateSimilarity,
+  normalizeText,
 };
