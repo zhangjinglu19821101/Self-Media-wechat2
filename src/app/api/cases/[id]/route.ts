@@ -3,45 +3,7 @@ import { db } from '@/lib/db';
 import { materialLibrary } from '@/lib/db/schema/material-library';
 import { getWorkspaceId } from '@/lib/auth/context';
 import { and, eq, or } from 'drizzle-orm';
-
-/**
- * 从 material_library 的素材格式化为前端 MaterialItem 格式（兼容旧前端）
- */
-function formatMaterialAsItem(m: any) {
-  // 从 content 中解析结构化段落
-  const content = m.content || '';
-  const sections: Record<string, string> = {};
-  const sectionRegex = /【(.+?)】\n([\s\S]*?)(?=\n【|$)/g;
-  let match;
-  while ((match = sectionRegex.exec(content)) !== null) {
-    sections[match[1]] = match[2].trim();
-  }
-
-  return {
-    id: m.id,
-    caseId: m.id, // 兼容前端
-    caseType: m.emotionTags?.includes('警示') ? 'warning' : 'positive',
-    title: m.title || '',
-    eventFullStory: sections['事件经过'] || content,
-    background: sections['核心背景'] || '',
-    insuranceAction: sections['保险动作'] || '',
-    result: sections['结果'] || m.analysisText || '',
-    protagonist: sections['主人公'] || '',
-    productTags: m.topicTags || [],
-    crowdTags: m.sceneTags || [],
-    sceneTags: m.sceneTags || [],
-    emotionTags: m.emotionTags || [],
-    applicableProducts: m.topicTags || [],
-    applicableScenarios: m.sceneTags || [],
-    industry: m.industry || 'insurance',
-    sceneType: m.sceneType || '',
-    paradigmId: m.paradigmId || '',
-    sourceArticleId: m.sourceArticleId || '',
-    workspaceId: m.workspaceId,
-    createdAt: m.createdAt,
-    updatedAt: m.updatedAt,
-  };
-}
+import { formatMaterialAsItem, is7DMaterialType } from '@/lib/utils/material-formatter';
 
 /**
  * GET /api/cases/[id]
@@ -86,6 +48,7 @@ export async function GET(
 /**
  * PUT /api/cases/[id]
  * 更新素材内容（更新 material_library）
+ * 注意：7维素材的 content 是纯文本，不能用结构化标记重建
  */
 export async function PUT(
   request: NextRequest,
@@ -98,7 +61,11 @@ export async function PUT(
 
     // 1. 查询素材，校验权限
     const existing = await db
-      .select({ workspaceId: materialLibrary.workspaceId, ownerType: materialLibrary.ownerType })
+      .select({
+        workspaceId: materialLibrary.workspaceId,
+        ownerType: materialLibrary.ownerType,
+        type: materialLibrary.type,
+      })
       .from(materialLibrary)
       .where(eq(materialLibrary.id, id))
       .limit(1);
@@ -128,19 +95,35 @@ export async function PUT(
       ? (Array.isArray(body.crowdTags) ? body.crowdTags : [])
       : undefined;
 
-    // 重建 content（从结构化字段）
-    const contentParts = [
-      body.eventFullStory?.trim() ? `【事件经过】\n${body.eventFullStory.trim()}` : '',
-      body.background?.trim() ? `【核心背景】\n${body.background.trim()}` : '',
-      body.insuranceAction?.trim() ? `【保险动作】\n${body.insuranceAction.trim()}` : '',
-      body.result?.trim() ? `【结果】\n${body.result.trim()}` : '',
-      body.protagonist?.trim() ? `【主人公】\n${body.protagonist.trim()}` : '',
-    ].filter(Boolean).join('\n\n');
-
     const updateFields: Record<string, unknown> = { updatedAt: new Date() };
+
+    // 标题更新
     if (body.title !== undefined) updateFields.title = body.title.trim();
-    if (contentParts) updateFields.content = contentParts;
-    if (body.result !== undefined) updateFields.analysisText = body.result.trim();
+
+    // 内容更新：区分7维素材和结构化案例
+    const currentType = existing[0].type || body.type || 'case';
+    if (is7DMaterialType(currentType)) {
+      // 7维素材：content 是纯文本，直接更新
+      if (body.eventFullStory !== undefined) {
+        updateFields.content = body.eventFullStory.trim();
+      } else if (body.content !== undefined) {
+        updateFields.content = body.content.trim();
+      }
+    } else {
+      // 旧格式结构化案例：从结构化字段重建 content
+      const contentParts = [
+        body.eventFullStory?.trim() ? `【事件经过】\n${body.eventFullStory.trim()}` : '',
+        body.background?.trim() ? `【核心背景】\n${body.background.trim()}` : '',
+        body.insuranceAction?.trim() ? `【保险动作】\n${body.insuranceAction.trim()}` : '',
+        body.result?.trim() ? `【最终结果】\n${body.result.trim()}` : '',
+        body.protagonist?.trim() ? `【当事人】\n${body.protagonist.trim()}` : '',
+      ].filter(Boolean).join('\n\n');
+
+      if (contentParts) updateFields.content = contentParts;
+    }
+
+    // 通用字段
+    if (body.result !== undefined) updateFields.analysisText = body.result?.trim() || '';
     if (productTags !== undefined) updateFields.topicTags = productTags;
     if (crowdTags !== undefined) updateFields.sceneTags = crowdTags;
     if (emotionTags !== undefined) updateFields.emotionTags = emotionTags;

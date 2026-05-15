@@ -2,10 +2,11 @@
  * 素材格式化工具
  * 统一将 material_library 数据库记录转为前端 MaterialItem 接口格式
  * 7维关系型素材：misconception/analogy/case/data/golden_sentence/fixed_phrase/personal_fragment
+ * 补充类型：hook_sentence/value_reconstruction
  * 旧素材类型：story/quote/opening/ending
  */
 
-/** 7维素材类型配置 */
+/** 素材类型配置（所有类型统一维护） */
 export const MATERIAL_TYPE_CONFIG: Record<string, {
   label: string;
   badgeType: string;
@@ -13,6 +14,7 @@ export const MATERIAL_TYPE_CONFIG: Record<string, {
   color: string;
   icon: string;
 }> = {
+  // 7维关系型素材
   misconception: {
     label: '错误认知',
     badgeType: 'warning',
@@ -62,6 +64,21 @@ export const MATERIAL_TYPE_CONFIG: Record<string, {
     color: 'purple',
     icon: '🧩',
   },
+  // 补充7维类型（与 article-extraction-service.ts 对齐）
+  hook_sentence: {
+    label: '钩子句',
+    badgeType: 'hook',
+    contentLabel: '钩子句内容',
+    color: 'pink',
+    icon: '🎣',
+  },
+  value_reconstruction: {
+    label: '价值重构',
+    badgeType: 'value',
+    contentLabel: '价值重构内容',
+    color: 'emerald',
+    icon: '🔄',
+  },
   // 旧素材类型
   story: {
     label: '故事素材',
@@ -105,6 +122,13 @@ export const SCENE_TYPE_LABELS: Record<string, string> = {
   emotional_resonance: '情感共鸣',
   closing_summary: '结尾总结',
 };
+
+/** 所有7维关系型素材类型（含补充类型） */
+const RELATIONAL_MATERIAL_TYPES = [
+  'misconception', 'analogy', 'case', 'data',
+  'golden_sentence', 'fixed_phrase', 'personal_fragment',
+  'hook_sentence', 'value_reconstruction',
+];
 
 /** 从 material_library 记录提取可读标题 */
 export function extractReadableTitle(material: {
@@ -178,13 +202,25 @@ function parseStructuredContent(content: string): {
 
 /** 判断是否为7维关系型素材类型 */
 export function is7DMaterialType(type: string): boolean {
-  return ['misconception', 'golden_sentence', 'personal_fragment', 'analogy', 'data', 'fixed_phrase', 'case'].includes(type);
+  return RELATIONAL_MATERIAL_TYPES.includes(type);
 }
 
+/** 判断内容是否为旧格式结构化案例 */
+function isStructuredContent(content: string): boolean {
+  return content.includes('【事件经过】') || content.includes('【核心背景】');
+}
+
+/**
+ * 素材数据库记录的输入类型
+ * 使用宽松类型以兼容 Drizzle ORM select() 返回的严格类型（字段均为 non-nullable）
+ * 以及其他查询返回的 nullable 字段
+ */
+export type MaterialRecord = Record<string, any>;
+
 /** 格式化素材为前端 MaterialItem 格式 */
-export function formatMaterialAsItem(material: Record<string, any>): Record<string, any> {
+export function formatMaterialAsItem(material: MaterialRecord): Record<string, any> {
   const materialType = material.type || 'story';
-  const config = MATERIAL_TYPE_CONFIG[materialType] || MATERIAL_TYPE_CONFIG.story;
+  const config = MATERIAL_TYPE_CONFIG[materialType as string] || MATERIAL_TYPE_CONFIG.story!;
   const typeLabel = config.label;
   const badgeType = config.badgeType;
   const contentLabel = config.contentLabel;
@@ -194,11 +230,11 @@ export function formatMaterialAsItem(material: Record<string, any>): Record<stri
 
   // 解析内容
   const content = material.content || '';
-  const structured = parseStructuredContent(content);
-  const hasStructuredContent = !!structured.eventFullStory || !!structured.background;
+  const hasStructured = isStructuredContent(content as string);
+  const structured = hasStructured ? parseStructuredContent(content as string) : {};
 
   // 场景描述
-  const sceneDesc = SCENE_TYPE_LABELS[material.sceneType] || material.sceneType || '';
+  const sceneDesc = SCENE_TYPE_LABELS[material.sceneType || ''] || material.sceneType || '';
 
   // 产品标签和人群标签
   const productTags = Array.isArray(material.topicTags) ? material.topicTags : [];
@@ -211,17 +247,22 @@ export function formatMaterialAsItem(material: Record<string, any>): Record<stri
   let insuranceAction = '';
   let resultText = '';
 
-  if (hasStructuredContent) {
+  if (is7DMaterialType(materialType as string) && !hasStructured) {
+    // 7维关系型素材（非结构化格式）：content 是纯文本，直接使用
+    eventFullStory = content as string;
+    background = content as string;
+    resultText = material.analysisText || '';
+  } else if (hasStructured) {
     // 旧格式结构化案例：从标记段落提取
-    eventFullStory = structured.eventFullStory || content;
+    eventFullStory = structured.eventFullStory || (content as string);
     background = structured.background || '';
     protagonist = structured.protagonist || '';
     insuranceAction = structured.insuranceAction || '';
-    resultText = structured.result || '';
+    resultText = structured.result || material.analysisText || '';
   } else {
-    // 7维关系型素材 或 无结构标记的普通素材：content 是纯文本，直接使用
-    eventFullStory = content;
-    background = content;
+    // 无结构标记的普通素材
+    eventFullStory = content as string;
+    background = content as string;
     resultText = material.analysisText || '';
   }
 
@@ -233,7 +274,7 @@ export function formatMaterialAsItem(material: Record<string, any>): Record<stri
     badgeType,
     contentLabel,
     caseType: badgeType, // 向后兼容前端 caseType 字段
-    content, // 原始内容（重要：详情弹窗需要）
+    content: content as string, // 原始内容（重要：详情弹窗需要）
     sceneDesc,
 
     // 内容字段
