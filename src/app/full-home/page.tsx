@@ -1,8 +1,8 @@
 'use client';
-
 import { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import Link from 'next/link';
 import { apiGet, apiPost, apiPut, apiDelete, checkApiKeyMissing, getCurrentWorkspaceId } from '@/lib/api/client';
+import { formatMaterialAsItem, is7DMaterialType, MATERIAL_TYPE_CONFIG } from '@/lib/utils/material-formatter';
 import type { MaterialFormat, WebSearchResultItem } from '@/lib/services/unified-search/types';
 import { Card, CardHeader, CardTitle, CardContent, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -174,6 +174,12 @@ interface MaterialItem {
   result?: string;
   applicableScenarios?: string[];
   applicableProducts?: string[];
+  // 🔥 V2 素材类型字段
+  typeLabel?: string;   // 中文类型标签（如"错误认知""金句"）
+  badgeType?: string;   // Badge 样式类型（warning/golden/personal/analogy/data/phrase/positive）
+  contentLabel?: string; // 详情展示字段名（如"认知内容""金句原文"）
+  rawTitle?: string;    // 数据库原始标题
+  sceneDesc?: string;   // 场景描述摘要（sceneTags 拼接）
 }
 
 // 推荐速记项类型
@@ -207,8 +213,16 @@ const FORM_SNAPSHOT_KEY = 'fullHome_formSnapshot';
 interface MaterialItemSnapshotV2 {
   id: string;
   title: string;
+  type: string;
+  typeLabel: string;
+  badgeType: string;
   productTags: string[];
   relevanceScore: number;
+  // 🔥 7维素材关键字段，快照恢复时需要展示
+  content?: string;
+  contentLabel?: string;
+  background?: string;
+  sceneType?: string;
 }
 
 interface FormSnapshot {
@@ -219,7 +233,7 @@ interface FormSnapshot {
   articleType: string;
   selectedMaterialIds: string[];
   // 🔥 保存精简的素材快照，避免 content（大字段）撑爆 sessionStorage
-  selectedMaterials: MaterialItemSnapshot[];
+  selectedMaterials: MaterialItemSnapshotV2[];
   selectedAccountIds: string[];
   selectedContentTemplate: {
     id: string;
@@ -282,9 +296,19 @@ function loadFormSnapshot(): FormSnapshot | null {
         emotionTone: snapshot.emotionTone || '',
         articleType: snapshot.articleType || '',
         selectedMaterialIds: snapshot.selectedMaterialIds || [],
-        // 🔥 迁移已选素材：v0 可能保存完整 MaterialItem[]，统一转为精简快照
+        // 🔥 迁移已选素材：v0 可能保存完整 MaterialItem[]，统一转为精简快照V2
         selectedMaterials: (snapshot.selectedMaterials || []).length > 0
-          ? (snapshot.selectedMaterials as (MaterialItem | MaterialItemSnapshot)[]).map(toMaterialItemSnapshot)
+          ? (snapshot.selectedMaterials as (MaterialItem | MaterialItemSnapshotV2 | MaterialItemSnapshot)[]).map(s => {
+              if ('id' in s && 'title' in s) {
+                // 如果已经有 typeLabel 字段，说明是 V2 格式
+                if ('typeLabel' in s && (s as MaterialItemSnapshotV2).typeLabel !== undefined) {
+                  return s as MaterialItemSnapshotV2;
+                }
+                // 否则转为 V2 格式
+                return toMaterialSnapshotV2(s as MaterialItem);
+              }
+              return s as MaterialItemSnapshotV2;
+            })
           : [],
         selectedAccountIds: (snapshot as any).selectedAccountIds || [],
         selectedContentTemplate: snapshot.selectedContentTemplate || null,
@@ -326,8 +350,16 @@ function toMaterialSnapshotV2(item: MaterialItem | MaterialItemSnapshotV2): Mate
   return {
     id: item.id,
     title: item.title,
+    type: (item as MaterialItem).type || 'case',
+    typeLabel: (item as MaterialItem).typeLabel || '',
+    badgeType: (item as MaterialItem).badgeType || '',
     productTags: item.productTags || [],
     relevanceScore: item.relevanceScore || 0,
+    // 🔥 保存7维素材关键字段，确保快照恢复时有足够信息展示
+    content: (item as MaterialItem).content || '',
+    contentLabel: (item as MaterialItem).contentLabel || '',
+    background: (item as MaterialItem).background || '',
+    sceneType: (item as MaterialItem).sceneType || '',
   };
 }
 
@@ -345,32 +377,39 @@ function toMaterialItemSnapshot(item: MaterialItem | MaterialItemSnapshot): Mate
 
 // 🔥 精简快照V2还原为完整素材对象（恢复时使用，兼容旧快照格式）
 function toFullMaterialItem(snapshot: MaterialItemSnapshotV2 | MaterialItemSnapshot, fallback?: MaterialItem): MaterialItem {
-  // MaterialItemSnapshot 格式（新）
-  if ('type' in snapshot) {
+  // MaterialItemSnapshotV2 格式（含7维素材字段，通过 typeLabel 区分）
+  if ('typeLabel' in snapshot && snapshot.typeLabel !== undefined) {
+    const snapV2 = snapshot as MaterialItemSnapshotV2;
     return {
-      id: snapshot.id,
-      title: snapshot.title,
-      type: (snapshot as MaterialItemSnapshot).type,
-      content: fallback?.content || '',
-      sourceDesc: fallback?.sourceDesc,
-      topicTags: (snapshot as MaterialItemSnapshot).topicTags || [],
-      sceneTags: (snapshot as MaterialItemSnapshot).sceneTags || [],
-      emotionTags: (snapshot as MaterialItemSnapshot).emotionTags || [],
-      useCount: fallback?.useCount,
-      matchLevel: fallback?.matchLevel,
-      keywordHitCount: fallback?.keywordHitCount,
-      tagHitCount: fallback?.tagHitCount,
+      id: snapV2.id,
+      title: snapV2.title,
+      type: snapV2.type || 'case',
+      typeLabel: snapV2.typeLabel || '',
+      badgeType: snapV2.badgeType || '',
+      contentLabel: snapV2.contentLabel || '',
+      content: snapV2.content || fallback?.content || '',
+      background: snapV2.background || fallback?.background || '',
+      sceneType: snapV2.sceneType || fallback?.sceneType || '',
+      topicTags: snapV2.productTags || [],
+      sceneTags: [],
+      emotionTags: [],
     };
   }
-  // MaterialItemSnapshotV2 格式（兼容旧快照）
+  // MaterialItemSnapshot 格式（旧格式，不含7维素材字段）
+  const snap = snapshot as MaterialItemSnapshot;
   return {
-    id: snapshot.id,
-    title: snapshot.title,
-    type: 'case',
-    content: '',
-    topicTags: (snapshot as MaterialItemSnapshotV2).productTags || [],
-    sceneTags: [],
-    emotionTags: [],
+    id: snap.id,
+    title: snap.title,
+    type: snap.type,
+    content: fallback?.content || '',
+    sourceDesc: fallback?.sourceDesc,
+    topicTags: snap.topicTags || [],
+    sceneTags: snap.sceneTags || [],
+    emotionTags: snap.emotionTags || [],
+    useCount: fallback?.useCount,
+    matchLevel: fallback?.matchLevel,
+    keywordHitCount: fallback?.keywordHitCount,
+    tagHitCount: fallback?.tagHitCount,
   };
 }
 
@@ -875,8 +914,8 @@ export default function HomePage() {
       emotionTone,
       articleType,
       selectedMaterialIds,
-      // 🔥 保存精简的素材快照（移除 content 等大字段），刷新后通过推荐列表重新获取正文
-      selectedMaterials: selectedMaterials.map(toMaterialItemSnapshot),
+      // 🔥 保存精简的素材快照V2（含7维素材关键字段），刷新后可恢复展示
+      selectedMaterials: selectedMaterials.map(toMaterialSnapshotV2),
       selectedAccountIds,
       selectedContentTemplate,
       selectedParadigmId: selectedParadigm?.id || '',
@@ -1367,7 +1406,8 @@ export default function HomePage() {
     try {
       const data: any = await apiGet(`/api/materials?search=${encodeURIComponent(query)}&pageSize=20`);
       // API 返回 { success: true, data: { list: [...], pagination: {...} } }
-      setMaterialSearchResults(Array.isArray(data?.data?.list) ? data.data.list : Array.isArray(data?.data) ? data.data : []);
+      const rawList = Array.isArray(data?.data?.list) ? data.data.list : Array.isArray(data?.data) ? data.data : [];
+      setMaterialSearchResults(rawList.map((m: any) => formatMaterialAsItem(m)));
     } catch (error) {
       console.error('搜索素材失败:', error);
     } finally {
@@ -1411,7 +1451,7 @@ export default function HomePage() {
       // P1-9: 如果请求已被取消，不更新状态
       if (controller.signal.aborted) return;
 
-      const materials = data?.data || [];
+      const materials = (data?.data || []).map((m: any) => formatMaterialAsItem(m));
       const snippets = data?.snippets || [];
       setRecommendedMaterials(materials);
       setRecommendedSnippets(snippets);
@@ -4241,9 +4281,13 @@ export default function HomePage() {
                                 </SelectTrigger>
                                 <SelectContent>
                                   <SelectItem value="all">全部类型</SelectItem>
-                                  <SelectItem value="positive">正面素材</SelectItem>
-                                  <SelectItem value="warning">警示素材</SelectItem>
-                                  <SelectItem value="milestone">里程碑</SelectItem>
+                                  <SelectItem value="misconception">错误认知</SelectItem>
+                                  <SelectItem value="analogy">生活类比</SelectItem>
+                                  <SelectItem value="case">真实案例</SelectItem>
+                                  <SelectItem value="data">权威数据</SelectItem>
+                                  <SelectItem value="golden_sentence">金句</SelectItem>
+                                  <SelectItem value="fixed_phrase">固定句式</SelectItem>
+                                  <SelectItem value="personal_fragment">个人碎片</SelectItem>
                                 </SelectContent>
                               </Select>
 
@@ -4332,28 +4376,31 @@ export default function HomePage() {
                                       >
                                         <div className="flex items-center gap-2">
                                           <Badge className={`text-[10px] px-1.5 py-0 ${
-                                            c.caseType === 'positive' ? 'bg-green-100 text-green-700' :
+                                            c.badgeType === 'warning' ? 'bg-amber-100 text-amber-700' :
+                                            c.badgeType === 'golden' ? 'bg-yellow-100 text-yellow-700' :
+                                            c.badgeType === 'personal' ? 'bg-purple-100 text-purple-700' :
+                                            c.badgeType === 'analogy' ? 'bg-cyan-100 text-cyan-700' :
+                                            c.badgeType === 'data' ? 'bg-blue-100 text-blue-700' :
+                                            c.badgeType === 'phrase' ? 'bg-slate-100 text-slate-600' :
                                             c.caseType === 'warning' ? 'bg-amber-100 text-amber-700' :
-                                            'bg-blue-100 text-blue-700'
+                                            'bg-green-100 text-green-700'
                                           }`}>
-                                            {c.caseType === 'positive' ? '正面' :
-                                             c.caseType === 'warning' ? '警示' : '里程碑'}
+                                            {c.typeLabel || (c.caseType === 'warning' ? '警示' : c.caseType === 'positive' ? '正面' : '素材')}
                                           </Badge>
-                                          <span className={`font-medium text-sm ${isSelected ? 'text-emerald-700' : 'text-slate-700'}`}>
+                                          <span className={`font-medium text-sm line-clamp-1 ${isSelected ? 'text-emerald-700' : 'text-slate-700'}`}>
                                             {c.title}
                                           </span>
                                           {isSelected && <CheckCircle2 className="w-4 h-4 text-emerald-500 flex-shrink-0" />}
                                         </div>
                                         <div className="text-xs text-slate-500 mt-1 line-clamp-2">
-                                          {c.protagonist && <span>{c.protagonist} | </span>}
-                                          {c.background || '暂无背景信息'}
+                                          {c.eventFullStory || c.background || c.content || ''}
                                         </div>
                                         <div className="flex flex-wrap gap-1 mt-1.5">
+                                          {c.sceneDesc && (
+                                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-50 text-slate-500">{c.sceneDesc}</span>
+                                          )}
                                           {(c.productTags || []).slice(0, 3).map(tag => (
                                             <span key={tag} className="text-[10px] px-1.5 py-0.5 rounded bg-blue-50 text-blue-600">{tag}</span>
-                                          ))}
-                                          {(c.crowdTags || []).slice(0, 2).map(tag => (
-                                            <span key={tag} className="text-[10px] px-1.5 py-0.5 rounded bg-purple-50 text-purple-600">{tag}</span>
                                           ))}
                                         </div>
                                       </div>
@@ -5048,141 +5095,166 @@ export default function HomePage() {
             </DialogDescription>
           </DialogHeader>
 
-          {viewingMaterial && (
-            <div className="space-y-4">
-              {/* 素材类型标识 */}
-              <div className="flex items-center gap-2">
-                <Badge className={`${
-                  viewingMaterial.caseType === 'positive' ? 'bg-green-100 text-green-700' :
-                  viewingMaterial.caseType === 'warning' ? 'bg-amber-100 text-amber-700' :
-                  'bg-blue-100 text-blue-700'
-                }`}>
-                  {viewingMaterial.caseType === 'positive' ? '正面素材' :
-                   viewingMaterial.caseType === 'warning' ? '反面警示' : '行业里程碑'}
-                </Badge>
-              </div>
+          {viewingMaterial && (() => {
+            const is7D = is7DMaterialType(viewingMaterial.type || 'case');
+            const typeConfig = MATERIAL_TYPE_CONFIG[viewingMaterial.type as keyof typeof MATERIAL_TYPE_CONFIG];
+            // 主内容：7维素材用 content，旧格式用 eventFullStory
+            const mainContent = is7D
+              ? (viewingMaterial.content || viewingMaterial.background || '')
+              : (viewingMaterial.eventFullStory || viewingMaterial.background || viewingMaterial.content || '');
+            const mainContentLabel = viewingMaterial.contentLabel || (is7D ? '素材内容' : '事件经过');
 
-              {/* 标题 */}
-              <div>
-                <Label className="text-xs text-slate-500 mb-1 block">素材标题</Label>
-                <p className="text-sm font-medium text-slate-900 bg-slate-50 rounded-md px-3 py-2 min-h-[36px] flex items-center">
-                  {viewingMaterial.title}
-                </p>
-              </div>
+            return (
+              <div className="space-y-4">
+                {/* 素材类型标识 */}
+                <div className="flex items-center gap-2">
+                  <Badge className={
+                    viewingMaterial.badgeType === 'warning' ? 'bg-amber-100 text-amber-700' :
+                    viewingMaterial.badgeType === 'golden' ? 'bg-yellow-100 text-yellow-700' :
+                    viewingMaterial.badgeType === 'personal' ? 'bg-purple-100 text-purple-700' :
+                    viewingMaterial.badgeType === 'analogy' ? 'bg-cyan-100 text-cyan-700' :
+                    viewingMaterial.badgeType === 'data' ? 'bg-blue-100 text-blue-700' :
+                    viewingMaterial.badgeType === 'phrase' ? 'bg-slate-100 text-slate-600' :
+                    viewingMaterial.caseType === 'warning' ? 'bg-amber-100 text-amber-700' :
+                    'bg-emerald-100 text-emerald-700'
+                  }>
+                    {viewingMaterial.typeLabel || typeConfig?.label || (viewingMaterial.caseType === 'warning' ? '警示' : viewingMaterial.caseType === 'positive' ? '正面' : '素材')}
+                  </Badge>
+                  {viewingMaterial.sceneType && (
+                    <Badge variant="outline" className="text-xs">{viewingMaterial.sceneType}</Badge>
+                  )}
+                </div>
 
-              {/* 事件完整经过 */}
-              {viewingMaterial.eventFullStory && (
+                {/* 标题 */}
                 <div>
-                  <Label className="text-xs text-slate-500 mb-1 block">事件完整经过</Label>
-                  <p className="text-sm text-slate-700 bg-amber-50/50 rounded-md px-3 py-2.5 leading-relaxed whitespace-pre-wrap">
-                    {viewingMaterial.eventFullStory}
+                  <Label className="text-xs text-slate-500 mb-1 block">素材标题</Label>
+                  <p className="text-sm font-medium text-slate-900 bg-slate-50 rounded-md px-3 py-2 min-h-[36px] flex items-center">
+                    {viewingMaterial.title}
                   </p>
                 </div>
-              )}
 
-              {/* 核心背景 */}
-              {viewingMaterial.background && (
-                <div>
-                  <Label className="text-xs text-slate-500 mb-1 block">核心背景 *</Label>
-                  <p className="text-sm text-slate-700 bg-amber-50/50 rounded-md px-3 py-2.5 leading-relaxed whitespace-pre-wrap">
-                    {viewingMaterial.background}
-                  </p>
-                </div>
-              )}
-
-              {/* 保险动作 */}
-              {viewingMaterial.insuranceAction && (
-                <div>
-                  <Label className="text-xs text-slate-500 mb-1 block">保险动作</Label>
-                  <p className="text-sm text-slate-700 bg-emerald-50/50 rounded-md px-3 py-2.5 leading-relaxed whitespace-pre-wrap">
-                    {viewingMaterial.insuranceAction}
-                  </p>
-                </div>
-              )}
-
-              {/* 结果详情 */}
-              {viewingMaterial.result && (
-                <div>
-                  <Label className="text-xs text-slate-500 mb-1 block">结果详情 *</Label>
-                  <p className="text-sm text-slate-700 bg-purple-50/50 rounded-md px-3 py-2.5 leading-relaxed whitespace-pre-wrap">
-                    {viewingMaterial.result}
-                  </p>
-                </div>
-              )}
-
-              {/* 产品标签 */}
-              {(viewingMaterial.productTags || []).length > 0 && (
-                <div>
-                  <Label className="text-xs text-slate-500 mb-1.5 block">产品标签</Label>
-                  <div className="flex flex-wrap gap-1.5">
-                    {(viewingMaterial.productTags || []).map((tag, i) => (
-                      <Badge key={i} className="bg-amber-50 text-amber-700 hover:bg-amber-100">
-                        {tag}
-                      </Badge>
-                    ))}
+                {/* 主内容区域：7维素材用统一字段，旧格式用结构化字段 */}
+                {mainContent && (
+                  <div>
+                    <Label className="text-xs text-slate-500 mb-1 block">{mainContentLabel}</Label>
+                    <p className="text-sm text-slate-700 bg-amber-50/50 rounded-md px-3 py-2.5 leading-relaxed whitespace-pre-wrap">
+                      {mainContent}
+                    </p>
                   </div>
-                </div>
-              )}
+                )}
 
-              {/* AI 自动提取的标签（折叠区） */}
-              {(viewingMaterial.protagonist || (viewingMaterial.crowdTags || []).length > 0 || (viewingMaterial.emotionTags || []).length > 0 || (viewingMaterial.sceneTags || []).length > 0 || (viewingMaterial.applicableProducts || []).length > 0 || (viewingMaterial.applicableScenarios || []).length > 0) && (
-                <details className="group">
-                  <summary className="text-xs text-slate-400 cursor-pointer hover:text-slate-600 flex items-center gap-1">
-                    <ChevronDown className="h-3 w-3 transition-transform group-open:rotate-180" />
-                    AI 自动提取的标签
-                  </summary>
-                  <div className="mt-2 space-y-2 pl-4 border-l-2 border-slate-100">
-                    {viewingMaterial.protagonist && (
-                      <div className="flex items-center gap-2 text-xs">
-                        <span className="text-slate-500">主人公：</span>
-                        <span className="text-slate-700">{viewingMaterial.protagonist}</span>
-                      </div>
-                    )}
-                    {(viewingMaterial.crowdTags || []).length > 0 && (
-                      <div className="flex items-center gap-2 text-xs flex-wrap">
-                        <span className="text-slate-500">人群标签：</span>
-                        {(viewingMaterial.crowdTags || []).map((tag, i) => (
-                          <Badge key={i} className="bg-slate-100 text-slate-600 px-1.5 py-0.5 text-[10px]">{tag}</Badge>
-                        ))}
-                      </div>
-                    )}
-                    {(viewingMaterial.emotionTags || []).length > 0 && (
-                      <div className="flex items-center gap-2 text-xs flex-wrap">
-                        <span className="text-slate-500">情绪标签：</span>
-                        {(viewingMaterial.emotionTags || []).map((tag, i) => (
-                          <Badge key={i} className="bg-slate-100 text-slate-600 px-1.5 py-0.5 text-[10px]">{tag}</Badge>
-                        ))}
-                      </div>
-                    )}
-                    {(viewingMaterial.sceneTags || []).length > 0 && (
-                      <div className="flex items-center gap-2 text-xs flex-wrap">
-                        <span className="text-slate-500">场景标签：</span>
-                        {(viewingMaterial.sceneTags || []).map((tag, i) => (
-                          <Badge key={i} className="bg-slate-100 text-slate-600 px-1.5 py-0.5 text-[10px]">{tag}</Badge>
-                        ))}
-                      </div>
-                    )}
-                    {(viewingMaterial.applicableProducts || []).length > 0 && (
-                      <div className="flex items-center gap-2 text-xs flex-wrap">
-                        <span className="text-slate-500">适用产品：</span>
-                        {(viewingMaterial.applicableProducts || []).map((tag, i) => (
-                          <Badge key={i} className="bg-slate-100 text-slate-600 px-1.5 py-0.5 text-[10px]">{tag}</Badge>
-                        ))}
-                      </div>
-                    )}
-                    {(viewingMaterial.applicableScenarios || []).length > 0 && (
-                      <div className="flex items-center gap-2 text-xs flex-wrap">
-                        <span className="text-slate-500">适用场景：</span>
-                        {(viewingMaterial.applicableScenarios || []).map((tag, i) => (
-                          <Badge key={i} className="bg-slate-100 text-slate-600 px-1.5 py-0.5 text-[10px]">{tag}</Badge>
-                        ))}
-                      </div>
-                    )}
+                {/* 旧格式结构化案例：额外展示核心背景、保险动作、结果详情 */}
+                {!is7D && viewingMaterial.background && viewingMaterial.background !== mainContent && (
+                  <div>
+                    <Label className="text-xs text-slate-500 mb-1 block">核心背景</Label>
+                    <p className="text-sm text-slate-700 bg-amber-50/50 rounded-md px-3 py-2.5 leading-relaxed whitespace-pre-wrap">
+                      {viewingMaterial.background}
+                    </p>
                   </div>
-                </details>
-              )}
-            </div>
-          )}
+                )}
+
+                {!is7D && viewingMaterial.insuranceAction && (
+                  <div>
+                    <Label className="text-xs text-slate-500 mb-1 block">保险动作</Label>
+                    <p className="text-sm text-slate-700 bg-emerald-50/50 rounded-md px-3 py-2.5 leading-relaxed whitespace-pre-wrap">
+                      {viewingMaterial.insuranceAction}
+                    </p>
+                  </div>
+                )}
+
+                {!is7D && viewingMaterial.result && (
+                  <div>
+                    <Label className="text-xs text-slate-500 mb-1 block">结果详情</Label>
+                    <p className="text-sm text-slate-700 bg-purple-50/50 rounded-md px-3 py-2.5 leading-relaxed whitespace-pre-wrap">
+                      {viewingMaterial.result}
+                    </p>
+                  </div>
+                )}
+
+                {/* 7维素材：分析/摘要 */}
+                {is7D && viewingMaterial.result && (
+                  <div>
+                    <Label className="text-xs text-slate-500 mb-1 block">分析摘要</Label>
+                    <p className="text-sm text-slate-700 bg-purple-50/50 rounded-md px-3 py-2.5 leading-relaxed whitespace-pre-wrap">
+                      {viewingMaterial.result}
+                    </p>
+                  </div>
+                )}
+
+                {/* 产品标签 */}
+                {(viewingMaterial.productTags || []).length > 0 && (
+                  <div>
+                    <Label className="text-xs text-slate-500 mb-1.5 block">产品标签</Label>
+                    <div className="flex flex-wrap gap-1.5">
+                      {(viewingMaterial.productTags || []).map((tag, i) => (
+                        <Badge key={i} className="bg-amber-50 text-amber-700 hover:bg-amber-100">
+                          {tag}
+                        </Badge>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* AI 自动提取的标签（折叠区） */}
+                {(viewingMaterial.protagonist || (viewingMaterial.crowdTags || []).length > 0 || (viewingMaterial.emotionTags || []).length > 0 || (viewingMaterial.sceneTags || []).length > 0 || (viewingMaterial.applicableProducts || []).length > 0 || (viewingMaterial.applicableScenarios || []).length > 0) && (
+                  <details className="group">
+                    <summary className="text-xs text-slate-400 cursor-pointer hover:text-slate-600 flex items-center gap-1">
+                      <ChevronDown className="h-3 w-3 transition-transform group-open:rotate-180" />
+                      AI 自动提取的标签
+                    </summary>
+                    <div className="mt-2 space-y-2 pl-4 border-l-2 border-slate-100">
+                      {viewingMaterial.protagonist && (
+                        <div className="flex items-center gap-2 text-xs">
+                          <span className="text-slate-500">主人公：</span>
+                          <span className="text-slate-700">{viewingMaterial.protagonist}</span>
+                        </div>
+                      )}
+                      {(viewingMaterial.crowdTags || []).length > 0 && (
+                        <div className="flex items-center gap-2 text-xs flex-wrap">
+                          <span className="text-slate-500">人群标签：</span>
+                          {(viewingMaterial.crowdTags || []).map((tag, i) => (
+                            <Badge key={i} className="bg-slate-100 text-slate-600 px-1.5 py-0.5 text-[10px]">{tag}</Badge>
+                          ))}
+                        </div>
+                      )}
+                      {(viewingMaterial.emotionTags || []).length > 0 && (
+                        <div className="flex items-center gap-2 text-xs flex-wrap">
+                          <span className="text-slate-500">情绪标签：</span>
+                          {(viewingMaterial.emotionTags || []).map((tag, i) => (
+                            <Badge key={i} className="bg-slate-100 text-slate-600 px-1.5 py-0.5 text-[10px]">{tag}</Badge>
+                          ))}
+                        </div>
+                      )}
+                      {(viewingMaterial.sceneTags || []).length > 0 && (
+                        <div className="flex items-center gap-2 text-xs flex-wrap">
+                          <span className="text-slate-500">场景标签：</span>
+                          {(viewingMaterial.sceneTags || []).map((tag, i) => (
+                            <Badge key={i} className="bg-slate-100 text-slate-600 px-1.5 py-0.5 text-[10px]">{tag}</Badge>
+                          ))}
+                        </div>
+                      )}
+                      {(viewingMaterial.applicableProducts || []).length > 0 && (
+                        <div className="flex items-center gap-2 text-xs flex-wrap">
+                          <span className="text-slate-500">适用产品：</span>
+                          {(viewingMaterial.applicableProducts || []).map((tag, i) => (
+                            <Badge key={i} className="bg-slate-100 text-slate-600 px-1.5 py-0.5 text-[10px]">{tag}</Badge>
+                          ))}
+                        </div>
+                      )}
+                      {(viewingMaterial.applicableScenarios || []).length > 0 && (
+                        <div className="flex items-center gap-2 text-xs flex-wrap">
+                          <span className="text-slate-500">适用场景：</span>
+                          {(viewingMaterial.applicableScenarios || []).map((tag, i) => (
+                            <Badge key={i} className="bg-slate-100 text-slate-600 px-1.5 py-0.5 text-[10px]">{tag}</Badge>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </details>
+                )}
+              </div>
+            );
+          })()}
 
           <DialogFooter className="flex gap-2 sm:gap-2">
             <Button
