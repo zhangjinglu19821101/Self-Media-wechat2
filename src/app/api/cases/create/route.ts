@@ -80,6 +80,8 @@ export async function POST(request: NextRequest) {
       topicTags: productTags,
       sceneTags: crowdTags,
       emotionTags: emotionTags,
+      sceneType: body.sceneType || 'event', // 🔥 场景类型（默认事件型）
+      industry: body.industry || 'insurance', // 🔥 行业标识
       sourceType: 'info_snippet' as const,
       ownerType: 'user' as const,
       workspaceId: workspaceId,
@@ -90,12 +92,12 @@ export async function POST(request: NextRequest) {
       // 1. 插入素材
       const [inserted] = await tx.insert(materialLibrary).values(materialData).returning();
 
-      // 2. 反写 materialId 到 info_snippets（如果有 snippetId）
+      // 2. 反写 materialId + caseId 到 info_snippets（如果有 snippetId）
       if (body.snippetId) {
         try {
           await tx
             .update(infoSnippets)
-            .set({ materialId: inserted.id, updatedAt: new Date() })
+            .set({ materialId: inserted.id, caseId: inserted.id, updatedAt: new Date() })
             .where(eq(infoSnippets.id, body.snippetId));
           console.log(`[cases/create] 素材 ${inserted.id} 反写到 info_snippets.material_id`);
         } catch (updateError: any) {

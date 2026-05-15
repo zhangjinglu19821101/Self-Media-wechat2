@@ -501,7 +501,7 @@ export async function POST(request: NextRequest) {
             ...(singlePlatform ? { platform: singlePlatform } : {}), // 🔴 平台标识（供虚拟执行器使用）
             ...(derivedImageCountMode ? { imageCountMode: derivedImageCountMode } : {}), // 🔥 小红书图片模式（从内容模板推导或前端传入）
             ...(contentTemplateId ? { contentTemplateId } : {}), // 🔥🔥 内容模板ID
-            ...(paradigmCode ? { paradigmCode } : {}), // 🔥 范式代码
+            ...(paradigmCode ? { paradigmCode, paradigmName, paradigmDetail } : {}), // 🔥 范式完整数据（与多平台模式对齐）
           },
           createdAt: new Date(),
           updatedAt: new Date(),

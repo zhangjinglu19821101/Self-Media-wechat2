@@ -18,21 +18,33 @@ import { eq, and, or, desc, sql } from 'drizzle-orm';
  * 从 material_library 查询素材，格式化为前端 MaterialItem 格式
  */
 function formatMaterialAsItem(m: any) {
+  // 从 content 中解析结构化段落（与 cases/[id] 保持一致）
+  const content = m.content || '';
+  const sections: Record<string, string> = {};
+  const sectionRegex = /【(.+?)】\n([\s\S]*?)(?=\n【|$)/g;
+  let match;
+  while ((match = sectionRegex.exec(content)) !== null) {
+    sections[match[1]] = match[2].trim();
+  }
+
   return {
     id: m.id,
     title: m.title || '',
     caseType: m.emotionTags?.includes('警示') ? 'warning' : 'positive',
-    eventFullStory: m.content || '',
-    protagonist: '',
-    background: '',
-    insuranceAction: '',
-    result: '',
+    eventFullStory: sections['事件经过'] || content,
+    protagonist: sections['主人公'] || '',
+    background: sections['核心背景'] || '',
+    insuranceAction: sections['保险动作'] || '',
+    result: sections['结果'] || m.analysisText || '',
     applicableProducts: m.topicTags || [],
     applicableScenarios: m.sceneTags || [],
     productTags: m.topicTags || [],
-    crowdTags: [],
+    crowdTags: m.sceneTags || [],
     sceneTags: m.sceneTags || [],
     emotionTags: m.emotionTags || [],
+    industry: m.industry || 'insurance',
+    sceneType: m.sceneType || '',
+    paradigmId: m.paradigmId || '',
     relevanceScore: 0,
     productTagMatchCount: 0,
     workspaceId: m.workspaceId,
@@ -130,6 +142,8 @@ export async function POST(request: NextRequest) {
         topicTags: caseData.productTags || [],
         sceneTags: caseData.applicableScenarios || caseData.sceneTags || [],
         emotionTags: caseData.emotionTags || [],
+        sceneType: caseData.sceneType || 'event', // 🔥 场景类型
+        industry: caseData.industry || 'insurance', // 🔥 行业标识
         sourceType: 'manual',
         ownerType: 'user',
         workspaceId: workspaceId,

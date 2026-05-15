@@ -8767,7 +8767,7 @@ export class SubtaskExecutionEngine {
           has_core_anchor: insuranceDAssembledResult.assemblyMetadata.hasCoreAnchor,
           has_user_opinion: insuranceDAssembledResult.assemblyMetadata.hasUserOpinion,
           material_count: insuranceDAssembledResult.assemblyMetadata.materialCount,
-          has_industry_cases: insuranceDAssembledResult.assemblyMetadata.hasIndustryCases, // 🔥 行业案例
+          // 🗑️ hasIndustryCases 已废弃：industryCases 统一通过 materialIds → userOpinionAndMaterials 注入
         });
       } else {
         agentPrompt = loadAgentPrompt(task.fromParentsExecutor);
