@@ -4346,13 +4346,13 @@ export default function HomePage() {
                                         </div>
                                         <div className="text-xs text-slate-500 mt-1 line-clamp-2">
                                           {c.protagonist && <span>{c.protagonist} | </span>}
-                                          {c.background}
+                                          {c.background || '暂无背景信息'}
                                         </div>
                                         <div className="flex flex-wrap gap-1 mt-1.5">
-                                          {c.productTags.slice(0, 3).map(tag => (
+                                          {(c.productTags || []).slice(0, 3).map(tag => (
                                             <span key={tag} className="text-[10px] px-1.5 py-0.5 rounded bg-blue-50 text-blue-600">{tag}</span>
                                           ))}
-                                          {c.crowdTags.slice(0, 2).map(tag => (
+                                          {(c.crowdTags || []).slice(0, 2).map(tag => (
                                             <span key={tag} className="text-[10px] px-1.5 py-0.5 rounded bg-purple-50 text-purple-600">{tag}</span>
                                           ))}
                                         </div>
@@ -5111,11 +5111,11 @@ export default function HomePage() {
               )}
 
               {/* 产品标签 */}
-              {viewingMaterial.productTags.length > 0 && (
+              {(viewingMaterial.productTags || []).length > 0 && (
                 <div>
                   <Label className="text-xs text-slate-500 mb-1.5 block">产品标签</Label>
                   <div className="flex flex-wrap gap-1.5">
-                    {viewingMaterial.productTags.map((tag, i) => (
+                    {(viewingMaterial.productTags || []).map((tag, i) => (
                       <Badge key={i} className="bg-amber-50 text-amber-700 hover:bg-amber-100">
                         {tag}
                       </Badge>
@@ -5125,7 +5125,7 @@ export default function HomePage() {
               )}
 
               {/* AI 自动提取的标签（折叠区） */}
-              {(viewingMaterial.protagonist || viewingMaterial.crowdTags.length > 0 || viewingMaterial.emotionTags.length > 0 || viewingMaterial.sceneTags.length > 0 || viewingMaterial.applicableProducts.length > 0 || viewingMaterial.applicableScenarios.length > 0) && (
+              {(viewingMaterial.protagonist || (viewingMaterial.crowdTags || []).length > 0 || (viewingMaterial.emotionTags || []).length > 0 || (viewingMaterial.sceneTags || []).length > 0 || (viewingMaterial.applicableProducts || []).length > 0 || (viewingMaterial.applicableScenarios || []).length > 0) && (
                 <details className="group">
                   <summary className="text-xs text-slate-400 cursor-pointer hover:text-slate-600 flex items-center gap-1">
                     <ChevronDown className="h-3 w-3 transition-transform group-open:rotate-180" />
@@ -5138,42 +5138,42 @@ export default function HomePage() {
                         <span className="text-slate-700">{viewingMaterial.protagonist}</span>
                       </div>
                     )}
-                    {viewingMaterial.crowdTags.length > 0 && (
+                    {(viewingMaterial.crowdTags || []).length > 0 && (
                       <div className="flex items-center gap-2 text-xs flex-wrap">
                         <span className="text-slate-500">人群标签：</span>
-                        {viewingMaterial.crowdTags.map((tag, i) => (
+                        {(viewingMaterial.crowdTags || []).map((tag, i) => (
                           <Badge key={i} className="bg-slate-100 text-slate-600 px-1.5 py-0.5 text-[10px]">{tag}</Badge>
                         ))}
                       </div>
                     )}
-                    {viewingMaterial.emotionTags.length > 0 && (
+                    {(viewingMaterial.emotionTags || []).length > 0 && (
                       <div className="flex items-center gap-2 text-xs flex-wrap">
                         <span className="text-slate-500">情绪标签：</span>
-                        {viewingMaterial.emotionTags.map((tag, i) => (
+                        {(viewingMaterial.emotionTags || []).map((tag, i) => (
                           <Badge key={i} className="bg-slate-100 text-slate-600 px-1.5 py-0.5 text-[10px]">{tag}</Badge>
                         ))}
                       </div>
                     )}
-                    {viewingMaterial.sceneTags.length > 0 && (
+                    {(viewingMaterial.sceneTags || []).length > 0 && (
                       <div className="flex items-center gap-2 text-xs flex-wrap">
                         <span className="text-slate-500">场景标签：</span>
-                        {viewingMaterial.sceneTags.map((tag, i) => (
+                        {(viewingMaterial.sceneTags || []).map((tag, i) => (
                           <Badge key={i} className="bg-slate-100 text-slate-600 px-1.5 py-0.5 text-[10px]">{tag}</Badge>
                         ))}
                       </div>
                     )}
-                    {viewingMaterial.applicableProducts.length > 0 && (
+                    {(viewingMaterial.applicableProducts || []).length > 0 && (
                       <div className="flex items-center gap-2 text-xs flex-wrap">
                         <span className="text-slate-500">适用产品：</span>
-                        {viewingMaterial.applicableProducts.map((tag, i) => (
+                        {(viewingMaterial.applicableProducts || []).map((tag, i) => (
                           <Badge key={i} className="bg-slate-100 text-slate-600 px-1.5 py-0.5 text-[10px]">{tag}</Badge>
                         ))}
                       </div>
                     )}
-                    {viewingMaterial.applicableScenarios.length > 0 && (
+                    {(viewingMaterial.applicableScenarios || []).length > 0 && (
                       <div className="flex items-center gap-2 text-xs flex-wrap">
                         <span className="text-slate-500">适用场景：</span>
-                        {viewingMaterial.applicableScenarios.map((tag, i) => (
+                        {(viewingMaterial.applicableScenarios || []).map((tag, i) => (
                           <Badge key={i} className="bg-slate-100 text-slate-600 px-1.5 py-0.5 text-[10px]">{tag}</Badge>
                         ))}
                       </div>
