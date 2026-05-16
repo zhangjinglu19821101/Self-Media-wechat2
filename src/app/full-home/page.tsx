@@ -1512,6 +1512,14 @@ export default function HomePage() {
     if (alreadySelected) {
       setSelectedMaterialIds(prev => prev.filter(id => id !== material.id));
       setSelectedMaterials(prev => prev.filter(m => m.id !== material.id));
+      // 同时清除该素材的位置绑定
+      setParadigmMaterialBindings(prev => {
+        const next = { ...prev };
+        for (const [slotId, mId] of Object.entries(next)) {
+          if (mId === material.id) delete next[slotId];
+        }
+        return next;
+      });
     } else {
       setSelectedMaterialIds(prev => [...prev, material.id]);
       setSelectedMaterials(prev => [...prev, material]);
@@ -1842,16 +1850,7 @@ export default function HomePage() {
 
   // 🔥 范式-素材位置绑定：将素材绑定到指定范式位置
 
-  // 指定位置弹窗状态
-  const [slotPickerOpen, setSlotPickerOpen] = useState(false);
-  const [slotPickerMaterialId, setSlotPickerMaterialId] = useState<string | null>(null);
-
-  // 打开位置选择弹窗
-  const handleOpenSlotPicker = (materialId: string) => {
-    setSlotPickerMaterialId(materialId);
-    setSlotPickerOpen(true);
-  };
-
+  // 范式位置-素材绑定操作
   const bindMaterialToSlot = (slotId: string, materialId: string) => {
     setParadigmMaterialBindings(prev => ({ ...prev, [slotId]: materialId }));
   };
@@ -4536,8 +4535,8 @@ export default function HomePage() {
                               {recommendedMaterials.map((c) => {
                                 const isSelected = selectedMaterialIdsV2.includes(c.id);
                                 return (
+                                  <div key={c.id} className="mb-1">
                                   <div
-                                    key={c.id}
                                     className={`relative px-4 py-3 rounded-xl border-2 transition-all ${
                                       isSelected
                                         ? 'border-emerald-400 bg-emerald-50'
@@ -4598,18 +4597,68 @@ export default function HomePage() {
                                         >
                                           {isSelected ? '已选' : '选择'}
                                         </button>
-                                        {/* 指定位置按钮：仅选中素材 + 已选范式时显示 */}
-                                        {isSelected && selectedParadigm && (selectedParadigm.materialPositionMap || []).length > 0 && (
-                                          <button
-                                            type="button"
-                                            onClick={() => handleOpenSlotPicker(c.id)}
-                                            className="text-[10px] px-2 py-1 rounded bg-indigo-50 text-indigo-600 border border-indigo-200 hover:bg-indigo-100 transition-colors"
-                                          >
-                                            指定位置
-                                          </button>
-                                        )}
                                       </div>
                                     </div>
+                                  </div>
+                                  {/* 选中素材+已选范式时，卡片下方展开可关联的范式位置列表 */}
+                                  {isSelected && selectedParadigm?.materialPositionMap && selectedParadigm.materialPositionMap.length > 0 && (
+                                    <div className="mt-2 px-3 pb-2">
+                                      <div className="text-[10px] text-slate-400 mb-1.5 flex items-center gap-1">
+                                        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" /></svg>
+                                        关联到范式位置（点击绑定/解绑）
+                                      </div>
+                                      <div className="flex flex-wrap gap-1.5">
+                                        {selectedParadigm.materialPositionMap
+                                          .sort((a: any, b: any) => (a.paragraphOrder ?? 0) - (b.paragraphOrder ?? 0))
+                                          .map((pos: any) => {
+                                          const boundMaterialId = paradigmMaterialBindings[pos.slotId];
+                                          const isBoundToThis = boundMaterialId === c.id;
+                                          const isBoundToOther = boundMaterialId && boundMaterialId !== c.id;
+                                          const materialTypeMatch = pos.materialTypes?.some((t: string) =>
+                                            c.type === t
+                                          );
+                                          return (
+                                            <button
+                                              key={pos.slotId}
+                                              onClick={(e) => {
+                                                e.stopPropagation();
+                                                if (isBoundToThis) {
+                                                  unbindMaterialFromSlot(pos.slotId);
+                                                } else if (!isBoundToOther) {
+                                                  bindMaterialToSlot(pos.slotId, c.id);
+                                                }
+                                              }}
+                                              className={`
+                                                inline-flex items-center gap-1 px-2 py-1 rounded text-[10px] font-medium transition-all
+                                                ${isBoundToThis
+                                                  ? 'bg-emerald-100 text-emerald-700 border border-emerald-300 shadow-sm'
+                                                  : isBoundToOther
+                                                    ? 'bg-slate-50 text-slate-300 border border-slate-100 cursor-not-allowed opacity-50'
+                                                    : materialTypeMatch
+                                                      ? 'bg-indigo-50 text-indigo-600 border border-indigo-200 hover:bg-indigo-100 hover:border-indigo-300 cursor-pointer'
+                                                      : 'bg-slate-50 text-slate-400 border border-slate-200 hover:bg-slate-100 cursor-pointer'
+                                                }
+                                              `}
+                                              disabled={isBoundToOther}
+                                              title={isBoundToThis ? '点击解绑' : isBoundToOther ? `已被其他素材占用` : `点击绑定到此位置`}
+                                            >
+                                              {isBoundToThis && (
+                                                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+                                              )}
+                                              {isBoundToOther && (
+                                                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m0 0v2m0-2h2m-2 0H10m10-5a8 8 0 11-16 0 8 8 0 0116 0z" /></svg>
+                                              )}
+                                              <span>第{pos.paragraphOrder}段</span>
+                                              <span className="max-w-[60px] truncate">{pos.stepName}</span>
+                                              {materialTypeMatch && !isBoundToThis && !isBoundToOther && (
+                                                <span className="w-1.5 h-1.5 rounded-full bg-indigo-400 flex-shrink-0" title="素材类型匹配" />
+                                              )}
+                                            </button>
+                                          );
+                                        })}
+                                      </div>
+                                    </div>
+                                  )}
                                   </div>
                                 );
                               })}
@@ -4631,73 +4680,6 @@ export default function HomePage() {
                               {caseSearchMode === 'search' ? '搜索中...' : 'AI 推荐中...'}
                             </div>
                           )}
-                        </div>
-                      )}
-
-                      {/* 🔥🔥 范式位置选择弹窗 */}
-                      {slotPickerOpen && slotPickerMaterialId && selectedParadigm && (
-                        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30" onClick={() => setSlotPickerOpen(false)}>
-                          <div className="bg-white rounded-xl shadow-2xl p-5 max-w-md w-full mx-4 border border-slate-200" onClick={e => e.stopPropagation()}>
-                            <div className="flex items-center justify-between mb-4">
-                              <h3 className="text-sm font-semibold text-slate-800">指定素材到范式位置</h3>
-                              <button type="button" onClick={() => setSlotPickerOpen(false)} className="text-slate-400 hover:text-slate-600 text-lg">✕</button>
-                            </div>
-                            <p className="text-xs text-slate-500 mb-3">
-                              选择将此素材绑定到「{selectedParadigm.name}」的哪个段落位置
-                            </p>
-                            <div className="space-y-2 max-h-72 overflow-y-auto">
-                              {(selectedParadigm.materialPositionMap || []).map((pos: any) => {
-                                const currentBound = paradigmMaterialBindings[pos.slotId];
-                                const isCurrentlyBound = currentBound === slotPickerMaterialId;
-                                const isBoundToOther = currentBound && currentBound !== slotPickerMaterialId;
-                                return (
-                                  <button
-                                    key={pos.slotId}
-                                    type="button"
-                                    onClick={() => {
-                                      if (isCurrentlyBound) {
-                                        unbindMaterialFromSlot(pos.slotId);
-                                      } else {
-                                        bindMaterialToSlot(pos.slotId, slotPickerMaterialId);
-                                      }
-                                      setSlotPickerOpen(false);
-                                    }}
-                                    disabled={isBoundToOther}
-                                    className={`w-full text-left p-3 rounded-lg border transition-all ${
-                                      isCurrentlyBound
-                                        ? 'border-green-400 bg-green-50 ring-1 ring-green-200'
-                                        : isBoundToOther
-                                          ? 'border-slate-100 bg-slate-50 opacity-50 cursor-not-allowed'
-                                          : 'border-slate-200 hover:border-indigo-300 hover:bg-indigo-50 cursor-pointer'
-                                    }`}
-                                  >
-                                    <div className="flex items-center justify-between">
-                                      <div>
-                                        <span className="text-xs font-medium text-slate-700">段落{pos.paragraphOrder} · {pos.stepName}</span>
-                                        {!pos.isOptional && <span className="ml-1.5 text-[10px] text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded">必填</span>}
-                                      </div>
-                                      {isCurrentlyBound && <span className="text-[10px] text-green-600 font-medium">当前绑定</span>}
-                                      {isBoundToOther && <span className="text-[10px] text-slate-400">已绑定其他</span>}
-                                    </div>
-                                    <div className="flex gap-1 mt-1.5">
-                                      {pos.materialTypes.map((t: string) => (
-                                        <span key={t} className="text-[10px] px-1.5 py-0.5 rounded bg-amber-100/80 text-amber-700">{t}</span>
-                                      ))}
-                                    </div>
-                                  </button>
-                                );
-                              })}
-                            </div>
-                            <div className="mt-4 flex justify-end">
-                              <button
-                                type="button"
-                                onClick={() => setSlotPickerOpen(false)}
-                                className="text-xs px-3 py-1.5 rounded-lg bg-slate-100 text-slate-600 hover:bg-slate-200 transition-colors"
-                              >
-                                取消
-                              </button>
-                            </div>
-                          </div>
                         </div>
                       )}
 
