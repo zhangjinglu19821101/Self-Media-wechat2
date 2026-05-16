@@ -3,6 +3,7 @@ import { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import Link from 'next/link';
 import { apiGet, apiPost, apiPut, apiDelete, checkApiKeyMissing, getCurrentWorkspaceId } from '@/lib/api/client';
 import { formatMaterialAsItem, is7DMaterialType, MATERIAL_TYPE_CONFIG } from '@/lib/utils/material-formatter';
+import { getRequiredMaterialTypes, getParadigmMaterialMapping } from '@/lib/services/paradigm-material-mapping-service';
 import type { MaterialFormat, WebSearchResultItem } from '@/lib/services/unified-search/types';
 import { Card, CardHeader, CardTitle, CardContent, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -955,6 +956,35 @@ export default function HomePage() {
     loadParadigms();
     loadParadigmInitStatuses();
   }, []);
+
+  // 🔥 范式选择时联动素材维度筛选：选择范式后自动筛选该范式需要的素材类型
+  useEffect(() => {
+    if (!selectedParadigm?.paradigmCode) return;
+    
+    // 获取该范式需要的所有素材类型
+    const requiredTypes = getRequiredMaterialTypes(selectedParadigm.paradigmCode);
+    
+    // 如果有素材类型需求，则设置筛选器（优先使用第一个需要的素材类型）
+    if (requiredTypes.length > 0) {
+      // 将7维度类型映射到前端使用的筛选类型（golden_sentence -> hook_sentence, personal_fragment -> value_reconstruction）
+      const filterType = requiredTypes[0];
+      let frontendFilterType: string = filterType;
+      
+      // 类型映射：后端类型 -> 前端筛选器类型
+      if (filterType === 'golden_sentence') frontendFilterType = 'hook_sentence';
+      if (filterType === 'personal_fragment') frontendFilterType = 'value_reconstruction';
+      
+      // 只有当前筛选类型不是该范式需要的类型时，才自动切换
+      const currentFilterInRequired = requiredTypes.some(type => {
+        const mapType = type === 'golden_sentence' ? 'hook_sentence' : type === 'personal_fragment' ? 'value_reconstruction' : type;
+        return mapType === caseFilterType;
+      });
+      
+      if (!currentFilterInRequired) {
+        setCaseFilterType(frontendFilterType);
+      }
+    }
+  }, [selectedParadigm?.paradigmCode]);
 
   // 🔥 当账号选择变化且已有AI拆解结果时，用流程模板初始化按平台分组的子任务
   // 注意：AI拆解结果仅用于展示，真正创建任务时使用固定流程模板
