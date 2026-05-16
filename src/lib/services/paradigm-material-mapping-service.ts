@@ -140,10 +140,10 @@ export function getParadigmMaterialMapping(
         slotId: position.slotId,
         paragraphOrder: position.paragraphOrder,
         stepName: position.stepName,
-        materialTypes: position.materialTypes as RelationalMaterialType[],
+        materialTypes: position.materialTypes as unknown as RelationalMaterialType[],
         isPrimary: position.isPrimary,
         isOptional: position.isOptional,
-        fixedContext: 'fixedContext' in position ? position.fixedContext : undefined
+        fixedContext: 'fixedContext' in position ? String((position as Record<string, unknown>).fixedContext) : undefined
       });
     }
 
@@ -244,6 +244,17 @@ export function isSlotIdMatch(
   
   // 严格匹配：只能将同ID素材填充到同ID位置
   return materialSlotId === targetSlotId;
+}
+
+/**
+ * 获取范式需要的素材类型列表
+ * @param paradigmCode 范式代码
+ * @returns 需要的素材类型列表
+ */
+export function getRequiredMaterialTypes(paradigmCode: string): RelationalMaterialType[] {
+  const mapping = getParadigmMaterialMapping(paradigmCode);
+  if (!mapping) return [];
+  return mapping.allMaterialTypes;
 }
 
 /**

@@ -455,7 +455,157 @@ export const PARADIGM_SEED_DATA = [
     isActive: true,
     isSystem: true,
   },
-] as const satisfies (typeof paradigmLibrary.$inferInsert)[];
+
+  // ============================================================
+  // P008: 避坑指南范式
+  // ============================================================
+  {
+    paradigmCode: 'P008',
+    paradigmName: '避坑指南范式',
+    description: '常见坑点列举→坑点解析→避坑方法→真实案例→实用建议→金句收尾。适用于避坑干货文章。',
+    applicableArticleTypes: ['避坑指南型', 'pitfall_guide'],
+    applicableIndustries: ['insurance_life', 'insurance_health', 'insurance_property'],
+    applicableSceneKeywords: ['避坑', '别踩', '注意', '小心', '别被骗'],
+    officialAccountStructure: [
+      { order: 1, slotId: 'P008-01', stepName: '坑点引入', titleTemplate: '常见的坑', contentRequirement: '常见坑点引入', wordRange: { min: 100, max: 200 }, required: true, fixedPhrases: ['很多人都踩过这个坑'], fixedContext: '{{P008-01}}' },
+      { order: 2, slotId: 'P008-02', stepName: '错误认知', titleTemplate: '你以为的', contentRequirement: '错误认知分析', wordRange: { min: 150, max: 250 }, required: true, fixedPhrases: ['你以为的其实是最不靠谱的'], fixedContext: '{{P008-02}}' },
+      { order: 3, slotId: 'P008-03', stepName: '坑点案例', titleTemplate: '踩坑案例', contentRequirement: '踩坑真实案例', wordRange: { min: 200, max: 350 }, required: true, fixedPhrases: ['我见过最典型的'], fixedContext: '{{P008-03}}' },
+      { order: 4, slotId: 'P008-04', stepName: '避坑方法', titleTemplate: '正确的做法', contentRequirement: '避坑方法', wordRange: { min: 200, max: 350 }, required: true, fixedPhrases: ['正确的做法是'], fixedContext: '{{P008-04}}' },
+      { order: 5, slotId: 'P008-05', stepName: '数据支撑', titleTemplate: '数据说话', contentRequirement: '数据支撑避坑', wordRange: { min: 100, max: 200 }, required: true, fixedPhrases: ['数据不会说谎'], fixedContext: '{{P008-05}}' },
+      { order: 6, slotId: 'P008-06', stepName: '实用建议', titleTemplate: '给大家的建议', contentRequirement: '实用建议', wordRange: { min: 150, max: 250 }, required: true, fixedPhrases: ['给大家的建议'], fixedContext: '{{P008-06}}' },
+      { order: 7, slotId: 'P008-07', stepName: '金句收尾', titleTemplate: '一句话总结', contentRequirement: '金句收尾', wordRange: { min: 50, max: 100 }, required: true, fixedPhrases: ['所以说'], fixedContext: '{{P008-07}}' },
+    ],
+    xiaohongshuStructure: [
+      { order: 1, slotId: 'P008-XHS-01', stepName: '坑点引入', titleTemplate: '常见的坑', contentRequirement: '一句话坑点', wordRange: { min: 30, max: 60 }, emojiSuggestions: ['⚠️', '🚫'], shortSentence: true, fixedContext: '{{P008-XHS-01}}' },
+      { order: 2, slotId: 'P008-XHS-02', stepName: '坑点案例', titleTemplate: '踩坑案例', contentRequirement: '2-3句案例', wordRange: { min: 50, max: 100 }, emojiSuggestions: ['😱', '💥'], shortSentence: true, fixedContext: '{{P008-XHS-02}}' },
+      { order: 3, slotId: 'P008-XHS-03', stepName: '避坑方法', titleTemplate: '正确的做法', contentRequirement: '避坑方法', wordRange: { min: 40, max: 80 }, emojiSuggestions: ['💡', '✅'], shortSentence: true, fixedContext: '{{P008-XHS-03}}' },
+      { order: 4, slotId: 'P008-XHS-04', stepName: '实用建议', titleTemplate: '实用建议', contentRequirement: '实用建议', wordRange: { min: 60, max: 120 }, emojiSuggestions: ['📝', '💪'], shortSentence: false, fixedContext: '{{P008-XHS-04}}' },
+      { order: 5, slotId: 'P008-XHS-05', stepName: '金句标签', titleTemplate: '金句+标签', contentRequirement: '金句+标签', wordRange: { min: 30, max: 80 }, emojiSuggestions: ['💎', '🎯'], shortSentence: true, fixedContext: '{{P008-XHS-05}}' },
+    ],
+    materialPositionMap: [
+      { slotId: 'P008-01', paragraphOrder: 1, stepName: '坑点引入', materialTypes: ['misconception', 'personal_fragment'], isPrimary: true, isOptional: false },
+      { slotId: 'P008-02', paragraphOrder: 2, stepName: '错误认知', materialTypes: ['misconception'], isPrimary: true, isOptional: false },
+      { slotId: 'P008-03', paragraphOrder: 3, stepName: '坑点案例', materialTypes: ['case'], isPrimary: true, isOptional: false },
+      { slotId: 'P008-04', paragraphOrder: 4, stepName: '避坑方法', materialTypes: ['fixed_phrase', 'analogy'], isPrimary: true, isOptional: false },
+      { slotId: 'P008-05', paragraphOrder: 5, stepName: '数据支撑', materialTypes: ['data'], isPrimary: true, isOptional: false },
+      { slotId: 'P008-06', paragraphOrder: 6, stepName: '实用建议', materialTypes: ['fixed_phrase', 'personal_fragment'], isPrimary: true, isOptional: false },
+      { slotId: 'P008-07', paragraphOrder: 7, stepName: '金句收尾', materialTypes: ['golden_sentence'], isPrimary: true, isOptional: false },
+    ],
+    emotionCurve: [
+      { paragraphOrder: 1, stepName: '坑点引入', emotion: '警醒', intensity: 8 },
+      { paragraphOrder: 2, stepName: '错误认知', emotion: '否定', intensity: 7 },
+      { paragraphOrder: 3, stepName: '坑点案例', emotion: '共鸣', intensity: 9 },
+      { paragraphOrder: 4, stepName: '避坑方法', emotion: '实用', intensity: 8 },
+      { paragraphOrder: 5, stepName: '数据支撑', emotion: '信服', intensity: 6 },
+      { paragraphOrder: 6, stepName: '实用建议', emotion: '温暖', intensity: 7 },
+      { paragraphOrder: 7, stepName: '金句收尾', emotion: '记忆', intensity: 6 },
+    ],
+    signaturePhrases: ['很多人都踩过这个坑', '你以为的其实是最不靠谱的', '正确的做法是', '数据不会说谎', '所以说'],
+    sortOrder: 8,
+    isActive: true,
+    isSystem: true,
+  },
+
+  // ============================================================
+  // P009: 对比分析范式
+  // ============================================================
+  {
+    paradigmCode: 'P009',
+    paradigmName: '对比分析范式',
+    description: '对比引入→A方案解析→B方案解析→核心差异→选择建议→金句收尾。适用于产品/方案对比文章。',
+    applicableArticleTypes: ['对比分析型', 'comparison_analysis'],
+    applicableIndustries: ['insurance_life', 'insurance_health', 'insurance_property'],
+    applicableSceneKeywords: ['对比', '哪个好', '区别', '选哪个', 'A还是B'],
+    officialAccountStructure: [
+      { order: 1, slotId: 'P009-01', stepName: '对比引入', titleTemplate: '很多人纠结', contentRequirement: '对比引入', wordRange: { min: 100, max: 200 }, required: true, fixedPhrases: ['很多人在这两者之间纠结'], fixedContext: '{{P009-01}}' },
+      { order: 2, slotId: 'P009-02', stepName: 'A方案解析', titleTemplate: '先说A', contentRequirement: 'A方案优势与劣势', wordRange: { min: 200, max: 350 }, required: true, fixedPhrases: ['先说说A的优势'], fixedContext: '{{P009-02}}' },
+      { order: 3, slotId: 'P009-03', stepName: 'B方案解析', titleTemplate: '再说B', contentRequirement: 'B方案优势与劣势', wordRange: { min: 200, max: 350 }, required: true, fixedPhrases: ['再来看看B'], fixedContext: '{{P009-03}}' },
+      { order: 4, slotId: 'P009-04', stepName: '核心差异', titleTemplate: '核心差异', contentRequirement: '核心差异对比', wordRange: { min: 200, max: 350 }, required: true, fixedPhrases: ['两者最核心的差异是'], fixedContext: '{{P009-04}}' },
+      { order: 5, slotId: 'P009-05', stepName: '选择建议', titleTemplate: '怎么选', contentRequirement: '选择建议', wordRange: { min: 150, max: 250 }, required: true, fixedPhrases: ['我的建议是'], fixedContext: '{{P009-05}}' },
+      { order: 6, slotId: 'P009-06', stepName: '案例佐证', titleTemplate: '真实案例', contentRequirement: '案例佐证', wordRange: { min: 150, max: 250 }, required: true, fixedPhrases: ['我见过一个真实的例子'], fixedContext: '{{P009-06}}' },
+      { order: 7, slotId: 'P009-07', stepName: '金句收尾', titleTemplate: '一句话总结', contentRequirement: '金句收尾', wordRange: { min: 50, max: 100 }, required: true, fixedPhrases: ['所以说'], fixedContext: '{{P009-07}}' },
+    ],
+    xiaohongshuStructure: [
+      { order: 1, slotId: 'P009-XHS-01', stepName: '对比引入', titleTemplate: '纠结选哪个', contentRequirement: '一句话引入', wordRange: { min: 30, max: 60 }, emojiSuggestions: ['🤔', '⚖️'], shortSentence: true, fixedContext: '{{P009-XHS-01}}' },
+      { order: 2, slotId: 'P009-XHS-02', stepName: 'AB对比', titleTemplate: 'AB对比', contentRequirement: 'AB对比要点', wordRange: { min: 60, max: 120 }, emojiSuggestions: ['📊', '🔄'], shortSentence: true, fixedContext: '{{P009-XHS-02}}' },
+      { order: 3, slotId: 'P009-XHS-03', stepName: '选择建议', titleTemplate: '怎么选', contentRequirement: '选择建议', wordRange: { min: 40, max: 80 }, emojiSuggestions: ['💡', '✅'], shortSentence: true, fixedContext: '{{P009-XHS-03}}' },
+      { order: 4, slotId: 'P009-XHS-04', stepName: '实用建议', titleTemplate: '实用建议', contentRequirement: '实用建议', wordRange: { min: 60, max: 120 }, emojiSuggestions: ['📝', '💪'], shortSentence: false, fixedContext: '{{P009-XHS-04}}' },
+      { order: 5, slotId: 'P009-XHS-05', stepName: '金句标签', titleTemplate: '金句+标签', contentRequirement: '金句+标签', wordRange: { min: 30, max: 80 }, emojiSuggestions: ['💎', '🎯'], shortSentence: true, fixedContext: '{{P009-XHS-05}}' },
+    ],
+    materialPositionMap: [
+      { slotId: 'P009-01', paragraphOrder: 1, stepName: '对比引入', materialTypes: ['misconception', 'personal_fragment'], isPrimary: true, isOptional: false },
+      { slotId: 'P009-02', paragraphOrder: 2, stepName: 'A方案解析', materialTypes: ['fixed_phrase', 'data'], isPrimary: true, isOptional: false },
+      { slotId: 'P009-03', paragraphOrder: 3, stepName: 'B方案解析', materialTypes: ['fixed_phrase', 'data'], isPrimary: true, isOptional: false },
+      { slotId: 'P009-04', paragraphOrder: 4, stepName: '核心差异', materialTypes: ['analogy', 'golden_sentence'], isPrimary: true, isOptional: false },
+      { slotId: 'P009-05', paragraphOrder: 5, stepName: '选择建议', materialTypes: ['fixed_phrase', 'personal_fragment'], isPrimary: true, isOptional: false },
+      { slotId: 'P009-06', paragraphOrder: 6, stepName: '案例佐证', materialTypes: ['case'], isPrimary: true, isOptional: false },
+      { slotId: 'P009-07', paragraphOrder: 7, stepName: '金句收尾', materialTypes: ['golden_sentence'], isPrimary: true, isOptional: false },
+    ],
+    emotionCurve: [
+      { paragraphOrder: 1, stepName: '对比引入', emotion: '好奇', intensity: 7 },
+      { paragraphOrder: 2, stepName: 'A方案解析', emotion: '客观', intensity: 6 },
+      { paragraphOrder: 3, stepName: 'B方案解析', emotion: '客观', intensity: 6 },
+      { paragraphOrder: 4, stepName: '核心差异', emotion: '清晰', intensity: 8 },
+      { paragraphOrder: 5, stepName: '选择建议', emotion: '实用', intensity: 8 },
+      { paragraphOrder: 6, stepName: '案例佐证', emotion: '信服', intensity: 7 },
+      { paragraphOrder: 7, stepName: '金句收尾', emotion: '记忆', intensity: 6 },
+    ],
+    signaturePhrases: ['很多人在这两者之间纠结', '先说说', '再来看看', '两者最核心的差异是', '我的建议是'],
+    sortOrder: 9,
+    isActive: true,
+    isSystem: true,
+  },
+
+  // ============================================================
+  // P010: 年终总结范式
+  // ============================================================
+  {
+    paradigmCode: 'P010',
+    paradigmName: '年终总结范式',
+    description: '年度回顾引入→行业重大事件→数据盘点→趋势预判→个人思考→实用建议→金句收尾。适用于年度回顾文章。',
+    applicableArticleTypes: ['年终总结型', 'year_end_review'],
+    applicableIndustries: ['insurance_life', 'insurance_health', 'insurance_property'],
+    applicableSceneKeywords: ['年终', '年度', '回顾', '盘点', '总结'],
+    officialAccountStructure: [
+      { order: 1, slotId: 'P010-01', stepName: '年度回顾引入', titleTemplate: '这一年', contentRequirement: '年度回顾引入', wordRange: { min: 100, max: 200 }, required: true, fixedPhrases: ['这一年过得太快了'], fixedContext: '{{P010-01}}' },
+      { order: 2, slotId: 'P010-02', stepName: '重大事件', titleTemplate: '大事记', contentRequirement: '行业重大事件', wordRange: { min: 200, max: 350 }, required: true, fixedPhrases: ['今年最大的事'], fixedContext: '{{P010-02}}' },
+      { order: 3, slotId: 'P010-03', stepName: '数据盘点', titleTemplate: '数据说话', contentRequirement: '数据盘点', wordRange: { min: 150, max: 250 }, required: true, fixedPhrases: ['我们来看看数据'], fixedContext: '{{P010-03}}' },
+      { order: 4, slotId: 'P010-04', stepName: '趋势预判', titleTemplate: '明年会怎样', contentRequirement: '趋势预判', wordRange: { min: 200, max: 350 }, required: true, fixedPhrases: ['明年我判断'], fixedContext: '{{P010-04}}' },
+      { order: 5, slotId: 'P010-05', stepName: '个人思考', titleTemplate: '我的思考', contentRequirement: '个人思考', wordRange: { min: 150, max: 250 }, required: true, fixedPhrases: ['我的思考是'], fixedContext: '{{P010-05}}' },
+      { order: 6, slotId: 'P010-06', stepName: '实用建议', titleTemplate: '给大家的建议', contentRequirement: '实用建议', wordRange: { min: 150, max: 250 }, required: true, fixedPhrases: ['给大家的建议'], fixedContext: '{{P010-06}}' },
+      { order: 7, slotId: 'P010-07', stepName: '金句收尾', titleTemplate: '一句话总结', contentRequirement: '金句收尾', wordRange: { min: 50, max: 100 }, required: true, fixedPhrases: ['所以说'], fixedContext: '{{P010-07}}' },
+    ],
+    xiaohongshuStructure: [
+      { order: 1, slotId: 'P010-XHS-01', stepName: '年度引入', titleTemplate: '这一年', contentRequirement: '一句话回顾', wordRange: { min: 30, max: 60 }, emojiSuggestions: ['📅', '⏰'], shortSentence: true, fixedContext: '{{P010-XHS-01}}' },
+      { order: 2, slotId: 'P010-XHS-02', stepName: '大事盘点', titleTemplate: '大事记', contentRequirement: '2-3件大事', wordRange: { min: 60, max: 120 }, emojiSuggestions: ['📰', '🔥'], shortSentence: true, fixedContext: '{{P010-XHS-02}}' },
+      { order: 3, slotId: 'P010-XHS-03', stepName: '趋势预判', titleTemplate: '明年怎么看', contentRequirement: '趋势预判', wordRange: { min: 40, max: 80 }, emojiSuggestions: ['🔮', '💡'], shortSentence: true, fixedContext: '{{P010-XHS-03}}' },
+      { order: 4, slotId: 'P010-XHS-04', stepName: '实用建议', titleTemplate: '实用建议', contentRequirement: '实用建议', wordRange: { min: 60, max: 120 }, emojiSuggestions: ['📝', '💪'], shortSentence: false, fixedContext: '{{P010-XHS-04}}' },
+      { order: 5, slotId: 'P010-XHS-05', stepName: '金句标签', titleTemplate: '金句+标签', contentRequirement: '金句+标签', wordRange: { min: 30, max: 80 }, emojiSuggestions: ['💎', '🎯'], shortSentence: true, fixedContext: '{{P010-XHS-05}}' },
+    ],
+    materialPositionMap: [
+      { slotId: 'P010-01', paragraphOrder: 1, stepName: '年度回顾引入', materialTypes: ['personal_fragment'], isPrimary: true, isOptional: false },
+      { slotId: 'P010-02', paragraphOrder: 2, stepName: '重大事件', materialTypes: ['case', 'data'], isPrimary: true, isOptional: false },
+      { slotId: 'P010-03', paragraphOrder: 3, stepName: '数据盘点', materialTypes: ['data'], isPrimary: true, isOptional: false },
+      { slotId: 'P010-04', paragraphOrder: 4, stepName: '趋势预判', materialTypes: ['fixed_phrase', 'golden_sentence'], isPrimary: true, isOptional: false },
+      { slotId: 'P010-05', paragraphOrder: 5, stepName: '个人思考', materialTypes: ['analogy', 'personal_fragment'], isPrimary: true, isOptional: false },
+      { slotId: 'P010-06', paragraphOrder: 6, stepName: '实用建议', materialTypes: ['fixed_phrase', 'personal_fragment'], isPrimary: true, isOptional: false },
+      { slotId: 'P010-07', paragraphOrder: 7, stepName: '金句收尾', materialTypes: ['golden_sentence'], isPrimary: true, isOptional: false },
+    ],
+    emotionCurve: [
+      { paragraphOrder: 1, stepName: '年度回顾引入', emotion: '感慨', intensity: 7 },
+      { paragraphOrder: 2, stepName: '重大事件', emotion: '震撼', intensity: 9 },
+      { paragraphOrder: 3, stepName: '数据盘点', emotion: '客观', intensity: 6 },
+      { paragraphOrder: 4, stepName: '趋势预判', emotion: '前瞻', intensity: 8 },
+      { paragraphOrder: 5, stepName: '个人思考', emotion: '深度', intensity: 7 },
+      { paragraphOrder: 6, stepName: '实用建议', emotion: '温暖', intensity: 7 },
+      { paragraphOrder: 7, stepName: '金句收尾', emotion: '记忆', intensity: 6 },
+    ],
+    signaturePhrases: ['这一年过得太快了', '今年最大的事', '我们来看看数据', '明年我判断', '我的思考是'],
+    sortOrder: 10,
+    isActive: true,
+    isSystem: true,
+  },
+] as const;
 
 /** 范式代码名称映射 */
 export const PARADIGM_CODE_NAME_MAP: Record<string, string> = {
@@ -466,6 +616,9 @@ export const PARADIGM_CODE_NAME_MAP: Record<string, string> = {
   'P005': '热点事件范式',
   'P006': '产品解读范式',
   'P007': '个人经历范式',
+  'P008': '避坑指南范式',
+  'P009': '对比分析范式',
+  'P010': '年终总结范式',
 };
 
 /** 范式文章类型映射 */
@@ -477,4 +630,7 @@ export const PARADIGM_ARTICLE_TYPE_MAP: Record<string, string[]> = {
   'P005': ['热点结合型', 'hot_topic'],
   'P006': ['产品测评型', 'product_review'],
   'P007': ['个人经历型', 'personal_story'],
+  'P008': ['避坑指南型', 'pitfall_guide'],
+  'P009': ['对比分析型', 'comparison_analysis'],
+  'P010': ['年终总结型', 'year_end_review'],
 };

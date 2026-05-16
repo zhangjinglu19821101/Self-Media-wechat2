@@ -37,6 +37,7 @@ export interface MaterialMatchResult {
   content: string;
   materialType: string;           // 素材类型：analogy/misconception/case/data/fixed_phrase/golden_sentence/personal_fragment
   paradigmPosition: string;       // 在范式中的位置（如 "P001-段落1"）
+  slotId?: string;                // 🔥 位置ID三重绑定：素材绑定的位置ID（如 "P001-01"）
   score: number;                  // 匹配得分
   hasPreContext: boolean;          // 是否有前文关系
   hasPostContext: boolean;         // 是否有后文关系
@@ -207,7 +208,7 @@ function recognizeParadigmFromSeed(params: {
   // 按文章类型匹配
   if (articleType) {
     for (const p of PARADIGM_SEED_DATA) {
-      if (p.applicableArticleTypes.includes(articleType)) {
+      if ((p.applicableArticleTypes as readonly string[]).includes(articleType)) {
         return {
           paradigmCode: p.paradigmCode,
           paradigmName: p.paradigmName,
@@ -223,7 +224,7 @@ function recognizeParadigmFromSeed(params: {
   const searchText = [topic, taskDescription, articleType].filter(Boolean).join(' ');
   if (searchText) {
     let bestScore = 0;
-    let bestP = PARADIGM_SEED_DATA[0];
+    let bestP: typeof PARADIGM_SEED_DATA[number] = PARADIGM_SEED_DATA[0];
     let matchedKw: string[] = [];
     for (const p of PARADIGM_SEED_DATA) {
       const kw = p.applicableSceneKeywords.filter(k => searchText.includes(k));
@@ -312,6 +313,7 @@ export async function matchMaterials(params: {
     const materials: MaterialMatchResult[] = [];
     const materialTypes = slot.materialTypes as string[];
     const paragraphOrder = slot.paragraphOrder as number;
+    const slotId = slot.slotId as string; // 🔥 位置ID三重绑定：第一层
 
     // 🔥 跳过用户素材已填充的段落（用户素材优先，系统素材补位）
     if (userFilledParagraphOrders.includes(paragraphOrder)) {
@@ -322,36 +324,73 @@ export async function matchMaterials(params: {
     // 🔥 合并排除ID：原有排除 + 用户素材ID
     const allExcludeIds = [...excludeIds, ...userMaterialIds];
 
-    // 策略1：精确匹配 paradigmId + paradigmPosition
-    const exactMatches = await db
-      .select()
-      .from(materialLibrary)
-      .where(
-        and(
-          eq(materialLibrary.status, 'active'),
-          eq(materialLibrary.paradigmId, paradigmCode),
-          eq(materialLibrary.paradigmPosition, `${paradigmCode}-段落${paragraphOrder}`),
-          or(
-            sql`${materialLibrary.lastUsedAt} IS NULL`,
-            sql`${materialLibrary.lastUsedAt} <= ${sevenDaysAgo}`
-          ),
-          ...buildExcludeCondition(allExcludeIds)
+    // 策略0（最高优先级）：🔥 位置ID三重绑定 - 精确匹配 slotId
+    if (slotId) {
+      const slotIdMatches = await db
+        .select()
+        .from(materialLibrary)
+        .where(
+          and(
+            eq(materialLibrary.status, 'active'),
+            eq(materialLibrary.slotId, slotId), // 🔥 第二层绑定：素材slotId = 位置slotId
+            or(
+              sql`${materialLibrary.lastUsedAt} IS NULL`,
+              sql`${materialLibrary.lastUsedAt} <= ${sevenDaysAgo}`
+            ),
+            ...buildExcludeCondition(allExcludeIds)
+          )
         )
-      )
-      .orderBy(asc(materialLibrary.useCount))
-      .limit(3);
+        .orderBy(asc(materialLibrary.useCount))
+        .limit(3);
 
-    for (const m of exactMatches) {
-      materials.push({
-        materialId: m.id,
-        title: m.title,
-        content: m.content || '',
-        materialType: m.sceneType || m.type,
-        paradigmPosition: m.paradigmPosition || '',
-        score: 1.0,
-        hasPreContext: !!(m.sceneTags as string[])?.some(t => t === '承接' || t === '过渡'),
-        hasPostContext: !!(m.sceneTags as string[])?.some(t => t === '引出' || t === '铺垫'),
-      });
+      for (const m of slotIdMatches) {
+        materials.push({
+          materialId: m.id,
+          title: m.title,
+          content: m.content || '',
+          materialType: m.sceneType || m.type,
+          paradigmPosition: m.paradigmPosition || '',
+          slotId: m.slotId || slotId, // 🔥 位置ID三重绑定：标记素材的slotId
+          score: 1.0, // slotId精确匹配=最高优先级
+          hasPreContext: !!(m.sceneTags as string[])?.some(t => t === '承接' || t === '过渡'),
+          hasPostContext: !!(m.sceneTags as string[])?.some(t => t === '引出' || t === '铺垫'),
+        });
+      }
+    }
+
+    // 策略1：精确匹配 paradigmId + paradigmPosition（降级方案）
+    if (materials.length < 2) {
+      const exactMatches = await db
+        .select()
+        .from(materialLibrary)
+        .where(
+          and(
+            eq(materialLibrary.status, 'active'),
+            eq(materialLibrary.paradigmId, paradigmCode),
+            eq(materialLibrary.paradigmPosition, `${paradigmCode}-段落${paragraphOrder}`),
+            or(
+              sql`${materialLibrary.lastUsedAt} IS NULL`,
+              sql`${materialLibrary.lastUsedAt} <= ${sevenDaysAgo}`
+            ),
+            ...buildExcludeCondition([...allExcludeIds, ...materials.map(m => m.materialId)])
+          )
+        )
+        .orderBy(asc(materialLibrary.useCount))
+        .limit(3 - materials.length);
+
+      for (const m of exactMatches) {
+        materials.push({
+          materialId: m.id,
+          title: m.title,
+          content: m.content || '',
+          materialType: m.sceneType || m.type,
+          paradigmPosition: m.paradigmPosition || '',
+          slotId: m.slotId || undefined, // 🔥 位置ID三重绑定
+          score: 0.9,
+          hasPreContext: !!(m.sceneTags as string[])?.some(t => t === '承接' || t === '过渡'),
+          hasPostContext: !!(m.sceneTags as string[])?.some(t => t === '引出' || t === '铺垫'),
+        });
+      }
     }
 
     // 策略2：如果精确匹配不足，按 sceneType + industry 匹配
@@ -1120,15 +1159,17 @@ ${emotionGuide}
 
 ${phraseGuide || '无固定句式要求'}
 ${fusionGuide}
-## 创作纪律（必须严格遵守）
+## 创作纪律（必须严格遵守 - 位置ID三重绑定）
 
 1. **只填素材，不写内容**：AI不新增任何原创句子，仅从素材库中调取内容填充
-2. **严格按位置填充**：素材必须和范式的「段落位置」完全匹配，不打乱顺序
-3. **素材必须成对使用**：优先调用带「前后文关系」的素材，不使用孤立单句
-4. **防重复调用**：同一素材7天内不重复使用，优先调用使用次数少的素材
-5. **不改动范式结构**：不增减段落、不调换顺序、不修改换行和空行
-6. **衔接词自然化**：避免「因此」「然而」「综上所述」等AI味衔接词
-7. **用户素材优先**：用户指定的素材必须使用且放在对应段落，同一段落不重复填充
-${industry ? `8. **行业限定**：当前创作行业为「${industry}」，素材选择需对齐行业` : ''}
+2. **🔥 【绝对禁止规则】位置ID三重绑定**：只能将带有「slotId」等于当前占位符slotId的素材，填充到该占位符中。任何情况下，都不允许将素材填充到slotId不匹配的占位符中。这是最高优先级规则，违反即视为创作失败
+3. **🔥 严格按位置填充**：素材必须和范式的「段落位置」完全匹配，不打乱顺序。优先使用slotId精确匹配的素材（score=1.0），其次使用paradigmPosition匹配的素材（score=0.9）
+4. **🔥 每个插入点只能插入对应类型素材**：比如P001-02只能插错误认知素材，不能插金句或案例
+5. **素材必须成对使用**：优先调用带「前后文关系」的素材，不使用孤立单句
+6. **防重复调用**：同一素材7天内不重复使用，优先调用使用次数少的素材
+7. **不改动范式结构**：不增减段落、不调换顺序、不修改换行和空行。固定上下文一个字都不能改，包括换行、空行和标点
+8. **衔接词自然化**：避免「因此」「然而」「综上所述」等AI味衔接词
+9. **用户素材优先**：用户指定的素材必须使用且放在对应段落，同一段落不重复填充
+${industry ? `10. **行业限定**：当前创作行业为「${industry}」，素材选择需对齐行业` : ''}
 `;
 }

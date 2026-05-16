@@ -38,6 +38,8 @@ const VALID_OWNER_FILTERS: OwnerFilter[] = ['all', 'user', 'system', 'bookmarked
  * - search: 关键词搜索（标题+内容）
  * - page: 页码（默认1）
  * - pageSize: 每页数量（默认20，最大100）
+ * - paradigmId: 范式ID筛选（位置ID三重绑定）
+ * - slotId: 位置ID筛选（位置ID三重绑定，优先级最高）
  */
 export async function GET(request: NextRequest) {
   try {
@@ -53,6 +55,8 @@ export async function GET(request: NextRequest) {
     const page = parseInt(searchParams.get('page') || '1', 10);
     const pageSize = Math.min(parseInt(searchParams.get('pageSize') || '20', 10), 100);
     const tagType = searchParams.get('tagType');
+    const paradigmId = searchParams.get('paradigmId');
+    const slotId = searchParams.get('slotId');
 
     // 校验归属筛选参数
     if (!VALID_OWNER_FILTERS.includes(ownerFilter)) {
@@ -96,6 +100,16 @@ export async function GET(request: NextRequest) {
     // 类型筛选
     if (type) {
       conditions.push(eq(materialLibrary.type, type));
+    }
+
+    // 🔥 位置ID三重绑定：范式ID筛选
+    if (paradigmId) {
+      conditions.push(eq(materialLibrary.paradigmId, paradigmId));
+    }
+
+    // 🔥 位置ID三重绑定：slotId筛选（最高优先级精确匹配）
+    if (slotId) {
+      conditions.push(eq(materialLibrary.slotId, slotId));
     }
 
     // 标签筛选
@@ -322,6 +336,9 @@ async function getBookmarkedMaterials(
  * - sceneTags: 场景标签[]
  * - emotionTags: 情绪标签[]
  * - applicablePositions: 适用位置[]
+ * - paradigmId: 适用范式ID（位置ID三重绑定，如 P001）
+ * - paradigmPosition: 范式段落位置（如 P001-段落1）
+ * - slotId: 位置ID（位置ID三重绑定，如 P001-01）
  */
 export async function POST(request: NextRequest) {
   try {
@@ -344,6 +361,10 @@ export async function POST(request: NextRequest) {
       sourceArticleId,
       sceneType,
       analysisText,
+      // 🔥 位置ID三重绑定：素材初始化时绑定范式和位置
+      paradigmId,
+      paradigmPosition,
+      slotId,
     } = body;
 
     // 参数校验
@@ -404,6 +425,10 @@ export async function POST(request: NextRequest) {
         sourceArticleId: sourceArticleId || null,
         sceneType: sceneType || null,
         analysisText: analysisText || null,
+        // 🔥 位置ID三重绑定：素材初始化时即绑定范式和位置
+        paradigmId: paradigmId || null,
+        paradigmPosition: paradigmPosition || null,
+        slotId: slotId || null,
         status: 'active',
         useCount: 0,
         effectiveCount: 0,

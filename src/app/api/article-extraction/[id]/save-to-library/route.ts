@@ -45,6 +45,31 @@ const SCENE_TYPE_MAP: Record<string, string> = {
   personal_fragment: 'personal_fragment',
 };
 
+/** 🔥 范式名称/类型 → 范式ID映射（位置ID三重绑定所需） */
+const PARADIGM_ID_MAP: Record<string, string> = {
+  '标准错位破局范式': 'P001',
+  '行业反思范式': 'P002',
+  '案例归谬范式': 'P003',
+  '本质定义范式': 'P004',
+  '热点事件范式': 'P005',
+  '产品解读范式': 'P006',
+  '个人经历范式': 'P007',
+  '避坑指南范式': 'P008',
+  '对比分析范式': 'P009',
+  '年终总结范式': 'P010',
+  // 兼容 paradigmType 字段值
+  'misconception_break': 'P001',
+  'industry_reflection': 'P002',
+  'case_refutation': 'P003',
+  'essential_definition': 'P004',
+  'hot_event': 'P005',
+  'product_review': 'P006',
+  'personal_experience': 'P007',
+  'pitfall_guide': 'P008',
+  'comparison_analysis': 'P009',
+  'year_end_review': 'P010',
+};
+
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -106,6 +131,22 @@ export async function POST(
           ? `P${paragraphIdx + 1}${sentenceIdx !== undefined ? `-S${sentenceIdx + 1}` : ''}`
           : '?';
 
+        // 🔥 位置ID三重绑定：自动计算 slotId
+        // 规则：如果文章匹配了范式ID，则素材的slotId = 范式ID + "-0" + (段落序号)
+        // 例如：范式P001的第1段 → slotId = "P001-01"
+        const matchedParadigmId = (extraction as any).paradigmId
+          || PARADIGM_ID_MAP[extraction.paradigmName || '']
+          || PARADIGM_ID_MAP[extraction.paradigmType || '']
+          || null;
+        const slotId = matchedParadigmId && paragraphIdx !== undefined
+          ? `${matchedParadigmId}-${String(paragraphIdx + 1).padStart(2, '0')}`
+          : null;
+
+        // 🔥 位置ID三重绑定：自动计算 paradigmPosition
+        const paradigmPosition = matchedParadigmId && paragraphIdx !== undefined
+          ? `${matchedParadigmId}-段落${paragraphIdx + 1}`
+          : null;
+
         // 合并情绪标签
         const emotionTags: string[] = [];
         if (material.emotion) emotionTags.push(material.emotion);
@@ -124,6 +165,10 @@ export async function POST(
           sceneTags: material.sceneTags || [],
           emotionTags,
           status: 'active',
+          // 🔥 位置ID三重绑定：素材初始化时即绑定范式和位置
+          paradigmId: matchedParadigmId || null,      // 绑定范式ID
+          paradigmPosition: paradigmPosition,          // 绑定范式段落位置
+          slotId: slotId,                              // 绑定位置ID（如 P001-01）
         };
       });
 
