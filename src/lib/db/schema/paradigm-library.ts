@@ -29,31 +29,37 @@ export const paradigmLibrary = pgTable('paradigm_library', {
   // 公众号版结构（7段固定）
   officialAccountStructure: jsonb('official_account_structure').$type<Array<{
     order: number;           // 段落顺序 1-7
+    slotId: string;          // 【位置ID三重绑定-第一层】唯一槽位ID，如 "P001-01"
     stepName: string;        // 步骤名，如 "错误认知"
     titleTemplate: string;   // 段落标题模板
     contentRequirement: string; // 内容要求
     wordRange: { min: number; max: number };
     required: boolean;
     fixedPhrases: string[];  // 该段落的固定句式（如 "说实话，这种想法我特别理解"）
+    fixedContext: string;    // 该段落的固定上下文（永远不变的句式）
   }>>().notNull(),
 
   // 小红书版结构
   xiaohongshuStructure: jsonb('xiaohongshu_structure').$type<Array<{
     order: number;
+    slotId: string;          // 小红书版槽位ID，如 "P001-XHS-01"
     stepName: string;
     titleTemplate: string;
     contentRequirement: string;
     wordRange: { min: number; max: number };
     emojiSuggestions: string[];  // 建议添加的emoji
     shortSentence: boolean;     // 是否强制短句
+    fixedContext: string;        // 固定上下文
   }>>().notNull(),
 
   // 素材位置映射：段落 → 素材类型
   materialPositionMap: jsonb('material_position_map').$type<Array<{
+    slotId: string;          // 【位置ID三重绑定-第一层】对应槽位ID
     paragraphOrder: number;     // 对应公众号版段落的 order
     stepName: string;           // 步骤名
     materialTypes: string[];    // 该段落需要的素材类型，如 ['misconception', 'fixed_phrase']
     isPrimary: boolean;         // 是否为该段落的主要素材类型
+    isOptional: boolean;        // 是否为可选插入点
   }>>().notNull(),
 
   // 情绪节奏曲线

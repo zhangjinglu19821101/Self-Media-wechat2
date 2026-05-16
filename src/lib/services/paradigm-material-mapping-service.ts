@@ -9,6 +9,9 @@ import { RELATIONAL_MATERIAL_TYPES, RelationalMaterialType } from "@/lib/db/sche
  * 2. 提供范式与素材维度的绑定关系查询
  * 3. 支持按范式查询可选素材维度
  * 4. 提供素材维度的详细信息和推荐
+ * 5. 【位置ID三重绑定】第一层绑定：范式结构 ↔ slotId
+ *    第二层绑定：素材 ↔ slotId（通过material_library.slotId字段）
+ *    第三层绑定：匹配规则 ↔ slotId（填充时严格检查ID匹配）
  */
 
 // 素材维度详细信息映射
@@ -71,6 +74,20 @@ export const MATERIAL_TYPE_INFO: Record<RelationalMaterialType, {
 };
 
 /**
+ * 位置ID映射结果（位置ID三重绑定-第一层）
+ * 每个插入点有唯一的slotId，如 P001-01、P001-02
+ */
+export interface SlotIdMapping {
+  slotId: string;
+  paragraphOrder: number;
+  stepName: string;
+  materialTypes: RelationalMaterialType[];
+  isPrimary: boolean;
+  isOptional: boolean;
+  fixedContext?: string;
+}
+
+/**
  * 范式素材映射结果类型
  */
 export interface ParadigmMaterialMapping {
@@ -89,6 +106,7 @@ export interface ParadigmMaterialMapping {
     usageCount: number;
     primaryParagraphs: number[];
   }>;
+  slotIdMappings: SlotIdMapping[]; // 位置ID三重绑定-第一层
 }
 
 /**
@@ -111,8 +129,24 @@ export function getParadigmMaterialMapping(
     { count: number; isPrimary: boolean; paragraphs: number[] }
   >();
 
+  // 构建位置ID映射（位置ID三重绑定-第一层）
+  const slotIdMappings: SlotIdMapping[] = [];
+
   // 遍历 materialPositionMap，统计素材类型使用情况
   for (const position of paradigm.materialPositionMap) {
+    // 添加位置ID映射
+    if ('slotId' in position) {
+      slotIdMappings.push({
+        slotId: position.slotId,
+        paragraphOrder: position.paragraphOrder,
+        stepName: position.stepName,
+        materialTypes: position.materialTypes as RelationalMaterialType[],
+        isPrimary: position.isPrimary,
+        isOptional: position.isOptional,
+        fixedContext: 'fixedContext' in position ? position.fixedContext : undefined
+      });
+    }
+
     for (const materialType of position.materialTypes) {
       const typedMaterialType = materialType as RelationalMaterialType;
       const existing = materialTypeUsage.get(typedMaterialType) || {
@@ -179,103 +213,123 @@ export function getParadigmMaterialMapping(
     optionalMaterialTypes,
     allMaterialTypes: [...requiredMaterialTypes, ...optionalMaterialTypes],
     materialTypeDetails,
+    slotIdMappings, // 位置ID三重绑定-第一层
   };
 }
 
 /**
- * 获取所有范式的素材映射
+ * 获取所有可用范式的素材映射
  * @returns 所有范式的素材映射
  */
-export function getAllParadigmMaterialMappings(): Record<
-  string,
-  ParadigmMaterialMapping
-> {
-  const mappings: Record<string, ParadigmMaterialMapping> = {};
-
-  for (const paradigm of PARADIGM_SEED_DATA) {
-    const mapping = getParadigmMaterialMapping(paradigm.paradigmCode);
-    if (mapping) {
-      mappings[paradigm.paradigmCode] = mapping;
-    }
-  }
-
-  return mappings;
+export function getAllParadigmMaterialMappings(): ParadigmMaterialMapping[] {
+  return PARADIGM_SEED_DATA
+    .filter((p) => p.isActive)
+    .map((p) => getParadigmMaterialMapping(p.paradigmCode))
+    .filter((m): m is ParadigmMaterialMapping => m !== null);
 }
 
 /**
- * 获取素材类型的详细信息
- * @param materialType 素材类型
- * @returns 素材类型详细信息
+ * 检查素材是否与指定的位置ID匹配（位置ID三重绑定-第二层+第三层）
+ * @param materialSlotId 素材的slotId
+ * @param targetSlotId 目标位置的slotId
+ * @returns 是否匹配
  */
-export function getMaterialTypeInfo(materialType: RelationalMaterialType) {
-  return MATERIAL_TYPE_INFO[materialType];
-}
-
-/**
- * 检查素材类型是否在范式中被使用
- * @param paradigmCode 范式代码
- * @param materialType 素材类型
- * @returns 是否被使用
- */
-export function isMaterialTypeUsedInParadigm(
-  paradigmCode: string,
-  materialType: RelationalMaterialType
+export function isSlotIdMatch(
+  materialSlotId: string | null,
+  targetSlotId: string
 ): boolean {
-  const mapping = getParadigmMaterialMapping(paradigmCode);
-  return mapping?.allMaterialTypes.includes(materialType) || false;
+  if (!materialSlotId) {
+    return false;
+  }
+  
+  // 严格匹配：只能将同ID素材填充到同ID位置
+  return materialSlotId === targetSlotId;
 }
 
 /**
- * 获取范式的推荐素材类型
+ * 从范式中获取指定位置的slotId
  * @param paradigmCode 范式代码
- * @param limit 限制数量
- * @returns 推荐素材类型列表
+ * @param paragraphOrder 段落顺序
+ * @returns slotId（如果找到）
  */
-export function getRecommendedMaterialTypes(
+export function getSlotIdByParagraph(
   paradigmCode: string,
-  limit: number = 5
-): RelationalMaterialType[] {
+  paragraphOrder: number
+): string | null {
   const mapping = getParadigmMaterialMapping(paradigmCode);
+  if (!mapping) return null;
+
+  const slotMapping = mapping.slotIdMappings.find(
+    (s) => s.paragraphOrder === paragraphOrder
+  );
   
-  if (!mapping) {
-    return [];
+  return slotMapping?.slotId || null;
+}
+
+/**
+ * 生成填充约束提示词（位置ID三重绑定-第三层）
+ * 【绝对禁止规则】：只能将带有「对应位置ID」等于当前占位符ID的素材，填充到该占位符中。
+ * 任何情况下，都不允许将素材填充到ID不匹配的占位符中。
+ * @param paradigmCode 范式代码
+ * @returns 填充约束提示词
+ */
+export function generateSlotIdConstraintPrompt(paradigmCode: string): string {
+  const mapping = getParadigmMaterialMapping(paradigmCode);
+  if (!mapping || mapping.slotIdMappings.length === 0) {
+    return '';
   }
 
-  return mapping.materialTypeDetails
-    .slice(0, limit)
-    .map((detail) => detail.type);
+  const slotIdList = mapping.slotIdMappings
+    .map((s) => `- ${s.slotId}: ${s.stepName}（只能插入: ${s.materialTypes.map(t => MATERIAL_TYPE_INFO[t].label).join('、')}）`)
+    .join('\n');
+
+  return `
+【绝对禁止规则 - 位置ID三重绑定】
+只能将带有「对应位置ID」等于当前占位符ID的素材，填充到该占位符中。
+任何情况下，都不允许将素材填充到ID不匹配的占位符中。
+
+本范式的位置ID清单：
+${slotIdList}
+
+【填充规则】
+1. 对于占位符 {{PXXX-YY}}，只能使用 slotId="PXXX-YY" 的素材
+2. 素材类型必须与位置要求的类型完全匹配
+3. 固定上下文一个字都不能改，只填充素材部分
+4. 可选插入点可以选择不插入，但如果插入，必须用对应类型的素材
+`;
 }
 
 /**
- * 获取范式的必需素材类型
- * @param paradigmCode 范式代码
- * @returns 必需素材类型列表
+ * 验证素材与位置的匹配性
+ * @param material 素材
+ * @param slotId 目标位置ID
+ * @param materialType 目标素材类型
+ * @returns 是否匹配
  */
-export function getRequiredMaterialTypes(
-  paradigmCode: string
-): RelationalMaterialType[] {
-  const mapping = getParadigmMaterialMapping(paradigmCode);
-  return mapping?.requiredMaterialTypes || [];
-}
+export function validateMaterialSlotMatch(
+  material: { slotId: string | null; type: string },
+  slotId: string,
+  materialType: RelationalMaterialType
+): { valid: boolean; reason?: string } {
+  // 第二层绑定：素材 ↔ slotId
+  if (!material.slotId) {
+    return { valid: false, reason: '素材缺少slotId绑定' };
+  }
+  
+  if (!isSlotIdMatch(material.slotId, slotId)) {
+    return { 
+      valid: false, 
+      reason: `素材slotId(${material.slotId})与目标位置slotId(${slotId})不匹配` 
+    };
+  }
 
-/**
- * 获取范式的可选素材类型
- * @param paradigmCode 范式代码
- * @returns 可选素材类型列表
- */
-export function getOptionalMaterialTypes(
-  paradigmCode: string
-): RelationalMaterialType[] {
-  const mapping = getParadigmMaterialMapping(paradigmCode);
-  return mapping?.optionalMaterialTypes || [];
-}
+  // 检查素材类型
+  if (material.type !== materialType) {
+    return { 
+      valid: false, 
+      reason: `素材类型(${material.type})与目标位置类型(${materialType})不匹配` 
+    };
+  }
 
-export default {
-  getParadigmMaterialMapping,
-  getAllParadigmMaterialMappings,
-  getMaterialTypeInfo,
-  isMaterialTypeUsedInParadigm,
-  getRecommendedMaterialTypes,
-  getRequiredMaterialTypes,
-  getOptionalMaterialTypes,
-};
+  return { valid: true };
+}
