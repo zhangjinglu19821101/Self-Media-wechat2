@@ -3773,10 +3773,10 @@ export default function HomePage() {
                                   <div className="flex-1 h-1.5 bg-gray-200 rounded-full overflow-hidden">
                                     <div
                                       className="h-full bg-gradient-to-r from-green-400 to-emerald-500 rounded-full"
-                                      style={{ width: `${Math.min(avgScore * 100, 100)}%` }}
+                                      style={{ width: `${Math.min(avgScore, 100)}%` }}
                                     />
                                   </div>
-                                  <span className="text-xs text-slate-400">匹配度 {(avgScore * 100).toFixed(0)}%</span>
+                                  <span className="text-xs text-slate-400">匹配度 {avgScore.toFixed(0)}%</span>
                                 </div>
                               )}
                               {/* 7维覆盖指示器 */}
