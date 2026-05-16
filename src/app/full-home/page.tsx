@@ -1883,7 +1883,7 @@ export default function HomePage() {
     } finally {
       setSnippetLoading(false);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [snippetSearchQuery, snippetStatusFilter, snippetTypeFilter]);
 
   // 🔥 信息速记：打开抽屉时加载
@@ -3705,7 +3705,11 @@ export default function HomePage() {
                       ) : (
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                           {paradigms.map((paradigm) => {
-                            const initInfo = paradigmInitStatuses.find(s => s.paradigmName === paradigm.name);
+                            // 🔥 修复匹配：前端范式名带"范式"后缀，服务端不带，需要统一匹配
+                            const normalizeName = (name: string) => name.replace(/范式$/, '').trim();
+                            const initInfo = paradigmInitStatuses.find(s => 
+                              normalizeName(s.paradigmName) === normalizeName(paradigm.name)
+                            );
                             const isInit = initInfo?.isInitialized ?? false;
                             const extractCount = initInfo?.extractionCount ?? 0;
                             const materialCount = initInfo?.totalMaterialCount ?? 0;
