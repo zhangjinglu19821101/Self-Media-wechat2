@@ -510,7 +510,7 @@ export default function HomePage() {
   // 🔥 创作引导相关状态
   const [showCreationGuide, setShowCreationGuide] = useState(true);
   const [activeGuideCard, setActiveGuideCard] = useState<'content' | 'paradigm' | 'platform' | 'guide' | null>(null);
-  const [activeGuideTab, setActiveGuideTab] = useState<'paradigm' | 'opinion' | 'material' | 'aiGenerate'>('paradigm');
+  const [activeGuideTab, setActiveGuideTab] = useState<'opinion' | 'material' | 'aiGenerate'>('opinion');
   
   // 🔥 横向流程图节点选中状态（用于联动详情面板）
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
@@ -625,6 +625,17 @@ export default function HomePage() {
     }>;
   } | null>(null);
   const [loadingParadigms, setLoadingParadigms] = useState(false);
+  // 范式初始化状态（显示标签：已初始化/未初始化/初始化程度）
+  const [paradigmInitStatuses, setParadigmInitStatuses] = useState<Array<{
+    paradigmId: string;
+    paradigmName: string;
+    isInitialized: boolean;
+    extractionCount: number;
+    totalMaterialCount: number;
+    avgMatchScore: number;
+    coveredDimensions: string[];
+    lastExtractedAt: string | null;
+  }>>([]);
   
   // 🔥 发布账号选择相关状态
   const [accountConfigs, setAccountConfigs] = useState<Array<{
@@ -939,9 +950,10 @@ export default function HomePage() {
     }
   }, [hasSplitResult]);
 
-  // 🔥 获取范式列表（页面加载时）
+  // 🔥 获取范式列表 + 范式初始化状态（页面加载时）
   useEffect(() => {
     loadParadigms();
+    loadParadigmInitStatuses();
   }, []);
 
   // 🔥 当账号选择变化且已有AI拆解结果时，用流程模板初始化按平台分组的子任务
@@ -1061,6 +1073,18 @@ export default function HomePage() {
       console.error('获取范式列表失败:', error);
     } finally {
       setLoadingParadigms(false);
+    }
+  };
+
+  // 加载范式初始化状态（标签：已初始化/未初始化/初始化程度）
+  const loadParadigmInitStatuses = async () => {
+    try {
+      const data: any = await apiGet('/api/article-extraction/paradigm-status');
+      if (data?.success && data.data?.paradigms) {
+        setParadigmInitStatuses(data.data.paradigms);
+      }
+    } catch (error) {
+      console.error('获取范式初始化状态失败:', error);
     }
   };
 
@@ -3650,7 +3674,14 @@ export default function HomePage() {
                         </div>
                       ) : (
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                          {paradigms.map((paradigm) => (
+                          {paradigms.map((paradigm) => {
+                            const initInfo = paradigmInitStatuses.find(s => s.paradigmName === paradigm.name);
+                            const isInit = initInfo?.isInitialized ?? false;
+                            const extractCount = initInfo?.extractionCount ?? 0;
+                            const materialCount = initInfo?.totalMaterialCount ?? 0;
+                            const avgScore = initInfo?.avgMatchScore ?? 0;
+                            const coveredDims = initInfo?.coveredDimensions ?? [];
+                            return (
                             <div
                               key={paradigm.id}
                               onClick={() => {
@@ -3679,6 +3710,17 @@ export default function HomePage() {
                               <div className="flex items-center justify-between mb-2">
                                 <h3 className="font-semibold text-slate-900">{paradigm.name}</h3>
                                 <div className="flex items-center gap-2">
+                                  {/* 初始化状态标签 */}
+                                  {isInit ? (
+                                    <Badge className="text-xs bg-green-100 text-green-700 border border-green-200 flex items-center gap-1">
+                                      <CheckCircle2 className="w-3 h-3" />
+                                      已初始化({extractCount}篇·{materialCount}素材·{coveredDims.length}/7维)
+                                    </Badge>
+                                  ) : (
+                                    <Badge className="text-xs bg-gray-100 text-gray-500 border border-gray-200">
+                                      未初始化
+                                    </Badge>
+                                  )}
                                   <Badge className="text-xs bg-slate-100 text-slate-600">
                                     {paradigm.sectionCount}段
                                   </Badge>
@@ -3687,7 +3729,44 @@ export default function HomePage() {
                                   )}
                                 </div>
                               </div>
-                              <p className="text-sm text-slate-500 mb-3">{paradigm.description}</p>
+                              <p className="text-sm text-slate-500 mb-2">{paradigm.description}</p>
+                              {/* 初始化程度指标 */}
+                              {isInit && avgScore > 0 && (
+                                <div className="flex items-center gap-2 mb-2">
+                                  <div className="flex-1 h-1.5 bg-gray-200 rounded-full overflow-hidden">
+                                    <div
+                                      className="h-full bg-gradient-to-r from-green-400 to-emerald-500 rounded-full"
+                                      style={{ width: `${Math.min(avgScore * 100, 100)}%` }}
+                                    />
+                                  </div>
+                                  <span className="text-xs text-slate-400">匹配度 {(avgScore * 100).toFixed(0)}%</span>
+                                </div>
+                              )}
+                              {/* 7维覆盖指示器 */}
+                              {isInit && coveredDims.length > 0 && (
+                                <div className="flex items-center gap-1.5 mb-2">
+                                  {['misconception', 'analogy', 'case', 'data', 'golden_sentence', 'hook_sentence', 'value_reconstruction'].map(dim => {
+                                    const dimLabels: Record<string, string> = {
+                                      misconception: '误', analogy: '比', case: '案', data: '数',
+                                      golden_sentence: '金', hook_sentence: '钩', value_reconstruction: '值',
+                                    };
+                                    const covered = coveredDims.includes(dim);
+                                    return (
+                                      <span
+                                        key={dim}
+                                        className={`w-5 h-5 rounded-full text-[10px] font-medium flex items-center justify-center ${
+                                          covered
+                                            ? 'bg-emerald-100 text-emerald-700 border border-emerald-300'
+                                            : 'bg-gray-100 text-gray-400 border border-gray-200'
+                                        }`}
+                                        title={covered ? `${dimLabels[dim]}(${dim})已覆盖` : `${dimLabels[dim]}(${dim})未覆盖`}
+                                      >
+                                        {dimLabels[dim]}
+                                      </span>
+                                    );
+                                  })}
+                                </div>
+                              )}
                               <div className="flex flex-wrap gap-1">
                                 {(paradigm.applicableTypes || []).slice(0, 3).map((type, idx) => (
                                   <span
@@ -3699,9 +3778,41 @@ export default function HomePage() {
                                 ))}
                               </div>
                             </div>
+                          );
+                        })}
+                      </div>
+                      )}
+
+                      {/* 篇幅选择 */}
+                      <div className="mt-6 pt-5 border-t border-slate-200">
+                        <div className="flex items-center gap-2 mb-3">
+                          <FileText className="w-4 h-4 text-slate-500" />
+                          <span className="text-sm font-medium text-slate-700">篇幅选择</span>
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                          {[
+                            { value: 'short', label: '短篇 (800-1200字)', desc: '快速阅读' },
+                            { value: 'medium', label: '中篇 (1500-2500字)', desc: '标准深度' },
+                            { value: 'long', label: '长篇 (3000-5000字)', desc: '深度分析' },
+                          ].map(opt => (
+                            <button
+                              key={opt.value}
+                              type="button"
+                              onClick={() => setArticleLength(opt.value as 'short' | 'medium' | 'long')}
+                              className={`
+                                px-4 py-2.5 rounded-lg border text-sm transition-all
+                                ${articleLength === opt.value
+                                  ? 'border-emerald-500 bg-emerald-50 text-emerald-700 font-medium'
+                                  : 'border-slate-200 bg-white text-slate-600 hover:border-emerald-300'
+                                }
+                              `}
+                            >
+                              <div>{opt.label}</div>
+                              <div className="text-xs text-slate-400 mt-0.5">{opt.desc}</div>
+                            </button>
                           ))}
                         </div>
-                      )}
+                      </div>
                     </div>
                   </div>
                   )}
@@ -3892,26 +4003,8 @@ export default function HomePage() {
                       <ChevronDown className="w-5 h-5 text-slate-500" />
                     </div>
                     
-                    {/* Tab 标签页导航 - 对齐10套范式+5大素材库体系 */}
+                    {/* Tab 标签页导航 */}
                     <div className="flex items-center border-b border-slate-100 bg-slate-50/30">
-                      <button
-                        type="button"
-                        onClick={() => setActiveGuideTab('paradigm')}
-                        className={`px-6 py-3 text-sm font-medium transition-all relative ${
-                          activeGuideTab === 'paradigm'
-                            ? 'text-sky-600 bg-white'
-                            : 'text-slate-500 hover:text-slate-700 hover:bg-slate-100/50'
-                        }`}
-                      >
-                        <Layers className="w-3.5 h-3.5 inline mr-1" />
-                        范式选择
-                        {selectedParadigm && (
-                          <span className="ml-1 text-xs bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded-full">1</span>
-                        )}
-                        {activeGuideTab === 'paradigm' && (
-                          <div className="absolute bottom-0 left-0 right-0 h-[2px] bg-sky-500 rounded-t-full" />
-                        )}
-                      </button>
                       <button
                         type="button"
                         onClick={() => setActiveGuideTab('opinion')}
@@ -3967,99 +4060,7 @@ export default function HomePage() {
                     
                     {/* Tab 内容区域 */}
                     <div className="p-6 bg-white">
-                      {/* Tab 1: 范式选择 */}
-                      {activeGuideTab === 'paradigm' && (
-                        <div className="space-y-4">
-                          <p className="text-sm text-gray-500 mb-3">选择创作范式，系统将自动匹配文章结构、情感基调与素材需求</p>
-                          {paradigms.length > 0 ? (
-                            <div className="grid grid-cols-2 gap-3">
-                              {paradigms.map(p => (
-                                <button
-                                  key={p.paradigmCode}
-                                  onClick={() => {
-                                    setSelectedParadigm({
-                                      id: p.id,
-                                      name: p.name,
-                                      description: p.description,
-                                      sectionCount: p.sectionCount,
-                                      paradigmCode: p.paradigmCode,
-                                      emotionTone: p.emotionTone,
-                                      structureName: p.structureName,
-                                      materialRequirements: p.materialRequirements,
-                                      structurePreview: p.structurePreview,
-                                    });
-                                    // 范式自带情感基调，自动同步
-                                    if (p.emotionTone) setEmotionTone(p.emotionTone);
-                                  }}
-                                  className={`p-3 rounded-lg border-2 text-left transition-all ${
-                                    selectedParadigm?.paradigmCode === p.paradigmCode
-                                      ? 'border-indigo-500 bg-indigo-50'
-                                      : 'border-gray-200 hover:border-gray-300'
-                                  }`}
-                                >
-                                  <div className="flex items-center gap-2">
-                                    <span className="text-xs px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700">{p.paradigmCode}</span>
-                                    <span className="font-medium text-sm">{p.name}</span>
-                                  </div>
-                                  <div className="text-xs text-gray-500 mt-1">{p.description}</div>
-                                  <div className="flex flex-wrap gap-1 mt-2">
-                                    {p.applicableTypes.slice(0, 3).map(t => (
-                                      <span key={t} className="text-[10px] px-1.5 py-0.5 rounded bg-blue-50 text-blue-600">{t}</span>
-                                    ))}
-                                  </div>
-                                </button>
-                              ))}
-                            </div>
-                          ) : (
-                            <div className="text-center py-6 text-sm text-slate-400">加载范式中...</div>
-                          )}
-                          {selectedParadigm && (
-                            <div className="mt-4 p-3 bg-green-50 rounded-lg border border-green-200">
-                              <p className="text-sm font-medium text-green-700">
-                                已选范式: {selectedParadigm.name}
-                              </p>
-                              <p className="text-xs text-green-600 mt-1">
-                                文章结构: {selectedParadigm.structureName || '7段标准结构'}
-                                {selectedParadigm.emotionTone && ` | 情感基调: ${selectedParadigm.emotionTone}`}
-                              </p>
-                            </div>
-                          )}
-
-                          {/* 篇幅选择 */}
-                          {selectedParadigm && (
-                            <div className="mt-4 space-y-3">
-                              <div className="flex items-center gap-2">
-                                <span className="text-sm font-medium text-slate-700">文章篇幅</span>
-                                <span className="text-xs text-slate-400">影响段落深度</span>
-                              </div>
-                              <div className="flex gap-3">
-                                {[
-                                  { key: 'short' as const, label: '短文', desc: '800-1500字', icon: '📄' },
-                                  { key: 'medium' as const, label: '中篇', desc: '1500-3000字', icon: '📃' },
-                                  { key: 'long' as const, label: '深度', desc: '3000-5000字', icon: '📜' },
-                                ].map(len => (
-                                  <button
-                                    key={len.key}
-                                    type="button"
-                                    onClick={() => setArticleLength(len.key)}
-                                    className={`flex-1 p-3 rounded-lg border-2 text-center transition-all ${
-                                      articleLength === len.key
-                                        ? 'border-indigo-500 bg-indigo-50'
-                                        : 'border-gray-200 hover:border-gray-300'
-                                    }`}
-                                  >
-                                    <div className="text-lg">{len.icon}</div>
-                                    <div className="font-medium text-sm">{len.label}</div>
-                                    <div className="text-xs text-gray-500">{len.desc}</div>
-                                  </button>
-                                ))}
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                      )}
-
-                      {/* Tab 2: 核心观点 */}
+                      {/* 核心观点 Tab */}
                       {activeGuideTab === 'opinion' && (
                         <div className="space-y-4">
                           <div className="flex items-center justify-between mb-1">
