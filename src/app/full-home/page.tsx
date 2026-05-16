@@ -4234,124 +4234,47 @@ export default function HomePage() {
                       {/* Tab 3: 素材选择 */}
                       {activeGuideTab === 'material' && (
                         <div className="space-y-4">
-                          {/* 🔥🔥 范式素材位置绑定面板（升级版：每个位置独立选素材） */}
+                          {/* 🔥🔥 范式素材绑定状态摘要条（素材→位置视角） */}
                           {selectedParadigm && (() => {
-                            // 获取范式的素材位置映射
                             const positionMap = selectedParadigm.materialPositionMap || [];
-                            const structurePreview = selectedParadigm.structurePreview || [];
-                            // 已选素材ID集合
-                            const selectedIds = new Set(selectedMaterialsV2List.map(m => m.id));
-                            // 位置绑定覆盖数
-                            const boundSlots = positionMap.filter((p: any) => paradigmMaterialBindings[p.slotId]);
                             const requiredSlots = positionMap.filter((p: any) => !p.isOptional);
                             const boundRequired = requiredSlots.filter((p: any) => paradigmMaterialBindings[p.slotId]);
+                            const allBound = positionMap.filter((p: any) => paradigmMaterialBindings[p.slotId]);
 
                             return (
-                              <div className="p-3 bg-gradient-to-r from-amber-50 to-orange-50 rounded-xl border border-amber-200">
-                                <div className="flex items-center justify-between mb-2">
-                                  <div className="flex items-center gap-2">
-                                    <span className="text-sm font-semibold text-amber-800">
-                                      范式「{selectedParadigm.name}」素材位置
-                                    </span>
-                                    <span className="text-[10px] bg-amber-200/60 text-amber-700 px-1.5 py-0.5 rounded-full">
-                                      {boundRequired.length}/{requiredSlots.length} 必填位已绑定
-                                    </span>
-                                  </div>
-                                  <div className="flex items-center gap-2">
-                                    {selectedMaterialsV2List.length > 0 && (
-                                      <button
-                                        type="button"
-                                        onClick={autoBindMaterialsToSlots}
-                                        className="text-[10px] px-2 py-1 rounded-md bg-emerald-100 text-emerald-700 hover:bg-emerald-200 transition-colors"
-                                        title="根据素材类型自动匹配到对应位置"
-                                      >
-                                        智能匹配
-                                      </button>
-                                    )}
-                                    {Object.keys(paradigmMaterialBindings).length > 0 && (
-                                      <button
-                                        type="button"
-                                        onClick={() => setParadigmMaterialBindings({})}
-                                        className="text-[10px] px-2 py-1 rounded-md bg-slate-100 text-slate-500 hover:bg-slate-200 transition-colors"
-                                      >
-                                        清除绑定
-                                      </button>
-                                    )}
-                                  </div>
+                              <div className="flex items-center justify-between px-3 py-2 bg-gradient-to-r from-amber-50 to-orange-50 rounded-xl border border-amber-200">
+                                <div className="flex items-center gap-2">
+                                  <span className="text-sm font-semibold text-amber-800">
+                                    范式「{selectedParadigm.name}」
+                                  </span>
+                                  <span className="text-[10px] bg-amber-200/60 text-amber-700 px-1.5 py-0.5 rounded-full">
+                                    {boundRequired.length}/{requiredSlots.length} 必填位已绑定
+                                  </span>
+                                  <span className="text-[10px] bg-emerald-100/60 text-emerald-700 px-1.5 py-0.5 rounded-full">
+                                    共 {allBound.length}/{positionMap.length} 个位置
+                                  </span>
                                 </div>
-
-                                {/* 位置列表 */}
-                                <div className="space-y-1.5">
-                                  {positionMap.map((pos: any) => {
-                                    const boundMaterialId = paradigmMaterialBindings[pos.slotId];
-                                    const boundMaterial = boundMaterialId
-                                      ? selectedMaterialsV2List.find(m => m.id === boundMaterialId)
-                                      : null;
-                                    const structureStep = structurePreview.find((s: any) => s.order === pos.paragraphOrder);
-                                    const isBound = !!boundMaterialId;
-                                    const isRequired = !pos.isOptional;
-
-                                    return (
-                                      <div
-                                        key={pos.slotId}
-                                        className={`flex items-center gap-2 text-xs p-1.5 rounded-lg transition-all ${
-                                          isBound
-                                            ? 'bg-green-50 border border-green-200'
-                                            : isRequired
-                                              ? 'bg-amber-50/80 border border-amber-100'
-                                              : 'bg-slate-50/50 border border-slate-100'
-                                        }`}
-                                      >
-                                        {/* 状态图标 */}
-                                        {isBound ? (
-                                          <span className="w-4 h-4 flex items-center justify-center rounded-full bg-green-100 text-green-600 text-[10px]">✓</span>
-                                        ) : isRequired ? (
-                                          <span className="w-4 h-4 flex items-center justify-center rounded-full bg-amber-100 text-amber-500 text-[10px]">○</span>
-                                        ) : (
-                                          <span className="w-4 h-4 flex items-center justify-center rounded-full bg-slate-100 text-slate-400 text-[10px]">—</span>
-                                        )}
-
-                                        {/* 段落信息 */}
-                                        <span className="text-slate-600 w-16 shrink-0 font-medium">段落{pos.paragraphOrder}</span>
-                                        <span className="text-slate-700 w-20 shrink-0 truncate" title={pos.stepName}>{pos.stepName}</span>
-
-                                        {/* 需要的素材类型 */}
-                                        <div className="flex gap-1 flex-wrap">
-                                          {pos.materialTypes.map((t: string) => (
-                                            <span key={t} className="px-1.5 py-0.5 rounded bg-amber-100/80 text-amber-700 font-mono text-[10px]">{t}</span>
-                                          ))}
-                                        </div>
-
-                                        {/* 绑定信息或操作 */}
-                                        {isBound && boundMaterial ? (
-                                          <div className="ml-auto flex items-center gap-1.5">
-                                            <span className="text-green-700 text-[10px] truncate max-w-[120px]" title={boundMaterial.title}>
-                                              ← {boundMaterial.title.length > 15 ? boundMaterial.title.slice(0, 15) + '...' : boundMaterial.title}
-                                            </span>
-                                            <button
-                                              type="button"
-                                              onClick={() => unbindMaterialFromSlot(pos.slotId)}
-                                              className="text-red-400 hover:text-red-600 text-[10px] shrink-0"
-                                              title="解除绑定"
-                                            >
-                                              ✕
-                                            </button>
-                                          </div>
-                                        ) : (
-                                          <span className="text-amber-500 text-[10px] ml-auto">
-                                            {selectedMaterialsV2List.length > 0 ? '点击下方素材→指定此位置' : '先选素材再绑定'}
-                                          </span>
-                                        )}
-                                      </div>
-                                    );
-                                  })}
+                                <div className="flex items-center gap-2">
+                                  {selectedMaterialsV2List.length > 0 && (
+                                    <button
+                                      type="button"
+                                      onClick={autoBindMaterialsToSlots}
+                                      className="text-[10px] px-2 py-1 rounded-md bg-emerald-100 text-emerald-700 hover:bg-emerald-200 transition-colors"
+                                      title="根据素材类型自动匹配到对应位置"
+                                    >
+                                      智能匹配
+                                    </button>
+                                  )}
+                                  {Object.keys(paradigmMaterialBindings).length > 0 && (
+                                    <button
+                                      type="button"
+                                      onClick={() => setParadigmMaterialBindings({})}
+                                      className="text-[10px] px-2 py-1 rounded-md bg-slate-100 text-slate-500 hover:bg-slate-200 transition-colors"
+                                    >
+                                      清除绑定
+                                    </button>
+                                  )}
                                 </div>
-
-                                {/* 底部提示 */}
-                                <p className="text-[10px] text-amber-600 mt-2 border-t border-amber-200/60 pt-1.5">
-                                  ✓ 已绑定素材 &nbsp;|&nbsp; ○ 必填位待绑定 &nbsp;|&nbsp; — 选填位 &nbsp;|&nbsp;
-                                  选择素材后点击「指定位置」绑定到特定段落
-                                </p>
                               </div>
                             );
                           })()}
@@ -4529,11 +4452,32 @@ export default function HomePage() {
                             </div>
                           )}
 
-                          {/* 素材列表 */}
+                          {/* 🔥 素材列表（素材→位置视角：先看素材，再关联位置） */}
                           {recommendedMaterials.length > 0 && (
                             <div className="space-y-2">
                               {recommendedMaterials.map((c) => {
                                 const isSelected = selectedMaterialIdsV2.includes(c.id);
+                                // 🔥 计算此素材可插入的范式位置
+                                const availableSlots = selectedParadigm?.materialPositionMap
+                                  ? selectedParadigm.materialPositionMap
+                                      .filter((pos: any) => {
+                                        // 位置未被其他素材占用，或已被当前素材绑定
+                                        const boundId = paradigmMaterialBindings[pos.slotId];
+                                        return !boundId || boundId === c.id;
+                                      })
+                                      .sort((a: any, b: any) => (a.paragraphOrder ?? 0) - (b.paragraphOrder ?? 0))
+                                  : [];
+                                // 类型匹配的位置
+                                const typeMatchedSlots = availableSlots.filter((pos: any) =>
+                                  pos.materialTypes?.some((t: string) => c.type === t || c.sceneType === t)
+                                );
+                                // 当前素材已绑定的位置
+                                const boundSlotsOfThis = selectedParadigm?.materialPositionMap
+                                  ? selectedParadigm.materialPositionMap.filter((pos: any) =>
+                                      paradigmMaterialBindings[pos.slotId] === c.id
+                                    )
+                                  : [];
+
                                 return (
                                   <div key={c.id} className="mb-1">
                                   <div
@@ -4565,6 +4509,11 @@ export default function HomePage() {
                                             {c.title}
                                           </span>
                                           {isSelected && <CheckCircle2 className="w-4 h-4 text-emerald-500 flex-shrink-0" />}
+                                          {isSelected && boundSlotsOfThis.length > 0 && (
+                                            <span className="text-[10px] bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded-full">
+                                              已绑定 {boundSlotsOfThis.length} 个位置
+                                            </span>
+                                          )}
                                         </div>
                                         <div className="text-xs text-slate-500 mt-1 line-clamp-2">
                                           {c.eventFullStory || c.background || c.content || ''}
@@ -4600,28 +4549,46 @@ export default function HomePage() {
                                       </div>
                                     </div>
                                   </div>
-                                  {/* 选中素材+已选范式时，卡片下方展开可关联的范式位置列表 */}
-                                  {isSelected && selectedParadigm?.materialPositionMap && selectedParadigm.materialPositionMap.length > 0 && (
-                                    <div className="mt-2 px-3 pb-2">
-                                      <div className="text-[10px] text-slate-400 mb-1.5 flex items-center gap-1">
-                                        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" /></svg>
-                                        关联到范式位置（点击绑定/解绑）
+
+                                  {/* 🔥 素材→位置关联面板：展示此素材可以插入范式的哪些位置 */}
+                                  {selectedParadigm?.materialPositionMap && selectedParadigm.materialPositionMap.length > 0 && (
+                                    <div className="mt-1.5 px-3 pb-2 pt-1.5 border-t border-dashed border-slate-200 bg-slate-50/50 rounded-b-xl">
+                                      <div className="text-[10px] text-slate-500 mb-1.5 flex items-center gap-1">
+                                        <BookmarkPlus className="w-3 h-3" />
+                                        {isSelected
+                                          ? '可插入的范式位置（点击绑定/解绑）'
+                                          : '可插入的范式位置（先选择素材再绑定）'
+                                        }
+                                        {typeMatchedSlots.length > 0 && (
+                                          <span className="ml-1 bg-indigo-100 text-indigo-600 px-1 py-0 rounded">
+                                            {typeMatchedSlots.length} 个类型匹配
+                                          </span>
+                                        )}
                                       </div>
                                       <div className="flex flex-wrap gap-1.5">
                                         {selectedParadigm.materialPositionMap
-                                          .sort((a: any, b: any) => (a.paragraphOrder ?? 0) - (b.paragraphOrder ?? 0))
+                                          .slice()
+                                          .sort((a: any, b: any) => {
+                                            // 类型匹配的排在前面
+                                            const aMatch = a.materialTypes?.some((t: string) => c.type === t || c.sceneType === t) ? 0 : 1;
+                                            const bMatch = b.materialTypes?.some((t: string) => c.type === t || c.sceneType === t) ? 0 : 1;
+                                            return aMatch - bMatch || (a.paragraphOrder ?? 0) - (b.paragraphOrder ?? 0);
+                                          })
                                           .map((pos: any) => {
                                           const boundMaterialId = paradigmMaterialBindings[pos.slotId];
                                           const isBoundToThis = boundMaterialId === c.id;
                                           const isBoundToOther = boundMaterialId && boundMaterialId !== c.id;
                                           const materialTypeMatch = pos.materialTypes?.some((t: string) =>
-                                            c.type === t
+                                            c.type === t || c.sceneType === t
                                           );
+                                          const canBind = isSelected && !isBoundToOther;
+
                                           return (
                                             <button
                                               key={pos.slotId}
                                               onClick={(e) => {
                                                 e.stopPropagation();
+                                                if (!isSelected) return;
                                                 if (isBoundToThis) {
                                                   unbindMaterialFromSlot(pos.slotId);
                                                 } else if (!isBoundToOther) {
@@ -4629,24 +4596,26 @@ export default function HomePage() {
                                                 }
                                               }}
                                               className={`
-                                                inline-flex items-center gap-1 px-2 py-1 rounded text-[10px] font-medium transition-all
+                                                inline-flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-medium transition-all
                                                 ${isBoundToThis
                                                   ? 'bg-emerald-100 text-emerald-700 border border-emerald-300 shadow-sm'
                                                   : isBoundToOther
                                                     ? 'bg-slate-50 text-slate-300 border border-slate-100 cursor-not-allowed opacity-50'
-                                                    : materialTypeMatch
+                                                    : materialTypeMatch && isSelected
                                                       ? 'bg-indigo-50 text-indigo-600 border border-indigo-200 hover:bg-indigo-100 hover:border-indigo-300 cursor-pointer'
-                                                      : 'bg-slate-50 text-slate-400 border border-slate-200 hover:bg-slate-100 cursor-pointer'
+                                                      : isSelected
+                                                        ? 'bg-slate-50 text-slate-400 border border-slate-200 hover:bg-slate-100 cursor-pointer'
+                                                        : 'bg-slate-50 text-slate-300 border border-slate-100 cursor-default'
                                                 }
                                               `}
-                                              disabled={isBoundToOther}
-                                              title={isBoundToThis ? '点击解绑' : isBoundToOther ? `已被其他素材占用` : `点击绑定到此位置`}
+                                              disabled={!canBind}
+                                              title={isBoundToThis ? '点击解绑' : isBoundToOther ? '已被其他素材占用' : !isSelected ? '请先选择此素材' : '点击绑定到此位置'}
                                             >
                                               {isBoundToThis && (
-                                                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+                                                <Check className="w-3 h-3" />
                                               )}
                                               {isBoundToOther && (
-                                                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m0 0v2m0-2h2m-2 0H10m10-5a8 8 0 11-16 0 8 8 0 0116 0z" /></svg>
+                                                <Lock className="w-3 h-3" />
                                               )}
                                               <span>第{pos.paragraphOrder}段</span>
                                               <span className="max-w-[60px] truncate">{pos.stepName}</span>
