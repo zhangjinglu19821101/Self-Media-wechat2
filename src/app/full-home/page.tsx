@@ -244,6 +244,7 @@ interface FormSnapshot {
     densityStyle?: string;
   } | null;
   selectedParadigmId: string;
+  paradigmMaterialBindings: Record<string, string>; // 范式位置-素材绑定 {slotId: materialId}
   hasSplitResult: boolean;
   subTasks: SubTask[];
   // 🔥 只保存精简的素材快照，避免 sessionStorage 容量超限
@@ -328,6 +329,7 @@ function loadFormSnapshot(): FormSnapshot | null {
         taskTitle: snapshot.taskTitle || '',
         executionDate: snapshot.executionDate || '',
         platformSubTaskGroups: snapshot.platformSubTaskGroups || [],
+        paradigmMaterialBindings: snapshot.paradigmMaterialBindings || {},
         savedAt: snapshot.savedAt || Date.now(),
       };
       sessionStorage.setItem(FORM_SNAPSHOT_KEY, JSON.stringify(migrated));
@@ -607,6 +609,19 @@ export default function HomePage() {
       name: string;
       wordRange: { min: number; max: number };
       contentRequirement: string;
+      slotId?: string | null;
+      materialTypes?: string[];
+      isPrimary?: boolean;
+      isOptional?: boolean;
+      fixedPhrases?: string[];
+    }>;
+    materialPositionMap?: Array<{
+      slotId: string;
+      paragraphOrder: number;
+      stepName: string;
+      materialTypes: string[];
+      isPrimary: boolean;
+      isOptional: boolean;
     }>;
   }>>([]);
   const [selectedParadigm, setSelectedParadigm] = useState<{
@@ -623,8 +638,23 @@ export default function HomePage() {
       name: string;
       wordRange: { min: number; max: number };
       contentRequirement: string;
+      slotId?: string | null;
+      materialTypes?: string[];
+      isPrimary?: boolean;
+      isOptional?: boolean;
+      fixedPhrases?: string[];
+    }>;
+    materialPositionMap?: Array<{
+      slotId: string;
+      paragraphOrder: number;
+      stepName: string;
+      materialTypes: string[];
+      isPrimary: boolean;
+      isOptional: boolean;
     }>;
   } | null>(null);
+  // 🔥 范式-素材位置绑定：{ slotId → materialId }
+  const [paradigmMaterialBindings, setParadigmMaterialBindings] = useState<Record<string, string>>({});
   const [loadingParadigms, setLoadingParadigms] = useState(false);
   // 范式初始化状态（显示标签：已初始化/未初始化/初始化程度）
   const [paradigmInitStatuses, setParadigmInitStatuses] = useState<Array<{
@@ -837,9 +867,14 @@ export default function HomePage() {
         structureName: paradigm.structureName,
         materialRequirements: paradigm.materialRequirements,
         structurePreview: paradigm.structurePreview,
+        materialPositionMap: paradigm.materialPositionMap,
       });
       // 恢复范式时同步情感基调
       if (paradigm.emotionTone && snapshot.selectedParadigmId) setEmotionTone(paradigm.emotionTone);
+    }
+    // 🔥 恢复范式-素材位置绑定
+    if (snapshot.paradigmMaterialBindings && Object.keys(snapshot.paradigmMaterialBindings).length > 0) {
+      setParadigmMaterialBindings(snapshot.paradigmMaterialBindings);
     }
     // 🔥 恢复提交表单字段
     if (snapshot.taskTitle) setTaskTitle(snapshot.taskTitle);
@@ -931,6 +966,7 @@ export default function HomePage() {
       selectedAccountIds,
       selectedContentTemplate,
       selectedParadigmId: selectedParadigm?.id || '',
+      paradigmMaterialBindings, // 🔥 保存范式-素材位置绑定
       hasSplitResult,
       subTasks,
       // 🔥 保存精简的素材快照，减少 sessionStorage 容量占用
@@ -1094,6 +1130,7 @@ export default function HomePage() {
             structureName: data.data[0].structureName,
             materialRequirements: data.data[0].materialRequirements,
             structurePreview: data.data[0].structurePreview,
+            materialPositionMap: data.data[0].materialPositionMap,
           });
           // 默认范式的情感基调自动同步
           if (data.data[0].emotionTone) setEmotionTone(data.data[0].emotionTone);
@@ -1789,11 +1826,64 @@ export default function HomePage() {
     if (alreadySelected) {
       setSelectedMaterialIdsV2(prev => prev.filter(id => id !== materialItem.id));
       setSelectedMaterialsV2List(prev => prev.filter(c => c.id !== materialItem.id));
+      // 同时清除该素材的位置绑定
+      setParadigmMaterialBindings(prev => {
+        const next = { ...prev };
+        for (const [slotId, mId] of Object.entries(next)) {
+          if (mId === materialItem.id) delete next[slotId];
+        }
+        return next;
+      });
     } else {
       setSelectedMaterialIdsV2(prev => [...prev, materialItem.id]);
       setSelectedMaterialsV2List(prev => [...prev, materialItem]);
     }
   };
+
+  // 🔥 范式-素材位置绑定：将素材绑定到指定范式位置
+
+  // 指定位置弹窗状态
+  const [slotPickerOpen, setSlotPickerOpen] = useState(false);
+  const [slotPickerMaterialId, setSlotPickerMaterialId] = useState<string | null>(null);
+
+  // 打开位置选择弹窗
+  const handleOpenSlotPicker = (materialId: string) => {
+    setSlotPickerMaterialId(materialId);
+    setSlotPickerOpen(true);
+  };
+
+  const bindMaterialToSlot = (slotId: string, materialId: string) => {
+    setParadigmMaterialBindings(prev => ({ ...prev, [slotId]: materialId }));
+  };
+
+  // 🔥 范式-素材位置绑定：解除指定位置的绑定
+  const unbindMaterialFromSlot = (slotId: string) => {
+    setParadigmMaterialBindings(prev => {
+      const next = { ...prev };
+      delete next[slotId];
+      return next;
+    });
+  };
+
+  // 🔥 范式-素材位置绑定：根据素材类型自动匹配到范式位置
+  const autoBindMaterialsToSlots = useCallback(() => {
+    if (!selectedParadigm?.materialPositionMap || selectedMaterialsV2List.length === 0) return;
+    const newBindings: Record<string, string> = {};
+    const usedMaterialIds = new Set<string>();
+
+    for (const position of selectedParadigm.materialPositionMap) {
+      // 查找类型匹配的素材
+      const match = selectedMaterialsV2List.find(m =>
+        !usedMaterialIds.has(m.id) &&
+        position.materialTypes.some((t: string) => m.type === t || m.sceneType === t)
+      );
+      if (match) {
+        newBindings[position.slotId] = match.id;
+        usedMaterialIds.add(match.id);
+      }
+    }
+    setParadigmMaterialBindings(prev => ({ ...prev, ...newBindings }));
+  }, [selectedParadigm, selectedMaterialsV2List]);
 
   // 🔥 行业素材：搜索素材（完全替换模式）
   const handleSearchIndustryMaterials = useCallback(async (keyword?: string, filters?: { productTag?: string; crowdTag?: string; caseType?: string }) => {
@@ -2828,6 +2918,8 @@ export default function HomePage() {
         articleLength: articleLength !== 'medium' ? articleLength : null,
         primaryMaterialId: primaryMaterialId || null,
         auxiliaryMaterialIds: auxiliaryMaterialIds.length > 0 ? auxiliaryMaterialIds : null,
+        // 🔥 范式-素材位置绑定（slotId → materialId 映射）
+        paradigmMaterialBindings: Object.keys(paradigmMaterialBindings).length > 0 ? paradigmMaterialBindings : null,
       });
 
       toast.success(`✅ 成功创建 ${result.data.insertedCount} 个子任务`);
@@ -3729,7 +3821,10 @@ export default function HomePage() {
                                   structureName: paradigm.structureName,
                                   materialRequirements: paradigm.materialRequirements,
                                   structurePreview: paradigm.structurePreview,
+                                  materialPositionMap: paradigm.materialPositionMap,
                                 });
+                                // 范式切换时清空旧的位置绑定
+                                setParadigmMaterialBindings({});
                                 // 范式自带情感基调，自动同步
                                 if (paradigm.emotionTone) setEmotionTone(paradigm.emotionTone);
                               }}
@@ -4140,81 +4235,123 @@ export default function HomePage() {
                       {/* Tab 3: 素材选择 */}
                       {activeGuideTab === 'material' && (
                         <div className="space-y-4">
-                          {/* 🔥🔥 范式素材需求清单（升级版：段落级 + 匹配状态） */}
+                          {/* 🔥🔥 范式素材位置绑定面板（升级版：每个位置独立选素材） */}
                           {selectedParadigm && (() => {
                             // 获取范式的素材位置映射
-                            const positionMap = selectedParadigm.structurePreview || [];
+                            const positionMap = selectedParadigm.materialPositionMap || [];
+                            const structurePreview = selectedParadigm.structurePreview || [];
                             // 已选素材ID集合
-                            const selectedIds = new Set(selectedMaterials.map(m => m.id));
-                            // 段落级匹配状态
-                            const paragraphStatuses = positionMap.map((slot: any) => {
-                              const requiredTypes: string[] = slot.materialTypes || [];
-                              // 检查用户已选素材中是否有映射到该段落的
-                              const matchedMaterials = selectedMaterials.filter(m => {
-                                // 精确匹配：素材的 paradigmId + paradigmPosition
-                                if (m.paradigmId === selectedParadigm.paradigmCode && m.paradigmPosition === `${selectedParadigm.paradigmCode}-段落${slot.order}`) {
-                                  return true;
-                                }
-                                // 类型匹配：素材 sceneType 在 requiredTypes 中
-                                if (m.sceneType && requiredTypes.includes(m.sceneType)) {
-                                  return true;
-                                }
-                                // 类型匹配：素材 type 直接匹配 requiredTypes（已统一使用范式 materialTypes）
-                                return m.type && requiredTypes.includes(m.type);
-                              });
-                              return {
-                                order: slot.order,
-                                name: slot.name,
-                                requiredTypes,
-                                matchedMaterials,
-                                status: matchedMaterials.length > 0 ? 'matched' as const : requiredTypes.length > 0 ? 'unmatched' as const : 'auto' as const,
-                              };
-                            });
+                            const selectedIds = new Set(selectedMaterialsV2List.map(m => m.id));
+                            // 位置绑定覆盖数
+                            const boundSlots = positionMap.filter((p: any) => paradigmMaterialBindings[p.slotId]);
+                            const requiredSlots = positionMap.filter((p: any) => !p.isOptional);
+                            const boundRequired = requiredSlots.filter((p: any) => paradigmMaterialBindings[p.slotId]);
 
                             return (
                               <div className="p-3 bg-gradient-to-r from-amber-50 to-orange-50 rounded-xl border border-amber-200">
-                                <div className="flex items-center gap-2 mb-2">
-                                  <span className="text-sm font-semibold text-amber-800">
-                                    范式「{selectedParadigm.name}」素材需求
-                                  </span>
-                                  <span className="text-[10px] bg-amber-200/60 text-amber-700 px-1.5 py-0.5 rounded-full">
-                                    {paragraphStatuses.filter((p: any) => p.status === 'matched').length}/{paragraphStatuses.filter((p: any) => p.requiredTypes.length > 0).length} 已覆盖
-                                  </span>
+                                <div className="flex items-center justify-between mb-2">
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-sm font-semibold text-amber-800">
+                                      范式「{selectedParadigm.name}」素材位置
+                                    </span>
+                                    <span className="text-[10px] bg-amber-200/60 text-amber-700 px-1.5 py-0.5 rounded-full">
+                                      {boundRequired.length}/{requiredSlots.length} 必填位已绑定
+                                    </span>
+                                  </div>
+                                  <div className="flex items-center gap-2">
+                                    {selectedMaterialsV2List.length > 0 && (
+                                      <button
+                                        type="button"
+                                        onClick={autoBindMaterialsToSlots}
+                                        className="text-[10px] px-2 py-1 rounded-md bg-emerald-100 text-emerald-700 hover:bg-emerald-200 transition-colors"
+                                        title="根据素材类型自动匹配到对应位置"
+                                      >
+                                        智能匹配
+                                      </button>
+                                    )}
+                                    {Object.keys(paradigmMaterialBindings).length > 0 && (
+                                      <button
+                                        type="button"
+                                        onClick={() => setParadigmMaterialBindings({})}
+                                        className="text-[10px] px-2 py-1 rounded-md bg-slate-100 text-slate-500 hover:bg-slate-200 transition-colors"
+                                      >
+                                        清除绑定
+                                      </button>
+                                    )}
+                                  </div>
                                 </div>
+
+                                {/* 位置列表 */}
                                 <div className="space-y-1.5">
-                                  {paragraphStatuses.map((ps: any) => (
-                                    <div key={ps.order} className="flex items-center gap-2 text-xs">
-                                      {/* 状态图标 */}
-                                      {ps.status === 'matched' ? (
-                                        <span className="w-4 h-4 flex items-center justify-center rounded-full bg-green-100 text-green-600">✓</span>
-                                      ) : ps.status === 'unmatched' ? (
-                                        <span className="w-4 h-4 flex items-center justify-center rounded-full bg-amber-100 text-amber-500">○</span>
-                                      ) : (
-                                        <span className="w-4 h-4 flex items-center justify-center rounded-full bg-slate-100 text-slate-400">—</span>
-                                      )}
-                                      {/* 段落名 */}
-                                      <span className="text-slate-600 w-16 shrink-0">段落{ps.order}</span>
-                                      {/* 类型标签 */}
-                                      <div className="flex gap-1 flex-wrap">
-                                        {ps.requiredTypes.map((t: string) => (
-                                          <span key={t} className="px-1.5 py-0.5 rounded bg-amber-100/80 text-amber-700 font-mono">{t}</span>
-                                        ))}
+                                  {positionMap.map((pos: any) => {
+                                    const boundMaterialId = paradigmMaterialBindings[pos.slotId];
+                                    const boundMaterial = boundMaterialId
+                                      ? selectedMaterialsV2List.find(m => m.id === boundMaterialId)
+                                      : null;
+                                    const structureStep = structurePreview.find((s: any) => s.order === pos.paragraphOrder);
+                                    const isBound = !!boundMaterialId;
+                                    const isRequired = !pos.isOptional;
+
+                                    return (
+                                      <div
+                                        key={pos.slotId}
+                                        className={`flex items-center gap-2 text-xs p-1.5 rounded-lg transition-all ${
+                                          isBound
+                                            ? 'bg-green-50 border border-green-200'
+                                            : isRequired
+                                              ? 'bg-amber-50/80 border border-amber-100'
+                                              : 'bg-slate-50/50 border border-slate-100'
+                                        }`}
+                                      >
+                                        {/* 状态图标 */}
+                                        {isBound ? (
+                                          <span className="w-4 h-4 flex items-center justify-center rounded-full bg-green-100 text-green-600 text-[10px]">✓</span>
+                                        ) : isRequired ? (
+                                          <span className="w-4 h-4 flex items-center justify-center rounded-full bg-amber-100 text-amber-500 text-[10px]">○</span>
+                                        ) : (
+                                          <span className="w-4 h-4 flex items-center justify-center rounded-full bg-slate-100 text-slate-400 text-[10px]">—</span>
+                                        )}
+
+                                        {/* 段落信息 */}
+                                        <span className="text-slate-600 w-16 shrink-0 font-medium">段落{pos.paragraphOrder}</span>
+                                        <span className="text-slate-700 w-20 shrink-0 truncate" title={pos.stepName}>{pos.stepName}</span>
+
+                                        {/* 需要的素材类型 */}
+                                        <div className="flex gap-1 flex-wrap">
+                                          {pos.materialTypes.map((t: string) => (
+                                            <span key={t} className="px-1.5 py-0.5 rounded bg-amber-100/80 text-amber-700 font-mono text-[10px]">{t}</span>
+                                          ))}
+                                        </div>
+
+                                        {/* 绑定信息或操作 */}
+                                        {isBound && boundMaterial ? (
+                                          <div className="ml-auto flex items-center gap-1.5">
+                                            <span className="text-green-700 text-[10px] truncate max-w-[120px]" title={boundMaterial.title}>
+                                              ← {boundMaterial.title.length > 15 ? boundMaterial.title.slice(0, 15) + '...' : boundMaterial.title}
+                                            </span>
+                                            <button
+                                              type="button"
+                                              onClick={() => unbindMaterialFromSlot(pos.slotId)}
+                                              className="text-red-400 hover:text-red-600 text-[10px] shrink-0"
+                                              title="解除绑定"
+                                            >
+                                              ✕
+                                            </button>
+                                          </div>
+                                        ) : (
+                                          <span className="text-amber-500 text-[10px] ml-auto">
+                                            {selectedMaterialsV2List.length > 0 ? '点击下方素材→指定此位置' : '先选素材再绑定'}
+                                          </span>
+                                        )}
                                       </div>
-                                      {/* 匹配信息 */}
-                                      {ps.status === 'matched' && (
-                                        <span className="text-green-600 text-[10px] ml-auto">
-                                          ← {ps.matchedMaterials.map((m: any) => m.title || m.caseTitle).join(', ')}
-                                        </span>
-                                      )}
-                                      {ps.status === 'unmatched' && (
-                                        <span className="text-amber-500 text-[10px] ml-auto">自动匹配</span>
-                                      )}
-                                    </div>
-                                  ))}
+                                    );
+                                  })}
                                 </div>
+
                                 {/* 底部提示 */}
                                 <p className="text-[10px] text-amber-600 mt-2 border-t border-amber-200/60 pt-1.5">
-                                  ✓ 用户素材优先填充 &nbsp;|&nbsp; ○ 系统自动补充 &nbsp;|&nbsp; — 无需素材
+                                  ✓ 已绑定素材 &nbsp;|&nbsp; ○ 必填位待绑定 &nbsp;|&nbsp; — 选填位 &nbsp;|&nbsp;
+                                  选择素材后点击「指定位置」绑定到特定段落
                                 </p>
                               </div>
                             );
@@ -4461,6 +4598,16 @@ export default function HomePage() {
                                         >
                                           {isSelected ? '已选' : '选择'}
                                         </button>
+                                        {/* 指定位置按钮：仅选中素材 + 已选范式时显示 */}
+                                        {isSelected && selectedParadigm && (selectedParadigm.materialPositionMap || []).length > 0 && (
+                                          <button
+                                            type="button"
+                                            onClick={() => handleOpenSlotPicker(c.id)}
+                                            className="text-[10px] px-2 py-1 rounded bg-indigo-50 text-indigo-600 border border-indigo-200 hover:bg-indigo-100 transition-colors"
+                                          >
+                                            指定位置
+                                          </button>
+                                        )}
                                       </div>
                                     </div>
                                   </div>
@@ -4484,6 +4631,73 @@ export default function HomePage() {
                               {caseSearchMode === 'search' ? '搜索中...' : 'AI 推荐中...'}
                             </div>
                           )}
+                        </div>
+                      )}
+
+                      {/* 🔥🔥 范式位置选择弹窗 */}
+                      {slotPickerOpen && slotPickerMaterialId && selectedParadigm && (
+                        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30" onClick={() => setSlotPickerOpen(false)}>
+                          <div className="bg-white rounded-xl shadow-2xl p-5 max-w-md w-full mx-4 border border-slate-200" onClick={e => e.stopPropagation()}>
+                            <div className="flex items-center justify-between mb-4">
+                              <h3 className="text-sm font-semibold text-slate-800">指定素材到范式位置</h3>
+                              <button type="button" onClick={() => setSlotPickerOpen(false)} className="text-slate-400 hover:text-slate-600 text-lg">✕</button>
+                            </div>
+                            <p className="text-xs text-slate-500 mb-3">
+                              选择将此素材绑定到「{selectedParadigm.name}」的哪个段落位置
+                            </p>
+                            <div className="space-y-2 max-h-72 overflow-y-auto">
+                              {(selectedParadigm.materialPositionMap || []).map((pos: any) => {
+                                const currentBound = paradigmMaterialBindings[pos.slotId];
+                                const isCurrentlyBound = currentBound === slotPickerMaterialId;
+                                const isBoundToOther = currentBound && currentBound !== slotPickerMaterialId;
+                                return (
+                                  <button
+                                    key={pos.slotId}
+                                    type="button"
+                                    onClick={() => {
+                                      if (isCurrentlyBound) {
+                                        unbindMaterialFromSlot(pos.slotId);
+                                      } else {
+                                        bindMaterialToSlot(pos.slotId, slotPickerMaterialId);
+                                      }
+                                      setSlotPickerOpen(false);
+                                    }}
+                                    disabled={isBoundToOther}
+                                    className={`w-full text-left p-3 rounded-lg border transition-all ${
+                                      isCurrentlyBound
+                                        ? 'border-green-400 bg-green-50 ring-1 ring-green-200'
+                                        : isBoundToOther
+                                          ? 'border-slate-100 bg-slate-50 opacity-50 cursor-not-allowed'
+                                          : 'border-slate-200 hover:border-indigo-300 hover:bg-indigo-50 cursor-pointer'
+                                    }`}
+                                  >
+                                    <div className="flex items-center justify-between">
+                                      <div>
+                                        <span className="text-xs font-medium text-slate-700">段落{pos.paragraphOrder} · {pos.stepName}</span>
+                                        {!pos.isOptional && <span className="ml-1.5 text-[10px] text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded">必填</span>}
+                                      </div>
+                                      {isCurrentlyBound && <span className="text-[10px] text-green-600 font-medium">当前绑定</span>}
+                                      {isBoundToOther && <span className="text-[10px] text-slate-400">已绑定其他</span>}
+                                    </div>
+                                    <div className="flex gap-1 mt-1.5">
+                                      {pos.materialTypes.map((t: string) => (
+                                        <span key={t} className="text-[10px] px-1.5 py-0.5 rounded bg-amber-100/80 text-amber-700">{t}</span>
+                                      ))}
+                                    </div>
+                                  </button>
+                                );
+                              })}
+                            </div>
+                            <div className="mt-4 flex justify-end">
+                              <button
+                                type="button"
+                                onClick={() => setSlotPickerOpen(false)}
+                                className="text-xs px-3 py-1.5 rounded-lg bg-slate-100 text-slate-600 hover:bg-slate-200 transition-colors"
+                              >
+                                取消
+                              </button>
+                            </div>
+                          </div>
                         </div>
                       )}
 

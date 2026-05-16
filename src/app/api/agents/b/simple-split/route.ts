@@ -87,10 +87,20 @@ export async function POST(request: NextRequest) {
       paradigmCode, // 🔥 范式代码（如 P001-标准错位破局）
       paradigmName, // 🔥 范式名称（如 标准错位破局范式）
       paradigmDetail, // 🔥 范式详情（JSON字符串，含结构/情绪/素材需求）
+      paradigmMaterialBindings, // 🔥 范式-素材位置绑定（slotId → materialId 映射）
       // useFlowTemplate 已移除：步骤来源由数据特征自动判断
       // 前端 subTasks 中包含 accountId 字段 → 使用前端编辑步骤
       // 否则 → 使用流程模板兜底
     } = body;
+
+    // 🔥🔥🔥 转换 paradigmMaterialBindings 格式：前端传 Record<string,string>，后端存储 Array<{slotId,materialId}>
+    const normalizedParadigmMaterialBindings: Array<{ slotId: string; materialId: string }> | null =
+      paradigmMaterialBindings
+        ? (Array.isArray(paradigmMaterialBindings)
+          ? paradigmMaterialBindings
+          : Object.entries(paradigmMaterialBindings as Record<string, string>).map(([slotId, materialId]) => ({ slotId, materialId }))
+        )
+        : null;
 
     // 🔥 统一处理：将 accountId / accountIds 合并为 effectiveAccountIds
     // P1-2 修复：去重 + 过滤空值
@@ -110,6 +120,7 @@ export async function POST(request: NextRequest) {
       tempSessionId,
       accountCount: effectiveAccountIds.length,
       contentTemplateId: contentTemplateId || '(未选择)', // 🔥🔥 内容模板
+      hasParadigmMaterialBindings: !!normalizedParadigmMaterialBindings, // 🔥 范式-素材位置绑定
       hasFrontendSteps: subTasks?.some((st: any) => st.accountId) || false,
     });
 
@@ -346,6 +357,7 @@ export async function POST(request: NextRequest) {
               ...(derivedImageCountMode ? { imageCountMode: derivedImageCountMode } : {}),
               ...(contentTemplateId ? { contentTemplateId } : {}),
               ...(paradigmCode ? { paradigmCode, paradigmName, paradigmDetail } : {}), // 🔥 范式数据
+              ...(normalizedParadigmMaterialBindings ? { paradigmMaterialBindings: normalizedParadigmMaterialBindings } : {}), // 🔥 范式-素材位置绑定
             },
             createdAt: new Date(),
             updatedAt: new Date(),
@@ -422,6 +434,7 @@ export async function POST(request: NextRequest) {
                 ...(derivedImageCountMode ? { imageCountMode: derivedImageCountMode } : {}),
                 ...(contentTemplateId ? { contentTemplateId } : {}),
                 ...(paradigmCode ? { paradigmCode, paradigmName, paradigmDetail } : {}), // 🔥 范式数据
+              ...(normalizedParadigmMaterialBindings ? { paradigmMaterialBindings: normalizedParadigmMaterialBindings } : {}), // 🔥 范式-素材位置绑定
               },
               createdAt: new Date(),
               updatedAt: new Date(),
@@ -502,6 +515,7 @@ export async function POST(request: NextRequest) {
             ...(derivedImageCountMode ? { imageCountMode: derivedImageCountMode } : {}), // 🔥 小红书图片模式（从内容模板推导或前端传入）
             ...(contentTemplateId ? { contentTemplateId } : {}), // 🔥🔥 内容模板ID
             ...(paradigmCode ? { paradigmCode, paradigmName, paradigmDetail } : {}), // 🔥 范式完整数据（与多平台模式对齐）
+            ...(normalizedParadigmMaterialBindings ? { paradigmMaterialBindings: normalizedParadigmMaterialBindings } : {}), // 🔥 范式-素材位置绑定
           },
           createdAt: new Date(),
           updatedAt: new Date(),

@@ -48,13 +48,26 @@ export async function GET(request: NextRequest) {
         materialRequirements: materialTypes.length > 0 
           ? `需要: ${materialTypes.join(' + ')}` 
           : '案例 + 类比 + 数据',
-        // 结构预览（用于面板展开）
-        structurePreview: structure.map(s => ({
-          order: s.order,
-          name: s.stepName,
-          wordRange: s.wordRange,
-          contentRequirement: s.contentRequirement,
-        })),
+        // 结构预览（用于面板展开，含 slotId 和 materialTypes 支持素材位置绑定）
+        structurePreview: structure.map(s => {
+          // 从 materialPositionMap 查找该段落的位置信息
+          const positionInfo = p.materialPositionMap?.find(
+            (m: any) => m.paragraphOrder === s.order
+          );
+          return {
+            order: s.order,
+            name: s.stepName,
+            wordRange: s.wordRange,
+            contentRequirement: s.contentRequirement,
+            slotId: s.slotId || positionInfo?.slotId || null,
+            materialTypes: positionInfo?.materialTypes || [],
+            isPrimary: positionInfo?.isPrimary ?? false,
+            isOptional: positionInfo?.isOptional ?? false,
+            fixedPhrases: s.fixedPhrases || [],
+          };
+        }),
+        // 完整的位置映射（供素材精准匹配使用）
+        materialPositionMap: p.materialPositionMap || [],
       };
     });
     

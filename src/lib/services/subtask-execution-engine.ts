@@ -84,6 +84,8 @@ interface TwoPhaseTaskMetadata extends TaskMetadata {
   multiPlatformGroupId?: string;
   sourceCommandResultId?: string;
   adaptationPlatform?: string;
+  paradigmCode?: string; // 🔥 范式代码
+  paradigmMaterialBindings?: Array<{ slotId: string; materialId: string }>; // 🔥 范式-素材位置绑定
 }
 
 interface TaskMetadata {
@@ -5449,6 +5451,10 @@ export class SubtaskExecutionEngine {
       materials?: Array<{ id: string; title: string; type: string; content: string; sourceDesc?: string }>;
       // 🔥 新增：关联素材补充区内容（软参考，与 keyMaterials 区分处理）
       relatedMaterials?: string;
+      // 🔥🔥 范式-素材位置绑定（数组格式：每个元素包含 slotId + materialId）
+      paradigmMaterialBindings?: Array<{ slotId: string; materialId: string }>;
+      // 🔥🔥 位置绑定的素材详情（slotId → 素材内容）
+      slotMaterialDetails?: Array<{ slotId: string; stepName: string; paragraphOrder: number; materialTitle: string; materialContent: string; materialType: string }>;
     } = {};
 
     // 1. 获取用户观点（核心锚点 + 关键素材）
@@ -5503,6 +5509,72 @@ export class SubtaskExecutionEngine {
         }
       } catch (error) {
         console.warn('[SubtaskEngine] ⚠️ 获取素材失败:', error);
+      }
+    }
+
+    // 🔥🔥🔥 【新增】获取范式-素材位置绑定（paradigmMaterialBindings）
+    const pmbFromMetadata = taskMetadata?.paradigmMaterialBindings;
+    if (pmbFromMetadata && Array.isArray(pmbFromMetadata) && pmbFromMetadata.length > 0) {
+      userOpinionAndMaterials.paradigmMaterialBindings = pmbFromMetadata as any;
+      console.log('[SubtaskEngine] 🔥 发现范式-素材位置绑定:', pmbFromMetadata.length, '个位置');
+
+      // 查询绑定素材的详情，构建 slotMaterialDetails
+      try {
+        const { db } = await import('@/lib/db');
+        const { materialLibrary } = await import('@/lib/db/schema/material-library');
+        const { inArray } = await import('drizzle-orm');
+
+        const boundMaterialIds = [...new Set(pmbFromMetadata.map((b: { materialId: string }) => b.materialId))];
+        const validBoundIds = boundMaterialIds.filter((id: string) =>
+          typeof id === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)
+        );
+
+        if (validBoundIds.length > 0) {
+          const boundMaterials = await db
+            .select({
+              id: materialLibrary.id,
+              title: materialLibrary.title,
+              type: materialLibrary.type,
+              content: materialLibrary.content,
+            })
+            .from(materialLibrary)
+            .where(inArray(materialLibrary.id, validBoundIds));
+
+          // 获取范式的 materialPositionMap 以映射 slotId → stepName/paragraphOrder
+          const paradigmCode = taskMetadata?.paradigmCode as string | undefined;
+          let positionMap: Array<{ slotId: string; stepName: string; paragraphOrder: number; materialTypes: string[] }> = [];
+          if (paradigmCode) {
+            try {
+              const { getParadigmPositionMap } = await import('@/lib/services/paradigm-creation-service');
+              positionMap = await getParadigmPositionMap(paradigmCode);
+            } catch {
+              console.warn('[SubtaskEngine] ⚠️ 获取范式位置映射失败，使用默认空映射');
+            }
+          }
+
+          const materialMap = new Map(boundMaterials.map(m => [m.id, m]));
+          const slotMaterialDetails: Array<{ slotId: string; stepName: string; paragraphOrder: number; materialTitle: string; materialContent: string; materialType: string }> = [];
+
+          for (const binding of pmbFromMetadata) {
+            const mat = materialMap.get(binding.materialId);
+            const posInfo = positionMap.find(p => p.slotId === binding.slotId);
+            if (mat) {
+              slotMaterialDetails.push({
+                slotId: binding.slotId,
+                stepName: posInfo?.stepName || `位置${binding.slotId}`,
+                paragraphOrder: posInfo?.paragraphOrder || 0,
+                materialTitle: mat.title,
+                materialContent: mat.content || '',
+                materialType: mat.type,
+              });
+            }
+          }
+
+          userOpinionAndMaterials.slotMaterialDetails = slotMaterialDetails;
+          console.log('[SubtaskEngine] 🔥 位置绑定素材详情:', slotMaterialDetails.length, '个');
+        }
+      } catch (error) {
+        console.warn('[SubtaskEngine] ⚠️ 获取位置绑定素材详情失败:', error);
       }
     }
 
@@ -8302,10 +8374,21 @@ export class SubtaskExecutionEngine {
         );
         const { userOpinionAndMaterials: _userOpinionAndMaterials, priorStepOutput: _priorStepOutput, extractedOutline: _extractedOutline } = _execCtx;
         
+        // 🔥🔥🔥 范式-素材位置绑定数据（从 task.metadata 读取）
+        const _paradigmMaterialBindings: Array<{ slotId: string; materialId: string }> = taskMetadata?.paradigmMaterialBindings || [];
+        
+        // 🔥🔥🔥 直接使用 buildExecutionContext 中已构建的 slotMaterialDetails（避免重复查询）
+        const _slotMaterialDetails = _userOpinionAndMaterials?.slotMaterialDetails || [];
+        
         // 构建素材内容文本
         const _materialsContent = _userOpinionAndMaterials?.materials && _userOpinionAndMaterials.materials.length > 0
           ? _userOpinionAndMaterials.materials.map(m => `--- 素材：${m.title}（${m.type}）---\n来源：${m.sourceDesc || '未标注'}\n内容：\n${m.content}`).join('\n\n')
           : undefined;
+        
+        // 🔥🔥🔥 slotMaterialDetails 已在 buildExecutionContext 中构建完成，直接使用
+        if (_slotMaterialDetails.length > 0) {
+          console.log(`[SubtaskEngine] 🎯 范式-素材位置绑定: ${_slotMaterialDetails.length} 个位置已绑定素材`);
+        }
         
         // 单次调用 assemblePrompt
         // Phase 3: 如果是全文子任务(B)，传入已确认的大纲内容
@@ -8602,6 +8685,8 @@ export class SubtaskExecutionEngine {
           primaryMaterialData: _primaryMaterialDataText || undefined,
           auxiliaryMaterialData: _auxiliaryMaterialDataText || undefined,
           articleStructureTemplate: _articleStructureTemplateText || undefined,
+          // 🔥🔥🔥 范式-素材位置绑定（段落级精准素材注入）
+          slotMaterialDetails: _slotMaterialDetails.length > 0 ? _slotMaterialDetails : undefined,
         });
 
         agentPrompt = insuranceDAssembledResult.fixedBasePrompt; // 固定基础部分作为 agentPrompt

@@ -51,6 +51,15 @@ export interface PromptAssemblyOptions {
   primaryMaterialData?: string;  // 🔥 主素材数据预格式化文本（产品信息/法规原文等）
   auxiliaryMaterialData?: string; // 🔥 辅素材数据预格式化文本（类比/案例/数据等）
   articleStructureTemplate?: string; // 🔥 文章结构模板预格式化文本（由 article-structure-templates 生成）
+  // 🔥🔥 范式-素材位置绑定（段落级精准素材注入）
+  slotMaterialDetails?: Array<{
+    slotId: string;
+    stepName: string;
+    paragraphOrder: number;
+    materialTitle: string;
+    materialContent: string;
+    materialType: string;
+  }>;
 }
 
 /**
@@ -694,6 +703,21 @@ export class PromptAssemblerService {
         }
         result += '\n';
       });
+    }
+
+    // 🔥🔥 4.5 范式-素材位置绑定（段落级精准素材注入）
+    if (options.slotMaterialDetails && options.slotMaterialDetails.length > 0) {
+      result += `### 范式位置素材绑定（必须将素材写入指定段落，不可挪用）\n\n`;
+      result += `以下是用户为特定段落位置绑定的素材，写作时必须将该素材内容写入对应段落：\n\n`;
+      // 按 paragraphOrder 排序，确保段落顺序正确
+      const sortedSlots = [...options.slotMaterialDetails].sort((a, b) => a.paragraphOrder - b.paragraphOrder);
+      for (const slot of sortedSlots) {
+        result += `**段落${slot.paragraphOrder}「${slot.stepName}」→ 必须使用以下素材：**\n`;
+        result += `- 素材标题：${slot.materialTitle}\n`;
+        result += `- 素材类型：${slot.materialType}\n`;
+        result += `- 素材内容：\n${slot.materialContent}\n\n`;
+      }
+      result += `⚠️ 重要：上述素材已绑定到指定段落位置，写作时必须在该段落中使用对应素材，不可遗漏或挪用至其他段落。\n\n`;
     }
 
     // 5. 目标字数
