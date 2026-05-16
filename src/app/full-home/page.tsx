@@ -3737,21 +3737,24 @@ export default function HomePage() {
                                 p-4 rounded-xl border-2 cursor-pointer transition-all duration-200
                                 ${selectedParadigm?.id === paradigm.id
                                   ? 'border-emerald-500 bg-emerald-50 shadow-md'
-                                  : 'border-slate-200 bg-white hover:border-emerald-300 hover:shadow-sm'
+                                  : isInit
+                                    ? 'border-emerald-300 bg-emerald-50/50 hover:border-emerald-400 hover:shadow-sm'
+                                    : 'border-slate-200 bg-white hover:border-slate-300 hover:shadow-sm'
                                 }
                               `}
                             >
                               <div className="flex items-center justify-between mb-2">
-                                <h3 className="font-semibold text-slate-900">{paradigm.name}</h3>
+                                <h3 className={`font-semibold ${isInit ? 'text-emerald-800' : 'text-slate-900'}`}>{paradigm.name}</h3>
                                 <div className="flex items-center gap-2">
                                   {/* 初始化状态标签 */}
                                   {isInit ? (
-                                    <Badge className="text-xs bg-green-100 text-green-700 border border-green-200 flex items-center gap-1">
+                                    <Badge className="text-xs bg-emerald-100 text-emerald-700 border border-emerald-200 flex items-center gap-1">
                                       <CheckCircle2 className="w-3 h-3" />
-                                      已初始化({extractCount}篇·{materialCount}素材·{coveredDims.length}/7维)
+                                      已初始化({extractCount}篇·{materialCount}素材)
                                     </Badge>
                                   ) : (
-                                    <Badge className="text-xs bg-gray-100 text-gray-500 border border-gray-200">
+                                    <Badge className="text-xs bg-amber-50 text-amber-600 border border-amber-200 flex items-center gap-1">
+                                      <AlertCircle className="w-3 h-3" />
                                       未初始化
                                     </Badge>
                                   )}
