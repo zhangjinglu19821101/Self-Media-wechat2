@@ -214,11 +214,11 @@ export async function POST(
           slotId: slotId,                              // 绑定位置ID（如 P001-01）
           
           // 🔥 关系型素材上下文（去AI化核心字段）
-          contextBefore: material.precedingText || null,           // 前一句原文
-          contextAfter: material.followingText || null,            // 后一句原文
-          emotion: material.emotion || null,                       // 单个情绪标签
-          relationToPrevious: material.relations?.shouldPrecede || null, // 与前一个素材的关系
-          paradigmStep: paradigmStep,                              // 范式步骤
+          contextBefore: material.contextBefore || material.precedingText || null,           // 前一句原文
+          contextAfter: material.contextAfter || material.followingText || null,            // 后一句原文
+          emotion: material.emotion || null,                       // 情绪标签（共情/理性/警示/温情/专业/中性）
+          relationToPrevious: material.relationToPrevious || material.relations?.shouldPrecede || null, // 与前一个素材的关系
+          paradigmStep: material.paradigmStep || paradigmStep,                    // 范式步骤（优先使用提取值）
           usageIntent: usageIntentMap[materialType] || null,       // 使用意图
           transitionPhrase: selectedTransition,                    // 衔接句式
           originalPosition: paragraphIdx ?? null,                  // 原文段落索引

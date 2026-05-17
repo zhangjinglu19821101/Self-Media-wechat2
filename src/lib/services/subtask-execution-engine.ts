@@ -5448,13 +5448,13 @@ export class SubtaskExecutionEngine {
     // 🔥🔥🔥 【新增】获取用户观点和素材（insurance-d 必须遵守，仅含创作引导结构化内容）
     const userOpinionAndMaterials: {
       userOpinion?: string; // 仅创作引导结构化内容（核心观点+情感基调+文章结构）
-      materials?: Array<{ id: string; title: string; type: string; content: string; sourceDesc?: string }>;
+      materials?: Array<{ id: string; title: string; type: string; content: string; sourceDesc?: string; contextBefore?: string; contextAfter?: string; emotion?: string; relationToPrevious?: string; paradigmStep?: string; transitionPhrase?: string }>;
       // 🔥 新增：关联素材补充区内容（软参考，与 keyMaterials 区分处理）
       relatedMaterials?: string;
       // 🔥🔥 范式-素材位置绑定（数组格式：每个元素包含 slotId + materialId）
       paradigmMaterialBindings?: Array<{ slotId: string; materialId: string }>;
       // 🔥🔥 位置绑定的素材详情（slotId → 素材内容）
-      slotMaterialDetails?: Array<{ slotId: string; stepName: string; paragraphOrder: number; materialTitle: string; materialContent: string; materialType: string }>;
+      slotMaterialDetails?: Array<{ slotId: string; stepName: string; paragraphOrder: number; materialTitle: string; materialContent: string; materialType: string; contextBefore?: string; contextAfter?: string; emotionTone?: string; usageInstruction?: string; relationToPrevious?: string }>;
     } = {};
 
     // 1. 获取用户观点（核心锚点 + 关键素材）
@@ -5581,11 +5581,12 @@ export class SubtaskExecutionEngine {
             materialTitle: string;
             materialContent: string;
             materialType: string;
-            // 🔥 新增：上下文信息
+            // 🔥 新增：上下文信息（字段名与 prompt-assembler PromptAssemblyOptions 保持一致）
             contextBefore?: string;
             contextAfter?: string;
-            emotion?: string;
-            transitionPhrase?: string;
+            emotionTone?: string;
+            usageInstruction?: string;
+            relationToPrevious?: string;
           }> = [];
 
           for (const binding of pmbFromMetadata) {
@@ -5602,8 +5603,9 @@ export class SubtaskExecutionEngine {
                 // 🔥 新增：上下文信息
                 contextBefore: mat.contextBefore || undefined,
                 contextAfter: mat.contextAfter || undefined,
-                emotion: mat.emotion || undefined,
-                transitionPhrase: mat.transitionPhrase || undefined,
+                emotionTone: mat.emotion || undefined,       // 🔥 字段名映射：DB emotion → 接口 emotionTone
+                usageInstruction: mat.transitionPhrase || undefined, // 🔥 字段名映射：DB transitionPhrase → 接口 usageInstruction
+                relationToPrevious: mat.relationToPrevious || undefined, // 🔥 补充缺失字段
               });
             }
           }
@@ -9067,7 +9069,14 @@ ${userOpinion}
               'story': '故事',
               'quote': '引用',
               'opening': '开头',
-              'ending': '结尾'
+              'ending': '结尾',
+              // 🔥 7维关系型素材类型
+              'misconception': '错误认知',
+              'analogy': '生活类比',
+              'golden_sentence': '金句',
+              'fixed_phrase': '固定句式组合',
+              'personal_fragment': '个人碎片',
+              'real_case': '真实案例',
             };
             const typeLabel = typeLabels[material.type] || material.type;
             
@@ -9076,6 +9085,7 @@ ${userOpinion}
 来源：${material.sourceDesc || '未标注'}
 内容：
 ${material.content}
+${material.contextBefore ? `\n📌 前文语境：${material.contextBefore}` : ''}${material.contextAfter ? `\n📌 后文语境：${material.contextAfter}` : ''}${material.emotion ? `\n💡 情绪基调：${material.emotion}` : ''}${material.paradigmStep ? `\n📐 范式步骤：${material.paradigmStep}` : ''}${material.transitionPhrase ? `\n🔗 过渡句式：${material.transitionPhrase}` : ''}
 
 `;
           });

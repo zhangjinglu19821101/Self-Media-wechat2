@@ -228,7 +228,29 @@ export async function POST(request: NextRequest) {
           extractionResult.articleTitle || articleTitle || '未命名文章'
         );
         const { materialLibrary } = await import('@/lib/db/schema/material-library');
-        for (const input of materialInputs) {
+        
+        // 🔥 范式ID映射（用于位置绑定）
+        const PARADIGM_ID_MAP: Record<string, string> = {
+          'misconception_break': 'P001',
+          'industry_reflection': 'P002',
+          'case_refutation': 'P003',
+          'essential_definition': 'P004',
+          'hot_event': 'P005',
+          'product_review': 'P006',
+          'personal_experience': 'P007',
+          'pitfall_guide': 'P008',
+          'comparison_analysis': 'P009',
+          'year_end_review': 'P010',
+        };
+        const matchedParadigmId = PARADIGM_ID_MAP[extractionResult.paradigmRecognition.matchedParadigmId] || null;
+
+        for (let i = 0; i < materialInputs.length; i++) {
+          const input = materialInputs[i];
+          const m = extractionResult.relationalMaterials[i];
+          const slotId = matchedParadigmId && m?.position !== undefined
+            ? `${matchedParadigmId}-${String(m.position + 1).padStart(2, '0')}`
+            : null;
+          
           await db.insert(materialLibrary).values({
             workspaceId,
             title: input.title,
@@ -242,6 +264,15 @@ export async function POST(request: NextRequest) {
             emotionTags: input.emotionTags,
             ownerType: 'user',
             analysisText: JSON.stringify(input.structuredData),
+            // 🔥 去AI化核心字段（完整传递）
+            contextBefore: m?.contextBefore || null,
+            contextAfter: m?.contextAfter || null,
+            emotion: m?.emotion || null,
+            relationToPrevious: m?.relationToPrevious || null,
+            paradigmStep: m?.paradigmStep || null,
+            paradigmId: matchedParadigmId,
+            slotId: slotId,
+            originalPosition: m?.position ?? null,
           } as any);
           savedMaterialCount++;
         }
