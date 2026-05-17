@@ -247,8 +247,17 @@ export async function POST(request: NextRequest) {
         for (let i = 0; i < materialInputs.length; i++) {
           const input = materialInputs[i];
           const m = extractionResult.relationalMaterials[i];
-          const slotId = matchedParadigmId && m?.position !== undefined
-            ? `${matchedParadigmId}-${String(m.position + 1).padStart(2, '0')}`
+          // 🔥 从 paradigmStep 推导 slotId（position 字段不总是存在）
+          const STEP_SLOT_MAP: Record<string, string> = {
+            '错误认知': '01', '核心论点': '02', '案例支撑': '03',
+            '数据论证': '04', '转折反思': '05', '情感共鸣': '06',
+            '总结升华': '07', '行动号召': '08',
+            '开头引入': '01', '中间论述': '04', '结尾升华': '07',
+            '破局引入': '01', '行业痛点': '02', '趋势洞察': '05',
+          };
+          const slotSuffix = STEP_SLOT_MAP[m?.paradigmStep || ''] || String(i + 1).padStart(2, '0');
+          const slotId = matchedParadigmId
+            ? `${matchedParadigmId}-${slotSuffix}`
             : null;
           
           await db.insert(materialLibrary).values({

@@ -389,6 +389,9 @@ ${structureMappingStr || '未识别到明确的结构映射'}
 ## 输出格式
 严格按照下面的JSON格式输出，不添加任何额外的说明、注释或markdown格式：
 {
+  "核心主题": "用一句话概括这篇文章的核心观点（15字以内）",
+  "情绪基调": "理性/共情/警示/温情/专业/中性（六选一，描述全文整体基调）",
+  "目标读者": "描述这篇文章的目标读者群体（如：30-50岁中产家庭、有保单的职场人）",
   "错误认知": [
     {
       "内容": "完整的2句原文，保留所有换行和空行",
@@ -603,9 +606,9 @@ export async function extractRelationalMaterials(
   return {
     articleTitle: String(parsed.articleTitle || ''),
     articleType: String(parsed.articleType || ''),
-    coreTheme: String(parsed.coreTheme || ''),
-    targetAudience: String(parsed.targetAudience || ''),
-    emotionalTone: String(parsed.emotionalTone || ''),
+    coreTheme: String(parsed.coreTheme || parsed['核心主题'] || ''),
+    targetAudience: String(parsed.targetAudience || parsed['目标读者'] || ''),
+    emotionalTone: String(parsed.emotionalTone || parsed['情绪基调'] || ''),
     platform: String(parsed.platform || '公众号'),
     relationalMaterials,
     emotionCurve: Array.isArray(parsed.emotionCurve) ? parsed.emotionCurve as ArticleExtractionResultV2['emotionCurve'] : [],
@@ -880,12 +883,16 @@ export function extractionV2ToMaterialInputs(
 
   for (const m of result.relationalMaterials) {
     const typeLabel = MATERIAL_TYPE_LABELS[m.materialType] || m.materialType;
-    const contentPreview = m.content.substring(0, 30);
+    // 🔥 标题生成：从内容中提取核心意思，而非简单截断
+    // 规则：取内容第一个句号/问号前的完整句子，≤20字；超长则截断加省略号
+    const firstSentenceMatch = m.content.match(/^[^。！？\n]{2,20}[。！？]?/);
+    const coreMeaning = firstSentenceMatch ? firstSentenceMatch[0].replace(/[。！？]$/, '') : m.content.substring(0, 18);
+    const title = `${typeLabel}｜${coreMeaning}${coreMeaning.length < m.content.length ? '...' : ''}`;
 
     materials.push({
       type: materialTypeToLibType[m.materialType] || 'personal_fragment',
       sceneType: materialTypeToSceneType[m.materialType] || 'personal_fragment',
-      title: `${typeLabel}: ${contentPreview}...`,
+      title,
       content: m.content,
       topicTags: [...baseTopicTags, ...m.topicTags],
       sceneTags: [...m.sceneTags, typeLabel],

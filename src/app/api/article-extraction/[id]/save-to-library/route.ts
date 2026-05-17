@@ -133,13 +133,33 @@ export async function POST(
           || PARADIGM_ID_MAP[extraction.paradigmName || '']
           || PARADIGM_ID_MAP[extraction.paradigmType || '']
           || null;
-        const slotId = matchedParadigmId && paragraphIdx !== undefined
-          ? `${matchedParadigmId}-${String(paragraphIdx + 1).padStart(2, '0')}`
+        // 🔥 位置ID推导：优先使用 position.paragraphIndex，兜底使用 paradigmStep 映射
+        // paradigmStep 是 LLM 提取的步骤标签（如"错误认知"、"核心论点"），
+        // 它比 paragraphIndex 更稳定（LLM 不一定输出 position，但一定会输出 paradigmStep）
+        const PARADIGM_STEP_SLOT_MAP: Record<string, string> = {
+          '错误认知': '01', '核心论点': '02', '核心锚点': '02',
+          '案例引入': '03', '案例论证': '03', '案例归谬': '03',
+          '数据支撑': '04', '权威数据': '04', '数据论证': '04',
+          '类比阐释': '05', '生活类比': '05', '类比论证': '05',
+          '金句升华': '06', '金句点睛': '06', '核心金句': '06',
+          '固定句式': '07', '固定句式组合': '07',
+          '个人碎片': '08', '个人经历': '08', '个人感悟': '08',
+          '转折推进': '09', '情感共鸣': '10', '结尾升华': '11',
+          '开篇引入': '01', '认知反转': '02', '论证展开': '04',
+          '情绪承接': '05', '总结收束': '11',
+        };
+
+        const stepSlotNumber = PARADIGM_STEP_SLOT_MAP[material.paradigmStep || '']
+          || PARADIGM_STEP_SLOT_MAP[material.materialType || '']
+          || (paragraphIdx !== undefined ? String(paragraphIdx + 1).padStart(2, '0') : null);
+
+        const slotId = matchedParadigmId && stepSlotNumber
+          ? `${matchedParadigmId}-${stepSlotNumber}`
           : null;
 
         // 🔥 位置ID三重绑定：自动计算 paradigmPosition
-        const paradigmPosition = matchedParadigmId && paragraphIdx !== undefined
-          ? `${matchedParadigmId}-段落${paragraphIdx + 1}`
+        const paradigmPosition = matchedParadigmId && stepSlotNumber
+          ? `${matchedParadigmId}-步骤${stepSlotNumber}(${material.paradigmStep || material.materialType})`
           : null;
 
         // 合并情绪标签
@@ -158,22 +178,39 @@ export async function POST(
           personal_fragment: '用个人经历增加真实感和独特性',
         };
 
-        // 🔥 推导衔接句式（基于素材类型）
-        const transitionPhraseMap: Record<string, string[]> = {
-          misconception: ['很多人以为...', '大家普遍认为...', '你可能觉得...'],
-          analogy: ['这就好比...', '打个比方...', '就像...'],
-          case: ['说个真实的例子...', '我有个客户...', '前段时间...'],
-          data: ['根据...数据显示...', '据统计...', '有报告指出...'],
-          golden_sentence: ['记住这句话：', '有句话说得好：', '简单来说就是...'],
-          fixed_phrase: ['说实话...', '不瞒你说...', '说实话我之前也...'],
-          personal_fragment: ['我自己就遇到过...', '说起来...', '那是...年前的事了'],
-        };
-
+        // 🔥 推导衔接句式（优先使用原文提取，不用随机固定句式——后者本身就是AI特征）
         const materialType = material.materialType || 'personal_fragment';
-        const suggestedTransitions = transitionPhraseMap[materialType] || [];
-        const selectedTransition = suggestedTransitions.length > 0 
-          ? suggestedTransitions[Math.floor(Math.random() * suggestedTransitions.length)]
-          : null;
+        
+        // 优先级：LLM提取的真实衔接句 > contextBefore末尾句子 > 类型默认衔接模式
+        let selectedTransition: string | null = null;
+        
+        // 1. 优先使用 LLM 从原文提取的真实衔接短语
+        if (material.transitionPhrase && material.transitionPhrase.trim()) {
+          selectedTransition = material.transitionPhrase.trim();
+        }
+        // 2. 从 contextBefore 末尾提取真实衔接句（取最后一个完整句子）
+        else if (material.contextBefore && material.contextBefore.trim()) {
+          const beforeText = material.contextBefore.trim();
+          const sentences = beforeText.split(/[。！？；\n]/).filter((s: string) => s.trim().length > 0);
+          if (sentences.length > 0) {
+            const lastSentence = sentences[sentences.length - 1].trim();
+            // 只取较短的衔接句（≤30字），避免截取过长内容
+            selectedTransition = lastSentence.length <= 30 ? lastSentence : null;
+          }
+        }
+        // 3. 兜底：使用该素材类型的典型衔接模式（标注为"典型模式"以便下游区分）
+        if (!selectedTransition) {
+          const defaultTransitionMap: Record<string, string> = {
+            misconception: '【典型模式】很多人以为...',
+            analogy: '【典型模式】这就好比...',
+            case: '【典型模式】说个真实的例子...',
+            data: '【典型模式】根据数据显示...',
+            golden_sentence: '【典型模式】有句话说得好...',
+            fixed_phrase: '【典型模式】说实话...',
+            personal_fragment: '【典型模式】我自己就遇到过...',
+          };
+          selectedTransition = defaultTransitionMap[materialType] || null;
+        }
 
         // 🔥 推导范式步骤（基于段落位置和范式类型）
         const paradigmStepMap: Record<string, string[]> = {
@@ -195,9 +232,16 @@ export async function POST(
           paradigmStep = steps[paragraphIdx] || `段落${paragraphIdx + 1}`;
         }
 
+        // 🔥 P0-1修复：标题从素材内容中提取有意义的摘要，不再使用占位符
+        const typeLabel = MATERIAL_TYPE_LABELS[material.materialType] || material.materialType || '素材';
+        const contentPreview = pureContent.replace(/\n/g, ' ').trim().slice(0, 40);
+        const meaningfulTitle = pureContent.length > 40
+          ? `${typeLabel}: ${contentPreview}...`
+          : `${typeLabel}: ${contentPreview}`;
+
         return {
           workspaceId: workspaceId as string,
-          title: `[提取] ${MATERIAL_TYPE_LABELS[material.materialType] || material.materialType} - ${positionLabel}`,
+          title: meaningfulTitle,
           content: pureContent,  // 🔥 素材内容保持纯净，不再混入上下文
           type: (MATERIAL_TYPE_MAP[material.materialType] || 'personal_fragment') as any,
           sceneType: SCENE_TYPE_MAP[material.materialType] || material.materialType || null,
