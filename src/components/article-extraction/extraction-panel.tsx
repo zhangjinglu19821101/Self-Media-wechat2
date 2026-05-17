@@ -1,6 +1,7 @@
 'use client';
 
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useMemo } from 'react';
+import React from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -58,6 +59,8 @@ interface ExtractionResult {
   extractionSummary: string;
   assetValueScore: number;
   totalMaterialCount: number;
+  articleText?: string; // 原文内容（用于对照验证）
+  articleTitle?: string; // 文章标题
 }
 
 // ====== 常量配置 ======
@@ -125,6 +128,174 @@ function groupMaterialsByType(materials: RelationalMaterial[]): GroupedMaterials
 }
 
 // ====== 子组件 ======
+
+/** 原文对照展示卡片 - 显示原文并高亮提取的素材 */
+function OriginalArticleCard({ 
+  articleText, 
+  articleTitle, 
+  materials 
+}: { 
+  articleText: string; 
+  articleTitle?: string;
+  materials: RelationalMaterial[];
+}) {
+  const [expanded, setExpanded] = useState(true);
+  const [showHighlight, setShowHighlight] = useState(true);
+
+  // 高亮处理：将原文中出现的素材内容标记为高亮
+  const highlightedText = useMemo(() => {
+    if (!showHighlight || !materials || materials.length === 0) {
+      return articleText;
+    }
+
+    // 收集所有需要高亮的内容片段
+    const highlights = materials
+      .map(m => m.content)
+      .filter(c => c && c.length >= 10) // 过滤太短的内容
+      .sort((a, b) => b.length - a.length); // 按长度降序，优先匹配长片段
+
+    let result = articleText;
+    // 使用特殊标记避免重复替换
+    const MARKER_START = '<<<HIGHLIGHT_START>>>';
+    const MARKER_END = '<<<HIGHLIGHT_END>>>';
+    
+    for (const content of highlights) {
+      // 转义正则特殊字符
+      const escaped = content.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const regex = new RegExp(escaped, 'g');
+      result = result.replace(regex, `${MARKER_START}${content}${MARKER_END}`);
+    }
+
+    return result;
+  }, [articleText, materials, showHighlight]);
+
+  // 渲染高亮文本
+  const renderHighlightedText = (text: string) => {
+    if (!showHighlight) {
+      return <span className="whitespace-pre-wrap">{text}</span>;
+    }
+
+    const parts: React.ReactNode[] = [];
+    let lastIndex = 0;
+    let keyIndex = 0;
+
+    const MARKER_START = '<<<HIGHLIGHT_START>>>';
+    const MARKER_END = '<<<HIGHLIGHT_END>>>';
+
+    let currentIndex = 0;
+    while (currentIndex < text.length) {
+      const startIdx = text.indexOf(MARKER_START, currentIndex);
+      if (startIdx === -1) {
+        // 没有更多高亮标记，添加剩余文本
+        parts.push(
+          <span key={keyIndex++} className="whitespace-pre-wrap">
+            {text.slice(currentIndex)}
+          </span>
+        );
+        break;
+      }
+
+      // 添加高亮标记前的普通文本
+      if (startIdx > currentIndex) {
+        parts.push(
+          <span key={keyIndex++} className="whitespace-pre-wrap">
+            {text.slice(currentIndex, startIdx)}
+          </span>
+        );
+      }
+
+      const endIdx = text.indexOf(MARKER_END, startIdx);
+      if (endIdx === -1) {
+        // 没有结束标记，添加剩余文本
+        parts.push(
+          <span key={keyIndex++} className="whitespace-pre-wrap">
+            {text.slice(startIdx + MARKER_START.length)}
+          </span>
+        );
+        break;
+      }
+
+      // 添加高亮内容
+      const highlightedContent = text.slice(startIdx + MARKER_START.length, endIdx);
+      parts.push(
+        <mark 
+          key={keyIndex++} 
+          className="bg-yellow-200 text-slate-900 rounded px-0.5 whitespace-pre-wrap"
+        >
+          {highlightedContent}
+        </mark>
+      );
+
+      currentIndex = endIdx + MARKER_END.length;
+    }
+
+    return parts;
+  };
+
+  return (
+    <Card className="border-2 border-emerald-200 bg-emerald-50/30">
+      <CardHeader className="pb-2">
+        <div className="flex items-center justify-between">
+          <CardTitle className="text-base flex items-center gap-2">
+            <FileText className="w-5 h-5 text-emerald-600" />
+            原文对照验证
+            <Badge variant="outline" className="ml-2 text-emerald-600 border-emerald-300">
+              {articleText.length} 字
+            </Badge>
+          </CardTitle>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setShowHighlight(!showHighlight)}
+              className="text-xs"
+            >
+              {showHighlight ? (
+                <><Eye className="w-3.5 h-3.5 mr-1" />高亮素材</>
+              ) : (
+                <><Eye className="w-3.5 h-3.5 mr-1 opacity-50" />显示原文</>
+              )}
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setExpanded(!expanded)}
+            >
+              {expanded ? (
+                <ChevronDown className="w-4 h-4 text-slate-400" />
+              ) : (
+                <ChevronRight className="w-4 h-4 text-slate-400" />
+              )}
+            </Button>
+          </div>
+        </div>
+        {articleTitle && (
+          <CardDescription className="mt-1 font-medium text-slate-700">
+            {articleTitle}
+          </CardDescription>
+        )}
+      </CardHeader>
+      {expanded && (
+        <CardContent>
+          <div className="bg-white rounded-lg p-4 border border-slate-200 max-h-[400px] overflow-y-auto">
+            <p className="text-sm text-slate-700 leading-relaxed">
+              {renderHighlightedText(highlightedText)}
+            </p>
+          </div>
+          {showHighlight && materials && materials.length > 0 && (
+            <div className="mt-3 flex items-center gap-2 text-xs text-slate-500">
+              <span className="inline-block w-3 h-3 bg-yellow-200 rounded"></span>
+              <span>黄色高亮 = 从原文中提取的素材内容（一字不差）</span>
+              <Badge variant="secondary" className="ml-auto">
+                已提取 {materials.length} 条素材
+              </Badge>
+            </div>
+          )}
+        </CardContent>
+      )}
+    </Card>
+  );
+}
 
 /** 范式匹配结果卡片 */
 function ParadigmMatchCard({ recognition }: { recognition: ParadigmRecognition }) {
@@ -593,6 +764,8 @@ export default function ArticleExtractionPanel() {
         extractionSummary: resultData.extractionSummary || '',
         assetValueScore: resultData.assetValueScore ?? 0,
         totalMaterialCount: resultData.totalMaterialCount ?? materials.length,
+        articleText: resultData.articleText || articleText, // 保存原文内容
+        articleTitle: resultData.articleTitle || articleTitle, // 保存文章标题
       };
 
       setExtraction(extractionResult);
@@ -768,6 +941,15 @@ export default function ArticleExtractionPanel() {
       {/* 提取结果 */}
       {extraction && (
         <>
+          {/* 原文对照展示 */}
+          {extraction.articleText && (
+            <OriginalArticleCard 
+              articleText={extraction.articleText}
+              articleTitle={extraction.articleTitle}
+              materials={extraction.relationalMaterials}
+            />
+          )}
+
           {/* 范式识别结果 */}
           <ParadigmMatchCard recognition={extraction.paradigmRecognition} />
 

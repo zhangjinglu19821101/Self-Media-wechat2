@@ -255,6 +255,7 @@ export async function POST(request: NextRequest) {
       data: {
         extractionId: inserted.id,
         articleTitle: extractionResult.articleTitle,
+        articleText: articleContent, // 返回原文内容，供前端对照验证
         paradigmRecognition: extractionResult.paradigmRecognition,
         relationalMaterials: extractionResult.relationalMaterials,
         emotionCurve: extractionResult.emotionCurve,
