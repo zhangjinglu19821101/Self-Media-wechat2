@@ -6,7 +6,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { materialLibrary } from '@/lib/db/schema/material-library';
-import { eq, isNull, and } from 'drizzle-orm';
+import { eq, isNull, and, sql } from 'drizzle-orm';
 
 export async function POST(request: NextRequest) {
   try {
@@ -45,8 +45,8 @@ export async function POST(request: NextRequest) {
       .from(materialLibrary)
       .where(and(
         isNull(materialLibrary.slotId),
-        materialLibrary.paradigmId.isNotNull(),
-        materialLibrary.paradigmPosition.isNotNull()
+        sql`${materialLibrary.paradigmId} IS NOT NULL`,
+        sql`${materialLibrary.paradigmPosition} IS NOT NULL`
       ));
 
       console.log(`[DB Migration] 找到 ${materialsToUpdate.length} 条需要回填 slotId 的素材`);

@@ -59,6 +59,12 @@ export interface PromptAssemblyOptions {
     materialTitle: string;
     materialContent: string;
     materialType: string;
+    // 🔥🔥 新增：素材上下文信息（指导LLM如何使用素材）
+    contextBefore?: string;        // 前文语境（素材前面是什么内容）
+    contextAfter?: string;         // 后文语境（素材后面是什么内容）
+    emotionTone?: string;          // 情绪基调（如：警示/温暖/理性/反差）
+    usageInstruction?: string;     // 使用指导（如：用转折句式引入、紧接上文展开）
+    relationToPrevious?: string;   // 与前一段的关系（如：反驳/延续/举例）
   }>;
 }
 
@@ -592,11 +598,16 @@ export class PromptAssemblerService {
     if (options.relatedMaterials) {
       result += '### 关联素材补充区（可参考使用，灵活整合）\n\n';
       result += `${options.relatedMaterials}\n\n`;
-      result += `💡 以上为关联素材，${agentLabel} 可以：\n`;
+      result += `💡 以上为关联素材，${agentLabel} 可以：n`;
       result += '- 引用、整合这些信息到文章中作为背景知识或补充案例\n';
       result += '- 基于这些信息进行合理演绎、扩展、补充\n';
       result += '- 优先级低于关键素材，但高于自行编造的内容\n\n';
     }
+
+    // 🔥🔥🔥 新增：句式约束（去AI化的核心）
+    const { SentencePatternService } = require('./sentence-pattern-constraint');
+    result += SentencePatternService.generateFullConstraintPrompt();
+    result += '\n\n';
 
     // 3. 固定结构
     if (options.structureName || options.structureDetail) {
@@ -705,10 +716,10 @@ export class PromptAssemblerService {
       });
     }
 
-    // 🔥🔥 4.5 范式-素材推荐位置（灵活编排，推荐位置仅供参考）
+    // 🔥🔥 4.5 范式-素材推荐位置（精准指导模式）
     if (options.slotMaterialDetails && options.slotMaterialDetails.length > 0) {
-      result += `### 用户选中的素材及推荐段落位置\n\n`;
-      result += `以下是用户选中并推荐用于特定段落的素材。推荐位置仅供参考，你可以根据文章整体效果灵活调整素材的使用位置和方式：\n\n`;
+      result += `### 用户选中的素材及使用指导\n\n`;
+      result += `以下是用户选中并指定用于特定段落的素材。每条素材都附带了**使用指导**，你必须按照指导使用素材：\n\n`;
       // 按 paragraphOrder 排序，同一段落的多条素材合并展示
       const sortedSlots = [...options.slotMaterialDetails].sort((a, b) => a.paragraphOrder - b.paragraphOrder);
       // 按 paragraphOrder 分组
@@ -721,20 +732,153 @@ export class PromptAssemblerService {
       }
       for (const [order, slots] of groupedByOrder) {
         if (slots.length === 1) {
-          result += `**段落${order}「${slots[0].stepName}」推荐素材：**\n`;
+          result += `#### 段落${order}「${slots[0].stepName}」\n\n`;
         } else {
-          result += `**段落${order}「${slots[0].stepName}」推荐素材（共${slots.length}条，选择最合适的1-2条使用）：**\n`;
+          result += `#### 段落${order}「${slots[0].stepName}」（${slots.length}条可选，选最合适的1-2条）\n\n`;
         }
         for (let i = 0; i < slots.length; i++) {
           const slot = slots[i];
-          const prefix = slots.length > 1 ? `${i + 1}. ` : '- ';
-          result += `${prefix}素材标题：${slot.materialTitle}\n`;
-          result += `   素材类型：${slot.materialType}\n`;
-          result += `   素材内容：\n${slot.materialContent}\n\n`;
+          const prefix = slots.length > 1 ? `${i + 1}. ` : '';
+          
+          // 🔥🔥 使用上下文信息构建精准指导
+          result += `${prefix}**【${slot.materialTitle}】**（${slot.materialType}）\n`;
+          result += `   📝 内容：${slot.materialContent}\n`;
+          
+          // 上下文语境指导
+          if (slot.contextBefore || slot.contextAfter) {
+            result += `   🎯 **位置指导**：`;
+            if (slot.contextBefore) {
+              result += `放在"${slot.contextBefore.substring(0, 30)}${slot.contextBefore.length > 30 ? '...' : ''}"之后；`;
+            }
+            if (slot.contextAfter) {
+              result += `放在"${slot.contextAfter.substring(0, 30)}${slot.contextAfter.length > 30 ? '...' : ''}"之前。`;
+            }
+            result += '\n';
+          }
+          
+          // 情绪基调指导
+          if (slot.emotionTone) {
+            result += `   💡 **情绪基调**：${slot.emotionTone}\n`;
+          }
+          
+          // 使用指导
+          if (slot.usageInstruction) {
+            result += `   ⚠️ **使用指导**：${slot.usageInstruction}\n`;
+          }
+          
+          // 与前段关系
+          if (slot.relationToPrevious) {
+            result += `   🔗 **与上一段的关系**：${slot.relationToPrevious}\n`;
+          }
+          
+          result += '\n';
         }
       }
-      result += `💡 说明：以上素材的推荐位置仅供参考，你可以根据文章需要灵活使用——同一段落有多条素材时选择最合适的1-2条，也可以将素材用于其他段落。关键是让文章自然流畅、有说服力。\n\n`;
+      result += `💡 **重要**：以上素材的使用指导来自真实文章的上下文，你必须按照指导使用——包括位置、情绪、句式等。这是去AI化的核心：让素材的使用方式与真人写作一致。\n\n`;
     }
+
+    // 🔥🔥 4.6 句式级约束（去AI化核心）
+    // 从已初始化范式中提取的真人句式模式
+    const permittedPhrases: string[] = [];
+    
+    // 🔥 优先从素材中提取真人句式（来自真实文章的 fixed_phrase / hook_sentence 类型）
+    const fixedPhrases = materials.filter(m => 
+      m.type === 'fixed_phrase' || m.type === 'hook_sentence'
+    );
+    for (const fp of fixedPhrases.slice(0, 15)) {
+      if (fp.content && fp.content.length < 50 && fp.content.length > 3) {
+        permittedPhrases.push(fp.content);
+      }
+    }
+    
+    // 🔥 从素材的 contextBefore 中提取真人句式模式（前文语境往往包含句式开头）
+    for (const m of materials.slice(0, 20)) {
+      // 从素材元数据中获取上下文句式
+      const metadata = m as any;
+      if (metadata.contextBefore && metadata.contextBefore.length < 30) {
+        // 提取句式开头（通常是逗号前的部分）
+        const parts = metadata.contextBefore.split(/[，,。]/);
+        if (parts.length > 0 && parts[0].length >= 3 && parts[0].length <= 15) {
+          permittedPhrases.push(parts[0] + (parts[0].endsWith('，') ? '' : '，'));
+        }
+      }
+    }
+    
+    // 🔥🔥 AI高频模式句式清单（扩展版，来源于大量AI生成文本分析）
+    const forbiddenPhrases: string[] = [
+      // 🔴 转折类（AI最爱用）
+      '值得注意的是', '值得注意的是，', '不可否认', '不可否认，', '众所周知', '众所周知，', 
+      '不言而喻', '不言而喻，', '由此可见', '由此可见，', '换句话说', '换句话说，',
+      '简而言之', '简而言之，', '总而言之', '总而言之，', '毋庸置疑', '毋庸置疑地',
+      '显而易见', '显而易见，', '不难发现', '不难发现，', '这不禁让人思考', '这不禁让人思考，',
+      
+      // 🔴 总结类（AI段落结尾必备）
+      '这告诉我们', '这告诉我们，', '这启示我们', '这启示我们，', '这让我们明白', '这让我们明白，',
+      '这充分说明', '这充分说明，', '从中我们可以看出', '从中我们可以看出，',
+      
+      // 🔴 引导类（AI最爱开头）
+      '很多人会问', '很多人会问，', '有人可能会说', '有人可能会说，', '有人认为', '有人认为，',
+      '一般而言', '一般而言，', '通常来说', '通常来说，', '普遍认为', '普遍认为，',
+      
+      // 🔴 强调类（AI显得很"专业"）
+      '事实上', '事实上，', '实际上', '实际上，', '其实', '其实，', '诚然', '诚然，',
+      '当然', '当然，', '确实', '确实，', '的确', '的确，',
+      
+      // 🔴 序列类（AI最爱的结构）
+      '首先', '首先，', '其次', '其次，', '最后', '最后，',
+      '第一', '第一，', '第二', '第二，', '第三', '第三，',
+      '一方面', '一方面，', '另一方面', '另一方面，',
+      '总的来说', '总的来说，', '综上所述', '综上所述，',
+      
+      // 🔴 情感引导类（AI假装有人情味）
+      '令人惊讶的是', '令人惊讶的是，', '让人意外的是', '让人意外的是，',
+      '让人欣慰的是', '让人欣慰的是，', '令人遗憾的是', '令人遗憾的是，',
+      '让人担忧的是', '让人担忧的是，', '令人欣慰的是', '令人欣慰的是，',
+      
+      // 🔴 分析类（AI假装在深度思考）
+      '深入分析可以发现', '深入分析可以发现，', '仔细观察不难发现', '仔细观察不难发现，',
+      '经过分析', '经过分析，', '研究显示', '研究显示，', '数据表明', '数据表明，',
+      
+      // 🔴 比喻类（AI最爱的开头模式）
+      '如果把...比作', '就像...一样', '正如...所说', '这就像...',
+    ];
+    
+    // 🔥🔥 真人感句式清单（来源于真实保险文章分析）
+    const defaultPermittedPhrases = [
+      // 🔵 口语化开头（真人特色）
+      '说实话，', '不瞒你说，', '我之前也这么想，', '后来才发现，',
+      '有个客户问我，', '前两天跟朋友聊起，', '说起来也巧，', '我自己就遇到过，',
+      '那会儿我还不知道，', '当时也没多想，', '回想起来，', '现在看明白了，',
+      
+      // 🔵 日常感过渡（真人特色）
+      '这事儿吧，', '简单说，', '你就这么想，', '打个比方，',
+      '举个例子，', '我给你算笔账，', '这么说吧，', '你想想，',
+      '说实话，', '不夸张地说，', '毫不夸张地说，', '站在过来人的角度，',
+      
+      // 🔵 情感连接（真人特色）
+      '我跟你说个事儿，', '有个朋友问我，', '客户老张前两天来找我，',
+      '上个月有个客户，', '我遇到过一个案例，', '说个真实的例子，',
+      
+      // 🔵 反问引入（真人特色）
+      '你可能会问，', '有人会想，', '很多人不理解，', '大家可能好奇，',
+    ];
+    permittedPhrases.push(...defaultPermittedPhrases);
+    
+    // 输出句式约束
+    result += `### 🔥🔥 句式约束（去AI化核心规则）\n\n`;
+    result += `#### ✅ 必须使用（每段至少1个）：真人感开头句式\n`;
+    result += `以下是真人写作时常用的开头句式，你必须**每段使用至少1个**。优先使用从你自己的文章中提取的句式：\n`;
+    const uniquePermitted = [...new Set(permittedPhrases)].slice(0, 20);
+    for (const phrase of uniquePermitted) {
+      result += `- "${phrase}"\n`;
+    }
+    result += `\n#### ❌ 禁止使用（出现任意一条即判为AI生成）：AI高频模式句式\n`;
+    result += `以下是AI写作时高频出现的模式句式，你的文章中**不得出现任何一条**。这些句式是AI生成文本的"指纹"：\n`;
+    for (const phrase of forbiddenPhrases.slice(0, 25)) {
+      result += `- "${phrase}"\n`;
+    }
+    result += `\n💡 **核心原则**：用"说实话"、"我之前也这么想"这样的真人句式开头，让读者感觉是在跟一个真实的人对话，而不是在阅读一篇AI生成的文章。\n\n`;
+    result += `⚠️ **严重警告**：如果文章中出现"值得注意的是"、"综上所述"、"不可否认"等AI高频句式，将被判定为AI生成内容，需要重写。\n\n`;
 
     // 5. 目标字数
     if (options.targetWordCount) {

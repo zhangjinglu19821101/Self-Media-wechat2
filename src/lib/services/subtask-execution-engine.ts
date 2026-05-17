@@ -5491,6 +5491,13 @@ export class SubtaskExecutionEngine {
               type: materialLibrary.type,
               content: materialLibrary.content,
               sourceDesc: materialLibrary.sourceDesc,
+              // 🔥 新增：上下文相关字段（用于指导LLM如何使用素材）
+              contextBefore: materialLibrary.contextBefore,
+              contextAfter: materialLibrary.contextAfter,
+              emotion: materialLibrary.emotion,
+              relationToPrevious: materialLibrary.relationToPrevious,
+              paradigmStep: materialLibrary.paradigmStep,
+              transitionPhrase: materialLibrary.transitionPhrase,
             })
             .from(materialLibrary)
             .where(inArray(materialLibrary.id, validMaterialIds));
@@ -5501,6 +5508,13 @@ export class SubtaskExecutionEngine {
             type: m.type,
             content: m.content,
             sourceDesc: m.sourceDesc || undefined,
+            // 🔥 新增：上下文信息
+            contextBefore: m.contextBefore || undefined,
+            contextAfter: m.contextAfter || undefined,
+            emotion: m.emotion || undefined,
+            relationToPrevious: m.relationToPrevious || undefined,
+            paradigmStep: m.paradigmStep || undefined,
+            transitionPhrase: m.transitionPhrase || undefined,
           }));
         
           console.log('[SubtaskEngine] 🔥 获取到素材:', materials.length, '个');
@@ -5536,6 +5550,13 @@ export class SubtaskExecutionEngine {
               title: materialLibrary.title,
               type: materialLibrary.type,
               content: materialLibrary.content,
+              // 🔥 新增：上下文相关字段
+              contextBefore: materialLibrary.contextBefore,
+              contextAfter: materialLibrary.contextAfter,
+              emotion: materialLibrary.emotion,
+              relationToPrevious: materialLibrary.relationToPrevious,
+              paradigmStep: materialLibrary.paradigmStep,
+              transitionPhrase: materialLibrary.transitionPhrase,
             })
             .from(materialLibrary)
             .where(inArray(materialLibrary.id, validBoundIds));
@@ -5553,7 +5574,19 @@ export class SubtaskExecutionEngine {
           }
 
           const materialMap = new Map(boundMaterials.map(m => [m.id, m]));
-          const slotMaterialDetails: Array<{ slotId: string; stepName: string; paragraphOrder: number; materialTitle: string; materialContent: string; materialType: string }> = [];
+          const slotMaterialDetails: Array<{
+            slotId: string;
+            stepName: string;
+            paragraphOrder: number;
+            materialTitle: string;
+            materialContent: string;
+            materialType: string;
+            // 🔥 新增：上下文信息
+            contextBefore?: string;
+            contextAfter?: string;
+            emotion?: string;
+            transitionPhrase?: string;
+          }> = [];
 
           for (const binding of pmbFromMetadata) {
             const mat = materialMap.get(binding.materialId);
@@ -5566,6 +5599,11 @@ export class SubtaskExecutionEngine {
                 materialTitle: mat.title,
                 materialContent: mat.content || '',
                 materialType: mat.type,
+                // 🔥 新增：上下文信息
+                contextBefore: mat.contextBefore || undefined,
+                contextAfter: mat.contextAfter || undefined,
+                emotion: mat.emotion || undefined,
+                transitionPhrase: mat.transitionPhrase || undefined,
               });
             }
           }

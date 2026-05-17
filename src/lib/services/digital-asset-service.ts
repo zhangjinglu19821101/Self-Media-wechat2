@@ -418,6 +418,13 @@ export class DigitalAssetService {
     useCount: number;
     status: string;
     createdAt: Date;
+    // 🔥 新增：上下文信息字段（用于去AI化）
+    contextBefore?: string | null;
+    contextAfter?: string | null;
+    emotion?: string | null;
+    usageGuidance?: string | null;
+    sourceSentencePattern?: string | null;
+    relationType?: string | null;
   }[]> {
     try {
       // 可见性条件：指定workspace时，用户workspace OR 系统预置
@@ -480,6 +487,13 @@ export class DigitalAssetService {
         useCount: item.useCount,
         status: item.status,
         createdAt: item.createdAt,
+        // 🔥 新增：上下文信息字段
+        contextBefore: item.contextBefore ?? null,
+        contextAfter: item.contextAfter ?? null,
+        emotion: item.emotion ?? null,
+        transitionPhrase: item.transitionPhrase ?? null,
+        relationToPrevious: item.relationToPrevious ?? null,
+        paradigmStep: item.paradigmStep ?? null,
       }));
     } catch (error) {
       console.error('[DigitalAssetService] 获取素材失败:', error);

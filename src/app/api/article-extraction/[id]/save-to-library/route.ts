@@ -115,14 +115,9 @@ export async function POST(
     const materialValues = filteredMaterials
       .filter((material: any) => material.content && material.content.trim().length > 0)
       .map((material: any) => {
-        // 构建素材内容：包含原文、上下文和关系信息
-        const contentParts: string[] = [];
-        contentParts.push(material.content);
-        if (material.precedingText) contentParts.push(`\n[上文] ${material.precedingText}`);
-        if (material.followingText) contentParts.push(`\n[下文] ${material.followingText}`);
-        if (material.emotion) contentParts.push(`\n[情绪] ${material.emotion}`);
-        if (material.relations?.shouldFollow) contentParts.push(`\n[后续应接] ${material.relations.shouldFollow}`);
-        if (material.relations?.shouldPrecede) contentParts.push(`\n[前置位置] ${material.relations.shouldPrecede}`);
+        // 🔥 关键修改：素材内容保持纯净，上下文信息存储到专门字段
+        // 原因：LLM 需要知道"这个素材是什么"和"如何使用这个素材"是两个独立的信息
+        const pureContent = material.content;
 
         // 提取位置信息
         const paragraphIdx = material.position?.paragraphIndex;
@@ -152,10 +147,58 @@ export async function POST(
         if (material.emotion) emotionTags.push(material.emotion);
         if (material.relations?.emotionTransition) emotionTags.push(material.relations.emotionTransition);
 
+        // 🔥 推导使用意图（基于素材类型）
+        const usageIntentMap: Record<string, string> = {
+          misconception: '破除读者常见的错误认知，制造认知冲突',
+          analogy: '用生活化的比喻让复杂概念变得易懂',
+          case: '用真实案例建立信任感和代入感',
+          data: '用权威数据增强说服力和可信度',
+          golden_sentence: '用精炼的金句制造记忆点和传播点',
+          fixed_phrase: '用熟悉的表达方式制造亲切感',
+          personal_fragment: '用个人经历增加真实感和独特性',
+        };
+
+        // 🔥 推导衔接句式（基于素材类型）
+        const transitionPhraseMap: Record<string, string[]> = {
+          misconception: ['很多人以为...', '大家普遍认为...', '你可能觉得...'],
+          analogy: ['这就好比...', '打个比方...', '就像...'],
+          case: ['说个真实的例子...', '我有个客户...', '前段时间...'],
+          data: ['根据...数据显示...', '据统计...', '有报告指出...'],
+          golden_sentence: ['记住这句话：', '有句话说得好：', '简单来说就是...'],
+          fixed_phrase: ['说实话...', '不瞒你说...', '说实话我之前也...'],
+          personal_fragment: ['我自己就遇到过...', '说起来...', '那是...年前的事了'],
+        };
+
+        const materialType = material.materialType || 'personal_fragment';
+        const suggestedTransitions = transitionPhraseMap[materialType] || [];
+        const selectedTransition = suggestedTransitions.length > 0 
+          ? suggestedTransitions[Math.floor(Math.random() * suggestedTransitions.length)]
+          : null;
+
+        // 🔥 推导范式步骤（基于段落位置和范式类型）
+        const paradigmStepMap: Record<string, string[]> = {
+          'P001': ['场景引入', '误认知破除', '反转破局', '数据支撑', '行动建议'],
+          'P002': ['行业痛点', '问题剖析', '反思展开', '解决方案', '警示总结'],
+          'P003': ['案例背景', '问题出现', '归谬推理', '教训提炼', '避坑建议'],
+          'P004': ['概念引入', '本质剖析', '深度解读', '实践指导', '总结升华'],
+          'P005': ['事件概述', '关键转折', '深度分析', '启示提炼', '行动指引'],
+          'P006': ['产品背景', '核心特点', '优势分析', '适用场景', '购买建议'],
+          'P007': ['经历开场', '关键转折', '心路历程', '感悟分享', '经验总结'],
+          'P008': ['踩坑背景', '问题揭示', '原因分析', '正确做法', '避坑提醒'],
+          'P009': ['对比背景', '维度一对比', '维度二对比', '综合分析', '选择建议'],
+          'P010': ['年度回顾', '关键事件', '数据分析', '经验总结', '展望未来'],
+        };
+
+        let paradigmStep: string | null = null;
+        if (matchedParadigmId && paragraphIdx !== undefined) {
+          const steps = paradigmStepMap[matchedParadigmId] || [];
+          paradigmStep = steps[paragraphIdx] || `段落${paragraphIdx + 1}`;
+        }
+
         return {
           workspaceId: workspaceId as string,
           title: `[提取] ${MATERIAL_TYPE_LABELS[material.materialType] || material.materialType} - ${positionLabel}`,
-          content: contentParts.join(''),
+          content: pureContent,  // 🔥 素材内容保持纯净，不再混入上下文
           type: (MATERIAL_TYPE_MAP[material.materialType] || 'personal_fragment') as any,
           sceneType: SCENE_TYPE_MAP[material.materialType] || material.materialType || null,
           ownerType: 'user' as const,
@@ -169,6 +212,16 @@ export async function POST(
           paradigmId: matchedParadigmId || null,      // 绑定范式ID
           paradigmPosition: paradigmPosition,          // 绑定范式段落位置
           slotId: slotId,                              // 绑定位置ID（如 P001-01）
+          
+          // 🔥 关系型素材上下文（去AI化核心字段）
+          contextBefore: material.precedingText || null,           // 前一句原文
+          contextAfter: material.followingText || null,            // 后一句原文
+          emotion: material.emotion || null,                       // 单个情绪标签
+          relationToPrevious: material.relations?.shouldPrecede || null, // 与前一个素材的关系
+          paradigmStep: paradigmStep,                              // 范式步骤
+          usageIntent: usageIntentMap[materialType] || null,       // 使用意图
+          transitionPhrase: selectedTransition,                    // 衔接句式
+          originalPosition: paragraphIdx ?? null,                  // 原文段落索引
         };
       });
 

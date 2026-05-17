@@ -107,6 +107,16 @@ export const materialLibrary = pgTable('material_library', {
   // === 来源文章关联 ===
   sourceArticleId: text('source_article_id'), // 来源文章ID（关联 article_content.article_id），追溯素材提取自哪篇原始文章
 
+  // === 🔥 关系型素材上下文（去AI化核心字段）===
+  contextBefore: text('context_before'),         // 前一句原文（素材在原文中的上文衔接）
+  contextAfter: text('context_after'),           // 后一句原文（素材在原文中的下文衔接）
+  emotion: text('emotion'),                      // 情绪标签：紧张/释放/温暖/理性/警示/共情
+  relationToPrevious: text('relation_to_previous'), // 与前一个素材的关系：反驳/补充/转折/递进/对比
+  paradigmStep: text('paradigm_step'),           // 该素材属于范式的哪个步骤（如：场景引入/误认知破除/数据支撑）
+  usageIntent: text('usage_intent'),             // 使用意图：为什么要用这个素材（如：破除误认知、建立信任、制造反差）
+  transitionPhrase: text('transition_phrase'),   // 衔接句式：如何引入这个素材（如："说个真实的例子..."、"这就好比..."）
+  originalPosition: integer('original_position'), // 在原文中的段落索引（用于保持原始顺序）
+
   // === 适用信息 ===
   applicablePositions: jsonb('applicable_positions').$type<string[]>().default([]), // 适用位置：opening/body/conclusion
   
