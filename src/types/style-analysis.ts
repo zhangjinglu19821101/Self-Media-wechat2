@@ -26,6 +26,10 @@ export interface OverallToneAnalysis {
   overallTone: string;
   /** 详细说明 */
   summary: string;
+  /** 原文支撑片段：LLM评分依据的原文关键句（从原文提取，供用户验证评分合理性） */
+  sourceExcerpts?: string[];
+  /** LLM返回的原文证据片段（从原文提取，非AI生成） */
+  originalTextEvidence?: string[];
 }
 
 // ═══════════════════════════════════════════════════
@@ -48,6 +52,10 @@ export interface ToneAndVoiceAnalysis {
   /** 正式度判断 */
   formalityLevel: 'informal' | 'neutral' | 'formal';
   summary: string;
+  /** 原文片段：代词使用例句（从原文提取，非AI生成） */
+  pronounExcerpts?: Array<{ pronoun: string; excerpt: string }>;
+  /** 原文片段：口语化标记词例句（从原文提取，非AI生成） */
+  colloquialExcerpts?: Array<{ marker: string; excerpt: string }>;
 }
 
 // ═══════════════════════════════════════════════════
@@ -64,6 +72,10 @@ export interface ExpressionHabitsAnalysis {
   /** 自定义行业词汇分类 */
   customVocabulary: Array<{ word: string; category: string; count: number }>;
   summary: string;
+  /** 原文片段：高频词对应原文句子（从原文提取，非AI生成） */
+  highFrequencyExcerpts?: Array<{ word: string; excerpts: string[] }>;
+  /** 原文片段：绝对化词对应原文句子（从原文提取，非AI生成） */
+  absoluteExcerpts?: Array<{ word: string; excerpts: string[] }>;
 }
 
 // ═══════════════════════════════════════════════════
@@ -84,6 +96,12 @@ export interface ContentDetailAnalysis {
   /** 数据引用率 */
   dataCitationRate: number;
   summary: string;
+  /** 原文片段：案例名对应原文句子（从原文提取，非AI生成） */
+  caseExcerpts?: Array<{ caseName: string; excerpt: string }>;
+  /** 原文片段：官方数据源对应原文句子（从原文提取，非AI生成） */
+  sourceExcerpts?: Array<{ source: string; excerpt: string }>;
+  /** 原文片段：合规声明原文（从原文提取，非AI生成） */
+  complianceExcerpt?: string;
 }
 
 // ═══════════════════════════════════════════════════
@@ -110,6 +128,12 @@ export interface FormattingStyleAnalysis {
   /** 是否符合目标排版 */
   compliance: boolean;
   summary: string;
+  /** 原文片段：检测到的小标题（从原文提取，非AI生成） */
+  headingExcerpts?: string[];
+  /** 原文片段：典型短段示例（从原文提取，非AI生成） */
+  shortParagraphExcerpts?: string[];
+  /** 原文片段：典型长段示例（从原文提取，非AI生成） */
+  longParagraphExcerpts?: string[];
 }
 
 // ═══════════════════════════════════════════════════

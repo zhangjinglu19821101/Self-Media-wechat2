@@ -709,6 +709,8 @@ export class StyleDepositionService {
 
       const prompt = `你是一位专业的写作风格分析师。请分析以下保险科普文章的整体调性，从5个维度各打1-10分（10分为最高）。
 
+⚠️ 重要原则：你的分析必须基于文章中的原文内容，不得凭空编造或生成文章中没有的内容。在 summary 中请引用原文的具体表达作为佐证。
+
 分析维度：
 1. consumerStance（消费者立场）：是否站在消费者角度说话，替用户着想
 2. productNeutrality（产品中立性）：是否避免推销具体产品，保持客观中立
@@ -727,7 +729,8 @@ ${articleText.substring(0, 6000)}
   "warmth": 数字,
   "pitfallFocus": 数字,
   "overallTone": "一句话总结整体调性",
-  "summary": "2-3句话详细说明各维度的表现"
+  "summary": "2-3句话详细说明各维度的表现，必须引用原文中的具体表达作为佐证",
+  "originalTextEvidence": ["从文章中直接摘取的原文片段1", "从文章中直接摘取的原文片段2", "从文章中直接摘取的原文片段3"]
 }`;
 
       const result = await llm.invoke(
@@ -738,7 +741,12 @@ ${articleText.substring(0, 6000)}
       const cleaned = text.replace(/```(?:json)?\s*([\s\S]*?)```/g, '$1').trim();
       const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
       if (jsonMatch) {
-        return JSON.parse(jsonMatch[0]) as OverallToneAnalysis;
+        const parsed = JSON.parse(jsonMatch[0]) as OverallToneAnalysis;
+        // 🔥 保留原文片段引用
+        if (parsed.originalTextEvidence) {
+          parsed.originalTextEvidence = parsed.originalTextEvidence.filter(e => e && e.trim().length > 0).slice(0, 5);
+        }
+        return parsed;
       }
     } catch (error) {
       console.warn('[StyleDeposition] 整体调性分析失败:', error instanceof Error ? error.message : String(error));
@@ -801,12 +809,47 @@ ${articleText.substring(0, 6000)}
     if (anxietyLevel > 0.3) summaryParts.push('存在夸大/绝对化表达');
     if (colloquialismScore > 0.2) summaryParts.push('口语化程度较高');
 
+    // 🔥 提取代词原文片段：从原文中找到包含代词的句子
+    const pronounExcerpts: Array<{ pronoun: string; excerpt: string }> = [];
+    const pronounKeywords = ['你', '咱们', '你们', '您', '贵', '客户'];
+    for (const pronoun of pronounKeywords) {
+      // 匹配包含该代词的句子（前后各取30字作为上下文）
+      const pronounRegex = new RegExp(`[^。！？\\n]{0,30}${pronoun.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}[^。！？\\n]{0,30}`, 'g');
+      const pronounMatches = cleanText.match(pronounRegex) || [];
+      // 最多取2条例句
+      for (const m of pronounMatches.slice(0, 2)) {
+        const trimmed = m.trim();
+        if (trimmed.length > 5) {
+          pronounExcerpts.push({ pronoun, excerpt: trimmed });
+        }
+      }
+    }
+
+    // 🔥 提取口语化标记词原文片段
+    const colloquialExcerpts: Array<{ marker: string; excerpt: string }> = [];
+    const colloquialMarkersList = ['呢', '吧', '呀', '嘛', '呗', '哈', '哎', '哦', '嗯', '啊'];
+    for (const marker of colloquialMarkersList) {
+      const markerRegex = new RegExp(`[^。！？\\n]{0,20}${marker.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}[^。！？\\n]{0,20}`, 'g');
+      const markerMatches = cleanText.match(markerRegex) || [];
+      // 最多取1条例句
+      const found = markerMatches.slice(0, 1);
+      for (const m of found) {
+        const trimmed = m.trim();
+        if (trimmed.length > 3) {
+          colloquialExcerpts.push({ marker, excerpt: trimmed });
+        }
+      }
+      if (colloquialExcerpts.length >= 5) break; // 最多5个口语化例句
+    }
+
     return {
       pronounStats: { niCount, ninCount, ninmenCount, ninGuaiguiCount, kehuCount, totalPronouns },
       colloquialismScore: Math.round(colloquialismScore * 100) / 100,
       anxietyLevel: Math.round(anxietyLevel * 100) / 100,
       formalityLevel,
       summary: summaryParts.join('；') || '语气表达较为中性',
+      pronounExcerpts,
+      colloquialExcerpts,
     };
   }
 
@@ -880,12 +923,38 @@ ${articleText.substring(0, 6000)}
       summaryParts.push(`行业特色词: ${customVocabulary.map(v => v.word).join('、')}`);
     }
 
+    // 🔥 提取高频词原文片段
+    const highFrequencyExcerpts: Array<{ word: string; excerpts: string[] }> = [];
+    for (const w of highFrequencyWords.slice(0, 8)) {
+      const escaped = w.word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const excerptRegex = new RegExp(`[^。！？\\n]{0,20}${escaped}[^。！？\\n]{0,20}`, 'g');
+      const excerptMatches = cleanText.match(excerptRegex) || [];
+      const excerpts = excerptMatches.slice(0, 2).map(m => m.trim()).filter(m => m.length > 5);
+      if (excerpts.length > 0) {
+        highFrequencyExcerpts.push({ word: w.word, excerpts });
+      }
+    }
+
+    // 🔥 提取绝对化词原文片段
+    const absoluteExcerpts: Array<{ word: string; excerpts: string[] }> = [];
+    for (const w of absoluteWords.filter(w => w.count > 0).slice(0, 5)) {
+      const escaped = w.word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const excerptRegex = new RegExp(`[^。！？\\n]{0,20}${escaped}[^。！？\\n]{0,20}`, 'g');
+      const excerptMatches = cleanText.match(excerptRegex) || [];
+      const excerpts = excerptMatches.slice(0, 2).map(m => m.trim()).filter(m => m.length > 5);
+      if (excerpts.length > 0) {
+        absoluteExcerpts.push({ word: w.word, excerpts });
+      }
+    }
+
     return {
       highFrequencyWords,
       forbiddenWords,
       absoluteWords,
       customVocabulary,
       summary: summaryParts.join('；') || '未检测到显著的表达习惯特征',
+      highFrequencyExcerpts,
+      absoluteExcerpts,
     };
   }
 
@@ -929,6 +998,39 @@ ${articleText.substring(0, 6000)}
     if (!hasComplianceStatement) summaryParts.push('⚠️ 缺少合规声明');
     if (dataCitationRate < 0.5) summaryParts.push('数据引用偏少');
 
+    // 🔥 提取案例名原文片段
+    const caseExcerpts: Array<{ caseName: string; excerpt: string }> = [];
+    for (const cn of caseNames.slice(0, 5)) {
+      const escaped = cn.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const excerptRegex = new RegExp(`[^。！？\\n]{0,30}${escaped}[^。！？\\n]{0,30}`, 'g');
+      const excerptMatches = cleanText.match(excerptRegex) || [];
+      const found = excerptMatches.slice(0, 1).map(m => m.trim()).filter(m => m.length > 5);
+      if (found.length > 0) {
+        caseExcerpts.push({ caseName: cn, excerpt: found[0] });
+      }
+    }
+
+    // 🔥 提取官方数据源原文片段
+    const sourceExcerpts: Array<{ source: string; excerpt: string }> = [];
+    for (const src of officialSources.slice(0, 5)) {
+      const escaped = src.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const excerptRegex = new RegExp(`[^。！？\\n]{0,30}${escaped}[^。！？\\n]{0,30}`, 'g');
+      const excerptMatches = cleanText.match(excerptRegex) || [];
+      const found = excerptMatches.slice(0, 1).map(m => m.trim()).filter(m => m.length > 5);
+      if (found.length > 0) {
+        sourceExcerpts.push({ source: src, excerpt: found[0] });
+      }
+    }
+
+    // 🔥 提取合规声明原文
+    let complianceExcerpt: string | undefined;
+    if (hasComplianceStatement) {
+      const complianceMatch = lastPart.match(/(?:免责声明|风险提示|本文仅供参考|不构成投资建议|请咨询专业人士|具体以实际为准)[^。！？]*[。！？]?/);
+      if (complianceMatch) {
+        complianceExcerpt = complianceMatch[0].trim();
+      }
+    }
+
     return {
       caseNames,
       officialSources,
@@ -937,6 +1039,9 @@ ${articleText.substring(0, 6000)}
       nonCompliantSources,
       dataCitationRate: Math.round(dataCitationRate * 100) / 100,
       summary: summaryParts.join('；') || '内容细节符合规范',
+      caseExcerpts,
+      sourceExcerpts,
+      complianceExcerpt,
     };
   }
 
@@ -1004,6 +1109,18 @@ ${articleText.substring(0, 6000)}
     summaryParts.push(`短段比例: ${(shortParagraphRatio * 100).toFixed(0)}%`);
     summaryParts.push(`小标题: ${uniqueHeadings.length}个 (${headingPattern})`);
 
+    // 🔥 提取小标题原文
+    const headingExcerpts: string[] = uniqueHeadings.slice(0, 8);
+
+    // 🔥 提取长短段原文样本
+    const shortParagraphExcerpts: string[] = paragraphs
+      .filter(p => p.length <= 50)
+      .slice(0, 3);
+    const longParagraphExcerpts: string[] = paragraphs
+      .filter(p => p.length >= 200)
+      .slice(0, 2)
+      .map(p => p.slice(0, 150) + (p.length > 150 ? '...' : ''));
+
     return {
       avgParagraphLength,
       shortParagraphRatio,
@@ -1015,6 +1132,9 @@ ${articleText.substring(0, 6000)}
       targetWordCount: targetWordCount || null,
       compliance,
       summary: summaryParts.join('；'),
+      headingExcerpts,
+      shortParagraphExcerpts,
+      longParagraphExcerpts,
     };
   }
 
@@ -1038,6 +1158,11 @@ ${articleText.substring(0, 6000)}
     ]);
 
     console.log('[StyleDeposition] 6 维度分析完成');
+
+    // 🔥 将 LLM 返回的 originalTextEvidence 映射到 sourceExcerpts（统一字段名）
+    if (overallTone?.originalTextEvidence && !overallTone.sourceExcerpts) {
+      overallTone.sourceExcerpts = overallTone.originalTextEvidence;
+    }
 
     return {
       overallTone,

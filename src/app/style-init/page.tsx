@@ -1905,6 +1905,21 @@ function DimensionDetailRenderer({ dimensionKey, data }: { dimensionKey: string;
             <h4 className="text-sm font-medium mb-1">详细说明</h4>
             <p className="text-sm text-muted-foreground">{data.summary}</p>
           </div>
+          {/* 🔥 原文证据片段 */}
+          {data.originalTextEvidence && data.originalTextEvidence.length > 0 && (
+            <div>
+              <h4 className="text-sm font-medium mb-2 flex items-center gap-1">
+                <span className="text-blue-600">📝</span> 原文依据（评分来源）
+              </h4>
+              <div className="space-y-2">
+                {data.originalTextEvidence.map((evidence: string, idx: number) => (
+                  <div key={idx} className="rounded bg-blue-50 border border-blue-200 p-2 text-sm text-blue-800 italic">
+                    &ldquo;{evidence}&rdquo;
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       );
 
@@ -1946,6 +1961,38 @@ function DimensionDetailRenderer({ dimensionKey, data }: { dimensionKey: string;
           </div>
           <Separator />
           <p className="text-sm text-muted-foreground">{data.summary}</p>
+          {/* 🔥 代词原文片段 */}
+          {data.pronounExcerpts && data.pronounExcerpts.length > 0 && (
+            <div>
+              <h4 className="text-sm font-medium mb-2 flex items-center gap-1">
+                <span className="text-blue-600">📝</span> 代词使用原文示例
+              </h4>
+              <div className="space-y-2">
+                {data.pronounExcerpts.map((item: { pronoun: string; excerpt: string }, idx: number) => (
+                  <div key={idx} className="rounded bg-blue-50 border border-blue-200 p-2 text-sm">
+                    <span className="font-semibold text-blue-700">&ldquo;{item.pronoun}&rdquo;</span>
+                    <span className="text-blue-800 ml-2">{item.excerpt}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+          {/* 🔥 口语化原文片段 */}
+          {data.colloquialExcerpts && data.colloquialExcerpts.length > 0 && (
+            <div>
+              <h4 className="text-sm font-medium mb-2 flex items-center gap-1">
+                <span className="text-blue-600">📝</span> 口语化表达原文示例
+              </h4>
+              <div className="space-y-2">
+                {data.colloquialExcerpts.map((item: { marker: string; excerpt: string }, idx: number) => (
+                  <div key={idx} className="rounded bg-amber-50 border border-amber-200 p-2 text-sm">
+                    <span className="font-semibold text-amber-700">&ldquo;{item.marker}&rdquo;</span>
+                    <span className="text-amber-800 ml-2">{item.excerpt}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       );
 
@@ -2003,6 +2050,46 @@ function DimensionDetailRenderer({ dimensionKey, data }: { dimensionKey: string;
 
           <Separator />
           <p className="text-sm text-muted-foreground">{data.summary}</p>
+          {/* 🔥 高频词原文片段 */}
+          {data.highFrequencyExcerpts && data.highFrequencyExcerpts.length > 0 && (
+            <div>
+              <h4 className="text-sm font-medium mb-2 flex items-center gap-1">
+                <span className="text-blue-600">📝</span> 高频词原文示例
+              </h4>
+              <div className="space-y-2">
+                {data.highFrequencyExcerpts.map((item: { word: string; excerpts: string[] }, idx: number) => (
+                  <div key={idx} className="rounded bg-blue-50 border border-blue-200 p-2 text-sm">
+                    <span className="font-semibold text-blue-700">&ldquo;{item.word}&rdquo;</span>
+                    <div className="mt-1 space-y-1">
+                      {item.excerpts.map((excerpt: string, eidx: number) => (
+                        <p key={eidx} className="text-blue-800 italic pl-2 border-l-2 border-blue-300">&ldquo;{excerpt}&rdquo;</p>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+          {/* 🔥 绝对化词原文片段 */}
+          {data.absoluteExcerpts && data.absoluteExcerpts.length > 0 && (
+            <div>
+              <h4 className="text-sm font-medium mb-2 flex items-center gap-1">
+                <span className="text-red-600">📝</span> 绝对化词原文示例
+              </h4>
+              <div className="space-y-2">
+                {data.absoluteExcerpts.map((item: { word: string; excerpts: string[] }, idx: number) => (
+                  <div key={idx} className="rounded bg-red-50 border border-red-200 p-2 text-sm">
+                    <span className="font-semibold text-red-700">&ldquo;{item.word}&rdquo;</span>
+                    <div className="mt-1 space-y-1">
+                      {item.excerpts.map((excerpt: string, eidx: number) => (
+                        <p key={eidx} className="text-red-800 italic pl-2 border-l-2 border-red-300">&ldquo;{excerpt}&rdquo;</p>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       );
 
@@ -2049,6 +2136,49 @@ function DimensionDetailRenderer({ dimensionKey, data }: { dimensionKey: string;
 
           <Separator />
           <p className="text-sm text-muted-foreground">{data.summary}</p>
+          {/* 🔥 案例名原文片段 */}
+          {data.caseExcerpts && data.caseExcerpts.length > 0 && (
+            <div>
+              <h4 className="text-sm font-medium mb-2 flex items-center gap-1">
+                <span className="text-blue-600">📝</span> 案例名原文出处
+              </h4>
+              <div className="space-y-2">
+                {data.caseExcerpts.map((item: { caseName: string; excerpt: string }, idx: number) => (
+                  <div key={idx} className="rounded bg-blue-50 border border-blue-200 p-2 text-sm">
+                    <span className="font-semibold text-blue-700">&ldquo;{item.caseName}&rdquo;</span>
+                    <p className="text-blue-800 italic mt-1 pl-2 border-l-2 border-blue-300">&ldquo;{item.excerpt}&rdquo;</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+          {/* 🔥 官方数据源原文片段 */}
+          {data.sourceExcerpts && data.sourceExcerpts.length > 0 && (
+            <div>
+              <h4 className="text-sm font-medium mb-2 flex items-center gap-1">
+                <span className="text-blue-600">📝</span> 官方数据源原文出处
+              </h4>
+              <div className="space-y-2">
+                {data.sourceExcerpts.map((item: { source: string; excerpt: string }, idx: number) => (
+                  <div key={idx} className="rounded bg-emerald-50 border border-emerald-200 p-2 text-sm">
+                    <span className="font-semibold text-emerald-700">&ldquo;{item.source}&rdquo;</span>
+                    <p className="text-emerald-800 italic mt-1 pl-2 border-l-2 border-emerald-300">&ldquo;{item.excerpt}&rdquo;</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+          {/* 🔥 合规声明原文 */}
+          {data.complianceExcerpt && (
+            <div>
+              <h4 className="text-sm font-medium mb-2 flex items-center gap-1">
+                <span className="text-emerald-600">📝</span> 合规声明原文
+              </h4>
+              <div className="rounded bg-emerald-50 border border-emerald-200 p-2 text-sm text-emerald-800 italic">
+                &ldquo;{data.complianceExcerpt}&rdquo;
+              </div>
+            </div>
+          )}
         </div>
       );
 
@@ -2092,6 +2222,43 @@ function DimensionDetailRenderer({ dimensionKey, data }: { dimensionKey: string;
 
           <Separator />
           <p className="text-sm text-muted-foreground">{data.summary}</p>
+          {/* 🔥 小标题原文 */}
+          {data.headingExcerpts && data.headingExcerpts.length > 0 && (
+            <div>
+              <h4 className="text-sm font-medium mb-2 flex items-center gap-1">
+                <span className="text-blue-600">📝</span> 检测到的小标题（原文）
+              </h4>
+              <div className="space-y-1">
+                {data.headingExcerpts.map((heading: string, idx: number) => (
+                  <div key={idx} className="rounded bg-blue-50 border border-blue-200 px-3 py-1.5 text-sm text-blue-800 font-medium">
+                    {heading}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+          {/* 🔥 典型段落原文样本 */}
+          {(data.shortParagraphExcerpts?.length > 0 || data.longParagraphExcerpts?.length > 0) && (
+            <div>
+              <h4 className="text-sm font-medium mb-2 flex items-center gap-1">
+                <span className="text-blue-600">📝</span> 典型段落原文样本
+              </h4>
+              <div className="space-y-2">
+                {data.shortParagraphExcerpts?.map((p: string, idx: number) => (
+                  <div key={`short-${idx}`} className="rounded bg-amber-50 border border-amber-200 p-2 text-sm">
+                    <span className="text-xs text-amber-600 font-medium">短段示例：</span>
+                    <p className="text-amber-800 italic mt-0.5">&ldquo;{p}&rdquo;</p>
+                  </div>
+                ))}
+                {data.longParagraphExcerpts?.map((p: string, idx: number) => (
+                  <div key={`long-${idx}`} className="rounded bg-purple-50 border border-purple-200 p-2 text-sm">
+                    <span className="text-xs text-purple-600 font-medium">长段示例：</span>
+                    <p className="text-purple-800 italic mt-0.5">&ldquo;{p}&rdquo;</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       );
 
