@@ -4,7 +4,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { getWorkspaceId } from '@/lib/auth/context';
+import { getWorkspaceId, isSuperAdmin } from '@/lib/auth/context';
 import { db } from '@/lib/db';
 import { articleExtractions } from '@/lib/db/schema';
 import { eq, desc, sql } from 'drizzle-orm';
@@ -12,11 +12,17 @@ import { eq, desc, sql } from 'drizzle-orm';
 export async function GET(request: NextRequest) {
   try {
     const workspaceId = await getWorkspaceId(request);
+    const adminMode = await isSuperAdmin(request);
     const { searchParams } = new URL(request.url);
     const page = parseInt(searchParams.get('page') || '1');
     const pageSize = parseInt(searchParams.get('pageSize') || '20');
 
     const offset = (page - 1) * pageSize;
+
+    // 🔥 super_admin 不限制 workspace，可查看所有提取记录
+    const workspaceFilter = adminMode
+      ? undefined
+      : eq(articleExtractions.workspaceId, workspaceId as string);
 
     const [extractions, countResult] = await Promise.all([
       db.select({
@@ -31,13 +37,13 @@ export async function GET(request: NextRequest) {
         createdAt: articleExtractions.createdAt,
       })
         .from(articleExtractions)
-        .where(eq(articleExtractions.workspaceId, workspaceId as string))
+        .where(workspaceFilter)
         .orderBy(desc(articleExtractions.createdAt))
         .limit(pageSize)
         .offset(offset),
       db.select({ count: sql<number>`count(*)` })
         .from(articleExtractions)
-        .where(eq(articleExtractions.workspaceId, workspaceId as string)),
+        .where(workspaceFilter),
     ]);
 
     return NextResponse.json({

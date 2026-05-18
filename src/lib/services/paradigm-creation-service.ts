@@ -512,8 +512,9 @@ export async function fillParadigmArticle(params: {
   paradigmCode: string;
   matchedMaterials: Map<number, MaterialMatchResult[]>;
   paradigmStructure?: any[];      // 范式公众号版结构
+  paradigmMaterialBindings?: Record<string, string>; // 🔥 用户手动绑定的素材（slotId → materialId）
 }): Promise<ArticleFillResult> {
-  const { paradigmCode, matchedMaterials } = params;
+  const { paradigmCode, matchedMaterials, paradigmMaterialBindings } = params;
 
   // 获取范式结构
   const structure = params.paradigmStructure || await getParadigmStructure(paradigmCode);
@@ -527,16 +528,67 @@ export async function fillParadigmArticle(params: {
   for (const step of structure) {
     const order = step.order as number;
     const materials = matchedMaterials.get(order) || [];
-    
-    // 优先选择有前后文关系的素材
-    let selectedMaterial: MaterialMatchResult | null = null;
-    const withContext = materials.filter(m => m.hasPreContext || m.hasPostContext);
-    const withoutContext = materials.filter(m => !m.hasPreContext && !m.hasPostContext);
 
-    if (withContext.length > 0) {
-      selectedMaterial = withContext[0];
-    } else if (withoutContext.length > 0) {
-      selectedMaterial = withoutContext[0];
+    // 🔥🔥🔥 位置ID三重绑定：优先使用用户手动绑定的素材
+    let selectedMaterial: MaterialMatchResult | null = null;
+    const slotInfo = positionMap.find((s: any) => s.paragraphOrder === order);
+    const slotId = slotInfo?.slotId as string | undefined;
+
+    // 1. 最高优先级：用户手动绑定的素材（通过 paradigmMaterialBindings）
+    if (paradigmMaterialBindings && slotId && paradigmMaterialBindings[slotId]) {
+      const boundMaterialId = paradigmMaterialBindings[slotId];
+      const boundMaterial = materials.find(m => m.materialId === boundMaterialId);
+      if (boundMaterial) {
+        selectedMaterial = boundMaterial;
+        console.log(`[fillParadigmArticle] 🔥 用户绑定素材 → 段落${order}(${slotId}): ${boundMaterial.title}`);
+      } else {
+        // 素材不在自动匹配结果中，需要从数据库查询
+        try {
+          const boundFromDb = await db
+            .select()
+            .from(materialLibrary)
+            .where(eq(materialLibrary.id, boundMaterialId))
+            .limit(1);
+          if (boundFromDb.length > 0) {
+            const m = boundFromDb[0];
+            selectedMaterial = {
+              materialId: m.id,
+              title: m.title,
+              content: m.content || '',
+              materialType: m.sceneType || m.type,
+              paradigmPosition: m.paradigmPosition || '',
+              slotId: m.slotId || slotId,
+              score: 1.0, // 用户手动绑定 = 最高优先级
+              hasPreContext: !!(m.sceneTags as string[])?.some((t: string) => t === '承接' || t === '过渡'),
+              hasPostContext: !!(m.sceneTags as string[])?.some((t: string) => t === '引出' || t === '铺垫'),
+            };
+            console.log(`[fillParadigmArticle] 🔥 用户绑定素材(DB查询) → 段落${order}(${slotId}): ${m.title}`);
+          }
+        } catch (e) {
+          console.warn(`[fillParadigmArticle] ⚠️ 查询用户绑定素材失败:`, e);
+        }
+      }
+    }
+
+    // 2. 次优先级：slotId精确匹配的自动素材
+    if (!selectedMaterial) {
+      const slotIdMatches = materials.filter(m => m.slotId && m.slotId === slotId && m.score >= 1.0);
+      if (slotIdMatches.length > 0) {
+        const withCtx = slotIdMatches.filter(m => m.hasPreContext || m.hasPostContext);
+        selectedMaterial = withCtx.length > 0 ? withCtx[0] : slotIdMatches[0];
+      }
+    }
+
+    // 3. 降级：自动匹配素材（按前后文关系排序）
+    if (!selectedMaterial) {
+      const withContext = materials.filter(m => m.hasPreContext || m.hasPostContext);
+      const withoutContext = materials.filter(m => !m.hasPreContext && !m.hasPostContext);
+
+      if (withContext.length > 0) {
+        selectedMaterial = withContext[0];
+      } else if (withoutContext.length > 0) {
+        selectedMaterial = withoutContext[0];
+      }
     }
 
     // 构建段落内容
@@ -550,7 +602,6 @@ export async function fillParadigmArticle(params: {
       allUsedMaterialIds.push(selectedMaterial.materialId);
 
       // 如果是主槽位且有固定句式，可以拼接固定句式前缀
-      const slotInfo = positionMap.find((s: any) => s.paragraphOrder === order);
       if (slotInfo?.isPrimary && step.fixedPhrases?.length > 0) {
         // 仅在素材不以固定句式开头时，拼接固定句式
         const startsWithFixed = step.fixedPhrases.some((phrase: string) => 
@@ -982,12 +1033,13 @@ export async function paradigmCreationPipeline(params: {
   taskDescription?: string;
   topicTags?: string[];
   personalFragments?: string[];
+  paradigmMaterialBindings?: Record<string, string>; // 🔥 用户手动绑定的素材（slotId → materialId）
 }): Promise<{
   recognition: ParadigmRecognitionResult;
   filledArticle: ArticleFillResult;
   optimizedArticle: ConnectiveOptimizeResult;
 }> {
-  const { articleType, industry, topic, taskDescription, topicTags, personalFragments } = params;
+  const { articleType, industry, topic, taskDescription, topicTags, personalFragments, paradigmMaterialBindings } = params;
 
   // Step 1: 范式识别
   const recognition = await recognizeParadigm({ articleType, industry, topic, taskDescription });
@@ -1005,6 +1057,7 @@ export async function paradigmCreationPipeline(params: {
     paradigmCode: recognition.paradigmCode,
     matchedMaterials,
     paradigmStructure: await getParadigmStructure(recognition.paradigmCode),
+    paradigmMaterialBindings, // 🔥 传递用户手动绑定的素材
   });
 
   // Step 4: 衔接优化
