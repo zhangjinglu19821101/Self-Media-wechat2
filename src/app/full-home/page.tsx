@@ -2854,7 +2854,7 @@ export default function HomePage() {
           userOpinion: taskUserOpinion,
           originalInstruction: mainInstruction.trim() || null, // 🔥 独立字段
           materialIds: selectedMaterialIds,
-          paradigmCode: selectedParadigm?.id || null,
+          paradigmCode: selectedParadigm?.paradigmCode || null,
           paradigmName: taskParadigmName,
           paradigmDetail: taskParadigmDetail,
         };
@@ -2870,7 +2870,7 @@ export default function HomePage() {
           userOpinion: taskUserOpinion,
           originalInstruction: mainInstruction.trim() || null, // 🔥 独立字段
           materialIds: [],
-          paradigmCode: selectedParadigm?.id || null,
+          paradigmCode: selectedParadigm?.paradigmCode || null,
           paradigmName: taskParadigmName,
           paradigmDetail: taskParadigmDetail,
         };
@@ -2889,7 +2889,7 @@ export default function HomePage() {
         originalInstruction: mainInstruction.trim() || null, // 🔥 独立字段：用户原始指令
         materialIds: selectedMaterialIds,
         // 范式选择数据（隐性继承，始终传递）
-        paradigmCode: selectedParadigm?.id || null,
+        paradigmCode: selectedParadigm?.paradigmCode || null,
         paradigmName: selectedParadigm?.name || null,
         paradigmDetail: paradigmDetailJson,
         // 发布账号（用于获取风格模板）

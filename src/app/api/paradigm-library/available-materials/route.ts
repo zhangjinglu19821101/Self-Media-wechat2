@@ -18,8 +18,9 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { materialLibrary } from '@/lib/db/schema/material-library';
 import { getParadigmPositionMap, getParadigmDetail } from '@/lib/services/paradigm-creation-service';
-import { eq, and, or, sql, isNull, asc } from 'drizzle-orm';
 import { isSlotValidForParadigm } from '@/lib/services/paradigm-slot-manager';
+import { getWorkspaceId } from '@/lib/auth/context';
+import { eq, and, or, sql, isNull, asc } from 'drizzle-orm';
 
 export async function GET(request: NextRequest) {
   try {
@@ -32,6 +33,15 @@ export async function GET(request: NextRequest) {
       return NextResponse.json(
         { success: false, error: '缺少 paradigmCode 参数' },
         { status: 400 }
+      );
+    }
+
+    // 获取 workspaceId 隔离
+    const workspaceId = await getWorkspaceId(request);
+    if (!workspaceId) {
+      return NextResponse.json(
+        { success: false, error: '未授权访问' },
+        { status: 401 }
       );
     }
 
@@ -123,6 +133,7 @@ export async function GET(request: NextRequest) {
             .where(
               and(
                 eq(materialLibrary.status, 'active'),
+                eq(materialLibrary.workspaceId, workspaceId),
                 eq(materialLibrary.slotId, posSlotId),
                 eq(materialLibrary.paradigmId, paradigmCode),
                 or(

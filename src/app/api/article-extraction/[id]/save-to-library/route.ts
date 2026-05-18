@@ -128,10 +128,8 @@ export async function POST(
           : '?';
 
         // 🔥 位置ID严格绑定：使用 ParadigmSlotManager 标准化 slotId
-        // 核心原则：同一范式的同一位置，无论从哪篇文章提取，slotId 必须一致
-        // 例如：P001 的"错误认知"段落，无论是文章A还是文章B提取，都是 P001-01
-        const matchedParadigmId = (extraction as any).paradigmId
-          || PARADIGM_ID_MAP[extraction.paradigmName || '']
+        // 优先使用提取记录中的 paradigmName 字段匹配范式ID（最可靠）
+        const matchedParadigmId = PARADIGM_ID_MAP[extraction.paradigmName || '']
           || PARADIGM_ID_MAP[extraction.paradigmType || '']
           || null;
 
