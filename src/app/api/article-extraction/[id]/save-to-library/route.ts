@@ -11,6 +11,7 @@ import { getWorkspaceId } from '@/lib/auth/context';
 import { db } from '@/lib/db';
 import { articleExtractions, materialLibrary } from '@/lib/db/schema';
 import { eq, and } from 'drizzle-orm';
+import { getStandardizedSlotId } from '@/lib/services/paradigm-slot-manager';
 
 /** V2 关系型素材类型 → 素材库类型映射（直接一一对应，无需转换） */
 const MATERIAL_TYPE_MAP: Record<string, string> = {
@@ -126,40 +127,29 @@ export async function POST(
           ? `P${paragraphIdx + 1}${sentenceIdx !== undefined ? `-S${sentenceIdx + 1}` : ''}`
           : '?';
 
-        // 🔥 位置ID三重绑定：自动计算 slotId
-        // 规则：如果文章匹配了范式ID，则素材的slotId = 范式ID + "-0" + (段落序号)
-        // 例如：范式P001的第1段 → slotId = "P001-01"
+        // 🔥 位置ID严格绑定：使用 ParadigmSlotManager 标准化 slotId
+        // 核心原则：同一范式的同一位置，无论从哪篇文章提取，slotId 必须一致
+        // 例如：P001 的"错误认知"段落，无论是文章A还是文章B提取，都是 P001-01
         const matchedParadigmId = (extraction as any).paradigmId
           || PARADIGM_ID_MAP[extraction.paradigmName || '']
           || PARADIGM_ID_MAP[extraction.paradigmType || '']
           || null;
-        // 🔥 位置ID推导：优先使用 position.paragraphIndex，兜底使用 paradigmStep 映射
-        // paradigmStep 是 LLM 提取的步骤标签（如"错误认知"、"核心论点"），
-        // 它比 paragraphIndex 更稳定（LLM 不一定输出 position，但一定会输出 paradigmStep）
-        const PARADIGM_STEP_SLOT_MAP: Record<string, string> = {
-          '错误认知': '01', '核心论点': '02', '核心锚点': '02',
-          '案例引入': '03', '案例论证': '03', '案例归谬': '03',
-          '数据支撑': '04', '权威数据': '04', '数据论证': '04',
-          '类比阐释': '05', '生活类比': '05', '类比论证': '05',
-          '金句升华': '06', '金句点睛': '06', '核心金句': '06',
-          '固定句式': '07', '固定句式组合': '07',
-          '个人碎片': '08', '个人经历': '08', '个人感悟': '08',
-          '转折推进': '09', '情感共鸣': '10', '结尾升华': '11',
-          '开篇引入': '01', '认知反转': '02', '论证展开': '04',
-          '情绪承接': '05', '总结收束': '11',
-        };
 
-        const stepSlotNumber = PARADIGM_STEP_SLOT_MAP[material.paradigmStep || '']
-          || PARADIGM_STEP_SLOT_MAP[material.materialType || '']
-          || (paragraphIdx !== undefined ? String(paragraphIdx + 1).padStart(2, '0') : null);
+        // 🔥 使用 ParadigmSlotManager 标准化 slotId（取代硬编码映射表）
+        // standardizeSlotId 内部有 stepName→slotId 的完整映射，包括常见变体
+        // 例如：stepName="认知错误" → P001-01，stepName="误区引入" → P001-01
+        let slotId: string | null = null;
+        if (matchedParadigmId) {
+          slotId = getStandardizedSlotId(
+            matchedParadigmId,
+            material.paradigmStep || material.materialType || '',
+            paragraphIdx !== undefined ? paragraphIdx + 1 : undefined
+          );
+        }
 
-        const slotId = matchedParadigmId && stepSlotNumber
-          ? `${matchedParadigmId}-${stepSlotNumber}`
-          : null;
-
-        // 🔥 位置ID三重绑定：自动计算 paradigmPosition
-        const paradigmPosition = matchedParadigmId && stepSlotNumber
-          ? `${matchedParadigmId}-步骤${stepSlotNumber}(${material.paradigmStep || material.materialType})`
+        // 🔥 位置ID绑定：自动计算 paradigmPosition（基于标准化后的 slotId）
+        const paradigmPosition = slotId
+          ? `${slotId}-${material.paradigmStep || material.materialType || ''}`
           : null;
 
         // 合并情绪标签

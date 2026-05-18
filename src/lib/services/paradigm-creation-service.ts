@@ -15,6 +15,7 @@ import { paradigmLibrary } from '@/lib/db/schema/paradigm-library';
 import { materialLibrary } from '@/lib/db/schema/material-library';
 import { eq, and, or, desc, asc, sql, lte, notInArray } from 'drizzle-orm';
 import { PARADIGM_SEED_DATA, PARADIGM_CODE_NAME_MAP, PARADIGM_ARTICLE_TYPE_MAP } from '@/lib/db/schema/paradigm-seed-data';
+import { ParadigmSlotManager } from '@/lib/services/paradigm-slot-manager';
 
 // ============================================================
 // 类型定义
@@ -278,16 +279,22 @@ const SCENE_TYPE_TO_MATERIAL_TYPE: Record<string, string> = {
 
 /**
  * 按范式位置映射匹配素材
- * 核心规则：
- * 1. 优先匹配带范式关联的素材（paradigmId + paradigmPosition）
- * 2. 其次按场景类型+行业+标签匹配
- * 3. 防重复：7天内不重复使用同一素材
- * 4. 优先使用次数少的素材
+ * 
+ * 🔥 严格绑定规则（V2 - 范式与素材强绑定）：
+ * 1. 选定范式后，素材范围严格限定在属于该范式的素材（paradigmId 匹配）
+ * 2. 每个槽位只允许对应 slotId 的素材（slotId 精确匹配）
+ * 3. 不属于当前范式的素材不出现在可选清单
+ * 4. 防重复：7天内不重复使用同一素材
+ * 5. 优先使用次数少的素材
+ * 
+ * ❌ 已移除的旧策略：
+ * - 旧策略2（按 sceneType 匹配）：不限制范式，会引入不相关素材
+ * - 旧策略3（按 topicTags 匹配）：不限制范式，会引入不相关素材
  */
 export async function matchMaterials(params: {
   paradigmCode: string;           // 范式ID
-  industry?: string;              // 行业
-  topicTags?: string[];           // 主题标签
+  industry?: string;              // 行业（仅用于素材排序偏好，不影响筛选范围）
+  topicTags?: string[];           // 主题标签（仅用于素材排序偏好，不影响筛选范围）
   excludeIds?: string[];          // 排除的素材ID（防重复）
   paradigmPositionMap?: any[];    // 范式的素材位置映射
   /** 🔥 用户素材已填充的段落序号（跳过这些段落，避免重复填充） */
@@ -295,7 +302,7 @@ export async function matchMaterials(params: {
   /** 🔥 用户素材ID列表（从自动匹配中排除，避免与用户素材重复） */
   userMaterialIds?: string[];
 }): Promise<Map<number, MaterialMatchResult[]>> {
-  const { paradigmCode, industry, topicTags, excludeIds = [], paradigmPositionMap, userFilledParagraphOrders = [], userMaterialIds = [] } = params;
+  const { paradigmCode, excludeIds = [], paradigmPositionMap, userFilledParagraphOrders = [], userMaterialIds = [] } = params;
   
   const result = new Map<number, MaterialMatchResult[]>();
   
@@ -306,14 +313,21 @@ export async function matchMaterials(params: {
     return result;
   }
 
+  // 🔥 校验：获取范式有效 slotId 集合
+  const validSlotIds = ParadigmSlotManager.getValidSlotIds(paradigmCode);
+  if (validSlotIds.length === 0) {
+    console.warn(`[matchMaterials] 范式 ${paradigmCode} 无有效槽位定义`);
+    return result;
+  }
+  console.log(`[matchMaterials] 范式 ${paradigmCode} 有效槽位: [${validSlotIds.join(', ')}]`);
+
   // 7天前的时间戳
   const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
 
   for (const slot of positionMap) {
     const materials: MaterialMatchResult[] = [];
-    const materialTypes = slot.materialTypes as string[];
     const paragraphOrder = slot.paragraphOrder as number;
-    const slotId = slot.slotId as string; // 🔥 位置ID三重绑定：第一层
+    const slotId = slot.slotId as string;
 
     // 🔥 跳过用户素材已填充的段落（用户素材优先，系统素材补位）
     if (userFilledParagraphOrders.includes(paragraphOrder)) {
@@ -321,153 +335,89 @@ export async function matchMaterials(params: {
       continue;
     }
 
+    // 🔥 校验：slotId 必须属于当前范式的有效槽位
+    if (!slotId || !ParadigmSlotManager.isValidSlotId(paradigmCode, slotId)) {
+      console.warn(`[matchMaterials] ⚠️ 槽位 ${slotId} 不属于范式 ${paradigmCode} 的有效槽位，跳过`);
+      continue;
+    }
+
     // 🔥 合并排除ID：原有排除 + 用户素材ID
     const allExcludeIds = [...excludeIds, ...userMaterialIds];
 
-    // 策略0（最高优先级）：🔥 位置ID三重绑定 - 精确匹配 slotId
-    if (slotId) {
-      const slotIdMatches = await db
-        .select()
-        .from(materialLibrary)
-        .where(
-          and(
-            eq(materialLibrary.status, 'active'),
-            eq(materialLibrary.slotId, slotId), // 🔥 第二层绑定：素材slotId = 位置slotId
-            or(
-              sql`${materialLibrary.lastUsedAt} IS NULL`,
-              sql`${materialLibrary.lastUsedAt} <= ${sevenDaysAgo}`
-            ),
-            ...buildExcludeCondition(allExcludeIds)
-          )
+    // ============================================================
+    // 策略1（最高优先级）：🔥 范式+slotId 双重精确匹配
+    // 条件：paradigmId = paradigmCode AND slotId = slotId
+    // ============================================================
+    const slotIdMatches = await db
+      .select()
+      .from(materialLibrary)
+      .where(
+        and(
+          eq(materialLibrary.status, 'active'),
+          eq(materialLibrary.paradigmId, paradigmCode),  // 🔥 范式限定
+          eq(materialLibrary.slotId, slotId),             // 🔥 槽位限定
+          or(
+            sql`${materialLibrary.lastUsedAt} IS NULL`,
+            sql`${materialLibrary.lastUsedAt} <= ${sevenDaysAgo}`
+          ),
+          ...buildExcludeCondition(allExcludeIds)
         )
-        .orderBy(asc(materialLibrary.useCount))
-        .limit(3);
+      )
+      .orderBy(asc(materialLibrary.useCount))
+      .limit(5);
 
-      for (const m of slotIdMatches) {
-        materials.push({
-          materialId: m.id,
-          title: m.title,
-          content: m.content || '',
-          materialType: m.sceneType || m.type,
-          paradigmPosition: m.paradigmPosition || '',
-          slotId: m.slotId || slotId, // 🔥 位置ID三重绑定：标记素材的slotId
-          score: 1.0, // slotId精确匹配=最高优先级
-          hasPreContext: !!(m.sceneTags as string[])?.some(t => t === '承接' || t === '过渡'),
-          hasPostContext: !!(m.sceneTags as string[])?.some(t => t === '引出' || t === '铺垫'),
-        });
-      }
+    for (const m of slotIdMatches) {
+      materials.push({
+        materialId: m.id,
+        title: m.title,
+        content: m.content || '',
+        materialType: m.sceneType || m.type,
+        paradigmPosition: m.paradigmPosition || '',
+        slotId: m.slotId || slotId,
+        score: 1.0, // 范式+slotId 双重匹配 = 最高优先级
+        hasPreContext: !!(m.sceneTags as string[])?.some(t => t === '承接' || t === '过渡'),
+        hasPostContext: !!(m.sceneTags as string[])?.some(t => t === '引出' || t === '铺垫'),
+      });
     }
 
-    // 策略1：精确匹配 paradigmId + paradigmPosition（降级方案）
-    if (materials.length < 2) {
-      const exactMatches = await db
-        .select()
-        .from(materialLibrary)
-        .where(
-          and(
-            eq(materialLibrary.status, 'active'),
-            eq(materialLibrary.paradigmId, paradigmCode),
-            eq(materialLibrary.paradigmPosition, `${paradigmCode}-段落${paragraphOrder}`),
-            or(
-              sql`${materialLibrary.lastUsedAt} IS NULL`,
-              sql`${materialLibrary.lastUsedAt} <= ${sevenDaysAgo}`
-            ),
-            ...buildExcludeCondition([...allExcludeIds, ...materials.map(m => m.materialId)])
-          )
-        )
-        .orderBy(asc(materialLibrary.useCount))
-        .limit(3 - materials.length);
+    // ============================================================
+    // ⚠️ 已移除的策略2/3/4：
+    // ❌ 旧策略2（paradigmPosition 兜底匹配）：旧数据没有 slotId，无法确定精确位置
+    // ❌ 旧策略3（按 sceneType 匹配）：不限制范式，会引入不相关素材
+    // ❌ 旧策略4（按 topicTags 匹配）：不限制范式，会引入不相关素材
+    //
+    // 🔥 严格绑定原则：
+    // - 选定范式后，素材范围严格限定在属于该范式的素材
+    // - slotId确定后，只允许对应slotId位置的素材可选
+    // - 不匹配的素材绝对不能出现在可选清单
+    // - 如果某槽位无素材，标记为"素材缺失"而非引入不相关素材
+    // ============================================================
 
-      for (const m of exactMatches) {
-        materials.push({
-          materialId: m.id,
-          title: m.title,
-          content: m.content || '',
-          materialType: m.sceneType || m.type,
-          paradigmPosition: m.paradigmPosition || '',
-          slotId: m.slotId || undefined, // 🔥 位置ID三重绑定
-          score: 0.9,
-          hasPreContext: !!(m.sceneTags as string[])?.some(t => t === '承接' || t === '过渡'),
-          hasPostContext: !!(m.sceneTags as string[])?.some(t => t === '引出' || t === '铺垫'),
-        });
-      }
-    }
-
-    // 策略2：如果精确匹配不足，按 sceneType + industry 匹配
-    if (materials.length < 2) {
-      const sceneTypes = materialTypes.map(t => SCENE_TYPE_TO_MATERIAL_TYPE[t] || t);
-      const existingIds = materials.map(m => m.materialId);
-      const strategy2ExcludeIds = [...allExcludeIds, ...existingIds];
-
-      const sceneMatches = await db
-        .select()
-        .from(materialLibrary)
-        .where(
-          and(
-            eq(materialLibrary.status, 'active'),
-            or(...sceneTypes.map(st => eq(materialLibrary.sceneType, st))),
-            industry ? eq(materialLibrary.industry, industry) : undefined,
-            or(
-              sql`${materialLibrary.lastUsedAt} IS NULL`,
-              sql`${materialLibrary.lastUsedAt} <= ${sevenDaysAgo}`
-            ),
-            ...buildExcludeCondition(strategy2ExcludeIds)
-          )
-        )
-        .orderBy(asc(materialLibrary.useCount))
-        .limit(3 - materials.length);
-
-      for (const m of sceneMatches) {
-        materials.push({
-          materialId: m.id,
-          title: m.title,
-          content: m.content || '',
-          materialType: m.sceneType || m.type,
-          paradigmPosition: m.paradigmPosition || '',
-          score: 0.7,
-          hasPreContext: !!(m.sceneTags as string[])?.some(t => t === '承接' || t === '过渡'),
-          hasPostContext: !!(m.sceneTags as string[])?.some(t => t === '引出' || t === '铺垫'),
-        });
-      }
-    }
-
-    // 策略3：如果仍然不足，按 topicTags 匹配
-    if (materials.length < 1 && topicTags && topicTags.length > 0) {
-      const existingIds = materials.map(m => m.materialId);
-      const strategy3ExcludeIds = [...allExcludeIds, ...existingIds];
-      
-      const tagMatches = await db
-        .select()
-        .from(materialLibrary)
-        .where(
-          and(
-            eq(materialLibrary.status, 'active'),
-            sql`${materialLibrary.topicTags} ?| ${topicTags}`,
-            or(
-              sql`${materialLibrary.lastUsedAt} IS NULL`,
-              sql`${materialLibrary.lastUsedAt} <= ${sevenDaysAgo}`
-            ),
-            ...buildExcludeCondition(strategy3ExcludeIds)
-          )
-        )
-        .orderBy(asc(materialLibrary.useCount))
-        .limit(1);
-
-      for (const m of tagMatches) {
-        materials.push({
-          materialId: m.id,
-          title: m.title,
-          content: m.content || '',
-          materialType: m.sceneType || m.type,
-          paradigmPosition: m.paradigmPosition || '',
-          score: 0.4,
-          hasPreContext: !!(m.sceneTags as string[])?.some(t => t === '承接' || t === '过渡'),
-          hasPostContext: !!(m.sceneTags as string[])?.some(t => t === '引出' || t === '铺垫'),
-        });
-      }
+    // 🔥 日志：槽位素材匹配结果
+    if (materials.length === 0) {
+      console.warn(`[matchMaterials] ⚠️ 槽位 ${slotId}（段落${paragraphOrder}）无可用素材！该槽位素材缺失。`);
+    } else {
+      console.log(`[matchMaterials] ✅ 槽位 ${slotId}（段落${paragraphOrder}）匹配 ${materials.length} 条素材，最优="${materials[0].title?.substring(0,20)}..." score=${materials[0].score}`);
     }
 
     result.set(paragraphOrder, materials);
+  }
+
+  // 🔥 最终校验：检查是否有必填槽位素材缺失
+  const { missing, hasMissingRequired } = ParadigmSlotManager.detectMissingSlots(
+    paradigmCode,
+    Array.from(result.entries())
+      .filter(([, mats]) => mats.length > 0)
+      .map(([order]) => {
+        const slot = positionMap.find((s: any) => s.paragraphOrder === order);
+        return slot?.slotId as string;
+      })
+      .filter(Boolean)
+  );
+
+  if (hasMissingRequired) {
+    const warning = ParadigmSlotManager.generateMissingSlotsWarning(paradigmCode, missing);
+    console.warn(`[matchMaterials] ${warning}`);
   }
 
   return result;
@@ -502,11 +452,13 @@ export async function getParadigmPositionMap(paradigmCode: string): Promise<any[
 
 /**
  * 将匹配的素材原位填充到范式结构中
- * 核心规则：
- * 1. 只填素材，不写内容
- * 2. 严格按位置填充
- * 3. 素材必须成对使用（优先有前后文关系的）
- * 4. 防重复调用
+ * 
+ * 🔥 V2 严格绑定规则：
+ * 1. 只填素材，不写内容（素材是什么就填什么）
+ * 2. 严格按位置填充（slotId 精确匹配）
+ * 3. 用户手动绑定的素材必须校验范式归属（不属于当前范式的素材拒绝使用）
+ * 4. 素材缺失的必填槽位标记为"待补充"，绝不引入不相关素材
+ * 5. 防重复调用
  */
 export async function fillParadigmArticle(params: {
   paradigmCode: string;
@@ -522,8 +474,12 @@ export async function fillParadigmArticle(params: {
   const emotionCurve = await getParadigmEmotionCurve(paradigmCode);
   const paradigmName = PARADIGM_CODE_NAME_MAP[paradigmCode] || paradigmCode;
 
+  // 🔥 获取范式有效槽位集合
+  const validSlotIds = ParadigmSlotManager.getValidSlotIds(paradigmCode);
+
   const paragraphs: ParagraphFillResult[] = [];
   const allUsedMaterialIds: string[] = [];
+  const missingSlotIds: string[] = [];  // 🔥 记录缺失的槽位
 
   for (const step of structure) {
     const order = step.order as number;
@@ -534,62 +490,100 @@ export async function fillParadigmArticle(params: {
     const slotInfo = positionMap.find((s: any) => s.paragraphOrder === order);
     const slotId = slotInfo?.slotId as string | undefined;
 
+    // 🔥 校验：slotId 必须属于当前范式
+    if (!slotId || !ParadigmSlotManager.isValidSlotId(paradigmCode, slotId)) {
+      console.warn(`[fillParadigmArticle] ⚠️ 步骤${order}的 slotId="${slotId}" 不属于范式 ${paradigmCode}，跳过`);
+      missingSlotIds.push(slotId || `order-${order}`);
+      // 推入占位段落
+      paragraphs.push({
+        order,
+        stepName: step.stepName || `步骤${order}`,
+        titleTemplate: step.titleTemplate || '',
+        filledContent: `【${step.stepName || `步骤${order}`}】槽位ID无效，无法填充`,
+        usedMaterialIds: [],
+        isPrimarySlot: false,
+      });
+      continue;
+    }
+
     // 1. 最高优先级：用户手动绑定的素材（通过 paradigmMaterialBindings）
-    if (paradigmMaterialBindings && slotId && paradigmMaterialBindings[slotId]) {
+    if (paradigmMaterialBindings && paradigmMaterialBindings[slotId]) {
       const boundMaterialId = paradigmMaterialBindings[slotId];
-      const boundMaterial = materials.find(m => m.materialId === boundMaterialId);
-      if (boundMaterial) {
-        selectedMaterial = boundMaterial;
-        console.log(`[fillParadigmArticle] 🔥 用户绑定素材 → 段落${order}(${slotId}): ${boundMaterial.title}`);
-      } else {
-        // 素材不在自动匹配结果中，需要从数据库查询
-        try {
-          const boundFromDb = await db
-            .select()
-            .from(materialLibrary)
-            .where(eq(materialLibrary.id, boundMaterialId))
-            .limit(1);
-          if (boundFromDb.length > 0) {
-            const m = boundFromDb[0];
-            selectedMaterial = {
-              materialId: m.id,
-              title: m.title,
-              content: m.content || '',
-              materialType: m.sceneType || m.type,
-              paradigmPosition: m.paradigmPosition || '',
-              slotId: m.slotId || slotId,
-              score: 1.0, // 用户手动绑定 = 最高优先级
-              hasPreContext: !!(m.sceneTags as string[])?.some((t: string) => t === '承接' || t === '过渡'),
-              hasPostContext: !!(m.sceneTags as string[])?.some((t: string) => t === '引出' || t === '铺垫'),
-            };
-            console.log(`[fillParadigmArticle] 🔥 用户绑定素材(DB查询) → 段落${order}(${slotId}): ${m.title}`);
-          }
-        } catch (e) {
-          console.warn(`[fillParadigmArticle] ⚠️ 查询用户绑定素材失败:`, e);
+      
+      // 🔥🔥🔥 V2 严格校验：用户绑定的素材必须属于当前范式
+      const boundFromDb = await db
+        .select()
+        .from(materialLibrary)
+        .where(eq(materialLibrary.id, boundMaterialId))
+        .limit(1);
+
+      if (boundFromDb.length > 0) {
+        const m = boundFromDb[0];
+        
+        // 🔥 校验1：素材的 paradigmId 必须匹配当前范式
+        if (m.paradigmId && m.paradigmId !== paradigmCode) {
+          console.warn(`[fillParadigmArticle] ❌ 用户绑定素材 "${m.title}" 的 paradigmId="${m.paradigmId}" 与当前范式 "${paradigmCode}" 不匹配，拒绝使用！`);
         }
+        // 🔥 校验2：素材的 slotId 必须匹配当前槽位
+        else if (m.slotId && m.slotId !== slotId) {
+          console.warn(`[fillParadigmArticle] ❌ 用户绑定素材 "${m.title}" 的 slotId="${m.slotId}" 与当前槽位 "${slotId}" 不匹配，拒绝使用！`);
+        }
+        else {
+          // ✅ 校验通过
+          selectedMaterial = {
+            materialId: m.id,
+            title: m.title,
+            content: m.content || '',
+            materialType: m.sceneType || m.type,
+            paradigmPosition: m.paradigmPosition || '',
+            slotId: m.slotId || slotId,
+            score: 1.0, // 用户手动绑定 = 最高优先级
+            hasPreContext: !!(m.sceneTags as string[])?.some((t: string) => t === '承接' || t === '过渡'),
+            hasPostContext: !!(m.sceneTags as string[])?.some((t: string) => t === '引出' || t === '铺垫'),
+          };
+          console.log(`[fillParadigmArticle] ✅ 用户绑定素材(已校验) → 段落${order}(${slotId}): ${m.title}`);
+        }
+      } else {
+        console.warn(`[fillParadigmArticle] ⚠️ 用户绑定的素材ID="${boundMaterialId}" 不存在`);
       }
     }
 
     // 2. 次优先级：slotId精确匹配的自动素材
+    // 🔥 V2：素材已由 matchMaterials 严格限定在当前范式+slotId范围内，无需再次校验
     if (!selectedMaterial) {
-      const slotIdMatches = materials.filter(m => m.slotId && m.slotId === slotId && m.score >= 1.0);
+      const slotIdMatches = materials.filter(m => m.slotId && m.slotId === slotId);
       if (slotIdMatches.length > 0) {
-        const withCtx = slotIdMatches.filter(m => m.hasPreContext || m.hasPostContext);
-        selectedMaterial = withCtx.length > 0 ? withCtx[0] : slotIdMatches[0];
+        // 🔥 同slotId多素材选择策略：按质量排序，选最优
+        const sortedByQuality = slotIdMatches.sort((a, b) => {
+          // 1. 匹配分数（slotId精确匹配=1.0 > paradigmPosition匹配=0.9）
+          if (a.score !== b.score) return b.score - a.score;
+          
+          // 2. 上下文完整度（有前后文 > 只有一个 > 无上下文）
+          const aCtxScore = (a.hasPreContext ? 1 : 0) + (a.hasPostContext ? 1 : 0);
+          const bCtxScore = (b.hasPreContext ? 1 : 0) + (b.hasPostContext ? 1 : 0);
+          if (aCtxScore !== bCtxScore) return bCtxScore - aCtxScore;
+          
+          // 3. 有使用指导优先
+          const aGuidance = (a as any).usageGuidance ? 1 : 0;
+          const bGuidance = (b as any).usageGuidance ? 1 : 0;
+          if (aGuidance !== bGuidance) return bGuidance - aGuidance;
+          
+          // 4. 创建时间优先（新素材优先，避免总是用旧素材）
+          return ((b as any).createdAt?.getTime() || 0) - ((a as any).createdAt?.getTime() || 0);
+        });
+        
+        selectedMaterial = sortedByQuality[0];
+        
+        // 🔥 日志：同slotId多素材选择
+        if (slotIdMatches.length > 1) {
+          console.log(`[fillParadigmArticle] ⚡ 同slotId多素材选择: slotId=${slotId}, 候选数=${slotIdMatches.length}, 选中="${selectedMaterial.title?.substring(0,20)}..."`);
+        }
       }
     }
 
-    // 3. 降级：自动匹配素材（按前后文关系排序）
-    if (!selectedMaterial) {
-      const withContext = materials.filter(m => m.hasPreContext || m.hasPostContext);
-      const withoutContext = materials.filter(m => !m.hasPreContext && !m.hasPostContext);
-
-      if (withContext.length > 0) {
-        selectedMaterial = withContext[0];
-      } else if (withoutContext.length > 0) {
-        selectedMaterial = withoutContext[0];
-      }
-    }
+    // 🔥 V2：移除"降级：自动匹配素材"逻辑
+    // 旧逻辑会使用不属于当前slotId的素材，违反了"slotId确定后只有该slotId素材可选"的原则
+    // 如果没有对应slotId的素材，就是缺失，应该标记而非用其他素材顶替
 
     // 构建段落内容
     let filledContent = '';
@@ -612,12 +606,17 @@ export async function fillParadigmArticle(params: {
         }
       }
     } else {
-      // 无可用素材时，使用固定句式作为占位
+      // 🔥 V2：素材缺失时，明确标记缺失的 slotId
+      missingSlotIds.push(slotId);
+      const slotDetail = ParadigmSlotManager.getSlotDetail(paradigmCode, slotId);
+      const requiredLabel = slotDetail?.required ? '【必填】' : '【可选】';
+      
       if (step.fixedPhrases?.length > 0) {
-        filledContent = `${step.fixedPhrases[0]}……（待补充素材）`;
+        filledContent = `${step.fixedPhrases[0]}……（⚠️ ${requiredLabel}素材缺失：${slotId}-${step.stepName}）`;
       } else {
-        filledContent = `【${step.stepName}】待补充素材`;
+        filledContent = `【${step.stepName}】⚠️ ${requiredLabel}素材缺失：${slotId}`;
       }
+      console.warn(`[fillParadigmArticle] ⚠️ 槽位 ${slotId}（${step.stepName}）素材缺失！required=${slotDetail?.required}`);
     }
 
     paragraphs.push({
@@ -628,6 +627,14 @@ export async function fillParadigmArticle(params: {
       usedMaterialIds: usedIds,
       isPrimarySlot: positionMap.find((s: any) => s.paragraphOrder === order)?.isPrimary ?? false,
     });
+  }
+
+  // 🔥 最终报告：素材缺失情况
+  if (missingSlotIds.length > 0) {
+    console.warn(`[fillParadigmArticle] ⚠️ 范式 ${paradigmCode} 有 ${missingSlotIds.length} 个槽位素材缺失: [${missingSlotIds.join(', ')}]`);
+    console.warn(`[fillParadigmArticle] 💡 建议：请为这些槽位补充素材，否则文章将出现占位标记`);
+  } else {
+    console.log(`[fillParadigmArticle] ✅ 范式 ${paradigmCode} 所有槽位素材填充完整`);
   }
 
   // 更新素材使用记录
