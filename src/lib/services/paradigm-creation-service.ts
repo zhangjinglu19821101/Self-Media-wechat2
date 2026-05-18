@@ -1141,8 +1141,8 @@ export async function generateParadigmPrompt(params: {
     type: string;
     sceneType?: string;
   }>;
-  /** 范式需求清单（简化版：用户素材直接映射） */
-  requirementList?: { paradigmName: string; slots: Array<{ paragraphOrder: number; stepName: string; materialTypes: string[]; filledBy?: { title: string; type: string } }> };
+  /** 范式需求清单（简化版：用户素材直接映射，含slotId精确绑定） */
+  requirementList?: { paradigmName: string; slots: Array<{ slotId?: string; paragraphOrder: number; stepName: string; materialTypes: string[]; filledBy?: { title: string; type: string } }> };
 }): Promise<string> {
   const { paradigmCode, industry, topicTags, userMaterials, requirementList } = params;
 
@@ -1151,10 +1151,11 @@ export async function generateParadigmPrompt(params: {
   const emotionCurve = await getParadigmEmotionCurve(paradigmCode);
   const paradigmName = PARADIGM_CODE_NAME_MAP[paradigmCode] || paradigmCode;
 
-  // 构建素材位置映射说明
-  const positionGuide = positionMap.map((slot: any) => {
+  // 构建素材位置映射说明（含slotId精确标识）
+  const positionGuide = positionMap.map((slot: any, idx: number) => {
     const step = structure.find((s: any) => s.order === slot.paragraphOrder);
-    return `段落${slot.paragraphOrder}【${step?.stepName || slot.stepName}】：需要${slot.materialTypes.join('/')}类型素材${slot.isPrimary ? '（主素材槽位，必须填充）' : '（辅助素材槽位）'}`;
+    const slotId = slot.slotId || `${paradigmCode.toUpperCase()}-${String(idx + 1).padStart(2, '0')}`;
+    return `[${slotId}] 段落${slot.paragraphOrder}【${step?.stepName || slot.stepName}】：需要${slot.materialTypes.join('/')}类型素材${slot.isPrimary ? '（主素材槽位，必须填充）' : '（辅助素材槽位）'}`;
   }).join('\n');
 
   // 构建情绪曲线说明
@@ -1173,28 +1174,33 @@ export async function generateParadigmPrompt(params: {
   // 🔥 素材-范式融合：如果有用户素材，构建融合指令（简化版：直接匹配type）
   let fusionGuide = '';
   if (requirementList) {
-    // 外部已构建需求清单，直接格式化
-    fusionGuide = '\n\n## 素材填充要求\n\n' + requirementList.slots.map(slot => {
-      const filled = slot.filledBy ? `✅ 已填充：${slot.filledBy.title}（${slot.filledBy.type}）` : '❌ 未填充';
-      return `段落${slot.paragraphOrder}【${slot.stepName}】：需要 ${slot.materialTypes.join('/')} → ${filled}`;
+    // 外部已构建需求清单，直接格式化（含slotId精确绑定）
+    fusionGuide = '\n\n## 素材填充要求（按slotId精确匹配）\n\n' + requirementList.slots.map(slot => {
+      const slotIdLabel = slot.slotId ? `[${slot.slotId}] ` : '';
+      const filled = slot.filledBy ? `✅ 已填充：${slot.filledBy.title}（${slot.filledBy.type}）` : '❌ 未填充（需自行寻找匹配素材）';
+      return `${slotIdLabel}段落${slot.paragraphOrder}【${slot.stepName}】：需要 ${slot.materialTypes.join('/')} → ${filled}`;
     }).join('\n');
     fusionGuide += `\n\n范式：${requirementList.paradigmName}`;
+    fusionGuide += '\n\n⚠️ 核心约束：素材必须通过slotId精确匹配到对应段落，不允许跨slotId填充。';
   } else if (userMaterials && userMaterials.length > 0) {
     // 简化版：直接按type匹配段落槽位
-    const slots = positionMap.map((slot: any) => {
+    const slots = positionMap.map((slot: any, idx: number) => {
       const matched = userMaterials.find(m => slot.materialTypes.includes(m.type));
+      const slotId = slot.slotId || `${paradigmCode.toUpperCase()}-${String(idx + 1).padStart(2, '0')}`;
       return {
+        slotId,
         paragraphOrder: slot.paragraphOrder,
         stepName: slot.stepName,
         materialTypes: slot.materialTypes,
         filledBy: matched ? { title: matched.title, type: matched.type } : undefined,
       };
     });
-    fusionGuide = '\n\n## 素材填充要求\n\n' + slots.map(slot => {
-      const filled = slot.filledBy ? `✅ 已填充：${slot.filledBy.title}（${slot.filledBy.type}）` : '❌ 未填充';
-      return `段落${slot.paragraphOrder}【${slot.stepName}】：需要 ${slot.materialTypes.join('/')} → ${filled}`;
+    fusionGuide = '\n\n## 素材填充要求（按slotId精确匹配）\n\n' + slots.map(slot => {
+      const filled = slot.filledBy ? `✅ 已填充：${slot.filledBy.title}（${slot.filledBy.type}）` : '❌ 未填充（需自行寻找匹配素材）';
+      return `[${slot.slotId}] 段落${slot.paragraphOrder}【${slot.stepName}】：需要 ${slot.materialTypes.join('/')} → ${filled}`;
     }).join('\n');
     fusionGuide += `\n\n范式：${paradigmName}`;
+    fusionGuide += '\n\n⚠️ 核心约束：素材必须通过slotId精确匹配到对应段落，不允许跨slotId填充。';
   }
 
   return `# 创作范式：${paradigmName}（${paradigmCode}）

@@ -8,7 +8,7 @@ import {
   type ArticleExtractionResultV2,
 } from '@/lib/services/article-extraction-service';
 import { getWorkspaceId } from '@/lib/auth/context';
-import { getStandardizedSlotId } from '@/lib/services/paradigm-slot-manager';
+import { getStandardizedSlotId, findBestSlotIdForMaterial } from '@/lib/services/paradigm-slot-manager';
 import {
   markParadigmInitialized,
   extractCoveredDimensions,
@@ -231,33 +231,59 @@ export async function POST(request: NextRequest) {
         const { materialLibrary } = await import('@/lib/db/schema/material-library');
         
         // 🔥 范式ID映射（用于位置绑定）
+        // 🔥 范式ID映射（用于位置绑定）
+        // 注意：键名必须与 article-extraction-service.ts 的 STANDARD_PARADIGMS[].id 完全一致
         const PARADIGM_ID_MAP: Record<string, string> = {
-          'misconception_break': 'P001',
-          'industry_reflection': 'P002',
-          'case_refutation': 'P003',
-          'essential_definition': 'P004',
-          'hot_event': 'P005',
-          'product_review': 'P006',
-          'personal_experience': 'P007',
-          'pitfall_guide': 'P008',
-          'comparison_analysis': 'P009',
-          'year_end_review': 'P010',
+          'standard_misalignment': 'P001',   // 标准错位破局
+          'industry_reflection': 'P002',     // 行业反思
+          'case_reductio': 'P003',           // 案例归谬
+          'essence_definition': 'P004',      // 本质定义
+          'hot_event': 'P005',               // 热点事件
+          'product_review': 'P006',          // 产品解读
+          'personal_experience': 'P007',     // 个人经历
+          'pitfall_guide': 'P008',           // 避坑指南
+          'comparative_analysis': 'P009',    // 对比分析
+          'year_end_review': 'P010',         // 年终总结
         };
         const matchedParadigmId = PARADIGM_ID_MAP[extractionResult.paradigmRecognition.matchedParadigmId] || null;
+
+        // 🔥 追踪已分配的 slotId，避免同一槽位被重复分配给多个素材
+        const usedSlotIds = new Set<string>();
 
         for (let i = 0; i < materialInputs.length; i++) {
           const input = materialInputs[i];
           const m = extractionResult.relationalMaterials[i];
-          // 🔥 使用 ParadigmSlotManager 标准化 slotId
-          // 核心原则：同一范式的同一位置，slotId 必须一致
-          // 例如：P001 的"错误认知" → P001-01，无论从文章A还是文章B提取
-          const slotId = matchedParadigmId
-            ? getStandardizedSlotId(
+          
+          // 🔥 两阶段 slotId 赋值（核心绑定逻辑）
+          // 阶段1: 根据步骤名称直接匹配 → getStandardizedSlotId
+          // 阶段2: 根据素材类型反向匹配 → findBestSlotIdForMaterial
+          // 设计原则：选定范式后，素材的范围和出现位置就定了
+          let slotId: string | null = null;
+          if (matchedParadigmId) {
+            // 阶段1: 通过步骤名称匹配
+            const stepName = m?.paradigmStep || m?.materialType || '';
+            slotId = getStandardizedSlotId(matchedParadigmId, stepName);
+            
+            // 阶段2: 阶段1未命中时，通过素材类型反向匹配
+            if (!slotId && m?.materialType) {
+              slotId = findBestSlotIdForMaterial(
                 matchedParadigmId,
-                m?.paradigmStep || m?.materialType || '',
-                i + 1  // 兜底使用段落序号
-              )
-            : null;
+                m.materialType,
+                stepName,
+                usedSlotIds
+              );
+            }
+            
+            // 兜底：如果两阶段都未命中，使用段落序号
+            if (!slotId) {
+              slotId = getStandardizedSlotId(matchedParadigmId, '', i + 1);
+            }
+            
+            // 记录已分配的 slotId
+            if (slotId) {
+              usedSlotIds.add(slotId);
+            }
+          }
           
           await db.insert(materialLibrary).values({
             workspaceId,

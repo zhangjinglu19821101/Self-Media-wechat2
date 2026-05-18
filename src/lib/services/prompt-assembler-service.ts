@@ -732,9 +732,9 @@ export class PromptAssemblerService {
       }
       for (const [order, slots] of groupedByOrder) {
         if (slots.length === 1) {
-          result += `#### 段落${order}「${slots[0].stepName}」\n\n`;
+          result += `#### 段落${order}「${slots[0].stepName}」(slotId: ${slots[0].slotId})\n\n`;
         } else {
-          result += `#### 段落${order}「${slots[0].stepName}」（${slots.length}条可选，选最合适的1-2条）\n\n`;
+          result += `#### 段落${order}「${slots[0].stepName}」(slotId: ${slots[0].slotId})（${slots.length}条可选，选最合适的1-2条）\n\n`;
         }
         for (let i = 0; i < slots.length; i++) {
           const slot = slots[i];
@@ -774,7 +774,7 @@ export class PromptAssemblerService {
           result += '\n';
         }
       }
-      result += `💡 **重要**：以上素材的使用指导来自真实文章的上下文，你必须按照指导使用——包括位置、情绪、句式等。这是去AI化的核心：让素材的使用方式与真人写作一致。\n\n`;
+      result += `💡 **重要**：以上素材的使用指导来自真实文章的上下文，你必须按照指导使用——包括位置(slotId)、情绪、句式等。slotId是素材在范式中位置的精确标识，同一slotId的素材必须在对应段落出现。这是去AI化的核心：让素材的使用方式与真人写作一致。\n\n`;
     }
 
     // 🔥🔥 4.6 句式级约束（去AI化核心）

@@ -8786,8 +8786,10 @@ export class SubtaskExecutionEngine {
                 slot.materialTypes?.includes(m.type) || m.type === slot.materialType
               );
               return {
+                slotId: slot.slotId || `${paradigmCode.toUpperCase()}-${String(idx + 1).padStart(2, '0')}`,
                 paragraphOrder: slot.paragraphOrder || idx + 1,
                 paragraphRole: slot.paragraphRole,
+                stepName: slot.stepName,
                 materialType: slot.materialType || slot.materialTypes?.[0],
                 materialTypes: slot.materialTypes || [slot.materialType],
                 required: slot.required !== false,
@@ -8870,6 +8872,20 @@ export class SubtaskExecutionEngine {
               console.warn('[SubtaskEngine] 用户素材范式映射失败，降级为纯自动匹配:', _mapErr);
             }
 
+            // 🔥 将 buildParadigmRequirementListSimple 的字段映射为 generateParadigmPrompt 期望的格式
+            const _mappedRequirementList = _requirementList ? {
+              ..._requirementList,
+              slots: _requirementList.slots.map((s: any) => ({
+                ...s,
+                // filledByUserMaterial/userMaterial → filledBy (generateParadigmPrompt 使用 filledBy)
+                filledBy: s.filledByUserMaterial && s.userMaterial ? {
+                  id: s.userMaterial.id,
+                  title: s.userMaterial.title,
+                  type: s.userMaterial.type,
+                } : undefined,
+              })),
+            } : undefined;
+
             // 生成范式创作提示词（传入用户素材和需求清单，自动匹配时跳过用户已填充的段落）
             const _paradigmPrompt = await generateParadigmPrompt({
               paradigmCode: _recognitionResult.paradigmCode,
@@ -8881,7 +8897,7 @@ export class SubtaskExecutionEngine {
                 type: m.type,
                 sceneType: m.sceneType,
               })),
-              requirementList: _requirementList,
+              requirementList: _mappedRequirementList,
             });
 
             if (_paradigmPrompt) {
