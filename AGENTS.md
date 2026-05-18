@@ -1806,6 +1806,19 @@
      - 权限控制函数：canEdit(material)/canDelete(material)
 
 84. **范式初始化状态标签功能**: 为10套默认范式添加"已初始化"标签，解决全维度提取时无法感知已有范式状态导致AI感的问题
+85. **范式位置与素材映射关系确认 + materialPositionMap修正**:
+   - **审查结论**: 范式A的step1只会找属于范式A的step1的素材，映射关系已正确实现
+   - **3层验证通过**:
+     - `matchMaterials()` 函数：唯一策略为 paradigmId + slotId 双重精确匹配
+     - `available-materials` API：按 paradigmId + slotId 查询，无跨范式/跨位置混淆
+     - 创作引擎素材注入：从 `paradigmMaterialBindings` 按 slotId 绑定注入
+   - **修正 materialPositionMap**: 10套范式的 materialTypes 从旧版"交叉映射"改为与实际提取数据一致的映射
+     - 每个位置的 materialTypes 现在包含该位置实际产出的素材类型
+     - 47条素材的 type 与 materialTypes 匹配率 100%
+   - **新增 paradigm_library 表**: 之前仅定义在 Schema 中但未迁移到数据库
+     - 新增 `/api/db/create-paradigm-library-table` 迁移API
+     - 新增 `/api/db/seed-paradigm-library` 种子数据写入
+     - 10套范式全部就位，material_position_map 完整覆盖 7 个维度
    - **设计原则**:
      - 范式初始化状态持久化：文章提取后自动标记对应范式为"已初始化"
      - 已初始化范式的真实素材注入：提取时参考已有范式素材，减少AI感
