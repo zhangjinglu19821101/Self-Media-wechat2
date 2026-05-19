@@ -54,11 +54,13 @@ export interface PromptAssemblyOptions {
   // 🔥🔥 范式-素材位置绑定（段落级精准素材注入）
   slotMaterialDetails?: Array<{
     slotId: string;
+    paradigmCode?: string;       // 🔥 范式ID（如P001）
     stepName: string;
     paragraphOrder: number;
     materialTitle: string;
     materialContent: string;
     materialType: string;
+    isUserBound?: boolean;       // 🔥 是否为用户手动绑定（最高优先级）
     // 🔥🔥 新增：素材上下文信息（指导LLM如何使用素材）
     contextBefore?: string;        // 前文语境（素材前面是什么内容）
     contextAfter?: string;         // 后文语境（素材后面是什么内容）
@@ -741,8 +743,19 @@ export class PromptAssemblerService {
           const prefix = slots.length > 1 ? `${i + 1}. ` : '';
           
           // 🔥🔥 使用上下文信息构建精准指导
-          result += `${prefix}**【${slot.materialTitle}】**（${slot.materialType}）\n`;
+          result += `${prefix}**【${slot.materialTitle}】**（${slot.materialType}）`;
+          if (slot.isUserBound) {
+            result += ` 🔥用户手动绑定（最高优先级）`;
+          }
+          result += `\n`;
           result += `   📝 内容：${slot.materialContent}\n`;
+          if (slot.slotId) {
+            result += `   📍 slotId：${slot.slotId}`;
+            if (slot.paradigmCode) {
+              result += `（范式${slot.paradigmCode}第${slot.paragraphOrder}段）`;
+            }
+            result += `\n`;
+          }
           
           // 上下文语境指导
           if (slot.contextBefore || slot.contextAfter) {

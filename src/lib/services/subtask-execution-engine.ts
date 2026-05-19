@@ -5454,7 +5454,7 @@ export class SubtaskExecutionEngine {
       // 🔥🔥 范式-素材位置绑定（数组格式：每个元素包含 slotId + materialId）
       paradigmMaterialBindings?: Array<{ slotId: string; materialId: string }>;
       // 🔥🔥 位置绑定的素材详情（slotId → 素材内容）
-      slotMaterialDetails?: Array<{ slotId: string; stepName: string; paragraphOrder: number; materialTitle: string; materialContent: string; materialType: string; contextBefore?: string; contextAfter?: string; emotionTone?: string; usageInstruction?: string; relationToPrevious?: string }>;
+      slotMaterialDetails?: Array<{ slotId: string; paradigmCode: string; stepName: string; paragraphOrder: number; materialTitle: string; materialContent: string; materialType: string; isUserBound: boolean; contextBefore?: string; contextAfter?: string; emotionTone?: string; usageInstruction?: string; relationToPrevious?: string }>;
     } = {};
 
     // 1. 获取用户观点（核心锚点 + 关键素材）
@@ -5576,11 +5576,13 @@ export class SubtaskExecutionEngine {
           const materialMap = new Map(boundMaterials.map(m => [m.id, m]));
           const slotMaterialDetails: Array<{
             slotId: string;
+            paradigmCode: string; // 🔥 范式ID，帮助insurance-d识别素材归属
             stepName: string;
             paragraphOrder: number;
             materialTitle: string;
             materialContent: string;
             materialType: string;
+            isUserBound: boolean; // 🔥 是否为用户手动绑定（最高优先级）
             // 🔥 新增：上下文信息（字段名与 prompt-assembler PromptAssemblyOptions 保持一致）
             contextBefore?: string;
             contextAfter?: string;
@@ -5595,11 +5597,13 @@ export class SubtaskExecutionEngine {
             if (mat) {
               slotMaterialDetails.push({
                 slotId: binding.slotId,
+                paradigmCode: paradigmCode || '', // 🔥 范式ID
                 stepName: posInfo?.stepName || `位置${binding.slotId}`,
                 paragraphOrder: posInfo?.paragraphOrder || 0,
                 materialTitle: mat.title,
                 materialContent: mat.content || '',
                 materialType: mat.type,
+                isUserBound: true, // 🔥 来自paradigmMaterialBindings的素材都是用户手动绑定
                 // 🔥 新增：上下文信息
                 contextBefore: mat.contextBefore || undefined,
                 contextAfter: mat.contextAfter || undefined,
@@ -8778,22 +8782,51 @@ export class SubtaskExecutionEngine {
             paradigmName: string;
             paradigmSlots: any[];
             userMaterials: Array<{ id: string; title: string; type: string; sceneType?: string }>;
+            paradigmMaterialBindings?: Array<{ slotId: string; materialId: string }>; // 🔥 用户手动绑定的素材
           }) => {
-            const { paradigmCode, paradigmName, paradigmSlots, userMaterials } = params;
+            const { paradigmCode, paradigmName, paradigmSlots, userMaterials, paradigmMaterialBindings } = params;
+            
+            // 🔥🔥🔥 构建 slotId → materialId 映射（用户手动绑定，最高优先级）
+            const bindingMap = new Map<string, string>();
+            if (paradigmMaterialBindings && paradigmMaterialBindings.length > 0) {
+              for (const b of paradigmMaterialBindings) {
+                bindingMap.set(b.slotId, b.materialId);
+              }
+            }
+            
             const slots = paradigmSlots.map((slot, idx) => {
-              // 直接按 type 精确匹配（无需桥接转换）
-              const matchedMaterial = userMaterials.find(m => 
-                slot.materialTypes?.includes(m.type) || m.type === slot.materialType
-              );
+              const slotId = slot.slotId || `${paradigmCode.toUpperCase()}-${String(idx + 1).padStart(2, '0')}`;
+              
+              // 🔥🔥🔥 第一优先级：用户手动绑定的素材（通过 paradigmMaterialBindings）
+              const boundMaterialId = bindingMap.get(slotId);
+              let matchedMaterial = null;
+              let isUserBound = false;
+              
+              if (boundMaterialId) {
+                const boundMat = userMaterials.find(m => m.id === boundMaterialId);
+                if (boundMat) {
+                  matchedMaterial = boundMat;
+                  isUserBound = true;
+                }
+              }
+              
+              // 🔥 第二优先级：按 type 自动匹配（未被用户手动绑定的位置才自动匹配）
+              if (!matchedMaterial) {
+                matchedMaterial = userMaterials.find(m => 
+                  slot.materialTypes?.includes(m.type) || m.type === slot.materialType
+                ) || null;
+              }
+              
               return {
-                slotId: slot.slotId || `${paradigmCode.toUpperCase()}-${String(idx + 1).padStart(2, '0')}`,
+                slotId,
                 paragraphOrder: slot.paragraphOrder || idx + 1,
                 paragraphRole: slot.paragraphRole,
                 stepName: slot.stepName,
                 materialType: slot.materialType || slot.materialTypes?.[0],
                 materialTypes: slot.materialTypes || [slot.materialType],
                 required: slot.required !== false,
-                filledByUserMaterial: !!matchedMaterial,
+                filledByUserMaterial: !!(matchedMaterial || isUserBound),
+                isUserBound, // 🔥 标记是否为用户手动绑定
                 userMaterial: matchedMaterial ? {
                   id: matchedMaterial.id,
                   title: matchedMaterial.title,
@@ -8805,6 +8838,14 @@ export class SubtaskExecutionEngine {
             const unmatchedUserMaterials = userMaterials.filter(m => 
               !slots.some(s => s.userMaterial?.id === m.id)
             );
+            
+            console.log(`[buildParadigmRequirementListSimple] 🔥 素材绑定结果:`, {
+              totalSlots: slots.length,
+              userBoundSlots: slots.filter(s => s.isUserBound).length,
+              autoMatchedSlots: slots.filter(s => s.filledByUserMaterial && !s.isUserBound).length,
+              unmatchedMaterials: unmatchedUserMaterials.length,
+            });
+            
             return { paradigmCode, paradigmName, slots, filledSlotIds, unmatchedUserMaterials };
           };
           const getUserFilledParagraphOrdersSimple = (requirementList: any) => 
@@ -8857,6 +8898,7 @@ export class SubtaskExecutionEngine {
                   type: m.type,
                   sceneType: m.sceneType,
                 })) || [],
+                paradigmMaterialBindings: _paradigmMaterialBindings, // 🔥 传递用户手动绑定的素材
               });
 
               if (_userMaterials && _userMaterials.length > 0) {
