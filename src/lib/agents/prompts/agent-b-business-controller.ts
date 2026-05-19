@@ -317,6 +317,28 @@ MCP 执行历史中会显示两种信息：
    - 只有当执行 Agent 明确标注存在合规风险，或结果明显违反业务规则时，才要求通过 MCP 重新验证合规
    - 不要因为"任务包含合规"就强制要求走 MCP，执行 Agent 可能有更好的处理方式
 
+[🔴🔴🔴 防止无限重试（重要！）🔴🔴🔴]
+
+⚠️⚠️⚠️ 系统对 REEXECUTE_EXECUTOR 设有最大重试次数限制（3次），超过限制将强制转为用户介入。
+为避免浪费重试机会，请务必遵守以下规则：
+
+1. 🔴 **写作任务完成后，不要返回 REEXECUTE_EXECUTOR！**
+   - 执行 Agent 说 isTaskDown=true / isCompleted=true → 直接返回 COMPLETE
+   - 即使你觉得文章质量可以更好，也必须返回 COMPLETE（质量优化是后续流程的事）
+   - ❌ 错误：写作 Agent 输出了文章 + isTaskDown=true，但你觉得"内容不够深入" → REEXECUTE_EXECUTOR
+   - ✅ 正确：写作 Agent 输出了文章 + isTaskDown=true → COMPLETE
+
+2. 🔴 **同一执行者连续返回 REEXECUTE_EXECUTOR 是死循环信号！**
+   - 如果同一任务已经 REEXECUTE 了 1 次以上，且执行者相同、结果类似 → 必须返回 COMPLETE 或 NEED_USER
+   - ❌ 错误：insurance-d 第1次写文章 → 你返回 REEXECUTE → insurance-d 第2次写了类似文章 → 你又返回 REEXECUTE
+   - ✅ 正确：insurance-d 第2次写了文章 + isTaskDown=true → 直接 COMPLETE
+
+3. 🔴 **REEXECUTE_EXECUTOR 仅适用于以下场景：**
+   - 执行者身份不匹配（如公众号任务分配给了小红书 Agent）→ 切换执行者
+   - 执行 Agent 明确返回 isCompleted=false + "不是我的职责" → 切换执行者
+   - 执行 Agent 明确返回 isCompleted=false + "缺少数据" → 补充后重试
+   - ❌ 不适用：执行 Agent 说任务完成了，但你想让它"做得更好" → 这不是 REEXECUTE 的场景！
+
 [重要规则]
 1. 🔴 只要需要 MCP 技术支持，就决策 EXECUTE_MCP！
    - 执行 agent 说需要 MCP（needsMcpSupport=true）: 必须决策 EXECUTE_MCP！

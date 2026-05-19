@@ -5769,13 +5769,59 @@ export class SubtaskExecutionEngine {
         await this.handleFailedDecision(task, agentBDecision, executorResult, mcpExecutionHistory, userInteractions, currentIteration);
         return false;
 
-      case 'REEXECUTE_EXECUTOR':
-        // 🔴🔴🔴 Agent B 判断需要更换执行者
-        console.log('[SubtaskEngine] Agent B 决策 REEXECUTE_EXECUTOR，需要更换执行者');
+      case 'REEXECUTE_EXECUTOR': {
+        // 🔴🔴🔴 Agent B 判断需要更换执行者或重新执行
+        console.log('[SubtaskEngine] Agent B 决策 REEXECUTE_EXECUTOR，需要更换执行者或重新执行');
         
         // 1. 提取新的执行者
         const newExecutor = agentBDecision.context?.suggestedExecutor || agentBDecision.data?.from_parents_executor;
         const oldExecutor = task.fromParentsExecutor;
+        
+        // ========== 🔴🔴🔴 【核心修复】REEXECUTE_EXECUTOR 最大重试次数限制 ==========
+        // 防止 Agent B 持续返回 REEXECUTE_EXECUTOR 导致无限循环
+        const MAX_REEXECUTE_COUNT = 3;
+        const taskMetadata = ((task.metadata as Record<string, unknown>) || {}) as TaskMetadata;
+        const currentReexecuteCount = (taskMetadata.reexecuteHistory || []).filter(
+          (h: ReexecuteHistoryItem) => h.status === 'completed' || h.status === 'pending'
+        ).length;
+        
+        console.log('[SubtaskEngine] REEXECUTE 执行历史:', {
+          reexecuteCount: currentReexecuteCount,
+          maxAllowed: MAX_REEXECUTE_COUNT,
+          taskId: task.id,
+          orderIndex: task.orderIndex,
+          from: oldExecutor,
+          to: newExecutor,
+          reason: agentBDecision.reasoning
+        });
+        
+        if (currentReexecuteCount >= MAX_REEXECUTE_COUNT) {
+          console.log(`[SubtaskEngine] 🔴🔴🔴 REEXECUTE_EXECUTOR 已达到最大重试次数(${currentReexecuteCount}/${MAX_REEXECUTE_COUNT})，强制转为 NEED_USER`);
+          
+          // 记录 Agent B 的交互
+          await this.recordAgentInteraction(
+            task.commandResultId,
+            task.orderIndex,
+            'agent B',
+            executorResult,
+            'REEXECUTE_EXECUTOR',
+            {
+              ...agentBDecision,
+              maxReexecuteReached: true,
+              reexecuteCount: currentReexecuteCount,
+              action: `超过最大重试次数(${MAX_REEXECUTE_COUNT})，强制转为 waiting_user`
+            },
+            task.id,
+            currentIteration
+          );
+          
+          // 🔴 超过最大重试次数，强制转为 waiting_user，让用户介入
+          const userMessage = `任务已重新执行 ${currentReexecuteCount} 次仍未通过审核，为避免无限循环，需要您介入处理。Agent B 最近一次的理由: ${agentBDecision.reasoning || '未知'}`;
+          await this.markTaskWaitingUser(task, userMessage);
+          console.log('[SubtaskEngine] ✅ 已超过最大重试次数，转为 waiting_user，等待用户介入');
+          return false;
+        }
+        // ========== 🔴🔴🔴 最大重试次数检查结束 ==========
         
         console.log('[SubtaskEngine] 执行者变更:', {
           from: oldExecutor,
@@ -5942,6 +5988,7 @@ export class SubtaskExecutionEngine {
         }
         
         return false;
+      }
 
       case 'EXECUTE_MCP': {
         // ==============================================================
