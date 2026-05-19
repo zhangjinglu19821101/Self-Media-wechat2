@@ -8975,7 +8975,7 @@ ${_xhsStructureText}
                 }
               }
               if (!_paradigmInjection) {
-                _paradigmInjection = `\n\n【🎯 创作范式指导（必须严格遵守）】\n已识别到当前任务适用创作范式：${_recognitionResult.paradigmName}（${_recognitionResult.paradigmCode}），置信度 ${Math.round(_recognitionResult.confidence * 100)}%\n匹配原因：${_recognitionResult.matchReason}\n\n${_paradigmPrompt}\n请严格按照以上范式结构创作，不要偏离范式定义的段落顺序和情绪节奏。`;
+                _paradigmInjection = `\n\n【🎯 创作范式指导】\n已识别到当前任务适用创作范式：${_recognitionResult.paradigmName}（${_recognitionResult.paradigmCode}），置信度 ${Math.round(_recognitionResult.confidence * 100)}%\n匹配原因：${_recognitionResult.matchReason}\n\n${_paradigmPrompt}\n请以范式结构为骨架展开创作。段落顺序遵循范式，情绪节奏以范式为参考基准。当素材内容与情绪节奏有小幅冲突时，以素材完整保留优先（素材是人味的核心来源），允许微调情绪过渡来适配素材。`;
               }
               agentPrompt = agentPrompt + _paradigmInjection;
               console.log('[SubtaskEngine] 🎯 范式创作上下文已注入 writing Agent Prompt:', {
