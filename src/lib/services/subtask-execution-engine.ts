@@ -8705,7 +8705,7 @@ export class SubtaskExecutionEngine {
           executorType, // 🔥 传递 executorType 决定加载哪个提示词文件
           subTaskRole: taskSubTaskRole, // 🔥 Phase 3.5: 传递子任务角色（outline_generation / full_article）
           taskInstruction: isFullArticleTask && _confirmedOutline
-            ? `${adaptationModePrefix}${platformPrefix}【已确认的创作大纲（必须严格按照此大纲展开写作）】\n\n${_confirmedOutline}\n\n原始创作指令：${task.taskDescription}`
+            ? `${adaptationModePrefix}${platformPrefix}【已确认的创作大纲（以大纲为骨架展开，核心结构和论点不得改变，细节允许自然调整）】\n\n${_confirmedOutline}\n\n原始创作指令：${task.taskDescription}`
             : `${adaptationModePrefix}${platformPrefix}${task.taskDescription || ''}`,
           userOpinion: _userOpinionAndMaterials?.userOpinion ?? task.userOpinion,
           materials: _materialsContent ? [_materialsContent] : undefined,
@@ -8928,18 +8928,23 @@ export class SubtaskExecutionEngine {
               })),
             } : undefined;
 
-            // 生成范式创作提示词（传入用户素材和需求清单，自动匹配时跳过用户已填充的段落）
+            // 生成范式创作提示词
+            // 🔥🔥🔥 【P0修复】当 slotMaterialDetails 已有详细素材-位置绑定时，
+            // 不再传递 requirementList/userMaterials 给 generateParadigmPrompt，
+            // 避免"素材填充要求"与 slotMaterialDetails 重复注入（后者更详细）
+            const _hasSlotDetails = _slotMaterialDetails.length > 0;
             const _paradigmPrompt = await generateParadigmPrompt({
               paradigmCode: _recognitionResult.paradigmCode,
               industry: _industry,
               topicTags: _topicTags,
-              userMaterials: _userMaterials?.map((m: any) => ({
+              // 有详细 slotMaterialDetails 时，不传素材信息（避免重复注入）
+              userMaterials: _hasSlotDetails ? undefined : _userMaterials?.map((m: any) => ({
                 id: m.id,
                 title: m.title,
                 type: m.type,
                 sceneType: m.sceneType,
               })),
-              requirementList: _mappedRequirementList,
+              requirementList: _hasSlotDetails ? undefined : _mappedRequirementList,
             });
 
             if (_paradigmPrompt) {
