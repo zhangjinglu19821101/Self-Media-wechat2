@@ -8465,6 +8465,9 @@ export class SubtaskExecutionEngine {
         );
         const { userOpinionAndMaterials: _userOpinionAndMaterials, priorStepOutput: _priorStepOutput, extractedOutline: _extractedOutline } = _execCtx;
         
+        // 🔴🔴🔴 P0 修复：提前定义 taskMetadata，避免在使用后才定义
+        const taskMetadata = task.metadata as Record<string, any> | null;
+        
         // 🔥🔥🔥 范式-素材位置绑定数据（从 task.metadata 读取）
         const _paradigmMaterialBindings: Array<{ slotId: string; materialId: string }> = taskMetadata?.paradigmMaterialBindings || [];
         
@@ -8511,7 +8514,6 @@ export class SubtaskExecutionEngine {
         // 🔥 多平台发布：为 insurance-d 注入平台上下文前缀
         // insurance-xiaohongshu 不需要平台前缀（平台规则已内置到提示词中）
         // P1-S06 修复：提前获取模板ID，检查是否存在 image_structure 规则，用于精简静态 GUIDELINES 重复内容
-        const taskMetadata = task.metadata as Record<string, any> | null;
         const _templateIdForPlatform = await this.getTemplateIdForTask(task);
         let _hasImageStructureRules = false;
         if (_templateIdForPlatform && taskMetadata?.platformLabel === '小红书' && isInsuranceD) {
