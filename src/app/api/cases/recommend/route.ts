@@ -112,7 +112,25 @@ export async function GET(request: NextRequest) {
       .limit(limit)
       .offset(offset);
 
-    const formatted = items.map(formatMaterialAsItem);
+    // Fallback：无任何筛选条件且结果为空时，返回所有可见素材（确保用户总能看到素材）
+    const hasAnyFilter = keywords || (productTags && productTags.length > 0) || (crowdTags && crowdTags.length > 0) || (sceneTags && sceneTags.length > 0) || caseType;
+    let finalItems = items;
+    if (!hasAnyFilter && items.length === 0) {
+      finalItems = await db
+        .select()
+        .from(materialLibrary)
+        .where(
+          or(
+            eq(materialLibrary.ownerType, 'system'),
+            eq(materialLibrary.workspaceId, workspaceId || '')
+          )
+        )
+        .orderBy(desc(materialLibrary.createdAt))
+        .limit(limit)
+        .offset(offset);
+    }
+
+    const formatted = finalItems.map(formatMaterialAsItem);
 
     return NextResponse.json({
       success: true,
@@ -200,32 +218,79 @@ export async function POST(request: NextRequest) {
       }, { status: 400 });
     }
 
-    // 从指令提取关键词，匹配 material_library 素材
-    // 改进：提取多段关键词（取指令前50字，分词匹配提高召回率）
-    const instructionText = instruction.slice(0, 50);
-    const shortKeyword = instruction.slice(0, 10);
+    // ===== 改进关键词提取：多段渐进式匹配 + fallback =====
+    // 1. 从指令中提取有意义的关键词（去除常见停用词/虚词）
+    const stopWords = /^(写一篇|写一个|帮我|请|关于|的|了|是|在|和|与|或|一篇|一个|怎么|如何|什么|为什么|哪些|那种|进行|做出|完成|创作|撰写|编写|生成|制作|提供|分析|解读|介绍|说明|解释|比较|对比|总结|整理|列出|描述|讲述|阐述)/;
     
-    const items = await db
-      .select()
-      .from(materialLibrary)
-      .where(
-        and(
-          or(
-            eq(materialLibrary.ownerType, 'system'),
-            eq(materialLibrary.workspaceId, workspaceId || '')
-          ),
-          or(
-            sql`${materialLibrary.title} ILIKE ${'%' + shortKeyword + '%'}`,
-            sql`${materialLibrary.topicTags}::text ILIKE ${'%' + shortKeyword + '%'}`,
-            sql`${materialLibrary.sceneTags}::text ILIKE ${'%' + shortKeyword + '%'}`,
-            sql`${materialLibrary.content} ILIKE ${'%' + shortKeyword + '%'}`,
-            // 长指令额外匹配
-            instructionText.length > 10 ? sql`${materialLibrary.content} ILIKE ${'%' + instructionText.slice(10, 20) + '%'}` : sql`1=0`
+    // 提取核心关键词：去除指令前缀停用词
+    let coreKeyword = instruction.trim();
+    for (let i = 0; i < 5; i++) {
+      const prev = coreKeyword;
+      coreKeyword = coreKeyword.replace(stopWords, '').trim();
+      if (coreKeyword === prev) break; // 没有更多停用词可去除
+    }
+    
+    // 2. 生成多段搜索关键词（渐进式缩短，提高召回率）
+    const searchKeywords: string[] = [];
+    
+    // 核心关键词（2-6字，最精准的匹配单元）
+    if (coreKeyword.length >= 2) {
+      searchKeywords.push(coreKeyword.slice(0, Math.min(6, coreKeyword.length)));
+    }
+    // 原始指令前10字（保留完整语义）
+    if (instruction.length >= 4) {
+      searchKeywords.push(instruction.slice(0, 10));
+    }
+    // 从核心关键词中提取2字短关键词（高召回）
+    if (coreKeyword.length >= 4) {
+      searchKeywords.push(coreKeyword.slice(0, 2));
+    }
+    // 去重
+    const uniqueKeywords = [...new Set(searchKeywords.filter(k => k.length >= 2))];
+    
+    // 3. 构建多段 OR 关键词匹配条件
+    const keywordConditions = uniqueKeywords.map(keyword =>
+      or(
+        sql`${materialLibrary.title} ILIKE ${'%' + keyword + '%'}`,
+        sql`${materialLibrary.topicTags}::text ILIKE ${'%' + keyword + '%'}`,
+        sql`${materialLibrary.sceneTags}::text ILIKE ${'%' + keyword + '%'}`,
+        sql`${materialLibrary.content} ILIKE ${'%' + keyword + '%'}`,
+        sql`${materialLibrary.emotionTags}::text ILIKE ${'%' + keyword + '%'}`
+      )!
+    );
+
+    // 可见性条件（系统素材 OR 当前工作区素材）
+    const visibilityCondition = or(
+      eq(materialLibrary.ownerType, 'system'),
+      eq(materialLibrary.workspaceId, workspaceId || '')
+    );
+
+    // 4. 先尝试关键词匹配搜索
+    let items;
+    if (keywordConditions.length > 0) {
+      items = await db
+        .select()
+        .from(materialLibrary)
+        .where(
+          and(
+            visibilityCondition,
+            or(...keywordConditions)
           )
         )
-      )
-      .orderBy(desc(materialLibrary.createdAt))
-      .limit(limit || 10);
+        .orderBy(desc(materialLibrary.createdAt))
+        .limit(limit || 10);
+    }
+    
+    // 5. Fallback：关键词搜索无结果时，返回所有可见素材（按创建时间倒序）
+    if (!items || items.length === 0) {
+      console.log('[API] 素材推荐关键词无匹配，fallback 返回全部可见素材');
+      items = await db
+        .select()
+        .from(materialLibrary)
+        .where(visibilityCondition)
+        .orderBy(desc(materialLibrary.createdAt))
+        .limit(limit || 10);
+    }
 
     const formatted = items.map(formatMaterialAsItem);
 

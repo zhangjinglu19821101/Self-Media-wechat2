@@ -1528,6 +1528,8 @@ export default function HomePage() {
 
   // P1-9: AbortController ref，用于取消前序推荐请求
   const recommendAbortRef = useRef<AbortController | null>(null);
+  // AbortController ref，用于取消前序案例推荐请求（防止与素材推荐互相干扰）
+  const caseRecommendAbortRef = useRef<AbortController | null>(null);
 
   // 🔥 创作引导：智能推荐素材（支持手动和自动触发）
   // P1-10: 使用 useCallback 管理依赖，避免 useEffect 依赖抑制
@@ -1597,7 +1599,6 @@ export default function HomePage() {
       setAutoOpinionFetched(false);
       setRecommendedMaterials([]);
       setRecommendedSnippets([]);
-      setRecommendedMaterials([]);
       setSuggestedOpinions([]);
       setSelectedMaterialIds([]);
       setSelectedMaterialIdsV2([]);
@@ -1802,16 +1803,33 @@ export default function HomePage() {
   }, []);
 
   // 🔥 行业素材：推荐相关案例（silent=true 时自动推荐，不弹 toast）
+  // 注意：结果与 handleRecommendMaterials 共用 recommendedMaterials 状态，采用合并策略而非覆盖
   const handleRecommendCases = useCallback(async (silent = false) => {
     if (!mainInstruction.trim()) {
       if (!silent) toast.error('请先输入任务指令');
       return;
     }
+
+    // 取消前序请求，防止竞态条件
+    if (caseRecommendAbortRef.current) {
+      caseRecommendAbortRef.current.abort();
+    }
+    const controller = new AbortController();
+    caseRecommendAbortRef.current = controller;
+
     setLoadingRecommendedMaterials(true);
     try {
-      const data: any = await apiPost('/api/cases/recommend', { instruction: mainInstruction });
+      const data: any = await apiPost('/api/cases/recommend', { instruction: mainInstruction }, { signal: controller.signal });
+      // 如果请求已被取消，不更新状态
+      if (controller.signal.aborted) return;
+
       const cases: MaterialItem[] = data?.data?.cases || [];
-      setRecommendedMaterials(cases);
+      // 合并策略：去重合并，不覆盖已有素材推荐结果
+      setRecommendedMaterials(prev => {
+        const existingIds = new Set(prev.map(m => m.id));
+        const newCases = cases.filter(c => !existingIds.has(c.id));
+        return [...prev, ...newCases];
+      });
       setHasSearchedMaterials(true);
       if (!silent) {
         if (cases.length > 0) {
@@ -1820,11 +1838,16 @@ export default function HomePage() {
           toast.info('暂无匹配素材');
         }
       }
-    } catch (error) {
+    } catch (error: unknown) {
+      // AbortError 是预期行为，不视为错误
+      if (error instanceof DOMException && error.name === 'AbortError') return;
       console.error('推荐素材失败:', error);
       if (!silent) toast.error('推荐素材失败');
     } finally {
-      setLoadingRecommendedMaterials(false);
+      // 仅在请求未被取消时更新 loading 状态
+      if (!controller.signal.aborted) {
+        setLoadingRecommendedMaterials(false);
+      }
     }
   }, [mainInstruction]);
 
@@ -1892,10 +1915,8 @@ export default function HomePage() {
     const crowdTag = (filters?.crowdTag ?? caseFilterCrowd) === 'all' ? '' : (filters?.crowdTag ?? caseFilterCrowd);
     const caseType = (filters?.caseType ?? caseFilterType) === 'all' ? '' : (filters?.caseType ?? caseFilterType);
     
-    // 至少需要一个搜索条件
-    if (!searchKeyword.trim() && !productTag && !crowdTag && !caseType) {
-      return;
-    }
+    // 无搜索条件时也允许搜索（浏览所有可见素材）
+    // 移除之前的"至少需要一个搜索条件"限制
     
     setCaseSearchLoading(true);
     setCaseSearchMode('search'); // 切换到搜索模式

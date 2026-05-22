@@ -775,6 +775,10 @@ interface ExecutionContext {
   // 🔴 【创作引导】结构化创作数据（创作类型 + 素材选择结果）
   structuredData?: Record<string, unknown>;
   articleType?: string;
+  // 🔴 【大纲确认】从前序任务提取的大纲内容
+  extractedOutline?: string;
+  // 🔴 【范式素材】按slotId分组的素材详情
+  slotMaterialDetails?: Record<string, Array<{ id: string; title: string; type: string; content: string; sourceDesc?: string }>>;
 }
 
 
@@ -1512,7 +1516,10 @@ export class SubtaskExecutionEngine {
         continue;
       }
 
-      if (task.status === 'pending') {
+      // 🔴 修复：使用 latestStatus（最新查询结果）而非 task.status（入参快照）
+      // 场景：两阶段架构中，适配组任务从 blocked → pending 解锁后，
+      // task.status 仍是 'blocked' 但 latestStatus 已是 'pending'
+      if (latestStatus === 'pending') {
         console.log(`[SubtaskEngine] ========== 执行Agent开始处理 ==========`, {
           command_result_id: groupId,
           task_id: task.id,
@@ -2880,7 +2887,12 @@ export class SubtaskExecutionEngine {
       let resultText = '';
       try {
         resultText = this.extractResultTextFromResultData(resultToSave, task.fromParentsExecutor);
-      } catch {
+      } catch (extractErr) {
+        console.warn('[SubtaskEngine] extractResultTextFromResultData 提取失败，resultText 将为空:', {
+          taskId: task.id,
+          executor: task.fromParentsExecutor,
+          error: extractErr instanceof Error ? extractErr.message : String(extractErr)
+        });
         resultText = '';
       }
       
@@ -3003,12 +3015,14 @@ export class SubtaskExecutionEngine {
       // 🔴 修复：类型转换！ExecutorDirectResult → ExecutorAgentResult
       const errorResultToSave = convertExecutorDirectToAgentResult(errorResult);
 
-      // 更新状态 + 保存错误结果
+      // 更新状态 + 保存错误结果（⚠️ P0修复：异常路径也必须保存 resultText，否则下游任务无法获取错误信息）
+      const errorResultText = `执行错误 (${executionPhase}): ${error instanceof Error ? error.message : String(error)}`;
       await db
         .update(agentSubTasks)
         .set({
           status: 'pre_need_support',
           resultData: JSON.stringify(errorResultToSave),
+          resultText: errorResultText,
           updatedAt: getCurrentBeijingTime(),
         })
         .where(eq(agentSubTasks.id, task.id));
@@ -8444,6 +8458,7 @@ export class SubtaskExecutionEngine {
       // 其他 Agent 仍使用传统的 loadAgentPrompt
       const _isWritingAgent = isWritingAgent(task.fromParentsExecutor);
       // 🔴🔴🔴 P0 修复：deai-optimizer 使用高质量模型，需要同样的长超时
+      // _needsLongTimeout 必须基于 _isWritingAgent 派生，保持一致性
       const _needsLongTimeout = _isWritingAgent || task.fromParentsExecutor === 'deai-optimizer';
       const isInsuranceD = task.fromParentsExecutor === 'insurance-d'; // 公众号特有逻辑（自动上传等）
       const isInsuranceXhs = task.fromParentsExecutor === 'insurance-xiaohongshu'; // 小红书特有逻辑标识
@@ -8464,6 +8479,9 @@ export class SubtaskExecutionEngine {
           task, null, _capabilities, 1, 5
         );
         const { userOpinionAndMaterials: _userOpinionAndMaterials, priorStepOutput: _priorStepOutput, extractedOutline: _extractedOutline } = _execCtx;
+        
+        // 🔴🔴🔴 P0 修复：提前定义 taskMetadata，避免在使用后才定义
+        const taskMetadata = task.metadata as Record<string, any> | null;
         
         // 🔥🔥🔥 范式-素材位置绑定数据（从 task.metadata 读取）
         const _paradigmMaterialBindings: Array<{ slotId: string; materialId: string }> = taskMetadata?.paradigmMaterialBindings || [];
@@ -8508,13 +8526,13 @@ export class SubtaskExecutionEngine {
           );
         }
 
-        // 🔥 多平台发布：为 insurance-d 注入平台上下文前缀
-        // insurance-xiaohongshu 不需要平台前缀（平台规则已内置到提示词中）
-        // P1-S06 修复：提前获取模板ID，检查是否存在 image_structure 规则，用于精简静态 GUIDELINES 重复内容
-        const taskMetadata = task.metadata as Record<string, any> | null;
+        // 🔥 多平台发布：检查当前写作Agent的风格模板是否存在 image_structure 规则
+        // 用于精简静态 GUIDELINES 重复内容（如小红书卡片结构规则）
+        // 【P0修复】原条件 isInsuranceD && platformLabel==='小红书' 互斥永远为 false
+        // 修正为 isInsuranceXhs（小红书Agent自身需要检查 image_structure 规则）
         const _templateIdForPlatform = await this.getTemplateIdForTask(task);
         let _hasImageStructureRules = false;
-        if (_templateIdForPlatform && taskMetadata?.platformLabel === '小红书' && isInsuranceD) {
+        if (_templateIdForPlatform && isInsuranceXhs) {
           try {
             const { digitalAssetService } = await import('./digital-asset-service');
             const _rules = await digitalAssetService.listStyleRules(_templateIdForPlatform);
@@ -9054,12 +9072,20 @@ ${_xhsStructureText}
         // 当 deai-optimizer 在范式创作流程中执行时，替换通用深度改写为衔接轻优化
         if (task.fromParentsExecutor === 'deai-optimizer') {
           try {
-            // 从同组已完成的 insurance-d 任务中获取范式信息
-            const _siblingInsuranceD = currentStepTasks.find(t =>
-              t.fromParentsExecutor === 'insurance-d' && t.status === 'completed'
-            );
-            const _paradigmCode = (_siblingInsuranceD?.resultData as any)?.paradigmCode
-              || (taskMetadata as any)?.paradigmCode;
+            // 从同组已完成的写作 Agent 任务中获取范式信息
+            const _siblingWritingTask = await db
+              .select({ resultData: agentSubTasks.resultData })
+              .from(agentSubTasks)
+              .where(
+                and(
+                  eq(agentSubTasks.commandResultId, task.commandResultId as any),
+                  eq(agentSubTasks.status, 'completed'),
+                  inArray(agentSubTasks.fromParentsExecutor, ['insurance-d', 'insurance-xiaohongshu', 'insurance-zhihu', 'insurance-toutiao'])
+                )
+              )
+              .limit(1);
+            const _paradigmCode = (_siblingWritingTask[0]?.resultData as any)?.paradigmCode
+              || (taskMetadata)?.paradigmCode;
 
             if (_paradigmCode) {
               const { generateConnectionOptimizationPrompt } = await import('./paradigm-creation-service');
@@ -9137,16 +9163,16 @@ ${_connOptPrompt}
       });
       
       // 🔥🔥🔥 【新增】构建用户观点和素材文本
-      // N2修复：insurance-d 直接复用阶段1的单次组装结果，不再重复调用
+      // N2修复：写作 Agent 直接复用阶段1的单次组装结果，不再重复调用
       let userOpinionAndMaterialsText = '';
       
-      if (isInsuranceD && insuranceDAssembledResult) {
-        // insurance-d 专属：直接从已组装结果中提取动态规则+当前创作需求
+      if (_isWritingAgent && insuranceDAssembledResult) {
+        // 写作 Agent 专属：直接从已组装结果中提取动态规则+当前创作需求
         userOpinionAndMaterialsText = insuranceDAssembledResult.userExclusiveRules.formattedText + '\n' 
           + insuranceDAssembledResult.styleRules.formattedText + '\n'
           + insuranceDAssembledResult.currentTask;
         
-        console.log('[执行Agent调用] ✅ insurance-d 动态提示词复用（无重复调用）:', {
+        console.log(`[执行Agent调用] ✅ ${task.fromParentsExecutor} 动态提示词复用（无重复调用）:`, {
           rules_count: insuranceDAssembledResult.assemblyMetadata.ruleCount,
           style_rules_count: insuranceDAssembledResult.assemblyMetadata.styleRuleCount,
           has_user_opinion: insuranceDAssembledResult.assemblyMetadata.hasUserOpinion,
@@ -9271,15 +9297,15 @@ ${userFeedbackText}
         has_boss_order: !!bossOrder
       });
       
-      // 🔴🔴🔴 新增：打印完整提示词内容，便于调试
-      console.log('');
-      console.log('┌─────────────────────────────────────────────────────────────────────────────┐');
-      console.log('│          [执行Agent调用] 完整提示词内容 (传递给 ' + task.fromParentsExecutor + ')    │');
-      console.log('└─────────────────────────────────────────────────────────────────────────────┘');
-      console.log('[完整提示词开始] ====================');
-      console.log(fullPrompt);
-      console.log('[完整提示词结束] ====================');
-      console.log('');
+      // 开发环境下打印完整提示词内容，便于调试（生产环境不打印，避免泄露敏感信息）
+      if (process.env.COZE_PROJECT_ENV !== 'PROD') {
+        console.log('');
+        console.log(`[执行Agent调用] 完整提示词内容 (传递给 ${task.fromParentsExecutor})`);
+        console.log('[完整提示词开始] ====================');
+        console.log(fullPrompt);
+        console.log('[完整提示词结束] ====================');
+        console.log('');
+      }
       
       // ========== 阶段3：调用 LLM ==========
       callPhase = 'call_llm';
@@ -9315,13 +9341,15 @@ ${userFeedbackText}
         llm_ended_at: llmEndAt.toISOString()
       });
       
-      // 🔴 新增：记录完整的原始响应，便于调试解析失败问题
-      console.log('[执行Agent调用] 🔴 完整原始响应内容:', {
-        task_id: task.id,
-        executor: task.fromParentsExecutor,
-        full_response_length: response.length,
-        full_response_content: response
-      });
+      // 🔴 P1 修复：生产环境不打印完整 LLM 响应（可能含用户观点/素材等敏感信息）
+      if (process.env.COZE_PROJECT_ENV !== 'PROD') {
+        console.log('[执行Agent调用] 完整原始响应内容:', {
+          task_id: task.id,
+          executor: task.fromParentsExecutor,
+          full_response_length: response.length,
+          full_response_content: response
+        });
+      }
       
       // ========== 阶段4：解析结果 ==========
       callPhase = 'parse_response';
@@ -9382,10 +9410,19 @@ ${userFeedbackText}
       });
       console.error('');
       
+      // 🔴 P0 修复：异常时 rawLlmResponse 可能为 undefined（LLM未调用或调用前异常）
+      // 明确返回错误阶段标识，便于排查是"未调用LLM"还是"LLM返回空"
+      const _errorPhaseLabel = callPhase === 'init' || callPhase === 'load_prompt' || callPhase === 'build_prompt'
+        ? `LLM未调用（阶段: ${callPhase}）`
+        : `LLM已调用但异常（阶段: ${callPhase}）`;
+
       return {
         isCompleted: false,
-        suggestion: `执行Agent处理时发生错误 (阶段: ${callPhase}): ${error instanceof Error ? error.message : String(error)}`,
-        rawLlmResponse  // ⚠️ 异常时仍保存原始报文，便于排查
+        result: null,
+        suggestion: `执行Agent处理时发生错误 (${_errorPhaseLabel}): ${error instanceof Error ? error.message : String(error)}`,
+        rawLlmResponse: rawLlmResponse ?? undefined,  // undefined 表示LLM未调用
+        briefResponse: `[执行失败] ${_errorPhaseLabel}: ${error instanceof Error ? error.message.substring(0, 100) : String(error).substring(0, 100)}`,
+        selfEvaluation: { isTaskDown: false, reason: _errorPhaseLabel }
       };
     }
   }
