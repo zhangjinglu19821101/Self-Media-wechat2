@@ -945,7 +945,7 @@ export default function HomePage() {
     if (!executionDate) {
       setExecutionDate(new Date().toISOString().split('T')[0]);
     }
-  }, [mainInstruction]);
+  }, [mainInstruction, selectedParadigm, detectedDomain, detectedProductTags]);
 
   // 🔥 自动保存：监听所有状态变化，有内容就保存（debounce 已内置）
   useEffect(() => {
@@ -994,6 +994,7 @@ export default function HomePage() {
   }, []);
 
   // 🔥 范式选择时联动素材维度筛选：选择范式后自动筛选该范式需要的素材类型
+  // 🔥 修复P1：范式选择变化后同时重新触发素材推荐，确保推荐结果与范式关联
   useEffect(() => {
     if (!selectedParadigm?.paradigmCode) return;
     
@@ -1019,6 +1020,13 @@ export default function HomePage() {
       if (!currentFilterInRequired) {
         setCaseFilterType(frontendFilterType);
       }
+    }
+
+    // 🔥 修复P1：范式选择变化后重新触发素材推荐（带范式代码和AI拆解结果）
+    if (mainInstruction.trim()) {
+      setTimeout(() => {
+        handleRecommendMaterials(true);
+      }, 300);
     }
   }, [selectedParadigm?.paradigmCode]);
 
@@ -1545,8 +1553,22 @@ export default function HomePage() {
 
     setLoadingRecommendedMaterials(true);
     try {
+      // 🔥 修复P1：将AI拆解的domain和productTags传递给素材推荐API
+      const params = new URLSearchParams({
+        instruction: mainInstruction,
+        limit: '5',
+      });
+      if (selectedParadigm?.paradigmCode) {
+        params.set('paradigmCode', selectedParadigm.paradigmCode);
+      }
+      if (detectedDomain) {
+        params.set('domain', detectedDomain);
+      }
+      if (detectedProductTags.length > 0) {
+        params.set('productTags', detectedProductTags.join(','));
+      }
       const data: any = await apiGet(
-        `/api/materials/recommend?instruction=${encodeURIComponent(mainInstruction)}&limit=5${selectedParadigm ? `&paradigmCode=${encodeURIComponent(selectedParadigm.paradigmCode)}` : ''}`,
+        `/api/materials/recommend?${params.toString()}`,
         { signal: controller.signal },
       );
       // P1-9: 如果请求已被取消，不更新状态
@@ -1577,7 +1599,7 @@ export default function HomePage() {
         setLoadingRecommendedMaterials(false);
       }
     }
-  }, [mainInstruction]);
+  }, [mainInstruction, selectedParadigm, detectedDomain, detectedProductTags]);
 
   // 🔥 追踪上一次指令值：区分"初始化恢复"和"用户主动改指令"
   // 从空值→非空值 = 初始化恢复，不清空核心观点/情感基调

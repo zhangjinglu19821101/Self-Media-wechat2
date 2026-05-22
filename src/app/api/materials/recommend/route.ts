@@ -21,19 +21,36 @@ export async function GET(request: NextRequest) {
     const instruction = searchParams.get('instruction') || '';
     const limit = parseInt(searchParams.get('limit') || '5');
     const paradigmCode = searchParams.get('paradigmCode') || '';
+    // 🔥 修复P1：接收AI拆解的领域和产品标签，增强关键词提取
+    const domain = searchParams.get('domain') || '';
+    const productTagsParam = searchParams.get('productTags') || '';
+    const productTags = productTagsParam ? productTagsParam.split(',').filter(Boolean) : [];
 
     if (!instruction.trim()) {
       return NextResponse.json({ success: true, data: [], snippets: [] });
     }
 
     // 从指令中提取关键词和标签候选
-    const { keywords: rawKeywords, tagCandidates } = extractKeywordsAndTags(instruction);
-
-    // ─── 同义词扩展 ───
-    // 将"继承"扩展为["继承", "遗产", "传承", "遗嘱", ...]
+    // 🔥 修复P1：将AI拆解的productTags注入关键词和标签候选
+    // 🔥 修复P0：将domain传递给extractKeywordsAndTags进行领域感知扩展
+    const { keywords: rawKeywords, tagCandidates: rawTagCandidates } = extractKeywordsAndTags(instruction, domain || undefined);
     const keywords = expandKeywordsWithSynonyms(rawKeywords);
+    const tagCandidates = [...rawTagCandidates];
 
-    if (keywords.length === 0 && tagCandidates.length === 0) {
+    // 🔥 合并AI拆解的产品标签到关键词和标签候选中
+    if (productTags.length > 0) {
+      for (const tag of productTags) {
+        // 产品标签同时作为关键词和标签候选（去重）
+        if (!keywords.includes(tag) && !keywords.some(kw => kw.includes(tag) || tag.includes(kw))) {
+          keywords.push(tag);
+        }
+        if (!tagCandidates.includes(tag)) {
+          tagCandidates.push(tag);
+        }
+      }
+    }
+
+    if (keywords.length === 0 && tagCandidates.length === 0 && productTags.length === 0) {
       return NextResponse.json({ success: true, data: [], snippets: [] });
     }
 
@@ -350,7 +367,8 @@ async function recallSnippets(workspaceId: string, keywords: string[]) {
 }
 
 // ─── 关键词 + 标签提取 ───
-function extractKeywordsAndTags(instruction: string): { keywords: string[]; tagCandidates: string[] } {
+// 🔥 修复P0：接受 domain 参数，根据领域动态扩展关键词
+function extractKeywordsAndTags(instruction: string, domain?: string): { keywords: string[]; tagCandidates: string[] } {
   // 保险领域关键词（v2: 扩展覆盖更多场景）
   const domainKeywords = [
     // 险种
@@ -420,7 +438,28 @@ function extractKeywordsAndTags(instruction: string): { keywords: string[]; tagC
     }
   }
 
-  return { keywords: keywords.slice(0, 12), tagCandidates };
+  // 4. 🔥 修复P0：根据AI拆解的领域动态扩展关键词
+  // 领域感知关键词补充：当domain明确时，补充该领域的通用词汇
+  if (domain === 'insurance') {
+    const insuranceContextWords = [
+      '保障', '赔付', '条款', '保单', '承保', '核保', '等待期', '宽限期',
+      '受益人', '投保人', '被保人', '犹豫期', '豁免', '附加险', '主险',
+    ];
+    for (const word of insuranceContextWords) {
+      if (instruction.includes(word) && !keywords.includes(word) && keywords.length < 15) {
+        keywords.push(word);
+      }
+    }
+    // 保险领域也补充相关标签
+    const insuranceTagExtras = ['保障', '赔付', '理赔', '投保'];
+    for (const tag of insuranceTagExtras) {
+      if (instruction.includes(tag) && !tagCandidates.includes(tag)) {
+        tagCandidates.push(tag);
+      }
+    }
+  }
+
+  return { keywords: keywords.slice(0, 15), tagCandidates };
 }
 
 // ─── 命中计数 ───
@@ -494,27 +533,45 @@ async function recallByParadigm(workspaceId: string, paradigmCode: string): Prom
     }));
   }
 
-  // 策略2：通过 sceneType 间接匹配
-  // 获取所有有效的 sceneType 值（数据库中实际存储的值）
-  const validSceneTypes = ['analogy', 'mistake', 'regulation', 'event'];
+  // 策略2：通过范式 materialPositionMap 中定义的素材类型（7维度）间接匹配
+  // 🔥 修复P2：不再用宽泛的 sceneType 兜底，而是根据范式的 materialTypes 精确匹配素材类型
+  try {
+    // 动态导入范式种子数据，获取 materialPositionMap
+    const { PARADIGM_SEED_DATA } = await import('@/lib/db/schema/paradigm-seed-data');
+    const paradigmData = PARADIGM_SEED_DATA.find(p => p.paradigmCode === paradigmCode);
+    if (paradigmData?.materialPositionMap) {
+      // 收集该范式所需的所有素材类型（去重）
+      const requiredTypes = [...new Set(paradigmData.materialPositionMap.flatMap(m => m.materialTypes))];
+      if (requiredTypes.length > 0) {
+        const typeMatch = await db
+          .select()
+          .from(materialLibrary)
+          .where(
+            and(
+              eq(materialLibrary.status, 'active'),
+              visibilityCondition,
+              inArray(materialLibrary.type, requiredTypes),
+            ),
+          )
+          .limit(10);
 
-  // 查询有 sceneType 且值在有效列表中的素材
-  const sceneMatch = await db
-    .select()
-    .from(materialLibrary)
-    .where(
-      and(
-        eq(materialLibrary.status, 'active'),
-        visibilityCondition,
-        inArray(materialLibrary.sceneType, validSceneTypes),
-      ),
-    )
-    .limit(10);
+        if (typeMatch.length > 0) {
+          return typeMatch.map((item) => ({
+            ...item,
+            keywordHitCount: 0,
+            tagHitCount: 0,
+            useCount: item.useCount || 0,
+            paradigmPosition: paradigmData.materialPositionMap.find((m: any) =>
+              (m.materialTypes as string[]).includes(item.type)
+            )?.slotId || null,
+          }));
+        }
+      }
+    }
+  } catch (e) {
+    console.warn('[materials/recommend] 范式materialTypes匹配失败:', e instanceof Error ? e.message : String(e));
+  }
 
-  return sceneMatch.map((item) => ({
-    ...item,
-    keywordHitCount: 0,
-    tagHitCount: 0,
-    useCount: item.useCount || 0,
-  }));
+  // 策略1和策略2都没有匹配到，返回空数组
+  return [];
 }
