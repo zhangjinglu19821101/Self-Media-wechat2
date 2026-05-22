@@ -1892,10 +1892,8 @@ export default function HomePage() {
     const crowdTag = (filters?.crowdTag ?? caseFilterCrowd) === 'all' ? '' : (filters?.crowdTag ?? caseFilterCrowd);
     const caseType = (filters?.caseType ?? caseFilterType) === 'all' ? '' : (filters?.caseType ?? caseFilterType);
     
-    // 至少需要一个搜索条件
-    if (!searchKeyword.trim() && !productTag && !crowdTag && !caseType) {
-      return;
-    }
+    // 无搜索条件时也允许搜索（浏览所有可见素材）
+    // 移除之前的"至少需要一个搜索条件"限制
     
     setCaseSearchLoading(true);
     setCaseSearchMode('search'); // 切换到搜索模式
