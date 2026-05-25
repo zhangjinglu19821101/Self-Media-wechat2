@@ -2896,7 +2896,7 @@ export default function HomePage() {
           ...task,
           userOpinion: taskUserOpinion,
           originalInstruction: mainInstruction.trim() || null, // 🔥 独立字段
-          materialIds: selectedMaterialIds,
+          materialIds: [...selectedMaterialIds, ...selectedMaterialIdsV2], // 🔥 修复：合并创作引导素材 + 行业素材
           paradigmCode: selectedParadigm?.paradigmCode || null,
           paradigmName: taskParadigmName,
           paradigmDetail: taskParadigmDetail,
@@ -2930,7 +2930,7 @@ export default function HomePage() {
         // 以下字段用于 daily_task 表存储（向后兼容）
         userOpinion: coreOpinion.trim() || null,
         originalInstruction: mainInstruction.trim() || null, // 🔥 独立字段：用户原始指令
-        materialIds: selectedMaterialIds,
+        materialIds: [...selectedMaterialIds, ...selectedMaterialIdsV2], // 🔥 修复：合并创作引导素材 + 行业素材
         // 范式选择数据（隐性继承，始终传递）
         paradigmCode: selectedParadigm?.paradigmCode || null,
         paradigmName: selectedParadigm?.name || null,
