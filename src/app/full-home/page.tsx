@@ -3209,7 +3209,7 @@ export default function HomePage() {
                   >
                     <Link href="/style-init">
                       <Sparkles className="w-4 h-4 mr-2" />
-                      风格初始化
+                      全维度提取
                     </Link>
                   </Button>
                   {/* 风格复刻 - 只有超级管理员可见 */}
@@ -7854,7 +7854,7 @@ function ContentTemplateSelector({
           href="/style-init"
           className="text-sm text-rose-600 hover:text-rose-700 underline"
         >
-          去风格复刻创建 →
+          去全维度提取创建 →
         </Link>
       </div>
     );
