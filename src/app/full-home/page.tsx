@@ -194,7 +194,7 @@ interface RecommendedSnippet {
 }
 
 // 🔥🔥🔥 精简素材快照类型：只保存必要字段，大幅减少 sessionStorage 容量占用
-// content（正文内容）不保存，刷新后通过 selectedMaterialIds + 推荐列表重新匹配
+// content（正文内容）不保存，刷新后通过 selectedMaterialIdsV2 + 推荐列表重新匹配
 interface MaterialItemSnapshot {
   id: string;
   title: string;
@@ -232,9 +232,6 @@ interface FormSnapshot {
   coreOpinion: string;
   emotionTone: string;
   articleType: string;
-  selectedMaterialIds: string[];
-  // 🔥 保存精简的素材快照，避免 content（大字段）撑爆 sessionStorage
-  selectedMaterials: MaterialItemSnapshotV2[];
   selectedAccountIds: string[];
   selectedContentTemplate: {
     id: string;
@@ -297,21 +294,6 @@ function loadFormSnapshot(): FormSnapshot | null {
         coreOpinion: snapshot.coreOpinion || '',
         emotionTone: snapshot.emotionTone || '',
         articleType: snapshot.articleType || '',
-        selectedMaterialIds: snapshot.selectedMaterialIds || [],
-        // 🔥 迁移已选素材：v0 可能保存完整 MaterialItem[]，统一转为精简快照V2
-        selectedMaterials: (snapshot.selectedMaterials || []).length > 0
-          ? (snapshot.selectedMaterials as (MaterialItem | MaterialItemSnapshotV2 | MaterialItemSnapshot)[]).map(s => {
-              if ('id' in s && 'title' in s) {
-                // 如果已经有 typeLabel 字段，说明是 V2 格式
-                if ('typeLabel' in s && (s as MaterialItemSnapshotV2).typeLabel !== undefined) {
-                  return s as MaterialItemSnapshotV2;
-                }
-                // 否则转为 V2 格式
-                return toMaterialSnapshotV2(s as MaterialItem);
-              }
-              return s as MaterialItemSnapshotV2;
-            })
-          : [],
         selectedAccountIds: (snapshot as any).selectedAccountIds || [],
         selectedContentTemplate: snapshot.selectedContentTemplate || null,
         selectedParadigmId: snapshot.selectedParadigmId || '',
@@ -552,8 +534,6 @@ export default function HomePage() {
   } | null>(null);
   // Phase 3: 通用 AI 生成加载状态
   const [aiGenerating, setAiGenerating] = useState(false);
-  const [selectedMaterialIds, setSelectedMaterialIds] = useState<string[]>([]);
-  const [selectedMaterials, setSelectedMaterials] = useState<MaterialItem[]>([]);
   const [materialSearchQuery, setMaterialSearchQuery] = useState('');
   const [materialSearchResults, setMaterialSearchResults] = useState<MaterialItem[]>([]);
   const [materialSearchLoading, setMaterialSearchLoading] = useState(false);
@@ -841,15 +821,6 @@ export default function HomePage() {
     }
     if (typeof snapshot.coreOpinion === 'string') setCoreOpinion(snapshot.coreOpinion);
     if (typeof snapshot.emotionTone === 'string') setEmotionTone(snapshot.emotionTone);
-    if (snapshot.selectedMaterialIds?.length) {
-      setSelectedMaterialIds(snapshot.selectedMaterialIds);
-      // 🔥 恢复已选素材：转换为完整对象，content 字段通过推荐列表重新匹配获取
-      if (snapshot.selectedMaterials?.length) {
-        // 🔥 content 字段不存储在快照中，刷新后需要用户重新选择或由推荐系统补充
-        const fullMaterials = snapshot.selectedMaterials.map(s => toFullMaterialItem(s));
-        setSelectedMaterials(fullMaterials);
-      }
-    }
     if (snapshot.selectedAccountIds?.length) {
       setSelectedAccountIds(snapshot.selectedAccountIds);
       setSelectedAccountId(snapshot.selectedAccountIds[0]);
@@ -960,9 +931,6 @@ export default function HomePage() {
       coreOpinion,
       emotionTone,
       articleType,
-      selectedMaterialIds,
-      // 🔥 保存精简的素材快照V2（含7维素材关键字段），刷新后可恢复展示
-      selectedMaterials: selectedMaterials.map(toMaterialSnapshotV2),
       selectedAccountIds,
       selectedContentTemplate,
       selectedParadigmId: selectedParadigm?.id || '',
@@ -978,7 +946,7 @@ export default function HomePage() {
       platformSubTaskGroups,
       savedAt: Date.now(),
     });
-  }, [mainInstruction, coreOpinion, emotionTone, selectedMaterialIds, selectedMaterials, selectedAccountIds, selectedContentTemplate, selectedParadigm, hasSplitResult, subTasks, recommendedMaterials, selectedMaterialsV2List, taskTitle, executionDate, platformSubTaskGroups]);
+  }, [mainInstruction, coreOpinion, emotionTone, selectedAccountIds, selectedContentTemplate, selectedParadigm, hasSplitResult, subTasks, recommendedMaterials, selectedMaterialsV2List, taskTitle, executionDate, platformSubTaskGroups]);
 
   // 🔥 获取账号列表（AI拆解后自动加载）
   useEffect(() => {
@@ -1236,9 +1204,9 @@ export default function HomePage() {
   const hasGlobalCreationGuide = useMemo(() => {
     return !!(
       coreOpinion.trim() || 
-      selectedMaterialIds.length > 0
+      selectedMaterialIdsV2.length > 0
     );
-  }, [coreOpinion, selectedMaterialIds]);
+  }, [coreOpinion, selectedMaterialIdsV2]);
 
   // 向上移动子任务
   const moveSubTaskUp = (id: string) => {
@@ -1437,8 +1405,6 @@ export default function HomePage() {
       setRecommendedMaterials([]);
       setRecommendedMaterials([]);
       setSuggestedOpinions([]);
-      setSelectedMaterialIds([]);
-      setSelectedMaterials([]);
       setSelectedMaterialIdsV2([]);
       setSelectedMaterialsV2List([]);
       setCoreOpinion('');
@@ -1511,26 +1477,6 @@ export default function HomePage() {
       console.error('搜索素材失败:', error);
     } finally {
       setMaterialSearchLoading(false);
-    }
-  };
-
-  // 🔥 创作引导：选择/取消选择素材
-  const toggleMaterialSelection = (material: MaterialItem) => {
-    const alreadySelected = selectedMaterialIds.includes(material.id);
-    if (alreadySelected) {
-      setSelectedMaterialIds(prev => prev.filter(id => id !== material.id));
-      setSelectedMaterials(prev => prev.filter(m => m.id !== material.id));
-      // 同时清除该素材的位置绑定
-      setParadigmMaterialBindings(prev => {
-        const next = { ...prev };
-        for (const [slotId, mId] of Object.entries(next)) {
-          if (mId === material.id) delete next[slotId];
-        }
-        return next;
-      });
-    } else {
-      setSelectedMaterialIds(prev => [...prev, material.id]);
-      setSelectedMaterials(prev => [...prev, material]);
     }
   };
 
@@ -1622,7 +1568,6 @@ export default function HomePage() {
       setRecommendedMaterials([]);
       setRecommendedSnippets([]);
       setSuggestedOpinions([]);
-      setSelectedMaterialIds([]);
       setSelectedMaterialIdsV2([]);
       setCoreOpinion('');
       prevInstructionRef.current = '';
@@ -1636,8 +1581,6 @@ export default function HomePage() {
     // 初始化恢复（空→非空）不清空，保留用户之前的选择
     const isUserChangingInstruction = prevInstruction.trim() && prevInstruction.trim() !== mainInstruction.trim();
     if (isUserChangingInstruction) {
-      setSelectedMaterialIds([]);
-      setSelectedMaterials([]);
       setSelectedMaterialIdsV2([]);
       setSelectedMaterialsV2List([]);
       setCoreOpinion('');
@@ -1650,17 +1593,8 @@ export default function HomePage() {
     return () => clearTimeout(timer);
   }, [mainInstruction, handleRecommendMaterials]);
 
-  // 🔥 页面刷新恢复：从推荐结果中重建 selectedMaterials / selectedMaterialsV2List
+  // 🔥 页面刷新恢复：从推荐结果中重建 selectedMaterialsV2List
   // 快照只保存了 ID 列表，对象数组需要从推荐数据中匹配重建
-  useEffect(() => {
-    if (selectedMaterialIds.length > 0 && selectedMaterials.length === 0 && recommendedMaterials.length > 0) {
-      const matched = selectedMaterialIds
-        .map(id => recommendedMaterials.find(m => m.id === id))
-        .filter((m): m is MaterialItem => m != null);
-      if (matched.length > 0) setSelectedMaterials(matched);
-    }
-  }, [selectedMaterialIds, recommendedMaterials]);
-
   useEffect(() => {
     if (selectedMaterialIdsV2.length > 0 && selectedMaterialsV2List.length === 0 && recommendedMaterials.length > 0) {
       const matched = selectedMaterialIdsV2
@@ -2896,7 +2830,7 @@ export default function HomePage() {
           ...task,
           userOpinion: taskUserOpinion,
           originalInstruction: mainInstruction.trim() || null, // 🔥 独立字段
-          materialIds: [...selectedMaterialIds, ...selectedMaterialIdsV2], // 🔥 修复：合并创作引导素材 + 行业素材
+          materialIds: selectedMaterialIdsV2, // 🔥 修复：行业素材
           paradigmCode: selectedParadigm?.paradigmCode || null,
           paradigmName: taskParadigmName,
           paradigmDetail: taskParadigmDetail,
@@ -2930,7 +2864,7 @@ export default function HomePage() {
         // 以下字段用于 daily_task 表存储（向后兼容）
         userOpinion: coreOpinion.trim() || null,
         originalInstruction: mainInstruction.trim() || null, // 🔥 独立字段：用户原始指令
-        materialIds: [...selectedMaterialIds, ...selectedMaterialIdsV2], // 🔥 修复：合并创作引导素材 + 行业素材
+        materialIds: selectedMaterialIdsV2, // 🔥 修复：行业素材
         // 范式选择数据（隐性继承，始终传递）
         paradigmCode: selectedParadigm?.paradigmCode || null,
         paradigmName: selectedParadigm?.name || null,
@@ -3443,8 +3377,6 @@ export default function HomePage() {
                     {guideCardsCollapsed && (
                       <div className="text-xs text-slate-500 flex items-center gap-1">
                         <span>•</span>
-                        <span>{selectedMaterialIds.length}个素材</span>
-                        <span>•</span>
                         <span>{selectedMaterialIdsV2.length}个素材</span>
                         <span>•</span>
                         <span>{selectedAccountIds.length}个平台</span>
@@ -3692,13 +3624,12 @@ export default function HomePage() {
                       </h3>
 
                       {/* 状态Badge */}
-                      {(coreOpinion.trim() || emotionTone !== '理性客观' || selectedMaterials.length > 0) && (
+                      {(coreOpinion.trim() || emotionTone !== '理性客观' || selectedMaterialsV2List.length > 0) && (
                         <div className="mt-3 flex justify-center">
                           <Badge className="text-xs bg-indigo-100 text-indigo-700 border border-indigo-200">
                             {[
                               coreOpinion.trim() && '通用输入',
                               emotionTone !== '理性客观' && emotionTone,
-                              selectedMaterials.length > 0 && `${selectedMaterials.length}素材`,
                               selectedMaterialsV2List.length > 0 && `${selectedMaterialsV2List.length}行业素材`,
                             ].filter(Boolean).join('·')}
                           </Badge>
@@ -4163,12 +4094,12 @@ export default function HomePage() {
                         <div className="flex items-center gap-2.5">
                           <span className="font-semibold text-base text-slate-900">通用配置</span>
                           <Badge className="text-xs text-sky-700 bg-sky-100 border border-sky-200 h-6">可选</Badge>
-                          {(coreOpinion.trim() || selectedMaterials.length > 0) && (
+                          {(coreOpinion.trim() || selectedMaterialsV2List.length > 0) && (
                             <Badge className="text-xs text-sky-700 bg-sky-100 border border-sky-200 h-6">
                               {[
                                 coreOpinion.trim() && '通用输入',
                                 emotionTone !== '理性客观' && emotionTone,
-                                selectedMaterials.length > 0 && `${selectedMaterials.length}素材`,
+                                selectedMaterialsV2List.length > 0 && `${selectedMaterialsV2List.length}行业素材`,
                               ].filter(Boolean).join('·')}
                             </Badge>
                           )}
@@ -4208,8 +4139,8 @@ export default function HomePage() {
                       >
                         <Briefcase className="w-3.5 h-3.5 inline mr-1" />
                         素材选择
-                        {selectedMaterials.length > 0 && (
-                          <span className="ml-1 text-xs bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded-full">{selectedMaterials.length}</span>
+                        {selectedMaterialsV2List.length > 0 && (
+                          <span className="ml-1 text-xs bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded-full">{selectedMaterialsV2List.length}</span>
                         )}
                         {activeGuideTab === 'material' && (
                           <div className="absolute bottom-0 left-0 right-0 h-[2px] bg-sky-500 rounded-t-full" />
