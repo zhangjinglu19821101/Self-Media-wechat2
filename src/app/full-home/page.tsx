@@ -916,7 +916,7 @@ export default function HomePage() {
     if (!executionDate) {
       setExecutionDate(new Date().toISOString().split('T')[0]);
     }
-  }, [mainInstruction, selectedParadigm, detectedDomain, detectedProductTags]);
+  }, [mainInstruction, selectedParadigm?.paradigmCode, detectedDomain, detectedProductTags]);
 
   // 🔥 自动保存：监听所有状态变化，有内容就保存（debounce 已内置）
   useEffect(() => {
@@ -946,7 +946,7 @@ export default function HomePage() {
       platformSubTaskGroups,
       savedAt: Date.now(),
     });
-  }, [mainInstruction, coreOpinion, emotionTone, selectedAccountIds, selectedContentTemplate, selectedParadigm, hasSplitResult, subTasks, recommendedMaterials, selectedMaterialsV2List, taskTitle, executionDate, platformSubTaskGroups]);
+  }, [mainInstruction, coreOpinion, emotionTone, selectedAccountIds, selectedContentTemplate, selectedParadigm?.id, selectedParadigm?.paradigmCode, paradigmMaterialBindings, hasSplitResult, subTasks, recommendedMaterials, selectedMaterialsV2List, taskTitle, executionDate, platformSubTaskGroups]);
 
   // 🔥 获取账号列表（AI拆解后自动加载）
   useEffect(() => {
@@ -1522,7 +1522,12 @@ export default function HomePage() {
 
       const materials = (data?.data || []).map((m: any) => formatMaterialAsItem(m));
       const snippets = data?.snippets || [];
-      setRecommendedMaterials(materials);
+      // 🔥 修复竞态：使用合并策略而非直接覆盖，避免与 handleRecommendCases 冲突
+      setRecommendedMaterials(prev => {
+        const existingIds = new Set(materials.map((m: MaterialItem) => m.id));
+        const kept = prev.filter(m => !existingIds.has(m.id));
+        return [...materials, ...kept];
+      });
       setRecommendedSnippets(snippets);
       setAutoRecommendFetched(true);
       // P1-11: 移除推荐结果混入搜索结果的逻辑
@@ -1861,7 +1866,7 @@ export default function HomePage() {
       }
     }
     setParadigmMaterialBindings(prev => ({ ...prev, ...newBindings }));
-  }, [selectedParadigm, selectedMaterialsV2List]);
+  }, [selectedParadigm?.paradigmCode, selectedParadigm?.materialPositionMap, selectedMaterialsV2List]);
 
   // 🔥 行业素材：搜索素材（完全替换模式）
   const handleSearchIndustryMaterials = useCallback(async (keyword?: string, filters?: { productTag?: string; crowdTag?: string; caseType?: string }) => {
