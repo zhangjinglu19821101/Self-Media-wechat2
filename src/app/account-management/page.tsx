@@ -911,7 +911,7 @@ export default function AccountManagementPage() {
             <p><strong>5. 平台专属配置</strong>：每个账号可单独设置平台特有参数（如小红书的卡片模式、公众号的段落风格），不配置则使用模板默认值</p>
             <Separator className="my-3" />
             <p className="text-xs">
-              提示：先在「风格初始化」页面上传文章分析风格，规则会自动入库。然后在此页面创建模板并绑定账号，再按需配置各平台的专属参数。
+              提示：先在「全维度提取」页面上传文章分析风格，规则会自动入库。然后在此页面创建模板并绑定账号，再按需配置各平台的专属参数。
             </p>
           </CardContent>
         </Card>

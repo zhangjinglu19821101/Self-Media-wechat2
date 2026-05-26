@@ -133,7 +133,11 @@ export async function GET(request: NextRequest) {
             .where(
               and(
                 eq(materialLibrary.status, 'active'),
-                eq(materialLibrary.workspaceId, workspaceId),
+                // 可见性：系统素材（所有用户可见）+ 当前工作区用户素材
+                or(
+                  eq(materialLibrary.ownerType, 'system'),
+                  eq(materialLibrary.workspaceId, workspaceId),
+                ),
                 eq(materialLibrary.slotId, posSlotId),
                 eq(materialLibrary.paradigmId, paradigmCode),
                 or(

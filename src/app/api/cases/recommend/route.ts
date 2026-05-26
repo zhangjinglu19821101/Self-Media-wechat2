@@ -21,7 +21,10 @@ export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const workspaceId = await getWorkspaceId(request);
-    
+    if (!workspaceId) {
+      return NextResponse.json({ success: false, error: '未授权访问' }, { status: 401 });
+    }
+
     const productTags = searchParams.get('productTags')?.split(',').filter(Boolean);
     const crowdTags = searchParams.get('crowdTags')?.split(',').filter(Boolean);
     const sceneTags = searchParams.get('sceneTags')?.split(',').filter(Boolean);
@@ -34,7 +37,7 @@ export async function GET(request: NextRequest) {
     const conditions = [
       or(
         eq(materialLibrary.ownerType, 'system'),
-        eq(materialLibrary.workspaceId, workspaceId || '')
+        eq(materialLibrary.workspaceId, workspaceId)
       )
     ];
 
@@ -122,7 +125,7 @@ export async function GET(request: NextRequest) {
         .where(
           or(
             eq(materialLibrary.ownerType, 'system'),
-            eq(materialLibrary.workspaceId, workspaceId || '')
+            eq(materialLibrary.workspaceId, workspaceId)
           )
         )
         .orderBy(desc(materialLibrary.createdAt))
@@ -217,6 +220,12 @@ export async function POST(request: NextRequest) {
         error: '缺少 instruction 参数',
       }, { status: 400 });
     }
+    if (!workspaceId) {
+      return NextResponse.json({
+        success: false,
+        error: '未授权访问',
+      }, { status: 401 });
+    }
 
     // ===== 改进关键词提取：多段渐进式匹配 + fallback =====
     // 1. 从指令中提取有意义的关键词（去除常见停用词/虚词）
@@ -262,7 +271,7 @@ export async function POST(request: NextRequest) {
     // 可见性条件（系统素材 OR 当前工作区素材）
     const visibilityCondition = or(
       eq(materialLibrary.ownerType, 'system'),
-      eq(materialLibrary.workspaceId, workspaceId || '')
+      eq(materialLibrary.workspaceId, workspaceId)
     );
 
     // 4. 先尝试关键词匹配搜索

@@ -16,6 +16,9 @@ export async function GET(
   try {
     const { id } = await params;
     const workspaceId = await getWorkspaceId(request);
+    if (!workspaceId) {
+      return NextResponse.json({ error: '未授权访问' }, { status: 401 });
+    }
 
     const result = await db
       .select()
@@ -25,7 +28,7 @@ export async function GET(
           eq(materialLibrary.id, id),
           or(
             eq(materialLibrary.ownerType, 'system'),
-            eq(materialLibrary.workspaceId, workspaceId || '')
+            eq(materialLibrary.workspaceId, workspaceId)
           )
         )
       )

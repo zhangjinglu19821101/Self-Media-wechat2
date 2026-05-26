@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-import { materialLibrary, SYSTEM_WORKSPACE_ID } from '@/lib/db/schema/material-library';
+import { materialLibrary } from '@/lib/db/schema/material-library';
 import { infoSnippets } from '@/lib/db/schema/info-snippets';
 import { or, like, desc, and, eq, sql, notInArray, inArray } from 'drizzle-orm';
 import { getWorkspaceId } from '@/lib/auth/context';
@@ -92,7 +92,9 @@ export async function GET(request: NextRequest) {
         sceneTags: string[] | null;
         emotionTags: string[] | null;
         useCount: number;
-        paradigmId?: string | null; // 🔥 范式关联ID
+        paradigmId?: string | null;
+        sceneType?: string | null; // 🔥 场景类型（范式映射用）
+        paradigmPosition?: string | null; // 🔥 范式段落位置
       },
     ) => {
       if (seen.has(item.id)) return;
@@ -110,7 +112,9 @@ export async function GET(request: NextRequest) {
         keywordHitCount: 0,
         tagHitCount: 0,
         score: 0,
-        paradigmId: item.paradigmId || null, // 🔥 传递范式关联
+        paradigmId: item.paradigmId || null,
+        sceneType: (item as any).sceneType || null,
+        paradigmPosition: (item as any).paradigmPosition || null,
       });
     };
 
@@ -168,9 +172,9 @@ export async function GET(request: NextRequest) {
       matchLevel: computeMatchLevel(c, candidates),
       keywordHitCount: c.keywordHitCount,
       tagHitCount: c.tagHitCount,
-      sceneType: (c as any).sceneType || null, // 🔥 场景类型（范式映射用）
-      paradigmId: c.paradigmId || null, // 🔥 关联范式
-      paradigmPosition: (c as any).paradigmPosition || null, // 🔥 范式段落位置
+      sceneType: c.sceneType || null,
+      paradigmId: c.paradigmId || null,
+      paradigmPosition: c.paradigmPosition || null,
     }));
 
     // ─── 信息速记结果 ───
@@ -215,20 +219,14 @@ interface CandidateItem {
   keywordHitCount: number;
   tagHitCount: number;
   score: number;
-  paradigmId?: string | null; // 🔥 范式关联ID，用于匹配加分
+  paradigmId?: string | null;
+  sceneType?: string | null; // 🔥 场景类型（范式映射用）
+  paradigmPosition?: string | null; // 🔥 范式段落位置
 }
 
 // ─── P1-2: LIKE 通配符转义 ───
 function escapeLikePattern(str: string): string {
   return str.replace(/[%_\\]/g, '\\$&');
-}
-
-// ─── 可见性条件：用户workspace OR 系统预置 ───
-function workspaceVisible(workspaceId: string) {
-  return or(
-    eq(materialLibrary.workspaceId, workspaceId),
-    eq(materialLibrary.workspaceId, SYSTEM_WORKSPACE_ID)
-  );
 }
 
 // ─── 路径1：关键词匹配 ───
