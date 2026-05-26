@@ -959,6 +959,123 @@ const MIGRATION_STEPS: MigrationStep[] = [
       return '模板初始化跳过（需注册用户后由系统自动创建）';
     },
   },
+  {
+    id: 'init-paradigm-library',
+    name: '初始化10套范式库（双Schema）',
+    category: 'init',
+    execute: async (targetSchema: string) => {
+      // 范式库是系统级数据，必须同时写入 dev_schema 和 public
+      // 否则生产环境看不到范式
+      const schemas = targetSchema === 'dev_schema' 
+        ? ['dev_schema', 'public'] 
+        : ['public'];
+      
+      let totalInserted = 0;
+      
+      for (const schema of schemas) {
+        try {
+          // 检查是否已有范式数据
+          const existing = await getActiveDb().execute(
+            sql`SELECT COUNT(*) as count FROM ${sql.raw(schema + '.paradigm_library')}`
+          );
+          const count = Number((existing as any)[0]?.count ?? 0);
+          if (count >= 10) {
+            continue; // 已有10套范式，跳过
+          }
+          
+          // 导入种子数据
+          const { PARADIGM_SEED_DATA } = await import('@/lib/db/schema/paradigm-seed-data');
+          
+          const SYSTEM_WORKSPACE_ID = '00000000-0000-0000-0000-000000000001';
+          for (const seed of PARADIGM_SEED_DATA) {
+            await getActiveDb().execute(sql`
+              INSERT INTO ${sql.raw(schema + '.paradigm_library')} (
+                id, paradigm_code, paradigm_name, description,
+                is_system, workspace_id, material_position_map, sort_order, created_at, updated_at
+              ) VALUES (
+                ${crypto.randomUUID()}, ${seed.paradigmCode}, ${seed.paradigmName}, 
+                ${seed.description},
+                ${seed.isSystem ?? true}, ${SYSTEM_WORKSPACE_ID}, ${JSON.stringify(seed.materialPositionMap)}, 
+                ${seed.sortOrder}, NOW(), NOW()
+              )
+              ON CONFLICT (workspace_id, paradigm_code) DO UPDATE SET
+                paradigm_name = EXCLUDED.paradigm_name,
+                description = EXCLUDED.description,
+                material_position_map = EXCLUDED.material_position_map,
+                sort_order = EXCLUDED.sort_order,
+                updated_at = NOW()
+            `);
+            totalInserted++;
+          }
+        } catch (e) {
+          console.warn(`[migrate] 范式初始化 ${schema} 失败:`, e instanceof Error ? e.message : String(e));
+        }
+      }
+      
+      return totalInserted > 0 
+        ? `范式库初始化完成: ${schemas.join('+')} 共 ${totalInserted} 条` 
+        : '范式库已存在，跳过初始化';
+    },
+  },
+  {
+    id: 'init-system-materials-sync',
+    name: '同步系统素材到双Schema',
+    category: 'init',
+    execute: async (targetSchema: string) => {
+      // 系统素材必须在两个 schema 中都存在
+      // DEV 环境: dev_schema 需要能看到系统素材
+      // PROD 环境: public 需要有系统素材
+      
+      const schemas = targetSchema === 'dev_schema' 
+        ? ['dev_schema', 'public'] 
+        : ['public'];
+      
+      const results: string[] = [];
+      
+      for (const schema of schemas) {
+        try {
+          const sysCount = await getActiveDb().execute(
+            sql`SELECT COUNT(*) as count FROM ${sql.raw(schema + '.material_library')} WHERE owner_type = 'system'`
+          );
+          const count = Number((sysCount as any)[0]?.count ?? 0);
+          results.push(`${schema}: ${count} 条系统素材`);
+        } catch (e) {
+          results.push(`${schema}: 检查失败`);
+        }
+      }
+      
+      // 如果 dev_schema 缺少系统素材，从 public 复制
+      if (targetSchema === 'dev_schema') {
+        try {
+          const devSysCount = await getActiveDb().execute(
+            sql`SELECT COUNT(*) as count FROM dev_schema.material_library WHERE owner_type = 'system'`
+          );
+          const devCount = Number((devSysCount as any)[0]?.count ?? 0);
+          
+          if (devCount === 0) {
+            // 从 public 复制系统素材到 dev_schema（用新UUID避免ID冲突）
+            const insertResult = await getActiveDb().execute(sql`
+              INSERT INTO dev_schema.material_library (
+                id, title, type, content, source_type, status, 
+                owner_type, workspace_id, created_at, updated_at
+              )
+              SELECT 
+                gen_random_uuid(), title, type, content, source_type, status,
+                'system', NULL, created_at, updated_at
+              FROM public.material_library 
+              WHERE owner_type = 'system'
+              ON CONFLICT DO NOTHING
+            `);
+            results.push('从 public 复制系统素材到 dev_schema 完成');
+          }
+        } catch (e) {
+          results.push('系统素材同步失败: ' + (e instanceof Error ? e.message : String(e)));
+        }
+      }
+      
+      return results.join('; ');
+    },
+  },
 ];
 
 // ==================== API 路由 ====================
