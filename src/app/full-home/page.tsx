@@ -426,6 +426,39 @@ interface InfoSnippet {
   createdAt: string;
 }
 
+/**
+ * 从用户指令中提取文章主题，支持3种场景：
+ * 1. "创作公众号文章，主题《存款，是放在银行大额存单还是保险的增额寿》" → 提取书名号内内容
+ * 2. "《存款，是放在银行大额存单还是保险的增额寿》" → 直接提取书名号内内容
+ * 3. "存款，是放在银行大额存单还是保险的增额寿" → 整段作为主题
+ */
+function extractArticleTopic(instruction: string): string {
+  if (!instruction?.trim()) return '';
+
+  // 优先级1：匹配"主题"关键词 + 书名号/引号包裹的内容
+  // 场景1: "主题《...》" / "主题《...》" / "主题'...'" / "主题【...】"
+  const withKeyword = instruction.match(/主题[：:]*\s*[《<『【"'「]([^》>』】"'」]+)[》>』】"'」]/);
+  if (withKeyword) return withKeyword[1].trim();
+
+  // 优先级2：匹配独立的书名号/引号包裹内容（不需要"主题"前缀）
+  // 场景2: "《存款，是放在银行大额存单还是保险的增额寿》"
+  const bracketed = instruction.match(/[《<『【"'「]([^》>』】"'」]+)[》>』】"'」]/);
+  if (bracketed) return bracketed[1].trim();
+
+  // 优先级3：纯文本主题（无书名号）
+  // 场景3: "存款，是放在银行大额存单还是保险的增额寿"
+  // 移除常见的前缀修饰词，取剩余内容
+  // 注意：带逗号的完整前缀先处理，再处理不带逗号的短前缀
+  const cleaned = instruction
+    .replace(/^创作[^，,，]*[，,，]\s*/, '')   // 移除"创作公众号文章，"
+    .replace(/^写[^，,，]*[，,，]\s*/, '')      // 移除"写一篇文章，"
+    // 移除短前缀组合：创作/写一篇/关于/主题，可连续出现（如"写一篇关于"）
+    .replace(/^(?:(?:创作|写[一篇两篇几多篇]*|关于|主题)[：:]*\s*)+/, '')
+    .trim();
+
+  return cleaned || instruction.trim();
+}
+
 export default function HomePage() {
   const [taskTitle, setTaskTitle] = useState('');
   const [taskDescription, setTaskDescription] = useState('');
@@ -900,16 +933,19 @@ export default function HomePage() {
     }
     prevMainInstructionRef.current = mainInstruction;
 
-    // 任务标题：从 mainInstruction 提取 "主题《xxx》"
-    const match = mainInstruction.match(/主题[《"<『【]([^》"』】]+)[》"』】]/);
-    if (match) {
-      const extractedTitle = `主题《${match[1]}》`;
+    // 任务标题：从 mainInstruction 提取文章主题（3种场景）
+    // 场景1："主题《xxx》" / "主题【xxx】" → 提取《》内容
+    // 场景2："《xxx》"（无"主题"前缀）→ 提取《》内容
+    // 场景3：纯文本无书名号 → 整体作为主题
+    const extractedTopic = extractArticleTopic(mainInstruction);
+    if (extractedTopic) {
+      const extractedTitle = `主题《${extractedTopic}》`;
       // 如果用户没有手动修改过标题，或者当前标题也是自动提取的"主题《xxx》"格式，则覆盖
       if (!userManuallyEditedTitleRef.current) {
         setTaskTitle(extractedTitle);
       }
     } else if (!userManuallyEditedTitleRef.current) {
-      // 没有匹配到"主题《xxx》"且用户未手动修改，使用前50字
+      // 无法提取时使用前50字
       setTaskTitle(mainInstruction.slice(0, 50));
     }
     // 执行日期：默认当天（仅设置一次）
@@ -1358,9 +1394,9 @@ export default function HomePage() {
 
     // 🔥 任务标题：点击 AI 智能拆解时，强制从指令重新提取（尊重用户最新的指令内容）
     let finalTaskTitle = '';
-    const match = mainInstruction.match(/主题[《"<『]([^》"』]+)[》"』]/);
-    if (match) {
-      finalTaskTitle = `主题《${match[1]}》`;
+    const extractedTopic = extractArticleTopic(mainInstruction);
+    if (extractedTopic) {
+      finalTaskTitle = `主题《${extractedTopic}》`;
     } else {
       finalTaskTitle = mainInstruction.slice(0, 50).trim();
     }
@@ -3279,15 +3315,19 @@ export default function HomePage() {
             <div className="space-y-3">
               <label className="text-sm font-medium text-slate-700 flex items-center gap-2">
                 <FileText className="w-4 h-4 text-blue-500" />
-                粘贴主任务指令
+                创作指令
+                <span className="text-xs text-slate-400 font-normal">（主题+内容要求即可，无需格式模板）</span>
               </label>
               <Textarea
                 value={mainInstruction}
                 onChange={(e) => setMainInstruction(e.target.value)}
-                placeholder="粘贴你的完整任务指令在这里，比如：&#10;&#10;完全依据复制下列指令给insurance-d下达执行指令&#10;### 二、正式指令下达&#10;职责标签：内容类&#10;执行主体为「insurance-d 」&#10;..."
-                rows={8}
+                placeholder={"主题《存款，是放在银行大额存单还是保险的增额寿》\n结合真实30万存款到期案例，对比产品领取规则与收益率，客观传递增额终身寿、年金、银行存款的差异"}
+                rows={4}
                 className="font-mono text-sm border-blue-200 focus:ring-blue-500 focus:border-blue-500 bg-white/70"
               />
+              <p className="text-xs text-slate-400">
+                只需写主题和内容要求，职责标签/执行主体/字数/拆解要求等系统自动处理
+              </p>
             </div>
             <TooltipProvider>
               <Tooltip>
