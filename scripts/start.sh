@@ -15,4 +15,5 @@ export HOSTNAME="0.0.0.0"
 export PORT="${DEPLOY_RUN_PORT}"
 
 # 使用 standalone 模式的 server.js 启动
-node .next/standalone/server.js
+# 🔴 P1 修复：增加 Node.js HTTP 请求头大小限制（64KB），解决 "Request Header Fields Too Large" (HTTP 431) 错误
+node --max-http-header-size=65536 .next/standalone/server.js

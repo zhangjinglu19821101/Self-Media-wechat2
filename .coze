@@ -9,7 +9,8 @@ appliedPatches = [
 
 [dev]
 build = ["bash", "-c", "cd /workspace/projects && pnpm install"]
-run = ["bash", "-c", "cd /workspace/projects && pnpm next dev --port 5000 -H 0.0.0.0"]
+# 🔴 P1 修复：增加 Node.js HTTP 请求头大小限制（64KB），解决 "Request Header Fields Too Large" (HTTP 431) 错误
+run = ["bash", "-c", "cd /workspace/projects && NODE_OPTIONS='--max-http-header-size=65536' pnpm next dev --port 5000 -H 0.0.0.0"]
 
 [deploy]
 build = [ "bash", "./scripts/build.sh" ]

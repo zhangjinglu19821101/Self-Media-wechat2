@@ -63,8 +63,19 @@ async function waitForReady(port, timeoutMs) {
 console.log(`[start.js] 启动 Next.js 服务 (port=${PORT})...`);
 console.log(`[start.js] 工作目录: ${COZE_WORKSPACE_PATH}`);
 
+// 🔴 P1 修复：增加 Node.js HTTP 请求头大小限制（默认 16KB，改为 64KB）
+// 解决 "Request Header Fields Too Large" (HTTP 431) 错误
+// 原因：NextAuth session cookie + 其他 cookie 累积可能超过默认限制
+const MAX_HTTP_HEADER_SIZE = 65536; // 64KB
+
 // 启动 Next.js 子进程
-const child = spawn('npx', ['next', 'start', '--port', PORT], {
+const child = spawn('node', [
+  '--max-http-header-size=' + MAX_HTTP_HEADER_SIZE,
+  'node_modules/next/dist/bin/next',
+  'start',
+  '--port',
+  PORT,
+], {
   cwd: COZE_WORKSPACE_PATH,
   stdio: ['pipe', 'pipe', 'pipe'],
   env: { ...process.env },
