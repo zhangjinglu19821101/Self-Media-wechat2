@@ -13,7 +13,7 @@ import {
   TrendingUp, AlertTriangle, FileText, ChevronDown, ChevronRight,
   BarChart3, Save, CheckCircle2, ArrowRight, Lightbulb, MessageSquare,
   Database, BookmarkCheck, GitBranch, Search, CircleCheck, Circle,
-  Flame, Eye, Clock
+  Flame, Eye, Clock, Pencil
 } from 'lucide-react';
 
 // ====== 类型定义 ======
@@ -345,12 +345,15 @@ function ParadigmMatchCard({ recognition }: { recognition: ParadigmRecognition }
 function MaterialDimensionCard({
   dimension,
   materials,
+  onMaterialChange,
 }: {
   dimension: typeof MATERIAL_DIMENSIONS[number];
   materials: RelationalMaterial[];
+  onMaterialChange?: (dimensionKey: string, index: number, updated: RelationalMaterial) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
   const c = COLOR_MAP[dimension.color] || COLOR_MAP.blue;
+  const dimKey = dimension.key;
   const Icon = dimension.icon;
 
   return (
@@ -377,7 +380,14 @@ function MaterialDimensionCard({
             <p className="text-sm text-slate-400">未提取到相关素材</p>
           ) : (
             materials.map((m, i) => (
-              <RelationalMaterialItem key={i} material={m} index={i + 1} color={dimension.color} />
+              <RelationalMaterialItem
+                key={m.id || i}
+                material={m}
+                index={i + 1}
+                color={dimension.color}
+                editable={!!onMaterialChange}
+                onChange={onMaterialChange ? (updated) => onMaterialChange(dimKey, i, updated) : undefined}
+              />
             ))
           )}
         </div>
@@ -386,39 +396,163 @@ function MaterialDimensionCard({
   );
 }
 
-/** 单条关系型素材展示 */
-function RelationalMaterialItem({ material, index, color }: { material: RelationalMaterial; index: number; color: string }) {
+/** 单条关系型素材展示+编辑 */
+function RelationalMaterialItem({
+  material,
+  index,
+  color,
+  editable = false,
+  onChange,
+}: {
+  material: RelationalMaterial;
+  index: number;
+  color: string;
+  editable?: boolean;
+  onChange?: (updated: RelationalMaterial) => void;
+}) {
   const c = COLOR_MAP[color] || COLOR_MAP.blue;
+  const [editing, setEditing] = useState(false);
+  const [editContent, setEditContent] = useState(material.content);
+  const [editContextBefore, setEditContextBefore] = useState(material.contextBefore || '');
+  const [editContextAfter, setEditContextAfter] = useState(material.contextAfter || '');
+  const [editEmotion, setEditEmotion] = useState(material.emotion || '');
+
+  // 进入编辑模式时同步最新数据
+  const startEditing = () => {
+    setEditContent(material.content);
+    setEditContextBefore(material.contextBefore || '');
+    setEditContextAfter(material.contextAfter || '');
+    setEditEmotion(material.emotion || '');
+    setEditing(true);
+  };
+
+  const saveEdit = () => {
+    if (!onChange) return;
+    onChange({
+      ...material,
+      content: editContent,
+      contextBefore: editContextBefore || undefined,
+      contextAfter: editContextAfter || undefined,
+      emotion: editEmotion || undefined,
+    });
+    setEditing(false);
+  };
+
+  const cancelEdit = () => {
+    setEditContent(material.content);
+    setEditContextBefore(material.contextBefore || '');
+    setEditContextAfter(material.contextAfter || '');
+    setEditEmotion(material.emotion || '');
+    setEditing(false);
+  };
 
   return (
     <div className="bg-white/80 rounded-lg p-3 border border-slate-100 space-y-2">
       {/* 核心内容 */}
       <div className="flex items-start gap-2">
         <span className={`text-xs font-bold ${c.text} min-w-[20px]`}>{index}.</span>
-        <p className="text-sm font-medium text-slate-800 flex-1 whitespace-pre-wrap">{material.content}</p>
+        <div className="flex-1 min-w-0">
+          {editing ? (
+            <textarea
+              value={editContent}
+              onChange={(e) => setEditContent(e.target.value)}
+              className="w-full text-sm font-medium text-slate-800 border border-indigo-200 rounded-md p-2 min-h-[60px] resize-y focus:outline-none focus:ring-2 focus:ring-indigo-300 bg-white"
+            />
+          ) : (
+            <p className="text-sm font-medium text-slate-800 whitespace-pre-wrap">{material.content}</p>
+          )}
+        </div>
+        {/* 编辑按钮 */}
+        {editable && !editing && (
+          <button
+            onClick={startEditing}
+            className="shrink-0 p-1 rounded hover:bg-slate-100 text-slate-400 hover:text-indigo-500 transition-colors"
+            title="编辑此素材"
+          >
+            <Pencil className="w-3.5 h-3.5" />
+          </button>
+        )}
       </div>
 
-      {/* 元信息标签行 */}
-      <div className="flex flex-wrap gap-1.5 pl-7">
-        {material.paradigmStep && (
-          <span className="text-xs px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-600 border border-indigo-100">
-            {material.paradigmStep}
-          </span>
-        )}
-        {material.emotion && (
-          <span className={`text-xs px-1.5 py-0.5 rounded border ${EMOTION_COLORS[material.emotion] || 'bg-gray-100 text-gray-700 border-gray-200'}`}>
-            {material.emotion}
-          </span>
-        )}
-        {material.relationToPrevious && (
-          <span className="text-xs px-1.5 py-0.5 rounded bg-violet-50 text-violet-600 border border-violet-100">
-            {material.relationToPrevious}
-          </span>
-        )}
-      </div>
+      {/* 编辑模式：上下文+情绪编辑区 */}
+      {editing && (
+        <div className="space-y-2 pl-7">
+          <div>
+            <label className="text-xs text-slate-500 mb-1 block">前文上下文</label>
+            <input
+              type="text"
+              value={editContextBefore}
+              onChange={(e) => setEditContextBefore(e.target.value)}
+              className="w-full text-xs border border-slate-200 rounded-md p-1.5 focus:outline-none focus:ring-2 focus:ring-indigo-200 bg-white"
+              placeholder="此素材在原文中的前文"
+            />
+          </div>
+          <div>
+            <label className="text-xs text-slate-500 mb-1 block">后文上下文</label>
+            <input
+              type="text"
+              value={editContextAfter}
+              onChange={(e) => setEditContextAfter(e.target.value)}
+              className="w-full text-xs border border-slate-200 rounded-md p-1.5 focus:outline-none focus:ring-2 focus:ring-indigo-200 bg-white"
+              placeholder="此素材在原文中的后文"
+            />
+          </div>
+          <div>
+            <label className="text-xs text-slate-500 mb-1 block">情绪标签</label>
+            <select
+              value={editEmotion}
+              onChange={(e) => setEditEmotion(e.target.value)}
+              className="text-xs border border-slate-200 rounded-md p-1.5 focus:outline-none focus:ring-2 focus:ring-indigo-200 bg-white"
+            >
+              <option value="">无</option>
+              <option value="共情">共情</option>
+              <option value="理性">理性</option>
+              <option value="警示">警示</option>
+              <option value="温情">温情</option>
+              <option value="专业">专业</option>
+              <option value="中性">中性</option>
+            </select>
+          </div>
+          <div className="flex items-center gap-2 pt-1">
+            <button
+              onClick={saveEdit}
+              className="text-xs px-3 py-1 rounded-md bg-indigo-500 text-white hover:bg-indigo-600 transition-colors"
+            >
+              确认修改
+            </button>
+            <button
+              onClick={cancelEdit}
+              className="text-xs px-3 py-1 rounded-md bg-slate-100 text-slate-600 hover:bg-slate-200 transition-colors"
+            >
+              取消
+            </button>
+          </div>
+        </div>
+      )}
 
-      {/* 上下文 */}
-      {(material.contextBefore || material.contextAfter) && (
+      {/* 非编辑模式：元信息标签行 */}
+      {!editing && (
+        <div className="flex flex-wrap gap-1.5 pl-7">
+          {material.paradigmStep && (
+            <span className="text-xs px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-600 border border-indigo-100">
+              {material.paradigmStep}
+            </span>
+          )}
+          {material.emotion && (
+            <span className={`text-xs px-1.5 py-0.5 rounded border ${EMOTION_COLORS[material.emotion] || 'bg-gray-100 text-gray-700 border-gray-200'}`}>
+              {material.emotion}
+            </span>
+          )}
+          {material.relationToPrevious && (
+            <span className="text-xs px-1.5 py-0.5 rounded bg-violet-50 text-violet-600 border border-violet-100">
+              {material.relationToPrevious}
+            </span>
+          )}
+        </div>
+      )}
+
+      {/* 非编辑模式：上下文 */}
+      {!editing && (material.contextBefore || material.contextAfter) && (
         <div className="pl-7 space-y-1">
           {material.contextBefore && (
             <p className="text-xs text-slate-400">前文：{material.contextBefore}</p>
@@ -681,6 +815,18 @@ export default function ArticleExtractionPanel() {
   const [extractionId, setExtractionId] = useState<string>('');
   const [history, setHistory] = useState<Array<{ id: string; title: string; createdAt: string }>>([]);
   const [savingToLibrary, setSavingToLibrary] = useState(false);
+  const [editedMaterialContents, setEditedMaterialContents] = useState<Record<string, RelationalMaterial>>({});
+
+  // 素材编辑回调
+  const handleMaterialChange = useCallback((dimensionKey: string, index: number, updated: RelationalMaterial) => {
+    // 使用 dimensionKey + index 作为唯一标识
+    const key = `${dimensionKey}:${index}`;
+    setEditedMaterialContents(prev => ({
+      ...prev,
+      [key]: updated,
+    }));
+  }, []);
+
   const [paradigmStatuses, setParadigmStatuses] = useState<ParadigmInitInfo[]>([]);
   const [paradigmSummary, setParadigmSummary] = useState<ParadigmStatusSummary>({
     total: 10, initialized: 0, uninitialized: 10, initializationRate: 0,
@@ -701,6 +847,11 @@ export default function ArticleExtractionPanel() {
   }, [paradigmSummary]);
 
   // 初始化时加载范式状态
+  // 提取结果变化时清空编辑状态
+  useEffect(() => {
+    setEditedMaterialContents({});
+  }, [extraction?.extractionSummary]);
+
   useEffect(() => {
     loadParadigmStatus();
   }, []);
@@ -782,7 +933,7 @@ export default function ArticleExtractionPanel() {
     }
   }, [articleText, articleTitle]);
 
-  // 保存到素材库
+  // 保存到素材库（传递编辑后的素材数据）
   const handleSaveToLibrary = useCallback(async () => {
     if (!extractionId) {
       toast.warning('请先完成提取');
@@ -790,9 +941,38 @@ export default function ArticleExtractionPanel() {
     }
     setSavingToLibrary(true);
     try {
+      // 收集所有维度的编辑后素材数据
+      const editedMaterials: Array<Record<string, any>> = [];
+      if (extraction?.relationalMaterials) {
+        const materials = extraction.relationalMaterials as RelationalMaterial[];
+        // 按维度分组，与 handleMaterialChange 的 key 格式一致 (dimensionKey:index)
+        const grouped = groupMaterialsByType(materials);
+        const dimensionOrder = ['misconception', 'analogy', 'case', 'data', 'golden_sentence', 'fixed_phrase', 'personal_fragment'];
+        dimensionOrder.forEach(dimKey => {
+          const items = grouped[dimKey] || [];
+          items.forEach((m, i) => {
+            const key = `${dimKey}:${i}`;
+            const edited = editedMaterialContents[key];
+            if (edited) {
+              // 合并编辑后的字段
+              editedMaterials.push({
+                ...m,
+                content: edited.content ?? m.content,
+                contextBefore: edited.contextBefore ?? m.contextBefore,
+                contextAfter: edited.contextAfter ?? m.contextAfter,
+                emotion: edited.emotion ?? m.emotion,
+              });
+            } else {
+              editedMaterials.push(m);
+            }
+          });
+        });
+      }
+
       const res = await fetch(`/api/article-extraction/${extractionId}/save-to-library`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ editedMaterials }),
       });
       const resp = await res.json();
       if (resp.success) {
@@ -805,7 +985,7 @@ export default function ArticleExtractionPanel() {
     } finally {
       setSavingToLibrary(false);
     }
-  }, [extractionId]);
+  }, [extractionId, extraction?.relationalMaterials, editedMaterialContents]);
 
   // 加载历史
   const loadHistory = useCallback(async () => {
@@ -1009,6 +1189,7 @@ export default function ArticleExtractionPanel() {
                 key={dim.key}
                 dimension={dim}
                 materials={extraction.groupedMaterials[dim.key] ?? []}
+                onMaterialChange={handleMaterialChange}
               />
             ))}
           </div>

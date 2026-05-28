@@ -79,7 +79,10 @@ export async function POST(
     const { id } = await params;
     const workspaceId = await getWorkspaceId(request);
     const body = await request.json().catch(() => ({}));
-    const { selectedTypes } = body as { selectedTypes?: string[] };
+    const { selectedTypes, editedMaterials } = body as {
+      selectedTypes?: string[];
+      editedMaterials?: Array<Record<string, any>>;  // 前端编辑后的素材数据（优先使用）
+    };
 
     // 查询提取记录
     const [extraction] = await db.select()
@@ -97,8 +100,10 @@ export async function POST(
       );
     }
 
-    // 获取关系型素材数据（优先使用新版字段）
-    const relationalMaterials = extraction.relationalMaterials as Array<any> || [];
+    // 获取关系型素材数据（优先使用前端编辑后的数据）
+    const relationalMaterials = editedMaterials && editedMaterials.length > 0
+      ? editedMaterials
+      : (extraction.relationalMaterials as Array<any> || []);
     
     if (relationalMaterials.length === 0) {
       return NextResponse.json(
