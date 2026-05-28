@@ -3021,8 +3021,8 @@ export default function HomePage() {
         mode: 'direct_publish',
         articleContent: providedArticle.trim(),
         articleTitle: providedArticleTitle.trim() || null,
-        // 原始指令为空（直接发文不需要AI创作）
-        originalInstruction: null,
+        // 直接发文：originalInstruction 记录用户原文（供 Agent B 参考）
+        originalInstruction: `【直接发文】${providedArticle.trim().substring(0, 200)}${providedArticle.trim().length > 200 ? '...' : ''}`,
         userOpinion: null,
         materialIds: [],
         // 发布账号
@@ -3032,7 +3032,7 @@ export default function HomePage() {
         contentTemplateId: selectedContentTemplate?.id || null,
       });
 
-      toast.success(`✅ 成功创建直接发文任务（${result.data.insertedCount} 个子步骤）`);
+      toast.success(`✅ 成功创建直接发文任务（${result.data.insertedCount} 个子步骤），请切换到"任务列表"查看执行进度`);
 
       // 提交成功后清除
       setProvidedArticle('');

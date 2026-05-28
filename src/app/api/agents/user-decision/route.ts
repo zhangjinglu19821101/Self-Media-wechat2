@@ -809,8 +809,8 @@ export async function POST(request: NextRequest) {
               const { styleTemplateService } = await import('@/lib/services/style-template-service');
               const templateId = await styleTemplateService.getTemplateIdByAccount((subTask.metadata as any)?.accountId || '');
               if (templateId) {
-                const rules = await digitalAssetService.listStyleRules(templateId);
-                const colorRule = rules.find(r => r.ruleType === 'color_scheme' && r.metadata?.primaryColor);
+                const rules = await digitalAssetService.listStyleRules({ templateId });
+                const colorRule = rules.items?.find(r => r.ruleType === 'color_scheme' && r.metadata?.primaryColor);
                 if (colorRule) {
                   customColorScheme = {
                     primaryColor: colorRule.metadata.primaryColor,

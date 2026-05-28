@@ -294,8 +294,8 @@ export const ZHIHU_DIRECT_PUBLISH_TEMPLATE = createFlowTemplate(
   [
     { id: 'node-dp-zhihu-1', executor: 'user_preview_edit', title: '确认文章内容', description: '用户确认提供的文章内容，可修改调整或直接确认继续', styleKey: 'dp_confirm' },
     { id: 'node-dp-zhihu-2', executor: 'T', title: '合规校验', description: '对文章进行合规性校验，检查是否包含绝对化用语、虚假承诺、违规营销等内容', styleKey: 'dp_check' },
-    { id: 'node-dp-zhihu-3', executor: 'T', title: '生成预览图', description: '生成知乎文章预览图，供用户手动发布使用', styleKey: 'dp_upload' },
-    { id: 'node-dp-zhihu-4', executor: 'B', title: '最终审核确认', description: '审核文章质量、合规性，确认是否可以正式发布', styleKey: 'dp_final' },
+    { id: 'node-dp-zhihu-3', executor: 'insurance-zhihu', title: '完成合规整改', description: '依据合规校验结果，完成文章整改（修改违规内容、调整表述）', styleKey: 'dp_fix' },
+    { id: 'node-dp-zhihu-4', executor: 'T', title: '生成预览图', description: '生成知乎文章预览图，供用户手动发布使用', styleKey: 'dp_upload' },
   ]
 );
 
@@ -310,8 +310,8 @@ export const TOUTIAO_DIRECT_PUBLISH_TEMPLATE = createFlowTemplate(
   [
     { id: 'node-dp-toutiao-1', executor: 'user_preview_edit', title: '确认文章内容', description: '用户确认提供的文章内容，可修改调整或直接确认继续', styleKey: 'dp_confirm' },
     { id: 'node-dp-toutiao-2', executor: 'T', title: '合规校验', description: '对文章进行合规性校验，检查是否包含绝对化用语、虚假承诺、违规营销等内容', styleKey: 'dp_check' },
-    { id: 'node-dp-toutiao-3', executor: 'T', title: '生成预览图', description: '生成头条文章预览图，供用户手动发布使用', styleKey: 'dp_upload' },
-    { id: 'node-dp-toutiao-4', executor: 'B', title: '最终审核确认', description: '审核文章质量、合规性，确认是否可以正式发布', styleKey: 'dp_final' },
+    { id: 'node-dp-toutiao-3', executor: 'insurance-toutiao', title: '完成合规整改', description: '依据合规校验结果，完成文章整改（修改违规内容、调整表述）', styleKey: 'dp_fix' },
+    { id: 'node-dp-toutiao-4', executor: 'T', title: '生成预览图', description: '生成头条文章预览图，供用户手动发布使用', styleKey: 'dp_upload' },
   ]
 );
 

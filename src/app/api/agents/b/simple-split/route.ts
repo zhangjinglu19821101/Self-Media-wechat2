@@ -589,6 +589,21 @@ export async function POST(request: NextRequest) {
 
     console.log('✅ [Agent B 简化拆解] 成功插入', insertedSubTasks.length, '个子任务');
 
+    // 🔴 P0 修复：创建任务后异步触发执行引擎（不再依赖 cron 轮询）
+    // 使用 setTimeout 确保不阻塞 API 响应，引擎会自动跳过已执行的任务
+    try {
+      const { SubtaskExecutionEngine } = await import('@/lib/services/subtask-execution-engine');
+      const engine = new SubtaskExecutionEngine();
+      // 异步触发，不等待结果
+      setTimeout(() => {
+        engine.execute().catch((err: unknown) => {
+          console.error('[Agent B 简化拆解] 异步触发执行引擎失败:', err);
+        });
+      }, 500); // 延迟500ms，确保数据库事务已提交
+    } catch (engineErr) {
+      console.warn('[Agent B 简化拆解] 触发执行引擎失败（不影响任务创建）:', engineErr);
+    }
+
     return NextResponse.json({
       success: true,
       message: `成功创建 ${insertedSubTasks.length} 个子任务${isMultiPlatform ? `（${isDirectPublishMode ? '直接发文+' : ''}基础文章+平台适配协同模式）` : isDirectPublishMode ? '（直接发文模式）' : ''}`,
