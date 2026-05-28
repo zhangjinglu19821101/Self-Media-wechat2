@@ -25,7 +25,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { Loader2, Plus, Trash2, Send, Sparkles, ListTodo, CheckCircle2, XCircle, GripVertical, MoveUp, MoveDown, Maximize2, Minimize2, AlertTriangle, GitCompare, RefreshCw, FileText, Save, Eye, Home, BookmarkPlus, ExternalLink, BookOpen, Clock, Building2, X, HelpCircle, Settings, Rocket, Layers, ChevronDown, ChevronUp, Cpu, Brain, Bell, Workflow, Palette, PenTool, ArrowRight, ArrowLeft, Briefcase, Shield, Users, Download, Copy, ImageIcon, Check, AlertCircle, Calendar, Lock, Search, Globe, Edit3, Lightbulb, MessageSquare } from 'lucide-react';
+import { Loader2, Plus, Trash2, Send, Sparkles, ListTodo, CheckCircle2, XCircle, GripVertical, MoveUp, MoveDown, Maximize2, Minimize2, AlertTriangle, GitCompare, RefreshCw, FileText, Save, Eye, Home, BookmarkPlus, ExternalLink, BookOpen, Clock, Building2, X, HelpCircle, Settings, Rocket, Layers, ChevronDown, ChevronUp, Cpu, Brain, Bell, Workflow, Palette, PenTool, ArrowRight, ArrowLeft, Briefcase, Shield, Users, Download, Copy, ImageIcon, Check, AlertCircle, Calendar, Lock, Search, Globe, Edit3, Lightbulb, MessageSquare, FileUp, ClipboardPaste } from 'lucide-react';
 import { toast } from 'sonner';
 import { AgentTaskListNormal } from '@/components/agent-task-list-normal';
 import { XiaohongshuPreview } from '@/components/xiaohongshu-preview';
@@ -527,6 +527,10 @@ export default function HomePage() {
 
   // 🔥 创作引导相关状态
   const [showCreationGuide, setShowCreationGuide] = useState(true);
+  // 🔥🔥🔥 直接发文模式状态
+  const [creationMode, setCreationMode] = useState<'ai_create' | 'direct_publish'>('ai_create');
+  const [providedArticle, setProvidedArticle] = useState('');
+  const [providedArticleTitle, setProvidedArticleTitle] = useState('');
   const [activeGuideCard, setActiveGuideCard] = useState<'content' | 'paradigm' | 'platform' | 'guide' | null>(null);
   const [activeGuideTab, setActiveGuideTab] = useState<'opinion' | 'material' | 'aiGenerate'>('opinion');
   
@@ -990,6 +994,13 @@ export default function HomePage() {
       loadAccountConfigs();
     }
   }, [hasSplitResult]);
+
+  // 🔥 直接发文模式：切换到直接发文时自动加载账号列表
+  useEffect(() => {
+    if (creationMode === 'direct_publish' && accountConfigs.length === 0) {
+      loadAccountConfigs();
+    }
+  }, [creationMode]);
 
   // 🔥 获取范式列表 + 范式初始化状态（页面加载时）
   useEffect(() => {
@@ -2965,6 +2976,81 @@ export default function HomePage() {
     toast.success('🔄 提交按钮已重置，请重新尝试');
   };
 
+  // 🔥🔥🔥 直接发文模式提交函数
+  const handleDirectPublishSubmit = async () => {
+    // 1. 立即加锁，防止重复点击
+    if (submitLockRef.current) {
+      toast.warning('正在创建中，请勿重复点击');
+      return;
+    }
+
+    // 2. 校验必填字段
+    if (!providedArticle.trim()) {
+      toast.error('请填写文章内容');
+      return;
+    }
+    if (providedArticle.trim().length < 50) {
+      toast.error('文章内容至少50字');
+      return;
+    }
+    if (!taskTitle.trim()) {
+      toast.error('请填写任务标题');
+      return;
+    }
+    if (!executionDate) {
+      toast.error('请选择执行日期');
+      return;
+    }
+    if (selectedAccountIds.length === 0) {
+      toast.error('请选择至少一个发布账号');
+      return;
+    }
+
+    // 3. 加锁并设置状态
+    submitLockRef.current = true;
+    setIsSubmitting(true);
+
+    try {
+      const result: any = await apiPost('/api/agents/b/simple-split', {
+        taskTitle,
+        taskDescription: `直接发文：${providedArticleTitle || taskTitle}`,
+        executionDate,
+        subTasks: [], // 直接发文模式不需要前端传递子任务，后端根据 mode 自动生成
+        tempSessionId,
+        // 直接发文模式核心参数
+        mode: 'direct_publish',
+        articleContent: providedArticle.trim(),
+        articleTitle: providedArticleTitle.trim() || null,
+        // 原始指令为空（直接发文不需要AI创作）
+        originalInstruction: null,
+        userOpinion: null,
+        materialIds: [],
+        // 发布账号
+        accountId: selectedAccountIds[0] || null,
+        accountIds: selectedAccountIds.length > 0 ? selectedAccountIds : null,
+        // 内容模板ID
+        contentTemplateId: selectedContentTemplate?.id || null,
+      });
+
+      toast.success(`✅ 成功创建直接发文任务（${result.data.insertedCount} 个子步骤）`);
+
+      // 提交成功后清除
+      setProvidedArticle('');
+      setProvidedArticleTitle('');
+      setTempSessionId(null);
+
+      // 触发任务列表刷新
+      setTaskListRefreshKey(prev => prev + 1);
+
+    } catch (error: any) {
+      if (checkApiKeyMissing(error)) return;
+      toast.error(`❌ 创建失败: ${error.message}`);
+    } finally {
+      submitLockRef.current = false;
+      setIsSubmitting(false);
+    }
+  };
+
   // 🔥 主提交函数
   const handleSubmit = async () => {
     // 1. 立即加锁，防止重复点击
@@ -3288,6 +3374,226 @@ export default function HomePage() {
               </div>
             </CardHeader>
         <CardContent className="space-y-6">
+          {/* 🔥🔥🔥 模式切换器：AI创作 / 直接发文 */}
+          <div className="flex items-center gap-2 p-1 bg-slate-100 rounded-xl w-fit">
+            <button
+              onClick={() => setCreationMode('ai_create')}
+              className={`flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 ${
+                creationMode === 'ai_create'
+                  ? 'bg-gradient-to-r from-blue-500 to-sky-500 text-white shadow-md shadow-blue-200/50'
+                  : 'text-slate-600 hover:bg-white/60'
+              }`}
+            >
+              <Sparkles className="w-4 h-4" />
+              AI 创作
+            </button>
+            <button
+              onClick={() => setCreationMode('direct_publish')}
+              className={`flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 ${
+                creationMode === 'direct_publish'
+                  ? 'bg-gradient-to-r from-emerald-500 to-teal-500 text-white shadow-md shadow-emerald-200/50'
+                  : 'text-slate-600 hover:bg-white/60'
+              }`}
+            >
+              <FileUp className="w-4 h-4" />
+              直接发文
+            </button>
+          </div>
+
+          {/* ========== 直接发文模式 ========== */}
+          {creationMode === 'direct_publish' && (
+            <div className="space-y-5 p-6 bg-gradient-to-br from-emerald-50 via-teal-50 to-green-50 rounded-xl border border-emerald-100 shadow-sm">
+              <div className="flex items-center gap-3 mb-1">
+                <div className="p-2 bg-gradient-to-r from-emerald-500 to-teal-500 rounded-lg">
+                  <FileUp className="w-5 h-5 text-white" />
+                </div>
+                <h3 className="font-semibold text-xl text-slate-800">
+                  直接发文
+                </h3>
+                <span className="text-xs text-emerald-600 bg-emerald-100 px-2 py-0.5 rounded-full">无需AI创作，直接发布</span>
+              </div>
+
+              {/* 任务标题 */}
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-slate-700 flex items-center gap-2">
+                  <FileText className="w-4 h-4 text-emerald-500" />
+                  任务标题
+                  <span className="text-xs text-slate-400 font-normal">（必填）</span>
+                </label>
+                <Input
+                  value={taskTitle}
+                  onChange={(e) => setTaskTitle(e.target.value)}
+                  placeholder="例如：主题《存款，是放在银行大额存单还是保险的增额寿》"
+                  className="border-emerald-200 focus:ring-emerald-500 focus:border-emerald-500 bg-white/70"
+                />
+              </div>
+
+              {/* 文章标题 */}
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-slate-700 flex items-center gap-2">
+                  <BookOpen className="w-4 h-4 text-emerald-500" />
+                  文章标题
+                  <span className="text-xs text-slate-400 font-normal">（可选，不填则使用任务标题）</span>
+                </label>
+                <Input
+                  value={providedArticleTitle}
+                  onChange={(e) => setProvidedArticleTitle(e.target.value)}
+                  placeholder="文章的正式标题"
+                  className="border-emerald-200 focus:ring-emerald-500 focus:border-emerald-500 bg-white/70"
+                />
+              </div>
+
+              {/* 文章内容 */}
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-slate-700 flex items-center gap-2">
+                  <ClipboardPaste className="w-4 h-4 text-emerald-500" />
+                  文章内容
+                  <span className="text-xs text-slate-400 font-normal">（必填，粘贴完整文章，系统将原样发布）</span>
+                </label>
+                <Textarea
+                  value={providedArticle}
+                  onChange={(e) => setProvidedArticle(e.target.value)}
+                  placeholder={"粘贴完整文章内容...\n\n支持 HTML 格式（公众号文章可直接从编辑器复制HTML）\n支持纯文本格式\n\n文章内容将原样使用，不会被AI修改"}
+                  rows={12}
+                  className="font-mono text-sm border-emerald-200 focus:ring-emerald-500 focus:border-emerald-500 bg-white/70 min-h-[240px]"
+                />
+                <div className="flex justify-between items-center">
+                  <p className="text-xs text-slate-400">
+                    文章将原样发布，不经过AI修改。系统仅提供格式化、合规校验和多平台上传能力
+                  </p>
+                  <span className={`text-xs font-medium ${providedArticle.length >= 50 ? 'text-emerald-500' : 'text-amber-500'}`}>
+                    {providedArticle.length} 字 {providedArticle.length > 0 && providedArticle.length < 50 && '(至少50字)'}
+                  </span>
+                </div>
+              </div>
+
+              {/* 执行日期 */}
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-slate-700 flex items-center gap-2">
+                  <Calendar className="w-4 h-4 text-emerald-500" />
+                  执行日期
+                  <span className="text-xs text-slate-400 font-normal">（必填）</span>
+                </label>
+                <Input
+                  type="date"
+                  value={executionDate}
+                  onChange={(e) => setExecutionDate(e.target.value)}
+                  className="border-emerald-200 focus:ring-emerald-500 focus:border-emerald-500 bg-white/70 w-48"
+                />
+              </div>
+
+              {/* 发布账号选择 */}
+              <div className="space-y-3">
+                <label className="text-sm font-medium text-slate-700 flex items-center gap-2">
+                  <Users className="w-4 h-4 text-emerald-500" />
+                  发布账号
+                  <span className="text-xs text-slate-400 font-normal">（必填，选择1-3个平台）</span>
+                </label>
+                {loadingAccounts ? (
+                  <div className="flex items-center gap-2 text-sm text-slate-400">
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    加载账号中...
+                  </div>
+                ) : accountConfigs.length === 0 ? (
+                  <p className="text-sm text-slate-400">暂无发布账号，请先在账号管理中创建</p>
+                ) : (
+                  <div className="flex flex-wrap gap-2">
+                    {accountConfigs.map(({ account, template }) => {
+                      const isSelected = selectedAccountIds.includes(account.id);
+                      const platform = account.platform || 'wechat_official';
+                      const platformLabel = PLATFORM_LABELS[platform as keyof typeof PLATFORM_LABELS] || platform;
+                      const isPrimary = selectedAccountIds.indexOf(account.id) === 0;
+                      return (
+                        <button
+                          key={account.id}
+                          onClick={() => {
+                            setSelectedAccountIds(prev => {
+                              if (prev.includes(account.id)) {
+                                return prev.filter(id => id !== account.id);
+                              }
+                              if (prev.length >= 3) {
+                                toast.warning('最多选择3个平台');
+                                return prev;
+                              }
+                              return [...prev, account.id];
+                            });
+                          }}
+                          className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm border transition-all ${
+                            isSelected
+                              ? 'border-emerald-400 bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200'
+                              : 'border-slate-200 bg-white text-slate-500 hover:border-slate-300'
+                          }`}
+                        >
+                          <span>{platformLabel}</span>
+                          <span className="font-medium">{account.accountName || account.id}</span>
+                          {template && (
+                            <span className="text-[10px] text-slate-400">{template.name}</span>
+                          )}
+                          {isSelected && isPrimary && (
+                            <span className="text-[10px] bg-emerald-500 text-white px-1.5 py-0.5 rounded-full">主账号</span>
+                          )}
+                          {isSelected && !isPrimary && (
+                            <Check className="w-3.5 h-3.5 text-emerald-500" />
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              {/* 提交按钮 */}
+              <div className="flex items-center gap-3 pt-2">
+                <Button
+                  onClick={handleDirectPublishSubmit}
+                  disabled={isSubmitting || !providedArticle.trim() || providedArticle.trim().length < 50 || !taskTitle.trim() || !executionDate || selectedAccountIds.length === 0}
+                  className="bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 shadow-lg shadow-emerald-200/50 h-11 text-base px-8"
+                >
+                  {isSubmitting ? (
+                    <>
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      创建中...
+                    </>
+                  ) : (
+                    <>
+                      <Send className="w-4 h-4 mr-2" />
+                      直接发文
+                    </>
+                  )}
+                </Button>
+                {isSubmitting && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={resetSubmitLock}
+                    className="text-slate-400"
+                  >
+                    <RefreshCw className="w-4 h-4 mr-1" />
+                    重置
+                  </Button>
+                )}
+              </div>
+
+              {/* 流程说明 */}
+              <div className="mt-4 p-4 bg-white/60 rounded-lg border border-emerald-100">
+                <h4 className="text-sm font-medium text-slate-600 mb-2">直接发文流程</h4>
+                <div className="flex items-center gap-2 text-xs text-slate-500 flex-wrap">
+                  <span className="bg-emerald-100 text-emerald-700 px-2 py-1 rounded">粘贴文章</span>
+                  <span className="text-slate-300">→</span>
+                  <span className="bg-blue-100 text-blue-700 px-2 py-1 rounded">预览确认</span>
+                  <span className="text-slate-300">→</span>
+                  <span className="bg-amber-100 text-amber-700 px-2 py-1 rounded">合规校验</span>
+                  <span className="text-slate-300">→</span>
+                  <span className="bg-purple-100 text-purple-700 px-2 py-1 rounded">多平台上传</span>
+                </div>
+                <p className="text-xs text-slate-400 mt-2">文章内容不会被AI修改，系统仅负责格式化和多平台分发</p>
+              </div>
+            </div>
+          )}
+
+          {/* ========== AI创作模式 ========== */}
+          {creationMode === 'ai_create' && (
+          <>
           {/* AI 智能拆解区域 - 统一天蓝色系，优化视觉层次 */}
           <div className="space-y-5 p-6 bg-gradient-to-br from-blue-50 via-sky-50 to-indigo-50 rounded-xl border border-blue-100 shadow-sm">
             <div className="flex items-center gap-3 mb-1">
@@ -5160,6 +5466,8 @@ export default function HomePage() {
               </Tooltip>
             </TooltipProvider>
           </div>
+          </>
+          )}
         </CardContent>
       </Card>
 

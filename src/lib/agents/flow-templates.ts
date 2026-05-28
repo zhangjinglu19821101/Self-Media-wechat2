@@ -57,6 +57,17 @@ const NODE_STYLES = {
   toutiao_deai: { icon: '✨', color: 'from-amber-500 to-orange-600' },
   toutiao_preview: { icon: '👁️', color: 'from-purple-500 to-orange-600' },
   toutiao_check: { icon: '✅', color: 'from-amber-500 to-orange-600' },
+  
+  // 直接发文模式样式
+  dp_confirm: { icon: '📋', color: 'from-emerald-500 to-green-600' },
+  dp_check: { icon: '✅', color: 'from-amber-500 to-orange-600' },
+  dp_fix: { icon: '🔧', color: 'from-sky-500 to-blue-600' },
+  dp_upload: { icon: '📤', color: 'from-teal-500 to-cyan-600' },
+  dp_final: { icon: '🏁', color: 'from-indigo-500 to-violet-600' },
+  dp_xhs_confirm: { icon: '📋', color: 'from-rose-500 to-pink-600' },
+  dp_xhs_check: { icon: '✅', color: 'from-amber-500 to-orange-600' },
+  dp_xhs_fix: { icon: '🔧', color: 'from-rose-500 to-red-600' },
+  dp_xhs_final: { icon: '👁️', color: 'from-purple-500 to-pink-600' },
 } as const;
 
 // ============ 平台默认流程模板定义 ============
@@ -222,6 +233,144 @@ export const USER_PREVIEW_EDIT_EXECUTOR = 'user_preview_edit';
 export function isVirtualExecutor(executor: string | undefined | null): boolean {
   if (!executor) return false;
   return executor === USER_PREVIEW_EDIT_EXECUTOR;
+}
+
+// ============ 直接发文模式流程模板 ============
+
+/**
+ * 直接发文模式：用户提供完整文章，跳过AI写作环节，直接进入合规校验+上传流程
+ *
+ * 设计原则：
+ * 1. 用户文章原文不动，系统仅提供平台格式化能力和多平台上传能力
+ * 2. 第一步为 user_preview_edit（虚拟执行器），用户确认文章后进入后续流程
+ * 3. 文章内容通过 metadata.providedArticle 传递，引擎自动注入到预览节点
+ * 4. 下游合规校验、上传等节点与AI创作模式完全一致
+ *
+ * 与AI创作模式对比：
+ * - AI创作：分析→撰写→去AI化→预览→合规校验→合规整改→上传（7步）
+ * - 直接发文：确认文章→合规校验→合规整改→上传（4步）
+ */
+
+/**
+ * 微信公众号直接发文流程（4步）
+ */
+export const WECHAT_DIRECT_PUBLISH_TEMPLATE = createFlowTemplate(
+  'wechat-direct-publish',
+  'wechat_official',
+  '微信公众号',
+  '公众号文章直接发布流程',
+  [
+    { id: 'node-dp-wechat-1', executor: 'user_preview_edit', title: '确认文章内容', description: '用户确认提供的文章内容，可修改调整或直接确认继续。文章将原样用于后续合规校验和上传', styleKey: 'dp_confirm' },
+    { id: 'node-dp-wechat-2', executor: 'T', title: '合规校验', description: '对文章进行合规性校验，检查是否包含绝对化用语、虚假承诺、违规营销等内容', styleKey: 'dp_check' },
+    { id: 'node-dp-wechat-3', executor: 'insurance-d', title: '完成合规整改', description: '依据合规校验结果，完成文章整改（修改违规内容、调整表述）', styleKey: 'dp_fix' },
+    { id: 'node-dp-wechat-4', executor: 'T', title: '上传公众号草稿箱', description: '将文章上传至公众号草稿箱，配置原创声明、赞赏等设置', styleKey: 'dp_upload' },
+  ]
+);
+
+/**
+ * 小红书直接发文流程（4步）
+ */
+export const XIAOHONGSHU_DIRECT_PUBLISH_TEMPLATE = createFlowTemplate(
+  'xiaohongshu-direct-publish',
+  'xiaohongshu',
+  '小红书',
+  '小红书图文直接发布流程',
+  [
+    { id: 'node-dp-xhs-1', executor: 'user_preview_edit', title: '确认图文内容', description: '用户确认提供的图文内容，可修改标题/要点/正文/标签或直接确认继续', styleKey: 'dp_xhs_confirm' },
+    { id: 'node-dp-xhs-2', executor: 'T', title: '合规校验', description: '对小红书图文进行合规性校验，检查是否包含绝对化用语、虚假承诺、违规营销等内容', styleKey: 'dp_xhs_check' },
+    { id: 'node-dp-xhs-3', executor: 'insurance-xiaohongshu', title: '完成合规整改', description: '依据合规校验结果，完成小红书图文整改', styleKey: 'dp_xhs_fix' },
+    { id: 'node-dp-xhs-4', executor: 'user_preview_edit', title: '用户预览终稿', description: '合规整改后的终稿确认，用户审阅最终图文内容。此节点由用户操作，非Agent执行', styleKey: 'dp_xhs_final' },
+  ]
+);
+
+/**
+ * 知乎直接发文流程（4步）
+ */
+export const ZHIHU_DIRECT_PUBLISH_TEMPLATE = createFlowTemplate(
+  'zhihu-direct-publish',
+  'zhihu',
+  '知乎',
+  '知乎文章直接发布流程',
+  [
+    { id: 'node-dp-zhihu-1', executor: 'user_preview_edit', title: '确认文章内容', description: '用户确认提供的文章内容，可修改调整或直接确认继续', styleKey: 'dp_confirm' },
+    { id: 'node-dp-zhihu-2', executor: 'T', title: '合规校验', description: '对文章进行合规性校验，检查是否包含绝对化用语、虚假承诺、违规营销等内容', styleKey: 'dp_check' },
+    { id: 'node-dp-zhihu-3', executor: 'T', title: '生成预览图', description: '生成知乎文章预览图，供用户手动发布使用', styleKey: 'dp_upload' },
+    { id: 'node-dp-zhihu-4', executor: 'B', title: '最终审核确认', description: '审核文章质量、合规性，确认是否可以正式发布', styleKey: 'dp_final' },
+  ]
+);
+
+/**
+ * 头条/抖音直接发文流程（4步）
+ */
+export const TOUTIAO_DIRECT_PUBLISH_TEMPLATE = createFlowTemplate(
+  'toutiao-direct-publish',
+  'douyin',
+  '今日头条/抖音',
+  '头条文章直接发布流程',
+  [
+    { id: 'node-dp-toutiao-1', executor: 'user_preview_edit', title: '确认文章内容', description: '用户确认提供的文章内容，可修改调整或直接确认继续', styleKey: 'dp_confirm' },
+    { id: 'node-dp-toutiao-2', executor: 'T', title: '合规校验', description: '对文章进行合规性校验，检查是否包含绝对化用语、虚假承诺、违规营销等内容', styleKey: 'dp_check' },
+    { id: 'node-dp-toutiao-3', executor: 'T', title: '生成预览图', description: '生成头条文章预览图，供用户手动发布使用', styleKey: 'dp_upload' },
+    { id: 'node-dp-toutiao-4', executor: 'B', title: '最终审核确认', description: '审核文章质量、合规性，确认是否可以正式发布', styleKey: 'dp_final' },
+  ]
+);
+
+/**
+ * 直接发文模式 - 平台流程映射
+ */
+export const DIRECT_PUBLISH_FLOW_MAP: Record<string, FlowTemplate> = {
+  wechat_official: WECHAT_DIRECT_PUBLISH_TEMPLATE,
+  xiaohongshu: XIAOHONGSHU_DIRECT_PUBLISH_TEMPLATE,
+  zhihu: ZHIHU_DIRECT_PUBLISH_TEMPLATE,
+  douyin: TOUTIAO_DIRECT_PUBLISH_TEMPLATE,
+  weibo: TOUTIAO_DIRECT_PUBLISH_TEMPLATE, // 微博复用头条模板
+};
+
+/**
+ * 根据平台获取直接发文流程模板
+ */
+export function getDirectPublishTemplate(platform: string): FlowTemplate {
+  return DIRECT_PUBLISH_FLOW_MAP[platform] || WECHAT_DIRECT_PUBLISH_TEMPLATE;
+}
+
+/**
+ * 获取直接发文模式的适配步骤（4步精简版）
+ * 与AI创作模式的适配步骤相同，但不含去AI化节点（因为用户文章已经是真人写的）
+ */
+export function getDirectPublishAdaptationSteps(platform: string): Array<{
+  executor: string;
+  title: string;
+  description: string;
+  styleKey: keyof typeof ADAPTATION_NODE_STYLES;
+}> {
+  const executor = getExecutorForPlatform(platform);
+  const platformLabel = {
+    xiaohongshu: '小红书',
+    zhihu: '知乎',
+    douyin: '头条/抖音',
+    weibo: '微博',
+  }[platform] || platform;
+
+  return [
+    {
+      executor,
+      title: `适配${platformLabel}版本`,
+      description: `基于用户提供的文章，适配改写为${platformLabel}平台风格和格式。必须基于原文改写，不得自行创作新内容`,
+      styleKey: 'adapt_write',
+    },
+    {
+      executor: 'user_preview_edit',
+      title: `用户预览${platformLabel}版本`,
+      description: `用户预览${platformLabel}适配版本，可修改或直接确认`,
+      styleKey: 'adapt_preview',
+    },
+    {
+      executor: 'T',
+      title: '合规校验',
+      description: `对${platformLabel}适配版本进行合规性校验`,
+      styleKey: 'adapt_check',
+    },
+  ];
 }
 
 // ============ 多平台协同流程模板（两阶段架构） ============

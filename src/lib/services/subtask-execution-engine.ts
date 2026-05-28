@@ -1607,6 +1607,50 @@ export class SubtaskExecutionEngine {
       return;
     }
 
+    // 🔥🔥🔥 直接发文模式：从 metadata.providedArticle 获取用户文章
+    const taskMetadata = task.metadata as Record<string, unknown> || {};
+    const providedArticle = taskMetadata.providedArticle as string | undefined;
+    const providedArticleTitle = taskMetadata.providedArticleTitle as string | undefined;
+    const isDirectPublish = !!providedArticle;
+
+    if (isDirectPublish) {
+      // ========== 直接发文模式 ==========
+      console.log('[SubtaskEngine] 👁️ 直接发文模式：使用用户提供的文章', {
+        taskId: task.id,
+        contentLength: providedArticle.length,
+        articleTitle: providedArticleTitle || '(自动提取)',
+      });
+
+      const platform = (taskMetadata.platform as string) || 'wechat_official';
+
+      const overrideResultData = {
+        interactionType: 'preview_edit_article',
+        articleContent: providedArticle,
+        articleTitle: providedArticleTitle || '',
+        platform,
+        platformRenderData: null,
+        writingTaskId: null,
+        canEdit: true,
+        canSkip: true,
+        isDirectPublish: true,
+      };
+
+      await this.markTaskWaitingUser(
+        lockedTask,
+        '请确认您提供的文章内容，可修改调整或直接确认继续',
+        overrideResultData
+      );
+
+      console.log('[SubtaskEngine] 👁️ 直接发文预览节点已设为 waiting_user:', {
+        taskId: task.id,
+        platform,
+        contentLength: providedArticle.length,
+      });
+      return;
+    }
+
+    // ========== AI创作模式（原有逻辑） ==========
+
     // 2. 查找前序写作任务
     const previousTasks = await db
       .select()
@@ -1695,7 +1739,7 @@ export class SubtaskExecutionEngine {
     // 🔥🔥🔥 【架构改造】平台渲染数据提取
     // result_text 是通用纯文本，不与平台渲染耦合
     // 平台专属的渲染数据（如小红书卡片）通过 platformRenderData 独立传递
-    let platformRenderData: Record<string, unknown> | null = null;
+    let platformRenderData: import('@/lib/platform-render/types').PlatformRenderData | Record<string, unknown> | null = null;
     let platformDataSource: typeof agentSubTasks.$inferSelect | undefined;
     if (effectiveWritingTask?.fromParentsExecutor === 'deai-optimizer') {
       // deai-optimizer → 复用单次遍历结果，从原始写作任务获取渲染数据
@@ -1718,7 +1762,7 @@ export class SubtaskExecutionEngine {
           writingTaskResultDataType: typeof platformDataSource.resultData,
         });
         platformRenderData = extractPlatformRenderData(
-          platform,
+          platform as import('@/lib/db/schema/style-template').PlatformType,
           platformDataSource.resultData,
           (task.metadata as Record<string, unknown>) || {}
         );

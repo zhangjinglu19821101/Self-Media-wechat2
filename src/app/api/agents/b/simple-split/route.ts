@@ -14,7 +14,7 @@ import { platformAccounts, PLATFORM_LABELS } from '@/lib/db/schema/style-templat
 import { v4 as uuidv4 } from 'uuid';
 import { sql, eq } from 'drizzle-orm';
 import { getWorkspaceId } from '@/lib/auth/context';
-import { getFlowTemplate, SubTaskTemplate, splitBaseAndAdaptationGroups, getAdaptationSteps, isBaseArticlePlatform } from '@/lib/agents/flow-templates';
+import { getFlowTemplate, SubTaskTemplate, splitBaseAndAdaptationGroups, getAdaptationSteps, isBaseArticlePlatform, getDirectPublishTemplate, getDirectPublishAdaptationSteps } from '@/lib/agents/flow-templates';
 import { getExecutorForPlatform, isWritingAgent } from '@/lib/agents/agent-registry';
 
 /**
@@ -91,7 +91,22 @@ export async function POST(request: NextRequest) {
       // useFlowTemplate 已移除：步骤来源由数据特征自动判断
       // 前端 subTasks 中包含 accountId 字段 → 使用前端编辑步骤
       // 否则 → 使用流程模板兜底
+      mode, // 🔥 创作模式：'creation'(AI创作,默认) | 'direct_publish'(直接发文)
+      articleContent, // 🔥 直接发文模式：用户提供的完整文章内容
+      articleTitle, // 🔥 直接发文模式：文章标题
     } = body;
+
+    // 🔥🔥🔥 直接发文模式校验
+    const isDirectPublishMode = mode === 'direct_publish';
+    if (isDirectPublishMode && (!articleContent || articleContent.trim().length < 50)) {
+      return NextResponse.json(
+        { success: false, error: '直接发文模式必须提供文章内容（至少50字）' },
+        { status: 400 }
+      );
+    }
+    if (isDirectPublishMode) {
+      console.log(`🔵 [Agent B 简化拆解] 🔥 直接发文模式：用户提供完整文章（${articleContent.length}字，标题: ${articleTitle || '(自动提取)'}）`);
+    }
 
     // 🔥🔥🔥 转换 paradigmMaterialBindings 格式：前端传 Record<string,string>，后端存储 Array<{slotId,materialId}>
     const normalizedParadigmMaterialBindings: Array<{ slotId: string; materialId: string }> | null =
@@ -122,6 +137,7 @@ export async function POST(request: NextRequest) {
       contentTemplateId: contentTemplateId || '(未选择)', // 🔥🔥 内容模板
       hasParadigmMaterialBindings: !!normalizedParadigmMaterialBindings, // 🔥 范式-素材位置绑定
       hasFrontendSteps: subTasks?.some((st: any) => st.accountId) || false,
+      mode: mode || 'creation', // 🔥 创作模式
     });
 
     // 🔥 步骤来源判断（纯数据特征，无需 useFlowTemplate 开关）：
@@ -132,6 +148,22 @@ export async function POST(request: NextRequest) {
 
     if (hasFrontendSteps) {
       console.log(`🔵 [Agent B 简化拆解] 🔥 检测到前端编辑步骤（含 accountId），优先使用前端步骤`);
+    } else if (isDirectPublishMode) {
+      // 🔥 直接发文模式：使用直接发文流程模板（跳过分析/写作/去AI化）
+      if (effectiveAccountIds.length === 1) {
+        const accountInfo = await getAccountInfo(effectiveAccountIds[0]);
+        const dpTemplate = getDirectPublishTemplate(accountInfo.platform);
+        console.log(`🔵 [Agent B 简化拆解] 🔥 直接发文模式，使用流程模板: ${dpTemplate.name}（平台: ${accountInfo.platform}）`);
+        effectiveSubTasks = dpTemplate.steps.map(step => ({
+          title: step.title,
+          description: step.description,
+          executor: step.executor,
+          orderIndex: step.orderIndex,
+        }));
+      } else if (effectiveAccountIds.length > 1) {
+        console.log(`🔵 [Agent B 简化拆解] 🔥 直接发文多平台模式，每个平台使用各自的直接发文流程模板`);
+        effectiveSubTasks = [];
+      }
     } else {
       // 无前端步骤 → 使用流程模板兜底
       if (effectiveAccountIds.length === 1) {
@@ -271,7 +303,9 @@ export async function POST(request: NextRequest) {
         if (hasFrontendSteps) {
           baseSubTasks = effectiveSubTasks.filter((st: any) => st.accountId === baseAccountId);
           if (baseSubTasks.length === 0) {
-            const fallbackTemplate = getFlowTemplate(baseAccountInfo.platform);
+            const fallbackTemplate = isDirectPublishMode
+              ? getDirectPublishTemplate(baseAccountInfo.platform)
+              : getFlowTemplate(baseAccountInfo.platform);
             baseSubTasks = fallbackTemplate.steps.map(step => ({
               title: step.title,
               description: step.description,
@@ -280,6 +314,16 @@ export async function POST(request: NextRequest) {
             }));
             console.log(`🔵 [Agent B 简化拆解] ⚠️ 基础组前端步骤为空，回退到流程模板: ${fallbackTemplate.name}`);
           }
+        } else if (isDirectPublishMode) {
+          // 🔥 直接发文模式：使用直接发文流程模板
+          const dpTemplate = getDirectPublishTemplate(baseAccountInfo.platform);
+          baseSubTasks = dpTemplate.steps.map(step => ({
+            title: step.title,
+            description: step.description,
+            executor: step.executor,
+            orderIndex: step.orderIndex,
+          }));
+          console.log(`🔵 [Agent B 简化拆解] 直接发文基础组使用流程模板: ${dpTemplate.name}（${baseSubTasks.length} 步）`);
         } else {
           const flowTemplate = getFlowTemplate(baseAccountInfo.platform);
           baseSubTasks = flowTemplate.steps.map(step => ({
@@ -336,7 +380,7 @@ export async function POST(request: NextRequest) {
             structuredData: structuredData || null, // 🔥 结构化创作引导数据
             metadata: {
               source: 'agent-b-simple-split',
-              phase: 'base_article', // 🔥 阶段标识：基础文章
+              phase: isDirectPublishMode ? 'direct_publish' : 'base_article', // 🔥 直接发文模式标识
               tempSessionId: newTempSessionId,
               originalTaskTitle: taskTitle,
               originalTaskDescription: taskDescription,
@@ -358,6 +402,12 @@ export async function POST(request: NextRequest) {
               ...(contentTemplateId ? { contentTemplateId } : {}),
               ...(paradigmCode ? { paradigmCode, paradigmName, paradigmDetail } : {}), // 🔥 范式数据
               ...(normalizedParadigmMaterialBindings ? { paradigmMaterialBindings: normalizedParadigmMaterialBindings } : {}), // 🔥 范式-素材位置绑定
+              // 🔥🔥 直接发文模式特有字段
+              ...(isDirectPublishMode ? {
+                providedArticle: articleContent,
+                providedArticleTitle: articleTitle || null,
+                creationMode: 'direct_publish',
+              } : {}),
             },
             createdAt: new Date(),
             updatedAt: new Date(),
@@ -383,7 +433,10 @@ export async function POST(request: NextRequest) {
           console.log(`🔵 [Agent B 简化拆解] 创建适配组 ${adaptIdx + 1}/${adaptationAccounts.length}: ${adaptAcc.platformLabel}(${adaptAcc.accountName})`);
 
           // 获取适配步骤（4步精简版）
-          const adaptationSteps = getAdaptationSteps(adaptAcc.platform);
+          // 🔥 直接发文模式：使用直接发文的适配步骤（不含去AI化节点）
+          const adaptationSteps = isDirectPublishMode
+            ? getDirectPublishAdaptationSteps(adaptAcc.platform)
+            : getAdaptationSteps(adaptAcc.platform);
 
           for (let i = 0; i < adaptationSteps.length; i++) {
             const step = adaptationSteps[i];
@@ -435,6 +488,8 @@ export async function POST(request: NextRequest) {
                 ...(contentTemplateId ? { contentTemplateId } : {}),
                 ...(paradigmCode ? { paradigmCode, paradigmName, paradigmDetail } : {}), // 🔥 范式数据
               ...(normalizedParadigmMaterialBindings ? { paradigmMaterialBindings: normalizedParadigmMaterialBindings } : {}), // 🔥 范式-素材位置绑定
+              // 🔥🔥 直接发文模式特有字段
+              ...(isDirectPublishMode ? { creationMode: 'direct_publish' } : {}),
               },
               createdAt: new Date(),
               updatedAt: new Date(),
@@ -498,7 +553,7 @@ export async function POST(request: NextRequest) {
           structureDetail: subTask.structureDetail !== undefined ? subTask.structureDetail : (structureDetail || null),
           metadata: {
             source: 'agent-b-simple-split',
-            phase: 'creation',
+            phase: isDirectPublishMode ? 'direct_publish' : 'creation',
             tempSessionId: newTempSessionId,
             originalTaskTitle: taskTitle,
             originalTaskDescription: taskDescription,
@@ -516,6 +571,12 @@ export async function POST(request: NextRequest) {
             ...(contentTemplateId ? { contentTemplateId } : {}), // 🔥🔥 内容模板ID
             ...(paradigmCode ? { paradigmCode, paradigmName, paradigmDetail } : {}), // 🔥 范式完整数据（与多平台模式对齐）
             ...(normalizedParadigmMaterialBindings ? { paradigmMaterialBindings: normalizedParadigmMaterialBindings } : {}), // 🔥 范式-素材位置绑定
+            // 🔥🔥 直接发文模式特有字段
+            ...(isDirectPublishMode ? {
+              providedArticle: articleContent,
+              providedArticleTitle: articleTitle || null,
+              creationMode: 'direct_publish',
+            } : {}),
           },
           createdAt: new Date(),
           updatedAt: new Date(),
@@ -530,7 +591,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      message: `成功创建 ${insertedSubTasks.length} 个子任务${isMultiPlatform ? `（基础文章+平台适配协同模式）` : ''}`,
+      message: `成功创建 ${insertedSubTasks.length} 个子任务${isMultiPlatform ? `（${isDirectPublishMode ? '直接发文+' : ''}基础文章+平台适配协同模式）` : isDirectPublishMode ? '（直接发文模式）' : ''}`,
       data: {
         insertedCount: insertedSubTasks.length,
         subTasks: insertedSubTasks,

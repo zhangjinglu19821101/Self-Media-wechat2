@@ -1845,3 +1845,43 @@
      - 10套范式卡片：已初始化(绿色)/未初始化(灰色) 标识
      - 素材数量/平均匹配度/最近提取时间 展示
      - 统计摘要：已初始化数/总数、各范式素材分布
+
+86. **直接发文功能**: 在创作引导页新增"直接发文"模式，用户可直接提供完整文章，利用系统的合规校验和多平台上传能力
+   - **设计原则**: 用户提供完整文章 → 确认内容 → 合规校验 → 合规整改 → 上传，跳过AI写作环节
+   - **前端改造** (`src/app/full-home/page.tsx`):
+     - 新增创作模式切换器（AI创作 / 直接发文）
+     - 直接发文模式：文章标题输入 + 文章内容文本框 + 账号选择 + 提交
+     - `handleDirectPublishSubmit()`: 提交时传递 mode/articleContent/articleTitle 到 API
+     - 切换模式时自动加载账号配置
+   - **流程模板** (`src/lib/agents/flow-templates.ts`):
+     - 新增 `DIRECT_PUBLISH_FLOW_MAP`: 5种平台的直接发文模板
+     - `getDirectPublishTemplate(platform)`: 获取平台对应的直接发文模板
+     - `getDirectPublishAdaptationSteps(platform)`: 多平台适配步骤（3步，无去AI化）
+     - 直接发文模板步骤：确认文章内容(user_preview_edit) → 合规校验(T) → 合规整改(写作Agent) → 上传(T)
+   - **后端API** (`src/app/api/agents/b/simple-split/route.ts`):
+     - 新增 `mode: 'direct_publish'` 参数
+     - 新增 `articleContent`（必填，>=50字）和 `articleTitle`（可选）参数
+     - 单账号模式：使用 `getDirectPublishTemplate(platform)` 生成子任务
+     - 多账号模式：基础组使用直接发文模板 + 适配组使用 `getDirectPublishAdaptationSteps()`
+     - `metadata.providedArticle` 和 `metadata.providedArticleTitle` 存储用户文章
+     - `metadata.creationMode: 'direct_publish'` 标记创建模式
+   - **执行引擎改造** (`src/lib/services/subtask-execution-engine.ts`):
+     - `executeUserPreviewEditTask()`: 新增直接发文模式处理
+     - 优先检查 `metadata.providedArticle`，存在时直接设置为待确认文章
+     - 无前序写作任务时，从 metadata 获取平台信息渲染预览
+     - `resultData.articleContent` 存储用户文章内容
+     - `resultData.articleTitle` 存储文章标题
+   - **数据流**:
+     ```
+     用户输入完整文章 + 选择账号
+       → simple-split API (mode=direct_publish)
+         → 创建4步子任务（确认→校验→整改→上传）
+           → user_preview_edit 从 metadata 获取文章 → waiting_user
+             → 用户确认 → result_text = 文章内容
+               → 合规校验 → 合规整改 → 上传（与AI创作完全一致）
+     ```
+   - **多平台直接发文**:
+     - 基础文章组：使用直接发文模板，包含 providedArticle
+     - 适配组：使用 getDirectPublishAdaptationSteps()，3步精简流程（适配改写→预览确认→合规校验）
+     - 适配组无去AI化步骤（用户文章已是真人写作）
+   - **上传格式一致性**: 与AI创作方式完全一致（信封格式 ArticleOutputEnvelope）
