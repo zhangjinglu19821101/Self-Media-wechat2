@@ -191,10 +191,21 @@ export function extractFromResultContentObject(
     'rawContent',      // 原始内容
   ];
   
-  // P0修复：添加最小长度检查
+  // 2a. 检查直接字段
   for (const field of knownContentFields) {
     if (typeof obj[field] === 'string' && obj[field].trim().length >= MIN_CONTENT_LENGTH) {
       return obj[field];
+    }
+  }
+  
+  // 🔥 P0修复：检查嵌套的 result 对象（信封格式 ArticleOutputEnvelope）
+  // 信封格式：{ isCompleted, result: { content, articleTitle, platformData }, briefResponse }
+  // 此时正文内容在 result.content 中，而非直接字段
+  if (obj.result && typeof obj.result === 'object' && !Array.isArray(obj.result)) {
+    for (const field of knownContentFields) {
+      if (typeof obj.result[field] === 'string' && obj.result[field].trim().length >= MIN_CONTENT_LENGTH) {
+        return obj.result[field];
+      }
     }
   }
 
