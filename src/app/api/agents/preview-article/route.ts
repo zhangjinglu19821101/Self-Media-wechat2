@@ -60,22 +60,38 @@ export async function GET(request: NextRequest) {
       resultData = {};
     }
 
-    // 如果 resultData 中已有文章内容（由 executeUserPreviewEditTask 写入），直接使用
-    let articleContent = resultData.articleContent || '';
-    let articleTitle = resultData.articleTitle || '';
-    let platform = resultData.platform || '';
+    // 🔥🔥🔥 【直接发文修复】直接发文模式下，优先使用用户提供的原文
+    // 问题：insurance-d 可能只输出 briefResponse 而没有实际文章内容，
+    // 导致 articleContent 是简短摘要而非用户原文
+    const taskMetadata = typeof task.metadata === 'object' && task.metadata !== null
+      ? task.metadata as Record<string, unknown>
+      : {};
+    const isDirectPublish = taskMetadata.creationMode === 'direct_publish' || !!taskMetadata.providedArticle;
+    const providedArticle = typeof taskMetadata.providedArticle === 'string' ? taskMetadata.providedArticle : '';
+    const providedArticleTitle = typeof taskMetadata.providedArticleTitle === 'string' ? taskMetadata.providedArticleTitle : '';
+
+    // 从 resultData 中获取预存内容（由 executeUserPreviewEditTask 写入）
+    let articleContent: string = resultData.articleContent || '';
+    let articleTitle: string = resultData.articleTitle || '';
+    let platform: string = resultData.platform || '';
     const writingTaskId = resultData.writingTaskId || null;
     // 🔥🔥🔥 【架构改造】平台渲染数据（独立于 articleContent 纯文本）
     let platformRenderData = resultData.platformRenderData || null;
 
-    // 🔥🔥🔥 【调试】打印初始数据
-    console.log('[Preview Article] 初始数据:', {
-      taskId,
-      hasArticleContent: !!articleContent,
-      articleContentLength: articleContent?.length || 0,
-      hasPlatformRenderData: !!platformRenderData,
-      platform,
-    });
+    // 直接发文模式：用用户提供的原文替换从写作任务提取的 briefResponse
+    // insurance-d 在直接发文模式下可能只输出 briefResponse 而没有实际文章内容
+    if (isDirectPublish && providedArticle) {
+      if (!articleContent || articleContent.length < providedArticle.length * 0.5) {
+        console.log('[Preview Article] 直接发文模式：使用 providedArticle 替换 articleContent', {
+          oldLength: articleContent?.length || 0,
+          newLength: providedArticle.length,
+        });
+        articleContent = providedArticle;
+      }
+      if (providedArticleTitle && !articleTitle) {
+        articleTitle = providedArticleTitle;
+      }
+    }
 
     // 3. 如果没有预存内容（兼容旧流程），从前序写作任务获取
     // 条件：articleContent 为空，或小红书平台缺少 platformRenderData（小红书必须有卡片数据）
@@ -104,7 +120,6 @@ export async function GET(request: NextRequest) {
       const writingTask = previousTasks.find(t => isWritingAgent(t.fromParentsExecutor));
 
       if (writingTask) {
-        // 🔥🔥🔥 【P0修复】安全解析 JSON，捕获异常
         let writingResultData: any = {};
         try {
           writingResultData = typeof writingTask.resultData === 'string'
@@ -115,59 +130,37 @@ export async function GET(request: NextRequest) {
           writingResultData = {};
         }
         
-        // 提取完整的执行结果
         const executorOutput = writingResultData?.executorOutput;
         const structuredResult = executorOutput?.structuredResult;
         const platformData = structuredResult?.resultContent?.platformData || 
                             structuredResult?.platformData;
         
-        // 🔥🔥🔥 【调试日志】打印关键数据
-        console.log('[Preview Article] 前序写作任务信息:', {
-          writingTaskId: writingTask.id,
-          fromParentsExecutor: writingTask.fromParentsExecutor,
-          hasResultData: !!writingTask.resultData,
-          resultDataType: typeof writingTask.resultData,
-          hasExecutorOutput: !!executorOutput,
-          hasStructuredResult: !!structuredResult,
-          hasPlatformData: !!platformData,
-        });
-        
-        // 🔥🔥🔥 【架构改造】使用平台渲染数据提取器
-        // 优先使用提取器获取结构化平台渲染数据
         const writingPlatform = getPlatformForExecutor(writingTask.fromParentsExecutor);
-        console.log('[Preview Article] 写作平台:', writingPlatform);
         
         if (writingPlatform && !platformRenderData) {
           try {
             const { extractPlatformRenderData } = await import('@/lib/platform-render/extractors');
-            const taskMetadata = typeof task.metadata === 'object' && task.metadata !== null
+            const writingTaskMetadata = typeof task.metadata === 'object' && task.metadata !== null
               ? task.metadata as Record<string, unknown>
               : {};
-            console.log('[Preview Article] 开始提取 platformRenderData...', {
-              writingPlatform,
-              writingTaskResultDataKeys: writingTask.resultData ? Object.keys(writingTask.resultData as object) : [],
-            });
             platformRenderData = extractPlatformRenderData(
               writingPlatform,
               writingTask.resultData,
-              taskMetadata
+              writingTaskMetadata
             );
-            console.log('[Preview Article] 提取结果:', {
-              hasPlatformRenderData: !!platformRenderData,
-              platformRenderDataKeys: platformRenderData ? Object.keys(platformRenderData) : [],
-              cardsCount: platformRenderData && 'cards' in platformRenderData 
-                ? (platformRenderData.cards as unknown[])?.length 
-                : 0,
-            });
           } catch (extractErr) {
             console.error('[Preview Article] 平台渲染数据提取失败:', extractErr);
           }
         }
 
-        // 🔥🔥🔥 【修复公众号预览】根据平台类型决定 articleContent 来源
-        // writingPlatform 已在上方声明
-        
-        if (platformData && platformData.platform === 'xiaohongshu') {
+        // 【直接发文修复】直接发文模式下，已有 providedArticle 作为 articleContent，
+        // 不需要从写作任务的 briefResponse/structuredResult 覆盖
+        // 但仍需提取 platformRenderData（上面的代码已处理）
+        if (isDirectPublish && articleContent && articleContent.length > 50) {
+          // 直接发文模式已有正确内容，只更新 platform 信息
+          if (!platform) platform = writingPlatform || '';
+          if (!articleTitle) articleTitle = extractArticleTitleFromResultData(writingTask.resultData, writingTask.taskTitle);
+        } else if (platformData && platformData.platform === 'xiaohongshu') {
           // 小红书：articleContent 保持纯文本，platformRenderData 提供卡片数据
           articleContent = structuredResult?.resultContent?.content || writingTask.resultText || '';
           articleTitle = platformData.title || structuredResult?.resultContent?.articleTitle || '';
@@ -193,8 +186,8 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // 🔥🔥🔥 【直接发文兜底】如果 platformRenderData 仍为空，
-    // 使用 LLM 格式化（微信应用 insurance-d HTML 样式、小红书智能提取要点）
+    // 【直接发文兜底】如果 platformRenderData 仍为空，
+    // 使用 LLM 格式化（微信应用公众号 HTML 样式、小红书智能提取要点）
     // 注意：公众号的 LLM 格式化就是"样式改造"功能，即使 articleContent 已经是 HTML
     // 也需要经过格式化来添加公众号风格的排版样式（标题/分割线/重点标注等）
     const shouldFormat = !platformRenderData && articleContent && platform;

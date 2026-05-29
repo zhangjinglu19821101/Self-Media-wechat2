@@ -1702,38 +1702,25 @@ export class SubtaskExecutionEngine {
       task.metadata as Record<string, unknown>
     );
 
-    if (effectiveWritingTask) {
-      // 提取文章内容（result_text 保持纯文本，不与平台渲染耦合）
+    // 🔥🔥🔥 【Bug修复】直接发文模式：始终优先使用 providedArticle
+    // 原因：直接发文流程中，insurance-d（创作Agent）不适合做纯格式化工作，
+    // 它的输出可能只包含 briefResponse（如"已将文章格式化"）而不含实际文章内容。
+    // 用户提供的原文是直接发文模式的核心内容源，应始终优先使用。
+    if (taskMetadata.creationMode === 'direct_publish' && taskMetadata.providedArticle) {
+      articleContent = taskMetadata.providedArticle as string;
+      articleTitle = (taskMetadata.providedArticleTitle as string) || articleTitle || '用户提供的文章';
+      console.log('[SubtaskEngine] 👁️ 直接发文模式：使用 metadata.providedArticle 作为文章内容', {
+        providedContentLength: articleContent.length,
+        title: articleTitle,
+        writingTaskResultPreview: effectiveWritingTask?.resultText?.substring(0, 100),
+      });
+    } else if (effectiveWritingTask) {
+      // 非直接发文模式：从写作任务提取文章内容
       articleContent = effectiveWritingTask.resultText || '';
       if (!articleContent && effectiveWritingTask.resultData) {
         articleContent = this.extractResultTextFromResultData(effectiveWritingTask.resultData, effectiveWritingTask.fromParentsExecutor) || '';
       }
       articleTitle = this.extractArticleTitleFromResultData(effectiveWritingTask.resultData, effectiveWritingTask.taskTitle);
-    }
-
-    // 🔥🔥🔥 【Bug修复】直接发文兜底：前序写作任务不存在/失败/内容无效时，从 metadata.providedArticle 获取用户文章
-    // 场景1：直接发文模式下，格式化步骤(insurance-d)可能执行失败，导致前序写作任务无有效内容
-    // 场景2：前序写作任务虽存在但状态为 failed，其 result_text 可能是错误信息而非文章内容
-    // 场景3：前序写作任务不存在（理论上不应出现，但防御性编程）
-    // 此时 user_preview_edit 应直接展示用户提供的原始文章，让用户确认
-    const isEffectiveTaskFailed = effectiveWritingTask && effectiveWritingTask.status === 'failed';
-    const isArticleContentInvalid = !articleContent
-      || articleContent.startsWith('【suggestions】')  // 解析失败的错误标记
-      || articleContent.startsWith('LLM 调用失败')    // LLM 调用失败的错误标记
-      || articleContent.startsWith('MCP 业务层执行失败'); // MCP 失败的错误标记
-
-    if ((isEffectiveTaskFailed || isArticleContentInvalid || !effectiveWritingTask)
-        && taskMetadata.creationMode === 'direct_publish'
-        && taskMetadata.providedArticle) {
-      const originalContent = articleContent; // 保留原始内容用于日志
-      articleContent = taskMetadata.providedArticle as string;
-      articleTitle = (taskMetadata.providedArticleTitle as string) || articleTitle || '用户提供的文章';
-      console.log('[SubtaskEngine] 👁️ 前序写作任务无效，已从 metadata.providedArticle 兜底获取用户文章', {
-        reason: isEffectiveTaskFailed ? 'task_failed' : (isArticleContentInvalid ? 'content_invalid' : 'no_task'),
-        originalContentPreview: originalContent?.substring(0, 100),
-        providedContentLength: articleContent.length,
-        title: articleTitle,
-      });
     }
 
     // 🔥🔥🔥 【架构改造】平台渲染数据提取
