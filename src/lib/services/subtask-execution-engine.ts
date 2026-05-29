@@ -3065,7 +3065,7 @@ export class SubtaskExecutionEngine {
         .update(agentSubTasks)
         .set({
           status: 'pre_need_support',
-          resultData: JSON.stringify(errorResultToSave),
+          resultData: errorResultToSave,
           resultText: errorResultText,
           updatedAt: getCurrentBeijingTime(),
         })
@@ -3324,7 +3324,7 @@ export class SubtaskExecutionEngine {
           .update(agentSubTasks)
           .set({
             status: 'auto_split',
-            resultData: JSON.stringify(splitMeta) as any,
+            resultData: splitMeta as any,
             resultText: `AUTO_SPLIT: ${splitReason}`,
             updatedAt: getCurrentBeijingTime()
           })
@@ -3486,7 +3486,7 @@ export class SubtaskExecutionEngine {
         .update(agentSubTasks)
         .set({
           status: finalStatus,
-          resultData: JSON.stringify(resultDataToSave),
+          resultData: resultDataToSave,
           resultText: agentTResultText,  // 🔴 新增：保存文本化结果
           updatedAt: getCurrentBeijingTime(),
         })
@@ -3686,10 +3686,10 @@ export class SubtaskExecutionEngine {
         .update(agentSubTasks)
         .set({
           status: 'pre_need_support',
-          resultData: JSON.stringify({
+          resultData: {
             error: error instanceof Error ? error.message : String(error),
             errorType: 'agent_t_execution_failed'
-          }),
+          },
           updatedAt: getCurrentBeijingTime(),
         })
         .where(eq(agentSubTasks.id, task.id));
@@ -4408,7 +4408,7 @@ export class SubtaskExecutionEngine {
       };
 
       await db.update(agentSubTasks)
-        .set({ resultData: JSON.stringify(currentResultData) })
+        .set({ resultData: currentResultData })
         .where(eq(agentSubTasks.id, task.id));
 
       console.log('[SubtaskEngine] [Phase5] ✅ 情绪分类完成并持久化', {
@@ -4462,7 +4462,7 @@ export class SubtaskExecutionEngine {
       };
 
       await db.update(agentSubTasks)
-        .set({ resultData: JSON.stringify(currentResultData) })
+        .set({ resultData: currentResultData })
         .where(eq(agentSubTasks.id, task.id));
 
       console.log('[SubtaskEngine] [Phase5] ✅ 风格一致性评估完成并持久化', {
@@ -10359,7 +10359,7 @@ ${agentBDecision ?
 
     // 🔴 修复：保留已有的 resultData，只在 resultData 为空时才设置新数据，或者合并数据
     // 🔴 🔴🔴 新增：支持 overrideResultData，用于虚拟执行器（如 user_preview_edit）注入自定义数据
-    let finalResultData: string;
+    let finalResultData: any;
     let finalResultText: string = task.resultText || ''; // 🔴 保留已有的 resultText
     
     // 🔴 如果没有已有的 resultText，生成一个
@@ -10379,7 +10379,9 @@ ${agentBDecision ?
       // 🔴🔴🔴 新增：虚拟执行器传入的自定义 resultData 优先级最高
       // 合并到现有 resultData 中（保留已有字段，overrideResultData 覆盖同名字段）
       try {
-        const existingData = task.resultData ? JSON.parse(task.resultData) : {};
+        const existingData = (task.resultData && typeof task.resultData === 'object') 
+          ? task.resultData as Record<string, any>
+          : (task.resultData ? JSON.parse(task.resultData as string) : {});
         const mergedData = {
           ...existingData,
           ...overrideResultData,
@@ -10387,29 +10389,31 @@ ${agentBDecision ?
           userMessage: userMessage,
           waitingUserAt: getCurrentBeijingTime()
         };
-        finalResultData = JSON.stringify(mergedData);
+        finalResultData = mergedData;
         console.log('[SubtaskEngine] ✅ 使用 overrideResultData 合并完成');
       } catch (e) {
         // 解析失败，直接使用 overrideResultData
-        finalResultData = JSON.stringify({
+        finalResultData = {
           ...overrideResultData,
           needUserHelp: true,
           userMessage: userMessage,
           waitingUserAt: getCurrentBeijingTime()
-        });
+        };
         console.warn('[SubtaskEngine] ⚠️ 解析现有 resultData 失败，直接使用 overrideResultData');
       }
     } else if (task.resultData) {
       // 如果已有 resultData，尝试合并数据
       try {
-        const existingData = JSON.parse(task.resultData);
+        const existingData = (typeof task.resultData === 'object' && task.resultData !== null)
+          ? task.resultData as Record<string, any>
+          : JSON.parse(task.resultData as string);
         const mergedData = {
           ...existingData,
           needUserHelp: true,
           userMessage: userMessage,
           waitingUserAt: getCurrentBeijingTime()
         };
-        finalResultData = JSON.stringify(mergedData);
+        finalResultData = mergedData;
         console.log('[SubtaskEngine] ✅ 已合并现有 resultData 和 waiting_user 信息');
       } catch (e) {
         // 如果解析失败，保留原有数据
@@ -10418,12 +10422,12 @@ ${agentBDecision ?
       }
     } else {
       // 如果没有 resultData，设置新数据
-      finalResultData = JSON.stringify({ 
+      finalResultData = { 
         success: false, 
         needUserHelp: true,
         userMessage: userMessage,
         waitingUserAt: getCurrentBeijingTime()
-      });
+      };
     }
 
     // 🔒 🔒 🔒 乐观锁：使用 status 校验进行更新！
@@ -10528,6 +10532,31 @@ ${agentBDecision ?
     // 只有用户确认预览（completed）时才解锁适配组
     // waiting_user = 用户尚未确认，文章内容可能还会修改，不能解锁适配组
     // unlockAdaptationGroupsIfNeeded 已在 markTaskCompleted 路径中调用（user_preview_edit → completed）
+
+    // 🔴 新增：记录到 step_history，确保用户能看到执行记录
+    try {
+      await this.createInteractionStep(
+        task.commandResultId,
+        task.orderIndex,
+        'system',
+        1,
+        'system',
+        {
+          type: 'waiting_user',
+          message: `等待用户${
+            task.fromParentsExecutor === 'user_preview_edit' ? '确认文章内容' : '确认操作'
+          }`,
+          taskId: task.id,
+          executor: task.fromParentsExecutor,
+          hasManualArticle: !!task.metadata?.providedArticle || !!task.metadata?.manualSourceArticle,
+        },
+        task.id,
+        null
+      );
+      console.log('[SubtaskEngine] ✅ markTaskWaitingUser 已记录到 step_history');
+    } catch (stepHistoryError) {
+      console.warn('[SubtaskEngine] ⚠️  markTaskWaitingUser 记录 step_history 失败:', stepHistoryError);
+    }
   }
 
   /**
@@ -11046,7 +11075,7 @@ ${resultData.executionSummary}
             validatedAt: new Date().toISOString(),
           };
           await db.update(agentSubTasks)
-            .set({ resultData: JSON.stringify(currentResultData) })
+            .set({ resultData: currentResultData })
             .where(eq(agentSubTasks.id, task.id));
           console.log('[SubtaskEngine] [Phase4] ✅ 校验结果已持久化到 resultData');
         } catch (persistError) {
@@ -12413,7 +12442,7 @@ ${resultData.executionSummary}
     interactNum: number,
     interactUser: string,
     content: any,
-    subTaskId: number,
+    subTaskId?: string | number,
     rawLlmResponse?: string
   ) {
     console.log('[SubtaskEngine] 🔴 createInteractionStep 被调用:', {
