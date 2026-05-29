@@ -193,10 +193,10 @@ export async function GET(request: NextRequest) {
     }
 
     // 🔥🔥🔥 【直接发文兜底】如果 platformRenderData 仍为空（直接发文模式无写作任务），
-    // 从纯文本生成平台渲染数据，确保预览样式与AI创作一致
+    // 使用 LLM 格式化（微信应用 insurance-d HTML 样式、小红书智能提取要点）
     if (!platformRenderData && articleContent && platform) {
       try {
-        const { generatePlatformRenderDataFromText } = await import('@/lib/platform-render/text-to-render');
+        const { formatDirectPublishArticle } = await import('@/lib/services/direct-publish-formatter-service');
         const taskMetadata = typeof task.metadata === 'object' && task.metadata !== null
           ? task.metadata as Record<string, unknown>
           : {};
@@ -205,16 +205,33 @@ export async function GET(request: NextRequest) {
         const cardCountMode = rawCardCountMode && VALID_CARD_MODES.includes(rawCardCountMode as typeof VALID_CARD_MODES[number])
           ? rawCardCountMode as typeof VALID_CARD_MODES[number]
           : undefined;
-        const generated = generatePlatformRenderDataFromText(articleContent, platform, articleTitle, cardCountMode);
+        const workspaceId = task.workspaceId || undefined;
+        const generated = await formatDirectPublishArticle({
+          textContent: articleContent,
+          platform,
+          articleTitle,
+          cardCountMode,
+          workspaceId,
+        });
         if (generated) {
           platformRenderData = generated;
-          console.log('[Preview Article] 从纯文本生成 platformRenderData 成功:', {
+          console.log('[Preview Article] LLM格式化 platformRenderData 成功:', {
             platform,
             dataType: Object.keys(generated).join(','),
           });
         }
       } catch (genErr) {
-        console.error('[Preview Article] 从纯文本生成 platformRenderData 失败:', genErr);
+        console.error('[Preview Article] LLM格式化失败，降级到简单文本处理:', genErr);
+        // 降级：使用简单文本处理
+        try {
+          const { generatePlatformRenderDataFromText } = await import('@/lib/platform-render/text-to-render');
+          const generated = generatePlatformRenderDataFromText(articleContent, platform, articleTitle);
+          if (generated) {
+            platformRenderData = generated;
+          }
+        } catch (fallbackErr) {
+          console.error('[Preview Article] 降级文本处理也失败:', fallbackErr);
+        }
       }
     }
 

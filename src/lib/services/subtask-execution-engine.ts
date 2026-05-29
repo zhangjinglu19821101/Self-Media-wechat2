@@ -1783,23 +1783,42 @@ export class SubtaskExecutionEngine {
       });
     }
 
-    // 🔥🔥🔥 【直接发文兜底】当 platformRenderData 为空时，从纯文本生成平台渲染数据
-    // 确保直接发文模式下的预览样式与 AI 创作模式一致
+    // 🔥🔥🔥 【直接发文兜底】当 platformRenderData 为空时，使用 LLM 格式化
+    // 微信：应用 insurance-d HTML 样式模板排版
+    // 小红书：LLM 智能提取封面标题、核心要点、结尾金句
     if (!platformRenderData && articleContent && platform) {
       try {
-        const { generatePlatformRenderDataFromText } = await import('@/lib/platform-render/text-to-render');
-        platformRenderData = generatePlatformRenderDataFromText(
-          articleContent,
-          platform as import('@/lib/db/schema/style-template').PlatformType,
-          articleTitle || '用户提供的文章'
-        );
-        console.log('[SubtaskEngine] 👁️ 直接发文兜底：从纯文本生成 platformRenderData:', {
+        const { formatDirectPublishArticle } = await import('@/lib/services/direct-publish-formatter-service');
+        const metadata = task.metadata as Record<string, any> || {};
+        const cardCountMode = metadata.cardCountMode || metadata.imageCountMode;
+        platformRenderData = await formatDirectPublishArticle({
+          textContent: articleContent,
+          platform: platform as import('@/lib/db/schema/style-template').PlatformType,
+          articleTitle: articleTitle || '用户提供的文章',
+          cardCountMode,
+          workspaceId: task.workspaceId || undefined,
+        });
+        console.log('[SubtaskEngine] 👁️ 直接发文 LLM 格式化结果:', {
           platform,
           hasPlatformRenderData: !!platformRenderData,
           platformRenderDataKeys: platformRenderData ? Object.keys(platformRenderData) : [],
+          cardsCount: platformRenderData && 'cards' in platformRenderData
+            ? (platformRenderData.cards as unknown[])?.length
+            : 0,
         });
       } catch (err) {
-        console.error('[SubtaskEngine] ❌ 直接发文兜底 platformRenderData 生成失败:', err);
+        console.error('[SubtaskEngine] ❌ 直接发文 LLM 格式化失败，降级到简单文本处理:', err);
+        // 降级：使用简单文本处理
+        try {
+          const { generatePlatformRenderDataFromText } = await import('@/lib/platform-render/text-to-render');
+          platformRenderData = generatePlatformRenderDataFromText(
+            articleContent,
+            platform as import('@/lib/db/schema/style-template').PlatformType,
+            articleTitle || '用户提供的文章'
+          );
+        } catch (fallbackErr) {
+          console.error('[SubtaskEngine] ❌ 降级文本处理也失败:', fallbackErr);
+        }
       }
     }
 
