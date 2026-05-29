@@ -469,7 +469,7 @@ function WechatHtmlPreview({ html }: { html: string }) {
       <WechatArticleRenderer 
         html={html} 
         collapsed={false}
-        maxHeight={800}
+        maxHeight={2000}
       />
     </div>
   );
