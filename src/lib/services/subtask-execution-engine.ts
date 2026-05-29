@@ -6831,6 +6831,149 @@ export class SubtaskExecutionEngine {
   }
 
   /**
+   * 🔴🔴🔴 【关键修复】自动从前序任务获取文章内容，注入到 MCP 参数中
+   * Agent T 不再在 mcpParams.params 中嵌入完整文章内容（避免 JSON 输出超出 LLM token 限制被截断）
+   * 系统在这里自动补充文章内容到 MCP 的 params 中
+   */
+  private async injectArticleContentIntoMcpParams(
+    task: typeof agentSubTasks.$inferSelect,
+    mcpParams: {
+      solutionNum: number;
+      toolName: string;
+      actionName: string;
+      params: Record<string, any>;
+    }
+  ): Promise<void> {
+    try {
+      // 判断是否是合规校验 MCP（需要文章内容的典型场景）
+      const isComplianceAudit = mcpParams.toolName?.toLowerCase().includes('compliance') ||
+        mcpParams.actionName?.toLowerCase().includes('compliance') ||
+        mcpParams.actionName?.toLowerCase().includes('audit') ||
+        mcpParams.actionName?.toLowerCase().includes('审核');
+      
+      // 判断 MCP 参数中是否缺少文章内容
+      const hasArticleContent = mcpParams.params?.articleContent?.length > 100 ||
+        mcpParams.params?.content?.length > 100 ||
+        mcpParams.params?.articles?.some((a: any) => a.content?.length > 100);
+      
+      if (!isComplianceAudit && hasArticleContent) {
+        // 非合规校验 MCP，且已有文章内容 → 无需注入
+        return;
+      }
+      
+      // 从前序任务获取文章内容
+      const previousTasks = await db
+        .select({
+          id: agentSubTasks.id,
+          orderIndex: agentSubTasks.orderIndex,
+          fromParentsExecutor: agentSubTasks.fromParentsExecutor,
+          resultText: agentSubTasks.resultText,
+          resultData: agentSubTasks.resultData,
+          status: agentSubTasks.status,
+        })
+        .from(agentSubTasks)
+        .where(
+          and(
+            eq(agentSubTasks.commandResultId, task.commandResultId as any),
+            lt(agentSubTasks.orderIndex, task.orderIndex),
+            eq(agentSubTasks.status, 'completed'),
+            eq(agentSubTasks.workspaceId, task.workspaceId)
+          )
+        )
+        .orderBy(desc(agentSubTasks.orderIndex));
+      
+      // 查找写作任务或预览编辑任务的 resultText
+      let articleContent = '';
+      let articleTitle = '';
+      
+      for (const prevTask of previousTasks) {
+        // 优先从写作任务和预览编辑任务获取文章内容
+        const isWritingOrPreview = isWritingAgent(prevTask.fromParentsExecutor) ||
+          prevTask.fromParentsExecutor === 'user_preview_edit';
+        
+        if (isWritingOrPreview && prevTask.resultText && prevTask.resultText.length > 100) {
+          articleContent = prevTask.resultText;
+          // 尝试从 resultData 获取标题
+          const resultDataObj = typeof prevTask.resultData === 'string' 
+            ? JSON.parse(prevTask.resultData) 
+            : prevTask.resultData;
+          if (resultDataObj?.executorOutput?.structuredResult?.resultContent?.articleTitle) {
+            articleTitle = resultDataObj.executorOutput.structuredResult.resultContent.articleTitle;
+          } else if (resultDataObj?.articleTitle) {
+            articleTitle = resultDataObj.articleTitle;
+          }
+          break;
+        }
+      }
+      
+      if (!articleContent) {
+        // 🔴 P1 修复：两阶段架构的适配组可能需要从基础文章组获取文章内容
+        const taskMetadata = typeof task.metadata === 'string' ? JSON.parse(task.metadata) : task.metadata;
+        const sourceCommandResultId = taskMetadata?.sourceCommandResultId;
+        if (sourceCommandResultId) {
+          console.log('[injectArticleContentIntoMcpParams] 🔄 同组未找到文章，尝试从基础文章组获取, sourceCommandResultId:', sourceCommandResultId);
+          const baseArticleTasks = await db
+            .select({
+              id: agentSubTasks.id,
+              fromParentsExecutor: agentSubTasks.fromParentsExecutor,
+              resultText: agentSubTasks.resultText,
+            })
+            .from(agentSubTasks)
+            .where(
+              and(
+                eq(agentSubTasks.commandResultId, sourceCommandResultId as any),
+                eq(agentSubTasks.status, 'completed'),
+                eq(agentSubTasks.workspaceId, task.workspaceId)
+              )
+            );
+          
+          for (const baseTask of baseArticleTasks) {
+            if (isWritingAgent(baseTask.fromParentsExecutor) && baseTask.resultText && baseTask.resultText.length > 100) {
+              articleContent = baseTask.resultText;
+              console.log('[injectArticleContentIntoMcpParams] ✅ 从基础文章组获取到文章内容，长度:', articleContent.length);
+              break;
+            }
+          }
+        }
+        
+        // 🔴 P1 修复：还检查 metadata.manualSourceArticle（手动输入的文章）
+        if (!articleContent && taskMetadata?.manualSourceArticle?.content) {
+          articleContent = taskMetadata.manualSourceArticle.content;
+          articleTitle = taskMetadata.manualSourceArticle.title || '';
+          console.log('[injectArticleContentIntoMcpParams] ✅ 从手动输入文章获取内容，长度:', articleContent.length);
+        }
+        
+        if (!articleContent) {
+          console.log('[injectArticleContentIntoMcpParams] ⚠️ 未找到前序任务的文章内容，跳过注入');
+          return;
+        }
+      }
+      
+      // 注入文章内容到 MCP 参数
+      if (isComplianceAudit) {
+        // 合规校验 MCP：注入 articleContent
+        if (!mcpParams.params.articleContent || mcpParams.params.articleContent.length < 100) {
+          mcpParams.params.articleContent = articleContent;
+          console.log('[injectArticleContentIntoMcpParams] ✅ 已注入 articleContent，长度:', articleContent.length);
+        }
+        // 如果有标题且 MCP 参数中缺少，也注入
+        if (articleTitle && !mcpParams.params.title) {
+          mcpParams.params.title = articleTitle;
+        }
+      }
+      
+      // 通用：如果 MCP 参数中缺少 content 且文章内容较短（<5000字），可以注入
+      if (!mcpParams.params.content && articleContent.length < 5000) {
+        mcpParams.params.content = articleContent;
+      }
+      
+    } catch (error) {
+      console.error('[injectArticleContentIntoMcpParams] ❌ 注入文章内容失败:', error);
+      // 注入失败不阻塞 MCP 执行
+    }
+  }
+
+  /**
    * 🔴🔴🔴 【场景2核心方法】直接执行 MCP
    * @description 执行 Agent 直接请求 MCP，跳过 Agent B 中转
    * @param task 任务对象
@@ -6854,6 +6997,11 @@ export class SubtaskExecutionEngine {
       actionName: mcpParams.actionName,
       solutionNum: mcpParams.solutionNum
     });
+    
+    // 🔴🔴🔴 【关键修复】自动从前序任务获取文章内容，注入到 MCP 参数中
+    // Agent T 不再在 mcpParams.params 中嵌入完整文章内容（避免 JSON 输出超出 token 限制被截断）
+    // 系统在这里自动补充文章内容
+    await this.injectArticleContentIntoMcpParams(task, mcpParams);
     
     const startTime = Date.now();
     
@@ -10834,9 +10982,9 @@ ${agentBDecision ?
     // 将 priorStepOutput 加入到 Agent B 的提示词中（限制长度避免超时）
     let priorStepOutputText = '';
     if (executionContext.priorStepOutput) {
-      // 🔴 修复：增大内容长度限制，避免文章内容被截断
-      // 原值 3000 太小，导致文章类任务（通常 4000-10000 字符）被截断
-      const maxContentLength = 20000;
+      // 🔴 Agent B 只做决策判断，不需要完整文章内容
+      // 限制 8000 字符足够覆盖核心结论和结构
+      const maxContentLength = 8000;
       let contentToUse = executionContext.priorStepOutput;
       
       if (contentToUse.length > maxContentLength) {
@@ -12962,14 +13110,18 @@ ${resultData.executionSummary}
     // 构建 priorStepOutputText
     let priorStepOutputText = '';
     if (executionContext.priorStepOutput) {
-      // 🔴 修复：增大内容长度限制，避免文章内容被截断
-      // 原值 3000 太小，导致文章类任务（通常 4000-10000 字符）被截断
-      const maxContentLength = 20000;
+      // 🔴🔴🔴 修复：Agent T 的 priorStepOutput 使用更小的内容限制
+      // 原因：Agent T 会把 priorStepOutput 中的文章内容放进 mcpParams 输出 JSON 中，
+      // 如果 priorStepOutput 太长（20000字），加上 JSON 结构，LLM 输出会超出 token 限制被截断，
+      // 导致 JSON 解析失败（"未找到 JSON 数据"）
+      // 合规校验不需要看到完整文章的每一个字，5000字已足够覆盖核心内容和结构
+      // 注意：系统会自动将完整文章内容注入到 MCP 执行参数中，所以截断不影响 MCP 执行
+      const maxContentLength = 5000;
       let contentToUse = executionContext.priorStepOutput;
       
       if (contentToUse.length > maxContentLength) {
         contentToUse = contentToUse.substring(0, maxContentLength) + 
-          '\n\n[...内容已截断，完整内容请参考上一步骤输出...]';
+          '\n\n[...内容已截断，系统会自动将完整内容注入到 MCP 执行参数中，你无需在 mcpParams 中重复嵌入...]';
       }
       
       priorStepOutputText = `

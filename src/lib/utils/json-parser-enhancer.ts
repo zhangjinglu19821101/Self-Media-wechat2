@@ -1508,6 +1508,41 @@ export class JsonParserEnhancer {
 
     repairDetails.push(`检测到括号不平衡: {开=${analysis.openBraces} 闭=${analysis.closeBraces}} [开=${analysis.openBrackets} 闭=${analysis.closeBrackets}]`);
 
+    // 🔴 新增：如果 inString=true 且缺失大量括号，很可能是 HTML 内容中的引号干扰了括号计数
+    // 先尝试剥离巨大的字符串内容（含 HTML），再修复括号
+    if (analysis.inString && (analysis.openBraces - analysis.closeBraces > 3)) {
+      const stripped = this.stripTruncatedStringValue(jsonStr, repairDetails);
+      if (stripped) {
+        const strippedAnalysis = this.analyzeBracketBalance(stripped);
+        if (strippedAnalysis.isBalanced || 
+            (strippedAnalysis.openBraces - strippedAnalysis.closeBraces <= 3 &&
+             strippedAnalysis.openBrackets - strippedAnalysis.closeBrackets <= 3)) {
+          // 剥离后括号更平衡了，使用剥离后的文本继续修复
+          let repaired = stripped;
+          // 移除末尾逗号
+          repaired = repaired.replace(/,\s*$/, '');
+          // 补齐闭合括号
+          const finalAnalysis = this.analyzeBracketBalance(repaired);
+          const missingBraces = Math.max(0, finalAnalysis.openBraces - finalAnalysis.closeBraces);
+          const missingBrackets = Math.max(0, finalAnalysis.openBrackets - finalAnalysis.closeBrackets);
+          repaired += ']'.repeat(missingBrackets);
+          repaired += '}'.repeat(missingBraces);
+          if (missingBraces > 0 || missingBrackets > 0) {
+            repairDetails.push(`剥离巨大字符串后补齐 ${missingBraces} 个 } 和 ${missingBrackets} 个 ]`);
+          }
+          // 验证
+          try {
+            JSON.parse(repaired);
+            repairDetails.push('剥离修复后 JSON 解析成功');
+            console.log(`🟢 [JSON截断修复] 剥离巨大字符串后修复成功: ${repairDetails.join('; ')}`);
+            return { text: repaired, wasRepaired: true, repairDetails: repairDetails.join('; ') };
+          } catch {
+            repairDetails.push('剥离修复后仍无法解析，继续尝试标准修复');
+          }
+        }
+      }
+    }
+
     // 4.1 尝试在截断点找到最后一个完整的值
     // 策略：从末尾向前查找，找到最后一个完整值的位置，然后截断并闭合
     let repaired = this.attemptTruncationRepair(jsonStr, analysis, repairDetails);
@@ -1561,7 +1596,9 @@ export class JsonParserEnhancer {
         continue;
       }
       
-      if (ch === '"' && !escapeNext) {
+      // 处理字符串引号切换
+      // 注意：仅当不在转义状态时（escapeNext 已在上方重置），双引号才切换字符串状态
+      if (ch === '"') {
         inString = !inString;
         continue;
       }
@@ -1582,6 +1619,94 @@ export class JsonParserEnhancer {
       closeBrackets,
       inString,
     };
+  }
+
+  /**
+   * 🔴 新增：剥离截断的巨大字符串值（通常包含 HTML 内容）
+   * 策略：找到最后一个未闭合的字符串引号，向前找到对应的 key，
+   * 将不完整的 key:value 替换为 key:"[TRUNCATED]" 或直接移除
+   */
+  private static stripTruncatedStringValue(
+    jsonStr: string,
+    repairDetails: string[]
+  ): string | null {
+    // 从末尾向前找到最后一个未闭合的引号
+    let lastQuoteIdx = -1;
+    let inStr = false;
+    let esc = false;
+    for (let i = jsonStr.length - 1; i >= 0; i--) {
+      const ch = jsonStr[i];
+      if (esc) { esc = false; continue; }
+      if (ch === '\\') { esc = true; continue; }
+      if (ch === '"') {
+        // 这个引号可能是字符串的开始（未闭合）或结束（已闭合）
+        // 从开头到这个位置计算引号数量（奇数=未闭合）
+        let quoteCount = 0;
+        let esc2 = false;
+        for (let j = 0; j <= i; j++) {
+          if (esc2) { esc2 = false; continue; }
+          if (jsonStr[j] === '\\') { esc2 = true; continue; }
+          if (jsonStr[j] === '"') quoteCount++;
+        }
+        if (quoteCount % 2 === 1) {
+          // 未闭合的引号
+          lastQuoteIdx = i;
+          break;
+        }
+      }
+    }
+    
+    if (lastQuoteIdx <= 0) return null;
+    
+    // 找到这个字符串值对应的 key 的冒号
+    const beforeQuote = jsonStr.substring(0, lastQuoteIdx);
+    let colonIdx = -1;
+    let braceDepth = 0;
+    let bracketDepth = 0;
+    for (let i = beforeQuote.length - 1; i >= 0; i--) {
+      const ch = beforeQuote[i];
+      if (ch === '}' || ch === ']') {
+        if (ch === '}') braceDepth++;
+        else bracketDepth++;
+      } else if (ch === '{' || ch === '[') {
+        if (ch === '{') braceDepth--;
+        else bracketDepth--;
+      } else if (ch === ':' && braceDepth === 0 && bracketDepth === 0) {
+        colonIdx = i;
+        break;
+      }
+    }
+    
+    if (colonIdx > 0) {
+      // 找到冒号，向前找逗号或对象开始位置
+      let commaIdx = -1;
+      for (let i = colonIdx - 1; i >= 0; i--) {
+        const ch = beforeQuote[i];
+        if (ch === ',' && braceDepth === 0 && bracketDepth === 0) {
+          commaIdx = i;
+          break;
+        } else if (ch === '{' || ch === '[') {
+          break;
+        }
+      }
+      
+      if (commaIdx > 0) {
+        // 截断到逗号之后，移除不完整的 key:value
+        const result = jsonStr.substring(0, commaIdx);
+        repairDetails.push(`剥离截断字符串值: 截断到逗号位置(${commaIdx})`);
+        return result;
+      } else {
+        // 这是对象的第一个属性
+        const objectStartIdx = beforeQuote.lastIndexOf('{');
+        if (objectStartIdx >= 0) {
+          const result = jsonStr.substring(0, objectStartIdx + 1);
+          repairDetails.push(`剥离截断字符串值: 保留对象开始位置(${objectStartIdx})`);
+          return result;
+        }
+      }
+    }
+    
+    return null;
   }
 
   /**
@@ -1734,7 +1859,7 @@ export class JsonParserEnhancer {
       return null; // 异常情况，无法修复
     }
 
-    if (missingBraces > 5 || missingBrackets > 5) {
+    if (missingBraces > 10 || missingBrackets > 10) {
       repairDetails.push(`缺失括号过多 (braces=${missingBraces}, brackets=${missingBrackets})，截断过于严重`);
       return null; // 截断过于严重，无法可靠修复
     }

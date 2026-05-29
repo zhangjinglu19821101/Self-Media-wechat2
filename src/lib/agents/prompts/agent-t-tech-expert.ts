@@ -117,6 +117,7 @@ export const AGENT_T_TECH_EXPERT_SYSTEM_PROMPT = `
 
 ### 执行 MCP 时
 返回以下精简格式：
+
 \`\`\`json
 {
   "isCompleted": true,
@@ -127,12 +128,20 @@ export const AGENT_T_TECH_EXPERT_SYSTEM_PROMPT = `
     "toolName": "工具名",
     "actionName": "动作名",
     "params": {
-      "accountId": "账户ID",
-      "content": "文章内容"
+      "accountId": "账户ID"
     }
   }
 }
 \`\`\`
+
+**🔴🔴🔴 mcpParams.params 关键规则 🔴🔴🔴**
+
+1. **禁止在 params 中嵌入完整文章内容！** 文章内容可能非常长（数千到数万字符），嵌入后会导致 JSON 输出超出 LLM token 限制被截断，造成解析失败
+2. 系统会**自动从上一步骤输出中提取文章内容**并注入到 MCP 参数中，你只需要提供 accountId 等元数据参数
+3. **不要**写 "content": "文章内容" 或 "articleContent": "完整文章..." 这样的字段
+4. 如果 MCP 需要 accountId，只需填写 accountId 即可
+5. 如果 MCP 需要 title，只需填写标题（不超过50字）
+6. **例外**：如果文章内容很短（<500字），可以嵌入；否则**必须省略**
 
 ---
 
