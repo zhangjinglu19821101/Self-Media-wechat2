@@ -80,7 +80,7 @@ interface ReexecuteHistoryItem {
 // 【P2修复】任务 metadata 类型定义，替代 as any
 // 两阶段架构 metadata 扩展
 interface TwoPhaseTaskMetadata extends TaskMetadata {
-  phase?: 'base_article' | 'platform_adaptation';
+  phase?: 'base_article' | 'platform_adaptation' | 'direct_publish';
   multiPlatformGroupId?: string;
   sourceCommandResultId?: string;
   adaptationPlatform?: string;
@@ -102,7 +102,7 @@ interface TaskMetadata {
     changedBy: string;
   };
   // 两阶段架构字段（P2-5 修复：添加精确类型，而非 Record<string, any>）
-  phase?: 'base_article' | 'platform_adaptation';
+  phase?: 'base_article' | 'platform_adaptation' | 'direct_publish';
   multiPlatformGroupId?: string;
   sourceCommandResultId?: string;
   adaptationPlatform?: string;
@@ -112,6 +112,10 @@ interface TaskMetadata {
     title?: string;
     providedAt?: string;
   };
+  // 直接发文模式字段
+  creationMode?: 'direct_publish';
+  providedArticle?: string;
+  providedArticleTitle?: string;
   [key: string]: unknown; // 允许其他动态字段
 }
 
@@ -1705,6 +1709,31 @@ export class SubtaskExecutionEngine {
         articleContent = this.extractResultTextFromResultData(effectiveWritingTask.resultData, effectiveWritingTask.fromParentsExecutor) || '';
       }
       articleTitle = this.extractArticleTitleFromResultData(effectiveWritingTask.resultData, effectiveWritingTask.taskTitle);
+    }
+
+    // 🔥🔥🔥 【Bug修复】直接发文兜底：前序写作任务不存在/失败/内容无效时，从 metadata.providedArticle 获取用户文章
+    // 场景1：直接发文模式下，格式化步骤(insurance-d)可能执行失败，导致前序写作任务无有效内容
+    // 场景2：前序写作任务虽存在但状态为 failed，其 result_text 可能是错误信息而非文章内容
+    // 场景3：前序写作任务不存在（理论上不应出现，但防御性编程）
+    // 此时 user_preview_edit 应直接展示用户提供的原始文章，让用户确认
+    const isEffectiveTaskFailed = effectiveWritingTask && effectiveWritingTask.status === 'failed';
+    const isArticleContentInvalid = !articleContent
+      || articleContent.startsWith('【suggestions】')  // 解析失败的错误标记
+      || articleContent.startsWith('LLM 调用失败')    // LLM 调用失败的错误标记
+      || articleContent.startsWith('MCP 业务层执行失败'); // MCP 失败的错误标记
+
+    if ((isEffectiveTaskFailed || isArticleContentInvalid || !effectiveWritingTask)
+        && taskMetadata.creationMode === 'direct_publish'
+        && taskMetadata.providedArticle) {
+      const originalContent = articleContent; // 保留原始内容用于日志
+      articleContent = taskMetadata.providedArticle as string;
+      articleTitle = (taskMetadata.providedArticleTitle as string) || articleTitle || '用户提供的文章';
+      console.log('[SubtaskEngine] 👁️ 前序写作任务无效，已从 metadata.providedArticle 兜底获取用户文章', {
+        reason: isEffectiveTaskFailed ? 'task_failed' : (isArticleContentInvalid ? 'content_invalid' : 'no_task'),
+        originalContentPreview: originalContent?.substring(0, 100),
+        providedContentLength: articleContent.length,
+        title: articleTitle,
+      });
     }
 
     // 🔥🔥🔥 【架构改造】平台渲染数据提取
@@ -5273,8 +5302,9 @@ export class SubtaskExecutionEngine {
     // 🔥🔥🔥 直接发文：用户文章注入
     // 如果当前任务属于直接发文流程（metadata.creationMode === 'direct_publish'），
     // 且 metadata.providedArticle 存在，将用户文章注入到 priorTaskResults[0]
+    // ⚠️ 如果 manualSourceArticle 存在，则跳过（手动输入优先级更高，避免注入两篇文章）
     try {
-      if (taskMetadata?.creationMode === 'direct_publish' && taskMetadata?.providedArticle) {
+      if (taskMetadata?.creationMode === 'direct_publish' && taskMetadata?.providedArticle && !manualSourceArticle) {
         const providedContent = taskMetadata.providedArticle as string;
         const providedTitle = (taskMetadata.providedArticleTitle as string) || '用户提供的文章';
 
@@ -5335,9 +5365,12 @@ export class SubtaskExecutionEngine {
       // 【P1-2修复】复用第一个 try 块中已提取的 taskMetadata（类型已统一为 TwoPhaseTaskMetadata）
       const taskPhase = taskMetadata?.phase;
 
-      // 🔥 仅当没有手动输入文章且是平台适配任务时，才跨组查询
+      // 🔥 仅当没有手动输入文章/直接发文文章且是平台适配任务时，才跨组查询
       // 【P1-2修复】复用已有 manualSourceArticle，避免重复计算 hasManualArticle
-      if (!manualSourceArticle && taskPhase === 'platform_adaptation' && taskMetadata?.sourceCommandResultId) {
+      // 【直接发文修复】如果 providedArticle 已注入（taskMetadata.creationMode === 'direct_publish'），
+      // 则跳过跨组查询，避免重复注入两篇文章
+      const hasDirectPublishArticle = taskMetadata?.creationMode === 'direct_publish' && !!taskMetadata?.providedArticle;
+      if (!manualSourceArticle && !hasDirectPublishArticle && taskPhase === 'platform_adaptation' && taskMetadata?.sourceCommandResultId) {
         const sourceCommandResultId = taskMetadata.sourceCommandResultId;
         console.log('[SubtaskEngine] 🔥 适配任务检测到，开始跨组注入基础文章', {
           sourceCommandResultId,
@@ -8600,16 +8633,20 @@ export class SubtaskExecutionEngine {
           const platformLabel = taskMetadata.platformLabel || adaptationPlatform;
           // 🔥 如果用户手动输入了文章，前缀措辞调整
           // 【P1-2修复】复用已有 taskMetadata，避免重复计算 hasManualArticle
-          const articleSourceDesc = taskMetadata?.manualSourceArticle?.content ? '用户提供的文章' : '基础文章';
+          // 【直接发文修复】直接发文适配组使用 providedArticle，也应显示"用户提供的文章"
+          const articleSourceDesc = taskMetadata?.manualSourceArticle?.content
+            ? '用户提供的文章'
+            : (taskMetadata?.creationMode === 'direct_publish' && taskMetadata?.providedArticle ? '用户提供的文章' : '基础文章');
           adaptationModePrefix = `\n【平台适配模式 - 最高优先级指令】\n你正在执行"平台适配"任务。${articleSourceDesc}已完成，你需要基于${articleSourceDesc}的内容进行平台适配改写。\n核心规则：\n1. 必须基于${articleSourceDesc}内容改写，不得自行创作新的核心论点、数据或案例\n2. 保留${articleSourceDesc}的核心观点和逻辑结构\n3. 按照${platformLabel}平台风格和格式进行改写\n4. 可以调整表达方式、段落结构、用词风格以适应平台特点\n5. ${articleSourceDesc}内容已在"前序任务执行结果"中提供（order_index=0 的"${articleSourceDesc}"条目）\n\n`;
           console.log('[SubtaskEngine] 🔥 适配模式前缀已注入，平台:', platformLabel, '文章来源:', articleSourceDesc);
         }
 
         // 🔥🔥🔥 直接发文：格式化模式前缀
-        // 仅对写作Agent（格式化任务）生效，不对预览确认/合规校验等任务生效
+        // 仅对基础文章组的写作Agent（格式化任务）生效，不对适配组/预览确认/合规校验等任务生效
+        // 适配组使用 adaptationModePrefix（平台适配模式），不使用格式化模式
         // 格式化任务是直接发文流程中的 orderIndex=1（写作Agent 执行）
         let formatModePrefix = '';
-        if (taskMetadata?.creationMode === 'direct_publish' && taskMetadata?.providedArticle && isWritingAgent(task.fromParentsExecutor)) {
+        if (taskMetadata?.creationMode === 'direct_publish' && taskMetadata?.providedArticle && isWritingAgent(task.fromParentsExecutor) && taskMetadata?.phase !== 'platform_adaptation') {
           const fmtPlatformLabel = taskMetadata.platformLabel || taskMetadata.platform || '';
           formatModePrefix = `\n【格式化模式 - 最高优先级指令】\n你正在执行"格式化"任务。用户提供了一篇完整的文章，你需要将这篇文章按照${fmtPlatformLabel}平台的格式要求进行格式化，输出标准格式的内容。\n核心规则：\n1. 保留用户文章的所有核心内容、观点、数据和逻辑结构，不得删减核心论点\n2. 将用户文章按照${fmtPlatformLabel}平台的排版格式要求进行格式化\n3. 不得自行创作新的内容，只做格式化处理和排版优化\n4. 可以微调表达方式使其更符合平台风格，但不改变原意\n5. 用户文章内容已在"前序任务执行结果"中提供（order_index=0 的"用户提供的文章"条目）\n\n`;
           console.log('[SubtaskEngine] 🔥 格式化模式前缀已注入，平台:', fmtPlatformLabel, 'executor:', task.fromParentsExecutor);

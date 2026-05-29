@@ -447,7 +447,8 @@ export async function POST(request: NextRequest) {
 
             // 🔥 只有第一个适配任务为 blocked，后续任务为 pending
             // 引擎按 orderIndex 顺序执行，后续任务不会在第一个之前运行
-            const taskStatus = i === 0 ? 'blocked' : 'pending';
+            // 🔥🔥🔥 【Bug修复】直接发文模式下，适配组不应 blocked（用户已有文章，无需等待基础文章定稿）
+            const taskStatus = isDirectPublishMode ? 'pending' : (i === 0 ? 'blocked' : 'pending');
 
             const inserted = await tx.insert(agentSubTasks).values({
               id: newSubTaskId,
@@ -489,7 +490,12 @@ export async function POST(request: NextRequest) {
                 ...(paradigmCode ? { paradigmCode, paradigmName, paradigmDetail } : {}), // 🔥 范式数据
               ...(normalizedParadigmMaterialBindings ? { paradigmMaterialBindings: normalizedParadigmMaterialBindings } : {}), // 🔥 范式-素材位置绑定
               // 🔥🔥 直接发文模式特有字段
-              ...(isDirectPublishMode ? { creationMode: 'direct_publish' } : {}),
+              // 🔥🔥🔥 【Bug修复】适配组也需要 providedArticle，否则写作Agent无法获取用户文章
+              ...(isDirectPublishMode ? {
+                creationMode: 'direct_publish',
+                providedArticle: articleContent,
+                providedArticleTitle: articleTitle || null,
+              } : {}),
               },
               createdAt: new Date(),
               updatedAt: new Date(),
