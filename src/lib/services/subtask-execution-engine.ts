@@ -1607,49 +1607,20 @@ export class SubtaskExecutionEngine {
       return;
     }
 
-    // 🔥🔥🔥 直接发文模式：从 metadata.providedArticle 获取用户文章
+    // 🔥🔥🔥 直接发文模式：已废弃特殊处理
+    // 新流程中，直接发文也走写作Agent格式化（orderIndex=1），
+    // 预览确认节点（orderIndex=2）获取前序格式化任务输出，与AI创作完全一致
+    // 保留 providedArticle 检测仅用于日志标记
     const taskMetadata = task.metadata as Record<string, unknown> || {};
-    const providedArticle = taskMetadata.providedArticle as string | undefined;
-    const providedArticleTitle = taskMetadata.providedArticleTitle as string | undefined;
-    const isDirectPublish = !!providedArticle;
+    const isDirectPublish = taskMetadata.creationMode === 'direct_publish';
 
     if (isDirectPublish) {
-      // ========== 直接发文模式 ==========
-      console.log('[SubtaskEngine] 👁️ 直接发文模式：使用用户提供的文章', {
+      console.log('[SubtaskEngine] 👁️ 直接发文模式：预览格式化后的文章（与AI创作一致）', {
         taskId: task.id,
-        contentLength: providedArticle.length,
-        articleTitle: providedArticleTitle || '(自动提取)',
       });
-
-      const platform = (taskMetadata.platform as string) || 'wechat_official';
-
-      const overrideResultData = {
-        interactionType: 'preview_edit_article',
-        articleContent: providedArticle,
-        articleTitle: providedArticleTitle || '',
-        platform,
-        platformRenderData: null,
-        writingTaskId: null,
-        canEdit: true,
-        canSkip: true,
-        isDirectPublish: true,
-      };
-
-      await this.markTaskWaitingUser(
-        lockedTask,
-        '请确认您提供的文章内容，可修改调整或直接确认继续',
-        overrideResultData
-      );
-
-      console.log('[SubtaskEngine] 👁️ 直接发文预览节点已设为 waiting_user:', {
-        taskId: task.id,
-        platform,
-        contentLength: providedArticle.length,
-      });
-      return;
     }
 
-    // ========== AI创作模式（原有逻辑） ==========
+    // ========== 统一逻辑：AI创作 / 直接发文 ==========
 
     // 2. 查找前序写作任务
     const previousTasks = await db
@@ -5299,6 +5270,34 @@ export class SubtaskExecutionEngine {
     const taskMetadata = task.metadata as TwoPhaseTaskMetadata | null;
     const manualSourceArticle = taskMetadata?.manualSourceArticle;
 
+    // 🔥🔥🔥 直接发文：用户文章注入
+    // 如果当前任务属于直接发文流程（metadata.creationMode === 'direct_publish'），
+    // 且 metadata.providedArticle 存在，将用户文章注入到 priorTaskResults[0]
+    try {
+      if (taskMetadata?.creationMode === 'direct_publish' && taskMetadata?.providedArticle) {
+        const providedContent = taskMetadata.providedArticle as string;
+        const providedTitle = (taskMetadata.providedArticleTitle as string) || '用户提供的文章';
+
+        console.log('[SubtaskEngine] 🔥 检测到直接发文用户文章，注入 priorTaskResults', {
+          contentLength: providedContent.length,
+          title: providedTitle,
+        });
+
+        priorTaskResults.unshift({
+          orderIndex: 0, // 特殊序号，表示用户提供的文章
+          taskTitle: `[用户提供的文章] ${providedTitle}`,
+          executor: 'base_article',
+          resultText: providedContent,
+        });
+
+        console.log('[SubtaskEngine] 🔥 已将直接发文用户文章注入 priorTaskResults（orderIndex=0），长度:', providedContent.length);
+      }
+    } catch (directPublishArticleError) {
+      console.warn('[SubtaskEngine] 🔥 直接发文文章注入失败（不影响主流程）:', {
+        message: directPublishArticleError instanceof Error ? directPublishArticleError.message : String(directPublishArticleError)
+      });
+    }
+
     // 🔥🔥🔥 手动输入文章优先注入（优先级最高）
     // 如果用户通过 manual-unblock API 手动输入了文章内容，
     // 优先使用该文章，不再跨组查询基础文章
@@ -8606,6 +8605,16 @@ export class SubtaskExecutionEngine {
           console.log('[SubtaskEngine] 🔥 适配模式前缀已注入，平台:', platformLabel, '文章来源:', articleSourceDesc);
         }
 
+        // 🔥🔥🔥 直接发文：格式化模式前缀
+        // 仅对写作Agent（格式化任务）生效，不对预览确认/合规校验等任务生效
+        // 格式化任务是直接发文流程中的 orderIndex=1（写作Agent 执行）
+        let formatModePrefix = '';
+        if (taskMetadata?.creationMode === 'direct_publish' && taskMetadata?.providedArticle && isWritingAgent(task.fromParentsExecutor)) {
+          const fmtPlatformLabel = taskMetadata.platformLabel || taskMetadata.platform || '';
+          formatModePrefix = `\n【格式化模式 - 最高优先级指令】\n你正在执行"格式化"任务。用户提供了一篇完整的文章，你需要将这篇文章按照${fmtPlatformLabel}平台的格式要求进行格式化，输出标准格式的内容。\n核心规则：\n1. 保留用户文章的所有核心内容、观点、数据和逻辑结构，不得删减核心论点\n2. 将用户文章按照${fmtPlatformLabel}平台的排版格式要求进行格式化\n3. 不得自行创作新的内容，只做格式化处理和排版优化\n4. 可以微调表达方式使其更符合平台风格，但不改变原意\n5. 用户文章内容已在"前序任务执行结果"中提供（order_index=0 的"用户提供的文章"条目）\n\n`;
+          console.log('[SubtaskEngine] 🔥 格式化模式前缀已注入，平台:', fmtPlatformLabel, 'executor:', task.fromParentsExecutor);
+        }
+
         // 🔥🔥🔥 【P0修复】提前读取内容模板，获取 cardCountMode 和 promptInstruction
         // cardCountMode 优先级：1. 内容模板的 cardCountMode  2. metadata 中的 imageCountMode（兼容旧数据）3. 小红书默认 5-card
         const VALID_CARD_COUNT_MODES = ['3-card', '5-card', '7-card'] as const;
@@ -8814,8 +8823,8 @@ export class SubtaskExecutionEngine {
           executorType, // 🔥 传递 executorType 决定加载哪个提示词文件
           subTaskRole: taskSubTaskRole, // 🔥 Phase 3.5: 传递子任务角色（outline_generation / full_article）
           taskInstruction: isFullArticleTask && _confirmedOutline
-            ? `${adaptationModePrefix}${platformPrefix}【已确认的创作大纲（以大纲为骨架展开，核心结构和论点不得改变，细节允许自然调整）】\n\n${_confirmedOutline}\n\n原始创作指令：${task.taskDescription}`
-            : `${adaptationModePrefix}${platformPrefix}${task.taskDescription || ''}`,
+            ? `${formatModePrefix}${adaptationModePrefix}${platformPrefix}【已确认的创作大纲（以大纲为骨架展开，核心结构和论点不得改变，细节允许自然调整）】\n\n${_confirmedOutline}\n\n原始创作指令：${task.taskDescription}`
+            : `${formatModePrefix}${adaptationModePrefix}${platformPrefix}${task.taskDescription || ''}`,
           userOpinion: _userOpinionAndMaterials?.userOpinion ?? task.userOpinion,
           materials: _materialsContent ? [_materialsContent] : undefined,
           targetWordCount: taskExtension.targetWordCount,

@@ -58,16 +58,23 @@ const NODE_STYLES = {
   toutiao_preview: { icon: '👁️', color: 'from-purple-500 to-orange-600' },
   toutiao_check: { icon: '✅', color: 'from-amber-500 to-orange-600' },
   
-  // 直接发文模式样式
+  // 直接发文模式样式（5步流程：格式化→预览→合规→整改→上传）
+  dp_format: { icon: '📝', color: 'from-blue-500 to-indigo-600' },
+  dp_preview: { icon: '👁️', color: 'from-purple-500 to-violet-600' },
   dp_confirm: { icon: '📋', color: 'from-emerald-500 to-green-600' },
   dp_check: { icon: '✅', color: 'from-amber-500 to-orange-600' },
   dp_fix: { icon: '🔧', color: 'from-sky-500 to-blue-600' },
   dp_upload: { icon: '📤', color: 'from-teal-500 to-cyan-600' },
   dp_final: { icon: '🏁', color: 'from-indigo-500 to-violet-600' },
+  dp_xhs_format: { icon: '📝', color: 'from-pink-500 to-rose-600' },
+  dp_xhs_preview: { icon: '👁️', color: 'from-purple-500 to-pink-600' },
   dp_xhs_confirm: { icon: '📋', color: 'from-rose-500 to-pink-600' },
   dp_xhs_check: { icon: '✅', color: 'from-amber-500 to-orange-600' },
   dp_xhs_fix: { icon: '🔧', color: 'from-rose-500 to-red-600' },
-  dp_xhs_final: { icon: '👁️', color: 'from-purple-500 to-pink-600' },
+  dp_zhihu_format: { icon: '📝', color: 'from-slate-500 to-slate-700' },
+  dp_zhihu_preview: { icon: '👁️', color: 'from-purple-500 to-indigo-600' },
+  dp_toutiao_format: { icon: '📝', color: 'from-orange-500 to-red-600' },
+  dp_toutiao_preview: { icon: '👁️', color: 'from-purple-500 to-orange-600' },
 } as const;
 
 // ============ 平台默认流程模板定义 ============
@@ -238,21 +245,27 @@ export function isVirtualExecutor(executor: string | undefined | null): boolean 
 // ============ 直接发文模式流程模板 ============
 
 /**
- * 直接发文模式：用户提供完整文章，跳过AI写作环节，直接进入合规校验+上传流程
+ * 直接发文模式：用户提供完整文章，由写作Agent格式化为平台标准格式，再走完整的预览/校验/上传流程
  *
- * 设计原则：
- * 1. 用户文章原文不动，系统仅提供平台格式化能力和多平台上传能力
- * 2. 第一步为 user_preview_edit（虚拟执行器），用户确认文章后进入后续流程
- * 3. 文章内容通过 metadata.providedArticle 传递，引擎自动注入到预览节点
- * 4. 下游合规校验、上传等节点与AI创作模式完全一致
+ * 🔥 核心设计原则：
+ * 1. 直接发文必须完全复用AI创作的格式化能力——用户通过系统发文的核心价值：
+ *    a) 系统有发布到各平台的样式（公众号HTML排版、小红书图文卡片等）
+ *    b) 能够直接发到对应的多个平台
+ * 2. 写作Agent参与"格式化"而非"创作"——将用户文章转为平台标准格式
+ * 3. 预览节点使用 ArticlePreviewEditor（与AI创作完全一致的预览体验）
+ * 4. step_history 记录格式与AI创作一致
  *
  * 与AI创作模式对比：
- * - AI创作：分析→撰写→去AI化→预览→合规校验→合规整改→上传（7步）
- * - 直接发文：确认文章→合规校验→合规整改→上传（4步）
+ * - AI创作：  分析→撰写→预览修改→合规校验→合规整改→上传（6步）
+ * - 直接发文：格式化→预览修改→合规校验→合规整改→上传（5步）
+ *
+ * 区别仅在于：AI创作的前两步（分析+撰写）被替换为一步（格式化），
+ * 后续的预览/校验/整改/上传完全一致。
  */
 
 /**
- * 微信公众号直接发文流程（4步）
+ * 微信公众号直接发文流程（5步）
+ * 格式化(insurance-d) → 预览修改 → 合规校验 → 合规整改 → 上传
  */
 export const WECHAT_DIRECT_PUBLISH_TEMPLATE = createFlowTemplate(
   'wechat-direct-publish',
@@ -260,15 +273,17 @@ export const WECHAT_DIRECT_PUBLISH_TEMPLATE = createFlowTemplate(
   '微信公众号',
   '公众号文章直接发布流程',
   [
-    { id: 'node-dp-wechat-1', executor: 'user_preview_edit', title: '确认文章内容', description: '用户确认提供的文章内容，可修改调整或直接确认继续。文章将原样用于后续合规校验和上传', styleKey: 'dp_confirm' },
-    { id: 'node-dp-wechat-2', executor: 'T', title: '合规校验', description: '对文章进行合规性校验，检查是否包含绝对化用语、虚假承诺、违规营销等内容', styleKey: 'dp_check' },
-    { id: 'node-dp-wechat-3', executor: 'insurance-d', title: '完成合规整改', description: '依据合规校验结果，完成文章整改（修改违规内容、调整表述）', styleKey: 'dp_fix' },
-    { id: 'node-dp-wechat-4', executor: 'T', title: '上传公众号草稿箱', description: '将文章上传至公众号草稿箱，配置原创声明、赞赏等设置', styleKey: 'dp_upload' },
+    { id: 'node-dp-wechat-1', executor: 'insurance-d', title: '格式化文章', description: '将用户提供的文章格式化为公众号标准HTML排版，保持原文内容不变，仅添加平台样式和排版', styleKey: 'dp_format' },
+    { id: 'node-dp-wechat-2', executor: 'user_preview_edit', title: '预览修改文章', description: '用户预览格式化后的公众号文章，可修改调整或直接确认继续', styleKey: 'dp_preview' },
+    { id: 'node-dp-wechat-3', executor: 'T', title: '合规校验', description: '对文章进行合规性校验，检查是否包含绝对化用语、虚假承诺、违规营销等内容', styleKey: 'dp_check' },
+    { id: 'node-dp-wechat-4', executor: 'insurance-d', title: '完成合规整改', description: '依据合规校验结果，完成文章整改（修改违规内容、调整表述）', styleKey: 'dp_fix' },
+    { id: 'node-dp-wechat-5', executor: 'T', title: '上传公众号草稿箱', description: '将文章上传至公众号草稿箱，配置原创声明、赞赏等设置', styleKey: 'dp_upload' },
   ]
 );
 
 /**
- * 小红书直接发文流程（4步）
+ * 小红书直接发文流程（5步）
+ * 格式化(insurance-xiaohongshu) → 预览修改 → 合规校验 → 合规整改 → 预览终稿
  */
 export const XIAOHONGSHU_DIRECT_PUBLISH_TEMPLATE = createFlowTemplate(
   'xiaohongshu-direct-publish',
@@ -276,15 +291,17 @@ export const XIAOHONGSHU_DIRECT_PUBLISH_TEMPLATE = createFlowTemplate(
   '小红书',
   '小红书图文直接发布流程',
   [
-    { id: 'node-dp-xhs-1', executor: 'user_preview_edit', title: '确认图文内容', description: '用户确认提供的图文内容，可修改标题/要点/正文/标签或直接确认继续', styleKey: 'dp_xhs_confirm' },
-    { id: 'node-dp-xhs-2', executor: 'T', title: '合规校验', description: '对小红书图文进行合规性校验，检查是否包含绝对化用语、虚假承诺、违规营销等内容', styleKey: 'dp_xhs_check' },
-    { id: 'node-dp-xhs-3', executor: 'insurance-xiaohongshu', title: '完成合规整改', description: '依据合规校验结果，完成小红书图文整改', styleKey: 'dp_xhs_fix' },
-    { id: 'node-dp-xhs-4', executor: 'user_preview_edit', title: '用户预览终稿', description: '合规整改后的终稿确认，用户审阅最终图文内容。此节点由用户操作，非Agent执行', styleKey: 'dp_xhs_final' },
+    { id: 'node-dp-xhs-1', executor: 'insurance-xiaohongshu', title: '格式化图文', description: '将用户提供的文章格式化为小红书标准图文结构（封面+要点卡片+标签），保持原文内容不变，仅添加平台样式和排版', styleKey: 'dp_format' },
+    { id: 'node-dp-xhs-2', executor: 'user_preview_edit', title: '预览修改图文', description: '用户预览格式化后的小红书图文卡片，可修改标题/要点/正文/标签或直接确认继续', styleKey: 'dp_preview' },
+    { id: 'node-dp-xhs-3', executor: 'T', title: '合规校验', description: '对小红书图文进行合规性校验，检查是否包含绝对化用语、虚假承诺、违规营销等内容', styleKey: 'dp_check' },
+    { id: 'node-dp-xhs-4', executor: 'insurance-xiaohongshu', title: '完成合规整改', description: '依据合规校验结果，完成小红书图文整改', styleKey: 'dp_fix' },
+    { id: 'node-dp-xhs-5', executor: 'user_preview_edit', title: '用户预览终稿', description: '合规整改后的终稿确认，用户审阅最终图文内容。此节点由用户操作，非Agent执行', styleKey: 'dp_preview' },
   ]
 );
 
 /**
- * 知乎直接发文流程（4步）
+ * 知乎直接发文流程（5步）
+ * 格式化(insurance-zhihu) → 预览修改 → 合规校验 → 合规整改 → 生成预览图
  */
 export const ZHIHU_DIRECT_PUBLISH_TEMPLATE = createFlowTemplate(
   'zhihu-direct-publish',
@@ -292,15 +309,17 @@ export const ZHIHU_DIRECT_PUBLISH_TEMPLATE = createFlowTemplate(
   '知乎',
   '知乎文章直接发布流程',
   [
-    { id: 'node-dp-zhihu-1', executor: 'user_preview_edit', title: '确认文章内容', description: '用户确认提供的文章内容，可修改调整或直接确认继续', styleKey: 'dp_confirm' },
-    { id: 'node-dp-zhihu-2', executor: 'T', title: '合规校验', description: '对文章进行合规性校验，检查是否包含绝对化用语、虚假承诺、违规营销等内容', styleKey: 'dp_check' },
-    { id: 'node-dp-zhihu-3', executor: 'insurance-zhihu', title: '完成合规整改', description: '依据合规校验结果，完成文章整改（修改违规内容、调整表述）', styleKey: 'dp_fix' },
-    { id: 'node-dp-zhihu-4', executor: 'T', title: '生成预览图', description: '生成知乎文章预览图，供用户手动发布使用', styleKey: 'dp_upload' },
+    { id: 'node-dp-zhihu-1', executor: 'insurance-zhihu', title: '格式化文章', description: '将用户提供的文章格式化为知乎标准排版格式，保持原文内容不变，仅添加平台样式和排版', styleKey: 'dp_format' },
+    { id: 'node-dp-zhihu-2', executor: 'user_preview_edit', title: '预览修改文章', description: '用户预览格式化后的知乎文章，可修改调整或直接确认继续', styleKey: 'dp_preview' },
+    { id: 'node-dp-zhihu-3', executor: 'T', title: '合规校验', description: '对文章进行合规性校验，检查是否包含绝对化用语、虚假承诺、违规营销等内容', styleKey: 'dp_check' },
+    { id: 'node-dp-zhihu-4', executor: 'insurance-zhihu', title: '完成合规整改', description: '依据合规校验结果，完成文章整改（修改违规内容、调整表述）', styleKey: 'dp_fix' },
+    { id: 'node-dp-zhihu-5', executor: 'T', title: '生成预览图', description: '生成知乎文章预览图，供用户手动发布使用', styleKey: 'dp_upload' },
   ]
 );
 
 /**
- * 头条/抖音直接发文流程（4步）
+ * 头条/抖音直接发文流程（5步）
+ * 格式化(insurance-toutiao) → 预览修改 → 合规校验 → 合规整改 → 生成预览图
  */
 export const TOUTIAO_DIRECT_PUBLISH_TEMPLATE = createFlowTemplate(
   'toutiao-direct-publish',
@@ -308,10 +327,11 @@ export const TOUTIAO_DIRECT_PUBLISH_TEMPLATE = createFlowTemplate(
   '今日头条/抖音',
   '头条文章直接发布流程',
   [
-    { id: 'node-dp-toutiao-1', executor: 'user_preview_edit', title: '确认文章内容', description: '用户确认提供的文章内容，可修改调整或直接确认继续', styleKey: 'dp_confirm' },
-    { id: 'node-dp-toutiao-2', executor: 'T', title: '合规校验', description: '对文章进行合规性校验，检查是否包含绝对化用语、虚假承诺、违规营销等内容', styleKey: 'dp_check' },
-    { id: 'node-dp-toutiao-3', executor: 'insurance-toutiao', title: '完成合规整改', description: '依据合规校验结果，完成文章整改（修改违规内容、调整表述）', styleKey: 'dp_fix' },
-    { id: 'node-dp-toutiao-4', executor: 'T', title: '生成预览图', description: '生成头条文章预览图，供用户手动发布使用', styleKey: 'dp_upload' },
+    { id: 'node-dp-toutiao-1', executor: 'insurance-toutiao', title: '格式化文章', description: '将用户提供的文章格式化为头条标准排版格式，保持原文内容不变，仅添加平台样式和排版', styleKey: 'dp_format' },
+    { id: 'node-dp-toutiao-2', executor: 'user_preview_edit', title: '预览修改文章', description: '用户预览格式化后的头条文章，可修改调整或直接确认继续', styleKey: 'dp_preview' },
+    { id: 'node-dp-toutiao-3', executor: 'T', title: '合规校验', description: '对文章进行合规性校验，检查是否包含绝对化用语、虚假承诺、违规营销等内容', styleKey: 'dp_check' },
+    { id: 'node-dp-toutiao-4', executor: 'insurance-toutiao', title: '完成合规整改', description: '依据合规校验结果，完成文章整改（修改违规内容、调整表述）', styleKey: 'dp_fix' },
+    { id: 'node-dp-toutiao-5', executor: 'T', title: '生成预览图', description: '生成头条文章预览图，供用户手动发布使用', styleKey: 'dp_upload' },
   ]
 );
 
@@ -334,8 +354,9 @@ export function getDirectPublishTemplate(platform: string): FlowTemplate {
 }
 
 /**
- * 获取直接发文模式的适配步骤（4步精简版）
+ * 获取直接发文模式的适配步骤（4步）
  * 与AI创作模式的适配步骤相同，但不含去AI化节点（因为用户文章已经是真人写的）
+ * 步骤：格式化(写作Agent) → 预览修改 → 合规校验 → 合规整改
  */
 export function getDirectPublishAdaptationSteps(platform: string): Array<{
   executor: string;
@@ -354,21 +375,27 @@ export function getDirectPublishAdaptationSteps(platform: string): Array<{
   return [
     {
       executor,
-      title: `适配${platformLabel}版本`,
-      description: `基于用户提供的文章，适配改写为${platformLabel}平台风格和格式。必须基于原文改写，不得自行创作新内容`,
+      title: `格式化${platformLabel}版本`,
+      description: `将用户提供的文章格式化为${platformLabel}平台标准排版格式，保持原文内容不变，仅添加平台样式和排版`,
       styleKey: 'adapt_write',
     },
     {
       executor: 'user_preview_edit',
-      title: `用户预览${platformLabel}版本`,
-      description: `用户预览${platformLabel}适配版本，可修改或直接确认`,
+      title: `预览修改${platformLabel}版本`,
+      description: `用户预览格式化后的${platformLabel}版本，可修改或直接确认继续`,
       styleKey: 'adapt_preview',
     },
     {
       executor: 'T',
       title: '合规校验',
-      description: `对${platformLabel}适配版本进行合规性校验`,
+      description: `对${platformLabel}格式化版本进行合规性校验`,
       styleKey: 'adapt_check',
+    },
+    {
+      executor,
+      title: `完成合规整改`,
+      description: `依据合规校验结果，完成${platformLabel}版本整改`,
+      styleKey: 'adapt_write',
     },
   ];
 }

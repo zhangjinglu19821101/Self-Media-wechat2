@@ -3580,13 +3580,17 @@ export default function HomePage() {
                 <div className="flex items-center gap-2 text-xs text-slate-500 flex-wrap">
                   <span className="bg-emerald-100 text-emerald-700 px-2 py-1 rounded">粘贴文章</span>
                   <span className="text-slate-300">→</span>
+                  <span className="bg-indigo-100 text-indigo-700 px-2 py-1 rounded">格式化排版</span>
+                  <span className="text-slate-300">→</span>
                   <span className="bg-blue-100 text-blue-700 px-2 py-1 rounded">预览确认</span>
                   <span className="text-slate-300">→</span>
                   <span className="bg-amber-100 text-amber-700 px-2 py-1 rounded">合规校验</span>
                   <span className="text-slate-300">→</span>
+                  <span className="bg-orange-100 text-orange-700 px-2 py-1 rounded">合规整改</span>
+                  <span className="text-slate-300">→</span>
                   <span className="bg-purple-100 text-purple-700 px-2 py-1 rounded">多平台上传</span>
                 </div>
-                <p className="text-xs text-slate-400 mt-2">文章内容不会被AI修改，系统仅负责格式化和多平台分发</p>
+                <p className="text-xs text-slate-400 mt-2">文章经写作Agent格式化为平台标准排版（公众号HTML/小红书图文等），预览确认后合规校验并上传各平台</p>
               </div>
             </div>
           )}
