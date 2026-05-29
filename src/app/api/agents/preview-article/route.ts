@@ -78,13 +78,10 @@ export async function GET(request: NextRequest) {
     });
 
     // 3. 如果没有预存内容（兼容旧流程），从前序写作任务获取
-    // 🔥🔥🔥 【修复】条件扩展：
-    // - articleContent 为空
-    // - platformRenderData 为空且是小红书平台（小红书必须有卡片数据）
-    // - platformRenderData 为空且是公众号平台（公众号必须有 htmlContent 渲染数据）
+    // 条件：articleContent 为空，或小红书平台缺少 platformRenderData（小红书必须有卡片数据）
+    // 注意：公众号的 platformRenderData 为空时不需要重新提取，因为 LLM 格式化会生成
     const needExtractFromWritingTask = !articleContent || 
-      (!platformRenderData && platform === 'xiaohongshu') ||
-      (!platformRenderData && platform === 'wechat_official');
+      (!platformRenderData && platform === 'xiaohongshu');
     
     console.log('[Preview Article] needExtractFromWritingTask:', needExtractFromWritingTask, {
       articleContentEmpty: !articleContent,
@@ -198,10 +195,9 @@ export async function GET(request: NextRequest) {
 
     // 🔥🔥🔥 【直接发文兜底】如果 platformRenderData 仍为空，
     // 使用 LLM 格式化（微信应用 insurance-d HTML 样式、小红书智能提取要点）
-    // 注意：如果 articleContent 已经是 HTML（以 < 开头），公众号不需要 LLM 格式化
-    const isHtmlContent = articleContent.trimStart().startsWith('<');
-    const shouldFormat = !platformRenderData && articleContent && platform &&
-      !(platform === 'wechat_official' && isHtmlContent);
+    // 注意：公众号的 LLM 格式化就是"样式改造"功能，即使 articleContent 已经是 HTML
+    // 也需要经过格式化来添加公众号风格的排版样式（标题/分割线/重点标注等）
+    const shouldFormat = !platformRenderData && articleContent && platform;
     
     if (shouldFormat) {
       try {

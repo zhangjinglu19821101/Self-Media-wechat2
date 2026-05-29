@@ -255,18 +255,16 @@ function extractWechatRenderData(
         const structuredResult = executorOutput.structuredResult as Record<string, unknown> | undefined;
         if (structuredResult && typeof structuredResult === 'object') {
           const resultContent = structuredResult.resultContent;
-          if (resultContent) {
-            if (typeof resultContent === 'string') {
-              // 🔥 修复：resultContent 直接是 HTML 字符串（insurance-d 实际输出格式）
-              htmlContent = resultContent;
-            } else if (typeof resultContent === 'object' && !Array.isArray(resultContent)) {
-              // 对象格式：{ htmlContent, content, articleTitle }
-              const rc = resultContent as Record<string, unknown>;
-              htmlContent = typeof rc.htmlContent === 'string' ? rc.htmlContent :
-                            typeof rc.content === 'string' ? rc.content : '';
-              if (!articleTitle) {
-                articleTitle = typeof rc.articleTitle === 'string' ? rc.articleTitle : '';
-              }
+          if (resultContent && typeof resultContent === 'object' && !Array.isArray(resultContent)) {
+            // 对象格式：{ htmlContent, content, articleTitle }
+            // 注意：resultContent 为字符串时不提取，因为那是 insurance-d 的原始 HTML 输出，
+            // 还未经过公众号样式改造（LLM格式化）。公众号的 platformRenderData 应由
+            // LLM 格式化步骤生成，而非从原始输出直接提取。
+            const rc = resultContent as Record<string, unknown>;
+            htmlContent = typeof rc.htmlContent === 'string' ? rc.htmlContent :
+                          typeof rc.content === 'string' ? rc.content : '';
+            if (!articleTitle) {
+              articleTitle = typeof rc.articleTitle === 'string' ? rc.articleTitle : '';
             }
           }
           // 从 structuredResult 直接取 articleTitle 兜底
