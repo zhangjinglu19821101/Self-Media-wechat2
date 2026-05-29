@@ -988,19 +988,12 @@ export default function HomePage() {
     });
   }, [mainInstruction, coreOpinion, emotionTone, selectedAccountIds, selectedContentTemplate, selectedParadigm?.id, selectedParadigm?.paradigmCode, paradigmMaterialBindings, hasSplitResult, subTasks, recommendedMaterials, selectedMaterialsV2List, taskTitle, executionDate, platformSubTaskGroups]);
 
-  // 🔥 获取账号列表（AI拆解后自动加载）
+  // 🔥 获取账号列表（创作引导区域可见时自动加载）
   useEffect(() => {
-    if (hasSplitResult) {
+    if (hasSplitResult || (creationMode === 'ai_create' && mainInstruction.trim().length > 0) || creationMode === 'direct_publish') {
       loadAccountConfigs();
     }
-  }, [hasSplitResult]);
-
-  // 🔥 直接发文模式：切换到直接发文时自动加载账号列表
-  useEffect(() => {
-    if (creationMode === 'direct_publish' && accountConfigs.length === 0) {
-      loadAccountConfigs();
-    }
-  }, [creationMode]);
+  }, [hasSplitResult, creationMode, mainInstruction.trim().length > 0]);
 
   // 🔥 获取范式列表 + 范式初始化状态（页面加载时）
   useEffect(() => {
@@ -3377,7 +3370,7 @@ export default function HomePage() {
           {/* 🔥🔥🔥 模式切换器：AI创作 / 直接发文 */}
           <div className="flex items-center gap-2 p-1 bg-slate-100 rounded-xl w-fit">
             <button
-              onClick={() => setCreationMode('ai_create')}
+              onClick={() => { setCreationMode('ai_create'); setActiveGuideCard(null); }}
               className={`flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 ${
                 creationMode === 'ai_create'
                   ? 'bg-gradient-to-r from-blue-500 to-sky-500 text-white shadow-md shadow-blue-200/50'
@@ -3388,7 +3381,7 @@ export default function HomePage() {
               AI 创作
             </button>
             <button
-              onClick={() => setCreationMode('direct_publish')}
+              onClick={() => { setCreationMode('direct_publish'); setActiveGuideCard(null); }}
               className={`flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 ${
                 creationMode === 'direct_publish'
                   ? 'bg-gradient-to-r from-emerald-500 to-teal-500 text-white shadow-md shadow-emerald-200/50'
@@ -3482,65 +3475,30 @@ export default function HomePage() {
                 />
               </div>
 
-              {/* 发布账号选择 */}
-              <div className="space-y-3">
-                <label className="text-sm font-medium text-slate-700 flex items-center gap-2">
-                  <Users className="w-4 h-4 text-emerald-500" />
-                  发布账号
-                  <span className="text-xs text-slate-400 font-normal">（必填，选择1-3个平台）</span>
-                </label>
-                {loadingAccounts ? (
-                  <div className="flex items-center gap-2 text-sm text-slate-400">
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                    加载账号中...
-                  </div>
-                ) : accountConfigs.length === 0 ? (
-                  <p className="text-sm text-slate-400">暂无发布账号，请先在账号管理中创建</p>
-                ) : (
-                  <div className="flex flex-wrap gap-2">
-                    {accountConfigs.map(({ account, template }) => {
-                      const isSelected = selectedAccountIds.includes(account.id);
-                      const platform = account.platform || 'wechat_official';
-                      const platformLabel = PLATFORM_LABELS[platform as keyof typeof PLATFORM_LABELS] || platform;
-                      const isPrimary = selectedAccountIds.indexOf(account.id) === 0;
-                      return (
-                        <button
-                          key={account.id}
-                          onClick={() => {
-                            setSelectedAccountIds(prev => {
-                              if (prev.includes(account.id)) {
-                                return prev.filter(id => id !== account.id);
-                              }
-                              if (prev.length >= 3) {
-                                toast.warning('最多选择3个平台');
-                                return prev;
-                              }
-                              return [...prev, account.id];
-                            });
-                          }}
-                          className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm border transition-all ${
-                            isSelected
-                              ? 'border-emerald-400 bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200'
-                              : 'border-slate-200 bg-white text-slate-500 hover:border-slate-300'
-                          }`}
-                        >
-                          <span>{platformLabel}</span>
-                          <span className="font-medium">{account.accountName || account.id}</span>
-                          {template && (
-                            <span className="text-[10px] text-slate-400">{template.name}</span>
-                          )}
-                          {isSelected && isPrimary && (
-                            <span className="text-[10px] bg-emerald-500 text-white px-1.5 py-0.5 rounded-full">主账号</span>
-                          )}
-                          {isSelected && !isPrimary && (
-                            <Check className="w-3.5 h-3.5 text-emerald-500" />
-                          )}
-                        </button>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
+              {/* 发布账号 - 已移至下方「通用配置」区域的发布平台卡片中，避免重复选择 */}
+              {selectedAccountIds.length === 0 && (
+                <div className="flex items-center gap-2 p-3 bg-amber-50 border border-amber-200 rounded-lg">
+                  <AlertCircle className="w-4 h-4 text-amber-500 shrink-0" />
+                  <p className="text-sm text-amber-700">请在下方「发布平台」卡片中选择发布账号后再提交</p>
+                </div>
+              )}
+              {selectedAccountIds.length > 0 && (
+                <div className="flex items-center gap-2 p-3 bg-emerald-50 border border-emerald-200 rounded-lg">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />
+                  <p className="text-sm text-emerald-700">
+                    已选择 {selectedAccountIds.length} 个发布账号
+                    {accountConfigs.length > 0 && (
+                      <span className="ml-1">
+                        （{selectedAccountIds.map(id => {
+                          const config = accountConfigs.find(c => c.account.id === id);
+                          const platform = config?.account?.platform || 'wechat_official';
+                          return PLATFORM_LABELS[platform as keyof typeof PLATFORM_LABELS] || platform;
+                        }).join('、')}）
+                      </span>
+                    )}
+                  </p>
+                </div>
+              )}
 
               {/* 提交按钮 */}
               <div className="flex items-center gap-3 pt-2">
@@ -3772,9 +3730,15 @@ export default function HomePage() {
               </div>
             )}
           </div>
+          </>
+          )}
 
-          {/* 🔥 创作引导区域（大卡片网格布局） */}
-          {hasSplitResult && (
+          {/* 🔥 创作引导区域（大卡片网格布局）
+              提前展示：不依赖 hasSplitResult，在用户输入指令/文章后即可配置
+              - AI创作：输入指令后即可展开配置
+              - 直接发文：始终可配置（内容模板、发布账号等）
+          */}
+          {(hasSplitResult || (creationMode === 'direct_publish') || (creationMode === 'ai_create' && mainInstruction.trim().length > 0)) && (
             <div className="space-y-6">
               {/* 大标题：通用配置 */}
               <div className="flex items-center justify-center gap-4">
@@ -3785,9 +3749,12 @@ export default function HomePage() {
                 <div className="h-[3px] w-20 bg-gradient-to-l from-transparent to-sky-500 rounded-full"></div>
               </div>
 
-              {/* 4张大卡片网格（仅当未选择具体卡片时显示） */}
+              {/* 大卡片网格（仅当未选择具体卡片时显示）
+                  - 直接发文模式：仅显示内容模版+发布平台（2列）
+                  - AI创作模式：显示全部4张卡片
+              */}
               {!activeGuideCard ? (
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-5">
+                <div className={`grid grid-cols-1 gap-5 ${creationMode === 'direct_publish' ? 'md:grid-cols-2' : 'md:grid-cols-4'}`}>
                   {/* 卡片1：内容模版（小红书特有） */}
                   <button
                     type="button"
@@ -3841,7 +3808,8 @@ export default function HomePage() {
                     </div>
                   </button>
 
-                  {/* 卡片2：范式选择 */}
+                  {/* 卡片2：范式选择（直接发文模式下隐藏，无需AI结构范式） */}
+                  {creationMode !== 'direct_publish' && (
                   <button
                     type="button"
                     onClick={() => setActiveGuideCard('paradigm')}
@@ -3896,6 +3864,7 @@ export default function HomePage() {
                       )}
                     </div>
                   </button>
+                  )}
 
                   {/* 卡片3：发布平台 */}
                   <button
@@ -3943,7 +3912,8 @@ export default function HomePage() {
                     </div>
                   </button>
 
-                  {/* 卡片4：创作引导 */}
+                  {/* 卡片4：创作引导（直接发文模式下隐藏，无需创作引导设置） */}
+                  {creationMode !== 'direct_publish' && (
                   <button
                     type="button"
                     onClick={() => setActiveGuideCard('guide')}
@@ -3992,6 +3962,7 @@ export default function HomePage() {
                       )}
                     </div>
                   </button>
+                  )}
                 </div>
               ) : (
                 /* 返回按钮 */
@@ -4010,7 +3981,8 @@ export default function HomePage() {
               )}
 
               {/* 原始创作引导内容（在 activeGuideCard 有值时显示） */}
-              {activeGuideCard && (
+              {/* 直接发文模式下，只允许 content 和 platform 卡片 */}
+              {activeGuideCard && !(creationMode === 'direct_publish' && (activeGuideCard === 'paradigm' || activeGuideCard === 'guide')) && (
                 <div className="space-y-5">
                   {/* 🔥🔥 小红书专属配置：内容模板（从风格复刻保存的图文模板） */}
                   {(() => {
@@ -5328,6 +5300,10 @@ export default function HomePage() {
               )}
             </div>
           )}
+
+          {/* 子任务列表 + 提交按钮（仅AI创作模式） */}
+          {creationMode === 'ai_create' && (
+          <>
 
           {/* 子任务列表 - 仅选了账号后按平台分组展示（横向流程图模式） */}
           {platformSubTaskGroups.length > 0 && (
