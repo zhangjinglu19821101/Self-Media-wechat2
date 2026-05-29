@@ -458,6 +458,14 @@ async function callLLMInternal(
     const latency = Date.now() - startTime;
     console.log(`🤖 [LLM调用] LLM 调用完成，总耗时: ${latency}ms`);
 
+    // 🔴 P0 修复：检测空响应（LLM SDK 在超时边缘可能返回空响应对象而非抛错）
+    const responseContentLength = response.content?.length || 0;
+    if (responseContentLength < 10) {
+      console.error(`🔴 [LLM Guard] Agent ${agentId} 返回空响应或极短响应 (${responseContentLength} 字符)`);
+      console.error(`🔴 [LLM Guard] 响应时间 ${latency}ms 接近超时阈值 ${timeout}ms，可能是超时边缘返回`);
+      throw new Error(`LLM 返回空响应 (${responseContentLength} 字符，Agent ${agentId}，可能是超时边缘问题)`);
+    }
+
     // 🔥 完整打印 LLM 的返回结果
     console.log('');
     console.log('═══════════════════════════════════════════════════════════════════════════');
