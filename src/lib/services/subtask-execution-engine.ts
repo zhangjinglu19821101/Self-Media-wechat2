@@ -1615,7 +1615,7 @@ export class SubtaskExecutionEngine {
     // 新流程中，直接发文也走写作Agent格式化（orderIndex=1），
     // 预览确认节点（orderIndex=2）获取前序格式化任务输出，与AI创作完全一致
     // 保留 providedArticle 检测仅用于日志标记
-    const taskMetadata = task.metadata as Record<string, unknown> || {};
+    const taskMetadata = (task.metadata != null ? task.metadata : {}) as Record<string, unknown>;
     const isDirectPublish = taskMetadata.creationMode === 'direct_publish';
 
     if (isDirectPublish) {
@@ -1706,7 +1706,9 @@ export class SubtaskExecutionEngine {
     // 原因：直接发文流程中，insurance-d（创作Agent）不适合做纯格式化工作，
     // 它的输出可能只包含 briefResponse（如"已将文章格式化"）而不含实际文章内容。
     // 用户提供的原文是直接发文模式的核心内容源，应始终优先使用。
-    if (taskMetadata.creationMode === 'direct_publish' && taskMetadata.providedArticle) {
+    // 注意：isDirectPublish 已在上方（第1619行）声明，此处复用
+    const hasProvidedArticle = !!taskMetadata.providedArticle;
+    if (isDirectPublish && hasProvidedArticle) {
       articleContent = taskMetadata.providedArticle as string;
       articleTitle = (taskMetadata.providedArticleTitle as string) || articleTitle || '用户提供的文章';
       console.log('[SubtaskEngine] 👁️ 直接发文模式：使用 metadata.providedArticle 作为文章内容', {
@@ -1728,7 +1730,18 @@ export class SubtaskExecutionEngine {
     // 平台专属的渲染数据（如小红书卡片）通过 platformRenderData 独立传递
     let platformRenderData: import('@/lib/platform-render/types').PlatformRenderData | Record<string, unknown> | null = null;
     let platformDataSource: typeof agentSubTasks.$inferSelect | undefined;
-    if (effectiveWritingTask?.fromParentsExecutor === 'deai-optimizer') {
+
+    // 🔥🔥🔥 【Bug修复】直接发文模式：跳过从格式化任务提取 platformRenderData
+    // 原因：直接发文模式下，insurance-d 格式化任务可能只输出 briefResponse（如"已将文章格式化"），
+    // 从中提取的 platformRenderData.htmlContent 会是 briefResponse 的 HTML 包装，
+    // 前端公众号预览优先使用 platformRenderData.htmlContent，会覆盖掉正确的 articleContent。
+    // 直接发文模式的文章内容来自 providedArticle，应交给 shouldFormatInEngine 逻辑处理。
+    const skipPlatformRenderExtraction = isDirectPublish && hasProvidedArticle;
+
+    if (skipPlatformRenderExtraction) {
+      console.log('[SubtaskEngine] 👁️ 直接发文模式：跳过 platformRenderData 提取，使用 providedArticle');
+      platformDataSource = undefined;
+    } else if (effectiveWritingTask?.fromParentsExecutor === 'deai-optimizer') {
       // deai-optimizer → 复用单次遍历结果，从原始写作任务获取渲染数据
       platformDataSource = firstCompletedWritingTask || fallbackWritingTask;
     } else if (isFinalPreview) {
@@ -1751,7 +1764,7 @@ export class SubtaskExecutionEngine {
         platformRenderData = extractPlatformRenderData(
           platform as import('@/lib/db/schema/style-template').PlatformType,
           platformDataSource.resultData,
-          (task.metadata as Record<string, unknown>) || {}
+          (task.metadata != null ? task.metadata : {}) as Record<string, unknown>
         );
         console.log('[SubtaskEngine] 👁️ 提取结果:', {
           hasPlatformRenderData: !!platformRenderData,
@@ -1780,7 +1793,7 @@ export class SubtaskExecutionEngine {
     if (shouldFormatInEngine) {
       try {
         const { formatDirectPublishArticle } = await import('@/lib/services/direct-publish-formatter-service');
-        const metadata = task.metadata as Record<string, any> || {};
+        const metadata = task.metadata != null ? task.metadata : {};
         const cardCountMode = metadata.cardCountMode || metadata.imageCountMode;
         platformRenderData = await formatDirectPublishArticle({
           textContent: articleContent,
@@ -2168,11 +2181,21 @@ export class SubtaskExecutionEngine {
     task: typeof agentSubTasks.$inferSelect
   ): Promise<boolean> {
     // 仅对写作类 Agent（insurance-d / insurance-xiaohongshu）的创作任务生效
+    // 🔥🔥🔥 【Bug修复】排除直接发文模式：直接发文用户提供完整文章，不需要大纲确认拆分
+    const taskMeta = typeof task.metadata === 'object' && task.metadata !== null
+      ? task.metadata as Record<string, unknown>
+      : typeof task.metadata === 'string'
+        ? (() => { try { return JSON.parse(task.metadata); } catch { return {}; } })()
+        : {};
+    const isDirectPublishMode = taskMeta.creationMode === 'direct_publish';
+
     const isWritingAgentCreation = isWritingAgent(task.fromParentsExecutor)
       && !task.taskTitle?.includes('大纲')
       && !task.taskTitle?.includes('outline')
       // 检查 metadata 中是否已经拆分过（防止重复拆分）
-      && !(task as any).resultData?.isOutlineSplit;
+      && !(task as any).resultData?.isOutlineSplit
+      // 🔥 直接发文模式不需要大纲确认拆分
+      && !isDirectPublishMode;
 
     if (!isWritingAgentCreation) {
       return false;

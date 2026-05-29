@@ -66,7 +66,7 @@ export async function GET(request: NextRequest) {
     const taskMetadata = typeof task.metadata === 'object' && task.metadata !== null
       ? task.metadata as Record<string, unknown>
       : {};
-    const isDirectPublish = taskMetadata.creationMode === 'direct_publish' || !!taskMetadata.providedArticle;
+    const isDirectPublish = taskMetadata.creationMode === 'direct_publish';
     const providedArticle = typeof taskMetadata.providedArticle === 'string' ? taskMetadata.providedArticle : '';
     const providedArticleTitle = typeof taskMetadata.providedArticleTitle === 'string' ? taskMetadata.providedArticleTitle : '';
 
@@ -80,6 +80,7 @@ export async function GET(request: NextRequest) {
 
     // 直接发文模式：用用户提供的原文替换从写作任务提取的 briefResponse
     // insurance-d 在直接发文模式下可能只输出 briefResponse 而没有实际文章内容
+    // 🔥🔥🔥 【Bug修复】同时替换 platformRenderData.htmlContent，防止前端优先使用 briefResponse HTML
     if (isDirectPublish && providedArticle) {
       if (!articleContent || articleContent.length < providedArticle.length * 0.5) {
         console.log('[Preview Article] 直接发文模式：使用 providedArticle 替换 articleContent', {
@@ -90,6 +91,17 @@ export async function GET(request: NextRequest) {
       }
       if (providedArticleTitle && !articleTitle) {
         articleTitle = providedArticleTitle;
+      }
+      // 🔥 同步替换 platformRenderData.htmlContent（前端公众号预览优先使用此字段）
+      if (platformRenderData && typeof platformRenderData === 'object') {
+        const htmlContent = (platformRenderData as Record<string, unknown>).htmlContent;
+        if (!htmlContent || String(htmlContent).length < providedArticle.length * 0.5) {
+          console.log('[Preview Article] 直接发文模式：同步替换 platformRenderData.htmlContent', {
+            oldLength: htmlContent ? String(htmlContent).length : 0,
+            newLength: providedArticle.length,
+          });
+          (platformRenderData as Record<string, unknown>).htmlContent = providedArticle;
+        }
       }
     }
 

@@ -176,11 +176,17 @@ export function ArticlePreviewEditor({
           const apiPlatformRenderData = data.data.platformRenderData;
           
           let finalContent = data.data.articleContent || '';
+          // 🔥🔥🔥 【修复公众号预览】公众号优先使用 platformRenderData.htmlContent
+          // 但需要检查有效性：如果 htmlContent 比 articleContent 短得多，说明是 briefResponse，不应覆盖
           if (apiPlatform === 'wechat_official' && 
               apiPlatformRenderData && 
               typeof apiPlatformRenderData === 'object' && 
               'htmlContent' in apiPlatformRenderData) {
-            finalContent = (apiPlatformRenderData as { htmlContent: string }).htmlContent || finalContent;
+            const htmlContent = (apiPlatformRenderData as { htmlContent: string }).htmlContent || '';
+            // htmlContent 必须比 articleContent 更长或相当才使用（防止 briefResponse 覆盖完整文章）
+            if (htmlContent && htmlContent.length >= (finalContent.length * 0.5)) {
+              finalContent = htmlContent;
+            }
           }
           
           setContent(finalContent);
