@@ -466,6 +466,28 @@ async function callLLMInternal(
       throw new Error(`LLM 返回空响应 (${responseContentLength} 字符，Agent ${agentId}，可能是超时边缘问题)`);
     }
 
+    // 🔴 P0 修复：检测 LLM 响应截断（JSON 不完整）
+    const trimmedContent = (response.content as string).trim();
+    const lastChar = trimmedContent.slice(-1);
+    const openBraces = (trimmedContent.match(/\{/g) || []).length;
+    const closeBraces = (trimmedContent.match(/\}/g) || []).length;
+    const openBrackets = (trimmedContent.match(/\[/g) || []).length;
+    const closeBrackets = (trimmedContent.match(/\]/g) || []).length;
+    const isBracesImbalanced = openBraces !== closeBraces;
+    const isBracketsImbalanced = openBrackets !== closeBrackets;
+    const endsWithIncompleteToken = ['{', '[', '"', ',', ':', '\\'].includes(lastChar);
+
+    if (isBracesImbalanced || isBracketsImbalanced || endsWithIncompleteToken) {
+      console.warn(`🟡 [LLM Guard] Agent ${agentId} 响应可能被截断! 括号不平衡({${openBraces}/${closeBraces}} [${openBrackets}/${closeBrackets}]) 末尾字符='${lastChar}'`);
+      console.warn(`🟡 [LLM Guard] 响应时间 ${latency}ms, 超时阈值 ${timeout}ms, 内容长度 ${responseContentLength}`);
+
+      // 🔴 关键：标记为截断但仍然返回内容，让解析器层的截断修复机制处理
+      // 不抛出错误，因为解析器可能能修复截断的 JSON
+      // 但添加标记，便于解析器识别
+      const truncationWarning = `\n\n[SYSTEM_TRUNCATION_WARNING: 响应可能被截断(括号不平衡 {${openBraces}/${closeBraces}} [${openBrackets}/${closeBrackets}], 末尾='${lastChar}')]`;
+      (response.content as string) += truncationWarning;
+    }
+
     // 🔥 完整打印 LLM 的返回结果
     console.log('');
     console.log('═══════════════════════════════════════════════════════════════════════════');

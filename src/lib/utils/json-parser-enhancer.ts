@@ -234,6 +234,35 @@ export class JsonParserEnhancer {
             console.log('[JsonParserEnhancer] ⚠️ 直接解析失败:', directParseError instanceof Error ? directParseError.message : String(directParseError));
           }
         }
+
+        // 🔴🔴🔴 P0-修复：JSON 截断检测与修复
+        // 当 endPos === -1 且 depth > 0 时，说明 JSON 对象没有闭合的 }，LLM 输出被截断
+        if (endPos === -1 && depth > 0) {
+          console.warn(`[JsonParserEnhancer] 🔴 检测到 JSON 截断！depth=${depth}，文本长度=${trimmedText.length}`);
+          console.warn(`[JsonParserEnhancer] 🔴 JSON 前80字符: ${trimmedText.substring(0, 80)}`);
+          console.warn(`[JsonParserEnhancer] 🔴 JSON 末尾80字符: ${trimmedText.substring(trimmedText.length - 80)}`);
+
+          // 尝试修复截断的 JSON：补全缺失的闭合括号 + 引号
+          const repairResult = this.repairTruncatedJson(trimmedText);
+          if (repairResult.wasRepaired) {
+            console.log('[JsonParserEnhancer] 🔧 截断修复成功，尝试解析修复后的 JSON，长度:', repairResult.text.length, '详情:', repairResult.repairDetails);
+            try {
+              const data = JSON.parse(repairResult.text);
+              if (typeof data === 'object' && data !== null && !Array.isArray(data)) {
+                const truncationWarning = `LLM 响应 JSON 被截断，已自动修复 (${repairResult.repairDetails})。建议增加 maxTokens。`;
+                console.warn(`[JsonParserEnhancer] ⚠️ ${truncationWarning}`);
+                warnings.push(truncationWarning);
+                return {
+                  success: true,
+                  data,
+                  warnings
+                };
+              }
+            } catch (repairParseError) {
+              console.warn('[JsonParserEnhancer] 🔴 截断修复后仍无法解析:', repairParseError instanceof Error ? repairParseError.message : String(repairParseError));
+            }
+          }
+        }
       }
       
       // 回退到通用解析
@@ -292,6 +321,31 @@ export class JsonParserEnhancer {
     if (!result.success && formatType !== 'unknown') {
       console.warn('[JsonParserEnhancer] ⚠️  专门解析失败，回退到通用解析');
       result = this.parseGenericJson(text);
+    }
+    
+    // 🔴 P0 修复：如果所有解析都失败，尝试截断修复
+    if (!result.success) {
+      console.warn('[JsonParserEnhancer] ⚠️  所有解析策略失败，尝试 JSON 截断修复...');
+      const repairResult = this.repairTruncatedJson(text);
+      if (repairResult.wasRepaired) {
+        console.log('[JsonParserEnhancer] 🟢 截断修复成功，重新解析修复后的文本');
+        // 使用修复后的文本重新尝试解析
+        const repairedResult = this.parseGenericJson(repairResult.text);
+        if (repairedResult.success) {
+          // 保留截断修复的警告信息
+          repairedResult.warnings = repairedResult.warnings || [];
+          repairedResult.warnings.push(`⚠️ JSON 已通过截断修复恢复（原始响应可能被 LLM token 限制截断）: ${repairResult.repairDetails}`);
+          result = repairedResult;
+        } else {
+          console.warn('[JsonParserEnhancer] 🟡 截断修复后仍无法解析，原始错误保留');
+          result.warnings = result.warnings || [];
+          result.warnings.push(`尝试了截断修复但失败: ${repairResult.repairDetails}`);
+        }
+      } else {
+        console.warn('[JsonParserEnhancer] 🟡 截断修复不适用: ' + repairResult.repairDetails);
+        result.warnings = result.warnings || [];
+        result.warnings.push(`截断修复不适用: ${repairResult.repairDetails}`);
+      }
     }
     
     console.log('[JsonParserEnhancer] 🧠 智能解析完成，结果:', {
@@ -1403,5 +1457,202 @@ export class JsonParserEnhancer {
     feedback += `6. 请参考上述 3 天拆解样例的格式和结构\n`;
 
     return feedback;
+  }
+
+  /**
+   * 🔴 P0 修复：检测并修复截断的 JSON
+   * 
+   * 当 LLM 输出达到 token 限制或超时边缘时，JSON 可能被截断（缺少闭合括号）。
+   * 此方法检测截断并尝试修复，使解析器能够正常解析。
+   * 
+   * @param text - 原始文本（可能包含截断的 JSON）
+   * @returns 修复后的文本，或原始文本（如果无法修复）
+   */
+  private static repairTruncatedJson(text: string): { text: string; wasRepaired: boolean; repairDetails: string } {
+    // 1. 清理 markdown 代码块
+    let cleaned = text.trim();
+    const codeBlockMatch = cleaned.match(/```(?:json)?\s*\n?([\s\S]*?)$/);
+    if (codeBlockMatch) {
+      cleaned = codeBlockMatch[1].trim();
+      // 移除末尾的 ``` 如果存在
+      cleaned = cleaned.replace(/\n```\s*$/, '').trim();
+    }
+
+    // 2. 查找 JSON 起始位置
+    const objStart = cleaned.indexOf('{');
+    const arrStart = cleaned.indexOf('[');
+    
+    if (objStart === -1 && arrStart === -1) {
+      return { text, wasRepaired: false, repairDetails: '未找到 JSON 起始括号' };
+    }
+
+    // 取最先出现的起始位置
+    const jsonStart = objStart === -1 ? arrStart : (arrStart === -1 ? objStart : Math.min(objStart, arrStart));
+    let jsonStr = cleaned.substring(jsonStart);
+
+    // 3. 检测是否有 callLLM 注入的截断警告标记
+    const repairDetails: string[] = [];
+    if (cleaned.includes('SYSTEM_TRUNCATION_WARNING')) {
+      repairDetails.push('检测到 callLLM 截断警告标记 SYSTEM_TRUNCATION_WARNING');
+      // 移除标记后继续修复
+      jsonStr = jsonStr.replace(/\n?\[SYSTEM_TRUNCATION_WARNING:.*?\]\n?/g, '').trim();
+    }
+
+    // 4. 检测括号是否匹配
+    const analysis = this.analyzeBracketBalance(jsonStr);
+    
+    if (analysis.isBalanced) {
+      // 括号平衡但可能仍需检查是否被标记为截断
+      return { text, wasRepaired: false, repairDetails: '括号已平衡，无需修复' };
+    }
+
+    repairDetails.push(`检测到括号不平衡: {开=${analysis.openBraces} 闭=${analysis.closeBraces}} [开=${analysis.openBrackets} 闭=${analysis.closeBrackets}]`);
+
+    // 4.1 尝试在截断点找到最后一个完整的值
+    // 策略：从末尾向前查找，找到最后一个完整值的位置，然后截断并闭合
+    let repaired = this.attemptTruncationRepair(jsonStr, analysis, repairDetails);
+
+    if (!repaired) {
+      return { text, wasRepaired: false, repairDetails: repairDetails.join('; ') };
+    }
+
+    // 5. 验证修复后的 JSON 是否可解析
+    try {
+      JSON.parse(repaired);
+      repairDetails.push('修复后 JSON 解析成功');
+      console.log(`🟢 [JSON截断修复] 修复成功: ${repairDetails.join('; ')}`);
+      return { text: repaired, wasRepaired: true, repairDetails: repairDetails.join('; ') };
+    } catch (e) {
+      // 修复后仍然无法解析，返回原始文本
+      repairDetails.push(`修复后解析失败: ${e instanceof Error ? e.message : String(e)}`);
+      console.warn(`🟡 [JSON截断修复] 修复后解析失败: ${repairDetails.join('; ')}`);
+      return { text, wasRepaired: false, repairDetails: repairDetails.join('; ') };
+    }
+  }
+
+  /**
+   * 分析括号平衡状态
+   */
+  private static analyzeBracketBalance(text: string): {
+    isBalanced: boolean;
+    openBraces: number;
+    closeBraces: number;
+    openBrackets: number;
+    closeBrackets: number;
+    inString: boolean;
+  } {
+    let openBraces = 0;
+    let closeBraces = 0;
+    let openBrackets = 0;
+    let closeBrackets = 0;
+    let inString = false;
+    let escapeNext = false;
+
+    for (let i = 0; i < text.length; i++) {
+      const ch = text[i];
+      
+      if (escapeNext) {
+        escapeNext = false;
+        continue;
+      }
+      
+      if (ch === '\\' && inString) {
+        escapeNext = true;
+        continue;
+      }
+      
+      if (ch === '"' && !escapeNext) {
+        inString = !inString;
+        continue;
+      }
+      
+      if (inString) continue;
+      
+      if (ch === '{') openBraces++;
+      else if (ch === '}') closeBraces++;
+      else if (ch === '[') openBrackets++;
+      else if (ch === ']') closeBrackets++;
+    }
+
+    return {
+      isBalanced: openBraces === closeBraces && openBrackets === closeBrackets,
+      openBraces,
+      closeBraces,
+      openBrackets,
+      closeBrackets,
+      inString,
+    };
+  }
+
+  /**
+   * 尝试修复截断的 JSON
+   * 策略：从截断点向前找到最后一个完整的 key:value 对，截断并补齐闭合括号
+   */
+  private static attemptTruncationRepair(
+    jsonStr: string,
+    analysis: ReturnType<typeof JsonParserEnhancer.analyzeBracketBalance>,
+    repairDetails: string[]
+  ): string | null {
+    // 如果正在字符串中，需要先关闭字符串
+    let working = jsonStr;
+    
+    if (analysis.inString) {
+      // 找到最后一个未闭合的字符串，截断到它之前
+      const lastQuoteIdx = working.lastIndexOf('"');
+      if (lastQuoteIdx > 0) {
+        // 尝试找到这个字符串的 key
+        const beforeQuote = working.substring(0, lastQuoteIdx);
+        const colonIdx = beforeQuote.lastIndexOf(':');
+        if (colonIdx > 0) {
+          // 截断到冒号之前（删除这个不完整的 key:value 对）
+          const commaIdx = beforeQuote.lastIndexOf(',', colonIdx);
+          if (commaIdx > 0) {
+            working = working.substring(0, commaIdx);
+            repairDetails.push('截断不完整的字符串值到上一个逗号');
+          } else {
+            working = working.substring(0, colonIdx);
+            repairDetails.push('截断不完整的字符串值到冒号');
+          }
+        } else {
+          working = working.substring(0, lastQuoteIdx);
+          repairDetails.push('截断不完整的字符串');
+        }
+      }
+      // 关闭字符串
+      working += '"';
+      repairDetails.push('关闭未闭合的字符串');
+    }
+
+    // 移除末尾的逗号（如果有）
+    working = working.replace(/,\s*$/, '');
+    
+    // 移除末尾的不完整 token（如 "key": 后面没有值）
+    working = working.replace(/,\s*"[^"]*"\s*:\s*$/, '');
+    working = working.replace(/"[^"]*"\s*:\s*$/, '');
+
+    // 补齐闭合括号
+    const newAnalysis = this.analyzeBracketBalance(working);
+    const missingBraces = newAnalysis.openBraces - newAnalysis.closeBraces;
+    const missingBrackets = newAnalysis.openBrackets - newAnalysis.closeBrackets;
+
+    if (missingBraces < 0 || missingBrackets < 0) {
+      repairDetails.push(`括号异常: 多余的闭合括号 (braces=${missingBraces}, brackets=${missingBrackets})`);
+      return null; // 异常情况，无法修复
+    }
+
+    if (missingBraces > 5 || missingBrackets > 5) {
+      repairDetails.push(`缺失括号过多 (braces=${missingBraces}, brackets=${missingBrackets})，截断过于严重`);
+      return null; // 截断过于严重，无法可靠修复
+    }
+
+    // 补齐闭合括号
+    working += ']'.repeat(missingBrackets);
+    working += '}'.repeat(missingBraces);
+    
+    if (missingBraces > 0 || missingBrackets > 0) {
+      repairDetails.push(`补齐 ${missingBraces} 个 } 和 ${missingBrackets} 个 ]`);
+    }
+
+    return working;
   }
 }
