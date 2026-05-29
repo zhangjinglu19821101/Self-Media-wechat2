@@ -78,9 +78,13 @@ export async function GET(request: NextRequest) {
     });
 
     // 3. 如果没有预存内容（兼容旧流程），从前序写作任务获取
-    // 🔥🔥🔥 【修复】条件扩展：articleContent 为空，或者 platformRenderData 为空且是小红书平台
+    // 🔥🔥🔥 【修复】条件扩展：
+    // - articleContent 为空
+    // - platformRenderData 为空且是小红书平台（小红书必须有卡片数据）
+    // - platformRenderData 为空且是公众号平台（公众号必须有 htmlContent 渲染数据）
     const needExtractFromWritingTask = !articleContent || 
-      (!platformRenderData && platform === 'xiaohongshu');
+      (!platformRenderData && platform === 'xiaohongshu') ||
+      (!platformRenderData && platform === 'wechat_official');
     
     console.log('[Preview Article] needExtractFromWritingTask:', needExtractFromWritingTask, {
       articleContentEmpty: !articleContent,
@@ -192,9 +196,14 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // 🔥🔥🔥 【直接发文兜底】如果 platformRenderData 仍为空（直接发文模式无写作任务），
+    // 🔥🔥🔥 【直接发文兜底】如果 platformRenderData 仍为空，
     // 使用 LLM 格式化（微信应用 insurance-d HTML 样式、小红书智能提取要点）
-    if (!platformRenderData && articleContent && platform) {
+    // 注意：如果 articleContent 已经是 HTML（以 < 开头），公众号不需要 LLM 格式化
+    const isHtmlContent = articleContent.trimStart().startsWith('<');
+    const shouldFormat = !platformRenderData && articleContent && platform &&
+      !(platform === 'wechat_official' && isHtmlContent);
+    
+    if (shouldFormat) {
       try {
         const { formatDirectPublishArticle } = await import('@/lib/services/direct-publish-formatter-service');
         const taskMetadata = typeof task.metadata === 'object' && task.metadata !== null

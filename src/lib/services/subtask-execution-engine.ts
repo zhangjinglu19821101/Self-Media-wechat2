@@ -1786,7 +1786,13 @@ export class SubtaskExecutionEngine {
     // 🔥🔥🔥 【直接发文兜底】当 platformRenderData 为空时，使用 LLM 格式化
     // 微信：应用 insurance-d HTML 样式模板排版
     // 小红书：LLM 智能提取封面标题、核心要点、结尾金句
-    if (!platformRenderData && articleContent && platform) {
+    // 注意：如果 articleContent 已经是 HTML（以 < 开头），公众号不需要 LLM 格式化，
+    // 因为 HTML 内容本身就是最终的渲染格式
+    const isHtmlContent = articleContent.trimStart().startsWith('<');
+    const shouldFormatInEngine = !platformRenderData && articleContent && platform &&
+      !(platform === 'wechat_official' && isHtmlContent);
+    
+    if (shouldFormatInEngine) {
       try {
         const { formatDirectPublishArticle } = await import('@/lib/services/direct-publish-formatter-service');
         const metadata = task.metadata as Record<string, any> || {};

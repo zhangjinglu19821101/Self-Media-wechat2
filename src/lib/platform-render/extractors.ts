@@ -241,25 +241,49 @@ function extractWechatRenderData(
     let htmlContent = '';
     let articleTitle = '';
 
-    // 路径1: 信封格式
+    // 路径1: 信封格式 { result: { content, articleTitle } }
     const result = parsed.result as Record<string, unknown> | undefined;
     if (result && typeof result === 'object') {
       htmlContent = typeof result.content === 'string' ? result.content : '';
       articleTitle = typeof result.articleTitle === 'string' ? result.articleTitle : '';
     }
 
-    // 路径2: executorOutput.structuredResult
+    // 路径2: executorOutput.structuredResult.resultContent
     if (!htmlContent) {
       const executorOutput = parsed.executorOutput as Record<string, unknown> | undefined;
       if (executorOutput && typeof executorOutput === 'object') {
         const structuredResult = executorOutput.structuredResult as Record<string, unknown> | undefined;
         if (structuredResult && typeof structuredResult === 'object') {
-          const resultContent = structuredResult.resultContent as Record<string, unknown> | undefined;
-          if (resultContent && typeof resultContent === 'object') {
-            htmlContent = typeof resultContent.htmlContent === 'string' ? resultContent.htmlContent :
-                          typeof resultContent.content === 'string' ? resultContent.content : '';
-            articleTitle = typeof resultContent.articleTitle === 'string' ? resultContent.articleTitle : '';
+          const resultContent = structuredResult.resultContent;
+          if (resultContent) {
+            if (typeof resultContent === 'string') {
+              // 🔥 修复：resultContent 直接是 HTML 字符串（insurance-d 实际输出格式）
+              htmlContent = resultContent;
+            } else if (typeof resultContent === 'object' && !Array.isArray(resultContent)) {
+              // 对象格式：{ htmlContent, content, articleTitle }
+              const rc = resultContent as Record<string, unknown>;
+              htmlContent = typeof rc.htmlContent === 'string' ? rc.htmlContent :
+                            typeof rc.content === 'string' ? rc.content : '';
+              if (!articleTitle) {
+                articleTitle = typeof rc.articleTitle === 'string' ? rc.articleTitle : '';
+              }
+            }
           }
+          // 从 structuredResult 直接取 articleTitle 兜底
+          if (!articleTitle && structuredResult.articleTitle) {
+            articleTitle = typeof structuredResult.articleTitle === 'string' ? structuredResult.articleTitle : '';
+          }
+        }
+      }
+    }
+
+    // 路径3: executorOutput.result（LLM 直接输出的 result 字段，可能也是 HTML）
+    if (!htmlContent) {
+      const executorOutput = parsed.executorOutput as Record<string, unknown> | undefined;
+      if (executorOutput && typeof executorOutput === 'object') {
+        const execResult = executorOutput.result;
+        if (typeof execResult === 'string' && execResult.trim().startsWith('<')) {
+          htmlContent = execResult;
         }
       }
     }
