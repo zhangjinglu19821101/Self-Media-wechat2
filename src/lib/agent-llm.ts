@@ -467,6 +467,7 @@ async function callLLMInternal(
     }
 
     // 🔴 P0 修复：检测 LLM 响应截断（JSON 不完整）
+    // 🔴 P1 修复：增加 SDK finish_reason 检查（最可靠的截断指标）
     const trimmedContent = (response.content as string).trim();
     const lastChar = trimmedContent.slice(-1);
     const openBraces = (trimmedContent.match(/\{/g) || []).length;
@@ -475,17 +476,27 @@ async function callLLMInternal(
     const closeBrackets = (trimmedContent.match(/\]/g) || []).length;
     const isBracesImbalanced = openBraces !== closeBraces;
     const isBracketsImbalanced = openBrackets !== closeBrackets;
-    const endsWithIncompleteToken = ['{', '[', '"', ',', ':', '\\'].includes(lastChar);
+    // 🔴 P1 修复：移除反斜杠，因为合法JSON可能以转义反斜杠结尾（如 "value\\"）
+    const endsWithIncompleteToken = ['{', '[', '"', ',', ':'].includes(lastChar);
+    // 🔴 P1 修复：检查 SDK 的 finish_reason（最可靠的截断指标）
+    const finishReason = (response as any).response_metadata?.finish_reason || (response as any).finish_reason;
+    const isSdkTruncated = finishReason === 'length';
 
-    if (isBracesImbalanced || isBracketsImbalanced || endsWithIncompleteToken) {
-      console.warn(`🟡 [LLM Guard] Agent ${agentId} 响应可能被截断! 括号不平衡({${openBraces}/${closeBraces}} [${openBrackets}/${closeBrackets}]) 末尾字符='${lastChar}'`);
+    if (isSdkTruncated || isBracesImbalanced || isBracketsImbalanced || endsWithIncompleteToken) {
+      console.warn(`🟡 [LLM Guard] Agent ${agentId} 响应可能被截断!`);
+      console.warn(`🟡 [LLM Guard] SDK finish_reason=${finishReason || 'unknown'}, 括号不平衡({${openBraces}/${closeBraces}} [${openBrackets}/${closeBrackets}]) 末尾字符='${lastChar}'`);
       console.warn(`🟡 [LLM Guard] 响应时间 ${latency}ms, 超时阈值 ${timeout}ms, 内容长度 ${responseContentLength}`);
 
       // 🔴 关键：标记为截断但仍然返回内容，让解析器层的截断修复机制处理
-      // 不抛出错误，因为解析器可能能修复截断的 JSON
-      // 但添加标记，便于解析器识别
-      const truncationWarning = `\n\n[SYSTEM_TRUNCATION_WARNING: 响应可能被截断(括号不平衡 {${openBraces}/${closeBraces}} [${openBrackets}/${closeBrackets}], 末尾='${lastChar}')]`;
-      (response.content as string) += truncationWarning;
+      // 🔴 P1 修复：创建新的字符串而非直接修改 response.content（避免 TypeError）
+      const truncationWarning = `\n\n[SYSTEM_TRUNCATION_WARNING: 响应可能被截断(SDK=${finishReason || 'unknown'}, 括号不平衡 {${openBraces}/${closeBraces}} [${openBrackets}/${closeBrackets}], 末尾='${lastChar}')]`;
+      
+      // 打印截断内容的摘要（而非完整内容，避免日志爆炸）
+      console.log(`🟡 [LLM Guard] 截断内容摘要: 前100字符='${trimmedContent.substring(0, 100)}...'`);
+      console.log(`🟡 [LLM Guard] 将交由解析器层 attemptTruncationRepair 尝试修复`);
+      
+      // 返回新的字符串而非修改原对象
+      return (response.content as string) + truncationWarning;
     }
 
     // 🔥 完整打印 LLM 的返回结果

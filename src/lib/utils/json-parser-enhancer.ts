@@ -1593,42 +1593,136 @@ export class JsonParserEnhancer {
     analysis: ReturnType<typeof JsonParserEnhancer.analyzeBracketBalance>,
     repairDetails: string[]
   ): string | null {
-    // 如果正在字符串中，需要先关闭字符串
+    // 🔴 P1 修复：如果正在字符串中，需要先正确处理未闭合的字符串
+    // 当 inString === true 时，表示最后一个 " 是字符串的开始引号（未闭合）
     let working = jsonStr;
     
     if (analysis.inString) {
-      // 找到最后一个未闭合的字符串，截断到它之前
+      // 🔴 P1 修复：使用更精确的截断策略
+      // 找到字符串开始的位置（最后一个未闭合的引号）
+      // 从这个字符串的开始引号向前找对应的 key
       const lastQuoteIdx = working.lastIndexOf('"');
       if (lastQuoteIdx > 0) {
-        // 尝试找到这个字符串的 key
+        // 🔴 P1 修复：从字符串开始位置向前找到完整的截断点
+        // 策略：找到最后一个逗号或对象开始括号，截断不完整的 key:value 对
         const beforeQuote = working.substring(0, lastQuoteIdx);
-        const colonIdx = beforeQuote.lastIndexOf(':');
+        
+        // 找这个字符串值对应的 key 的冒号
+        // 向前扫描找到冒号（注意要跳过嵌套结构中的冒号）
+        let colonIdx = -1;
+        let braceDepth = 0;
+        let bracketDepth = 0;
+        for (let i = beforeQuote.length - 1; i >= 0; i--) {
+          const ch = beforeQuote[i];
+          if (ch === '}' || ch === ']') {
+            // 遇到闭合括号，增加深度（说明进入了嵌套结构）
+            if (ch === '}') braceDepth++;
+            else bracketDepth++;
+          } else if (ch === '{' || ch === '[') {
+            // 遇到开放括号，减少深度
+            if (ch === '{') braceDepth--;
+            else bracketDepth--;
+          } else if (ch === ':' && braceDepth === 0 && bracketDepth === 0) {
+            // 在顶层找到了冒号
+            colonIdx = i;
+            break;
+          }
+        }
+        
         if (colonIdx > 0) {
-          // 截断到冒号之前（删除这个不完整的 key:value 对）
-          const commaIdx = beforeQuote.lastIndexOf(',', colonIdx);
+          // 找到了冒号，向前找逗号或对象开始位置
+          let commaIdx = -1;
+          for (let i = colonIdx - 1; i >= 0; i--) {
+            const ch = beforeQuote[i];
+            if (ch === ',' && braceDepth === 0 && bracketDepth === 0) {
+              commaIdx = i;
+              break;
+            } else if (ch === '{' || ch === '[') {
+              // 到达对象开始位置，没有逗号
+              break;
+            }
+          }
+          
           if (commaIdx > 0) {
+            // 截断到逗号之后（保留逗号之前的完整属性）
             working = working.substring(0, commaIdx);
-            repairDetails.push('截断不完整的字符串值到上一个逗号');
+            repairDetails.push('P1修复: 截断不完整的字符串值到上一个逗号');
           } else {
-            working = working.substring(0, colonIdx);
-            repairDetails.push('截断不完整的字符串值到冒号');
+            // 没有逗号，说明这是对象的第一个属性
+            // 截断到对象开始括号之后
+            const objectStartIdx = beforeQuote.lastIndexOf('{');
+            if (objectStartIdx >= 0) {
+              working = working.substring(0, objectStartIdx + 1);
+              repairDetails.push('P1修复: 截断对象第一个不完整属性，保留对象开始');
+            } else {
+              // 无法找到对象开始，截断到冒号之前
+              working = working.substring(0, colonIdx);
+              repairDetails.push('P1修复: 截断不完整的字符串值到冒号');
+            }
           }
         } else {
-          working = working.substring(0, lastQuoteIdx);
-          repairDetails.push('截断不完整的字符串');
+          // 没找到冒号，可能是数组中的字符串元素
+          // 截断到上一个逗号或数组开始位置
+          const commaOrBracketIdx = Math.max(
+            beforeQuote.lastIndexOf(','),
+            beforeQuote.lastIndexOf('[')
+          );
+          if (commaOrBracketIdx >= 0) {
+            const ch = beforeQuote[commaOrBracketIdx];
+            if (ch === ',') {
+              working = working.substring(0, commaOrBracketIdx);
+              repairDetails.push('P1修复: 截断数组中不完整的字符串元素到逗号');
+            } else {
+              working = working.substring(0, commaOrBracketIdx + 1);
+              repairDetails.push('P1修复: 截断数组第一个不完整元素，保留数组开始');
+            }
+          } else {
+            // 无法确定截断位置，保守截断到引号之前
+            working = working.substring(0, lastQuoteIdx);
+            repairDetails.push('P1修复: 截断不完整的字符串');
+          }
         }
       }
-      // 关闭字符串
-      working += '"';
-      repairDetails.push('关闭未闭合的字符串');
+      // 🔴 注意：不再添加闭合引号，因为我们已经截断了整个不完整的 key:value 对
+      // 这样避免了添加 " 后形成非法 JSON 的问题
     }
 
     // 移除末尾的逗号（如果有）
     working = working.replace(/,\s*$/, '');
     
-    // 移除末尾的不完整 token（如 "key": 后面没有值）
-    working = working.replace(/,\s*"[^"]*"\s*:\s*$/, '');
-    working = working.replace(/"[^"]*"\s*:\s*$/, '');
+    // 🔴 P1 修复：移除末尾的不完整 token，使用更精确的方法而非正则
+    // 正则 `[^"]*` 无法正确处理转义引号，改用手动扫描
+    const trimmedWorking = working.trimEnd();
+    if (trimmedWorking.length > 0) {
+      const lastNonSpace = trimmedWorking.slice(-1);
+      // 检查是否以 "key": 结尾（冒号后没有值）
+      if (lastNonSpace === ':') {
+        // 向前找这个 key 的开始位置
+        // 找冒号前的 key 和逗号/括号
+        let keyStart = -1;
+        let depth = 0;
+        for (let i = trimmedWorking.length - 2; i >= 0; i--) {
+          const ch = trimmedWorking[i];
+          if (ch === '}' || ch === ']') depth++;
+          else if (ch === '{' || ch === '[') depth--;
+          else if ((ch === ',' || ch === '{' || ch === '[') && depth === 0) {
+            keyStart = i;
+            break;
+          }
+        }
+        if (keyStart >= 0) {
+          const ch = trimmedWorking[keyStart];
+          if (ch === ',') {
+            working = trimmedWorking.substring(0, keyStart);
+            repairDetails.push('P1修复: 移除末尾不完整的 key:（无值）');
+          } else {
+            // key 是对象/数组的第一个元素
+            working = trimmedWorking.substring(0, keyStart + 1);
+            repairDetails.push('P1修复: 移除对象/数组第一个不完整的 key:');
+          }
+        }
+      }
+    }
 
     // 补齐闭合括号
     const newAnalysis = this.analyzeBracketBalance(working);
