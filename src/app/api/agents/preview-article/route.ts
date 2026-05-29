@@ -192,6 +192,32 @@ export async function GET(request: NextRequest) {
       }
     }
 
+    // 🔥🔥🔥 【直接发文兜底】如果 platformRenderData 仍为空（直接发文模式无写作任务），
+    // 从纯文本生成平台渲染数据，确保预览样式与AI创作一致
+    if (!platformRenderData && articleContent && platform) {
+      try {
+        const { generatePlatformRenderDataFromText } = await import('@/lib/platform-render/text-to-render');
+        const taskMetadata = typeof task.metadata === 'object' && task.metadata !== null
+          ? task.metadata as Record<string, unknown>
+          : {};
+        const VALID_CARD_MODES = ['3-card', '5-card', '7-card'] as const;
+        const rawCardCountMode = (taskMetadata.cardCountMode as string) || (taskMetadata.imageCountMode as string) || undefined;
+        const cardCountMode = rawCardCountMode && VALID_CARD_MODES.includes(rawCardCountMode as typeof VALID_CARD_MODES[number])
+          ? rawCardCountMode as typeof VALID_CARD_MODES[number]
+          : undefined;
+        const generated = generatePlatformRenderDataFromText(articleContent, platform, articleTitle, cardCountMode);
+        if (generated) {
+          platformRenderData = generated;
+          console.log('[Preview Article] 从纯文本生成 platformRenderData 成功:', {
+            platform,
+            dataType: Object.keys(generated).join(','),
+          });
+        }
+      } catch (genErr) {
+        console.error('[Preview Article] 从纯文本生成 platformRenderData 失败:', genErr);
+      }
+    }
+
     return NextResponse.json({
       success: true,
       data: {

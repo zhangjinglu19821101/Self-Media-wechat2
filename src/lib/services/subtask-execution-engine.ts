@@ -1783,6 +1783,26 @@ export class SubtaskExecutionEngine {
       });
     }
 
+    // 🔥🔥🔥 【直接发文兜底】当 platformRenderData 为空时，从纯文本生成平台渲染数据
+    // 确保直接发文模式下的预览样式与 AI 创作模式一致
+    if (!platformRenderData && articleContent && platform) {
+      try {
+        const { generatePlatformRenderDataFromText } = await import('@/lib/platform-render/text-to-render');
+        platformRenderData = generatePlatformRenderDataFromText(
+          articleContent,
+          platform as import('@/lib/db/schema/style-template').PlatformType,
+          articleTitle || '用户提供的文章'
+        );
+        console.log('[SubtaskEngine] 👁️ 直接发文兜底：从纯文本生成 platformRenderData:', {
+          platform,
+          hasPlatformRenderData: !!platformRenderData,
+          platformRenderDataKeys: platformRenderData ? Object.keys(platformRenderData) : [],
+        });
+      } catch (err) {
+        console.error('[SubtaskEngine] ❌ 直接发文兜底 platformRenderData 生成失败:', err);
+      }
+    }
+
     console.log('[SubtaskEngine] 👁️ 前序写作任务信息:', {
       effectiveTaskId: effectiveWritingTask?.id,
       effectiveExecutor: effectiveWritingTask?.fromParentsExecutor,
