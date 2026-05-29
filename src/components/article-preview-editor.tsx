@@ -468,8 +468,8 @@ function WechatHtmlPreview({ html }: { html: string }) {
     <div className="overflow-hidden">
       <WechatArticleRenderer 
         html={html} 
-        collapsed={true}
-        maxHeight={450}
+        collapsed={false}
+        maxHeight={800}
       />
     </div>
   );
