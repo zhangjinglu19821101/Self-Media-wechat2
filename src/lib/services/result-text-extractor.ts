@@ -184,6 +184,7 @@ export function extractFromResultContentObject(
   const knownContentFields = [
     'articleHtml',     // 公众号 HTML
     'htmlContent',     // 通用 HTML
+    'modifiedArticle', // 合规整改后的完整文章
     'content',         // 通用正文
     'fullText',        // 完整文本
     'outlineText',     // 大纲文本

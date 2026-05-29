@@ -81,11 +81,12 @@ export class ArticleContentService {
       console.log('[ArticleContentService] 查询历史记录, commandResultId:', commandResultId);
       
       // 查询所有相关的历史记录
+      // 🔴 修复：按 stepNo DESC 遍历，优先获取最新版本（合规整改后的文章）
       const historyRecords = await db
         .select()
         .from(agentSubTasksStepHistory)
         .where(eq(agentSubTasksStepHistory.commandResultId, commandResultId))
-        .orderBy(agentSubTasksStepHistory.stepNo, agentSubTasksStepHistory.interactNum);
+        .orderBy(desc(agentSubTasksStepHistory.stepNo), agentSubTasksStepHistory.interactNum);
 
       console.log('[ArticleContentService] 找到历史记录数量:', historyRecords.length);
 
@@ -112,6 +113,17 @@ export class ArticleContentService {
           
           // 优先从 executionSummary.resultContent 提取
           let resultContent = structuredResult.executionSummary?.resultContent || structuredResult.resultContent;
+          
+          // 🔴 合规整改输出格式：resultContent 是对象 { modifiedArticle, changes }
+          if (resultContent && typeof resultContent === 'object' && resultContent.modifiedArticle && typeof resultContent.modifiedArticle === 'string' && resultContent.modifiedArticle.length > 100) {
+            console.log('[ArticleContentService] 从 structuredResult.resultContent.modifiedArticle 提取合规整改文章, 长度:', resultContent.modifiedArticle.length);
+            let title = resultContent.articleTitle || '未命名文章';
+            return {
+              title: title,
+              content: resultContent.modifiedArticle,
+              keywords: [],
+            };
+          }
           
           if (resultContent && typeof resultContent === 'string' && resultContent.length > 100) {
             // 提取标题 - 支持多种格式
@@ -389,13 +401,19 @@ export class ArticleContentService {
       }
 
       // 3. 备用方案：从 agent_sub_tasks.resultData 中获取
+      // 🔴 修复：按 orderIndex DESC 遍历，优先获取最新版本（合规整改后的文章）
       const subTasks = await db
         .select()
         .from(agentSubTasks)
         .where(eq(agentSubTasks.commandResultId, commandResultId))
-        .orderBy(agentSubTasks.orderIndex);
+        .orderBy(desc(agentSubTasks.orderIndex));
 
       for (const subTask of subTasks) {
+        // 🔴 只从写作类/预览修改类任务获取文章内容（跳过分析/校验/上传等非内容任务）
+        const executor = subTask.fromParentsExecutor || '';
+        const isContentTask = isWritingAgent(executor) || executor === 'user_preview_edit';
+        if (!isContentTask && !subTask.resultText) continue;
+
         if (subTask.resultData) {
           try {
             // 智能解析：兼容对象和字符串两种格式
@@ -423,8 +441,15 @@ export class ArticleContentService {
             let content = '';
             let title = '未命名文章';
 
+            // 🔴 优先级0：合规整改输出 executorOutput.structuredResult.resultContent.modifiedArticle
+            const srResultContent = resultData.executorOutput?.structuredResult?.resultContent || resultData.structuredResult?.resultContent;
+            if (srResultContent && typeof srResultContent === 'object' && srResultContent.modifiedArticle && typeof srResultContent.modifiedArticle === 'string' && srResultContent.modifiedArticle.length > 100) {
+              content = srResultContent.modifiedArticle;
+              title = srResultContent.articleTitle || resultData.articleTitle || title;
+              console.log('[ArticleContentService] 从 structuredResult.resultContent.modifiedArticle 提取合规整改文章, 长度:', content.length);
+            }
             // 🔴 优先级1：信封格式 executorOutput.result.content（统一 ArticleOutputEnvelope）
-            if (resultData.executorOutput?.result && typeof resultData.executorOutput.result === 'object') {
+            else if (resultData.executorOutput?.result && typeof resultData.executorOutput.result === 'object') {
               const envelope = resultData.executorOutput.result;
               // 大纲模式优先：platformData.outlineText
               if (envelope.platformData && typeof envelope.platformData === 'object' && typeof envelope.platformData.outlineText === 'string' && envelope.platformData.outlineText.trim().length > 0) {

@@ -1863,8 +1863,12 @@ export class SubtaskExecutionEngine {
       if (data?.result?.articleTitle) return data.result.articleTitle;
       // 顶层 articleTitle
       if (data?.articleTitle) return data.articleTitle;
-      // executorOutput.structuredResult
+      // executorOutput.structuredResult.articleTitle
       if (data?.executorOutput?.structuredResult?.articleTitle) return data.executorOutput.structuredResult.articleTitle;
+      // executorOutput.structuredResult.resultContent.articleTitle（合规整改输出格式）
+      if (data?.executorOutput?.structuredResult?.resultContent?.articleTitle) return data.executorOutput.structuredResult.resultContent.articleTitle;
+      // executorOutput.result.articleTitle（信封格式 result 对象）
+      if (typeof data?.executorOutput?.result === 'object' && data.executorOutput.result?.articleTitle) return data.executorOutput.result.articleTitle;
     } catch {
       // 解析失败，使用兜底
     }
@@ -6420,6 +6424,7 @@ export class SubtaskExecutionEngine {
   /**
    * 🔴🔴🔴 补充文章内容参数
    * @description 在执行 MCP 前检查是否缺少文章内容参数，如果缺少则从 priorStepOutput 或历史记录中补充
+   * 🔴🔴🔴 重构：与 injectArticleContentIntoMcpParams 保持一致的文章获取逻辑
    * @param task 任务对象
    * @param mcpParams MCP 参数
    * @param priorStepOutput 可选的前序任务输出（包含完整文章内容）
@@ -6431,247 +6436,167 @@ export class SubtaskExecutionEngine {
     priorStepOutput?: string
   ): Promise<{ toolName: string; actionName: string; params: any; solutionNum: number; }> {
     try {
-      console.log('[SubtaskEngine] 🔴🔴🔴 ========== supplementArticleContentParams 开始 ==========');
-      console.log('[SubtaskEngine] 🔴🔴🔴 order_index =', task.orderIndex);
-      console.log('[SubtaskEngine] 🔴🔴🔴 task.commandResultId =', task.commandResultId);
-      console.log('[SubtaskEngine] 🔴🔴🔴 mcpParams =', {
-        toolName: mcpParams.toolName,
-        actionName: mcpParams.actionName,
-        hasParams: !!mcpParams.params,
-        paramsKeys: mcpParams.params ? Object.keys(mcpParams.params) : []
-      });
-      console.log('[SubtaskEngine] 🔴🔴🔴 priorStepOutput 参数有值吗?', !!priorStepOutput);
-      console.log('[SubtaskEngine] 🔴🔴🔴 priorStepOutput 长度:', priorStepOutput?.length || 0);
-      console.log('[SubtaskEngine] 🔴🔴🔴 priorStepOutput 前1000字符:', JSON.stringify(priorStepOutput?.substring(0, 1000)));
+      console.log('[supplementArticleContentParams] 开始, order_index:', task.orderIndex, 'toolName:', mcpParams.toolName);
       
-      // 1. 检查是否是需要文章内容的 MCP
-      const isWechatFormatTask = 
-        mcpParams.toolName?.toLowerCase().includes('wechat') ||
-        mcpParams.actionName?.toLowerCase().includes('format') ||
+      // 1. 判断是否是需要文章内容的 MCP
+      const isComplianceAudit = 
         mcpParams.toolName?.toLowerCase().includes('compliance') ||
         mcpParams.actionName?.toLowerCase().includes('compliance') ||
         mcpParams.actionName?.toLowerCase().includes('audit');
+      
+      const isUploadDraft = 
+        mcpParams.toolName?.toLowerCase().includes('wechat') ||
+        mcpParams.toolName?.toLowerCase().includes('draft') ||
+        mcpParams.toolName?.toLowerCase().includes('upload') ||
+        mcpParams.actionName?.toLowerCase().includes('format') ||
+        mcpParams.actionName?.toLowerCase().includes('draft') ||
+        mcpParams.actionName?.toLowerCase().includes('upload') ||
+        mcpParams.actionName?.toLowerCase().includes('草稿');
 
-      if (!isWechatFormatTask) {
-        console.log('[SubtaskEngine] 🔴 [补充文章内容] 不是需要文章内容的任务，跳过');
-        console.log('[SubtaskEngine] 🔴🔴🔴 ========== supplementArticleContentParams 结束（不是目标任务）==========');
+      if (!isComplianceAudit && !isUploadDraft) {
+        console.log('[supplementArticleContentParams] 不是需要文章内容的任务，跳过');
         return mcpParams;
       }
 
-      console.log('[SubtaskEngine] 🔴 [补充文章内容] 检测到需要文章内容的任务，开始检查参数...');
-      console.log('[SubtaskEngine] 🔴 [补充文章内容] 原始 MCP 参数:', {
-        toolName: mcpParams.toolName,
-        actionName: mcpParams.actionName,
-        hasParams: !!mcpParams.params,
-        paramsKeys: mcpParams.params ? Object.keys(mcpParams.params) : [],
-        hasPriorStepOutput: !!priorStepOutput,
-        priorStepOutputLength: priorStepOutput?.length || 0
-      });
+      // 🔴🔴🔴 核心修复：上传类 MCP 始终从前序任务获取最新版本文章内容
+      // 不再因为"参数中已有文章内容"就跳过（旧版本文章可能是过时的）
+      const hasArticleContent = mcpParams.params?.articleContent?.length > 100 ||
+        mcpParams.params?.content?.length > 100 ||
+        mcpParams.params?.articles?.some((a: any) => a.content?.length > 100);
 
-      // 2. 检查参数中是否已经有文章内容
-      const params = mcpParams.params || {};
-      const hasArticleContent = 
-        params.articleContent || 
-        params.content ||
-        params.title ||
-        (params.articles && params.articles.length > 0 && params.articles[0].content);
-
-      if (hasArticleContent) {
-        console.log('[SubtaskEngine] 🔴 [补充文章内容] 参数中已有文章内容，跳过');
+      // 只有非上传且非合规校验的场景，才在已有内容时跳过
+      // 上传类 MCP 必须始终获取最新版本
+      if (hasArticleContent && !isUploadDraft) {
+        console.log('[supplementArticleContentParams] 参数中已有文章内容且非上传任务，跳过');
         return mcpParams;
       }
 
-      // 3. 🔴 如果传入了 priorStepOutput，直接使用它（最可靠的方式）
-      let articleContentData: { title: string; content: string } | null = null;
-      
-      console.log('[SubtaskEngine] 🔴🔴🔴 开始尝试获取文章内容...');
-      
-      if (priorStepOutput && priorStepOutput.length > 100) {
-        console.log('[SubtaskEngine] 🔴 [补充文章内容] ✅ 从 priorStepOutput 获取文章内容，长度:', priorStepOutput.length);
+      // 🔴🔴🔴 核心重构：统一使用与 injectArticleContentIntoMcpParams 一致的文章获取逻辑
+      // 按优先级：前序任务 resultData → 前序任务 resultText → priorStepOutput → article_content 表 → 历史记录
+      let articleContent = '';
+      let articleTitle = '';
+
+      // 优先从前序任务获取最新版本（与 injectArticleContentIntoMcpParams 一致）
+      const previousTasks = await db
+        .select({
+          id: agentSubTasks.id,
+          orderIndex: agentSubTasks.orderIndex,
+          fromParentsExecutor: agentSubTasks.fromParentsExecutor,
+          resultText: agentSubTasks.resultText,
+          resultData: agentSubTasks.resultData,
+          status: agentSubTasks.status,
+        })
+        .from(agentSubTasks)
+        .where(
+          and(
+            eq(agentSubTasks.commandResultId, task.commandResultId as any),
+            lt(agentSubTasks.orderIndex, task.orderIndex),
+            eq(agentSubTasks.status, 'completed'),
+            eq(agentSubTasks.workspaceId, task.workspaceId)
+          )
+        )
+        .orderBy(desc(agentSubTasks.orderIndex));
+
+      for (const prevTask of previousTasks) {
+        const isWritingOrPreview = isWritingAgent(prevTask.fromParentsExecutor) ||
+          prevTask.fromParentsExecutor === 'user_preview_edit';
         
-        // 提取标题
-        let title = '未命名文章';
+        if (!isWritingOrPreview) continue;
+
+        // 先从 resultData 提取完整文章
+        let extractedContent = this.extractArticleFromResultData(prevTask.resultData);
+        
+        // 兜底使用 resultText
+        if (!extractedContent && prevTask.resultText && this.isFullArticleContent(prevTask.resultText)) {
+          extractedContent = prevTask.resultText;
+        }
+        
+        if (extractedContent) {
+          articleContent = extractedContent;
+          articleTitle = this.extractArticleTitleFromResultData(prevTask.resultData);
+          console.log('[supplementArticleContentParams] ✅ 从前序任务获取到文章内容', {
+            orderIndex: prevTask.orderIndex,
+            executor: prevTask.fromParentsExecutor,
+            contentLength: articleContent.length
+          });
+          break;
+        }
+      }
+
+      // 兜底：从 priorStepOutput 获取
+      if (!articleContent && priorStepOutput && priorStepOutput.length > 200) {
+        articleContent = priorStepOutput;
         const titleMatch = priorStepOutput.match(/^#{1,3}\s*([^\n]+)/);
         if (titleMatch) {
-          title = titleMatch[1].trim();
+          articleTitle = titleMatch[1].trim();
         }
-        
-        articleContentData = {
-          title: title,
-          content: priorStepOutput
-        };
-        
-        console.log('[SubtaskEngine] 🔴🔴🔴 ✅ 从 priorStepOutput 提取到文章内容:');
-        console.log('[SubtaskEngine] 🔴🔴🔴    - 标题:', title);
-        console.log('[SubtaskEngine] 🔴🔴🔴    - 内容长度:', priorStepOutput.length);
-        console.log('[SubtaskEngine] 🔴🔴🔴    - 内容前500字符:', JSON.stringify(priorStepOutput.substring(0, 500)));
-      } else {
-        console.log('[SubtaskEngine] 🔴🔴🔴 ❌ priorStepOutput 不可用或太短:', {
-          hasPriorStepOutput: !!priorStepOutput,
-          length: priorStepOutput?.length || 0
-        });
-        // 4. 如果没有 priorStepOutput，尝试从 article_content 表查询
-        console.log('[SubtaskEngine] 🔴 [补充文章内容] 没有 priorStepOutput，尝试从 article_content 表中查询...');
+        console.log('[supplementArticleContentParams] ✅ 从 priorStepOutput 获取文章内容，长度:', articleContent.length);
+      }
+
+      // 兜底：从 article_content 表查询
+      if (!articleContent) {
+        console.log('[supplementArticleContentParams] 尝试从 article_content 表查询...');
         const articleContentService = ArticleContentService.getInstance();
-        articleContentData = await articleContentService.getArticleContent(task.commandResultId);
-        
-        // 4.1 如果 article_content 表没有数据，尝试从历史记录中直接提取
-        if (!articleContentData) {
-          console.log('[SubtaskEngine] 🔴 [补充文章内容] article_content 表没有数据，尝试从 agentSubTasksStepHistory 中提取...');
-          
-          // 直接从数据库查询前序任务的交互记录
-          const historyRecords = await db
-            .select()
-            .from(agentSubTasksStepHistory)
-            .where(eq(agentSubTasksStepHistory.commandResultId, task.commandResultId))
-            .orderBy(agentSubTasksStepHistory.stepNo, agentSubTasksStepHistory.interactNum);
-
-          console.log('[SubtaskEngine] 🔴 [补充文章内容] 查询到历史记录数量:', historyRecords.length);
-
-          // 遍历历史记录，查找前序任务（order_index 更小的任务）的文章内容
-          for (const record of historyRecords) {
-            // 只检查前序任务（order_index 更小的任务）
-            if (record.stepNo >= task.orderIndex) continue;
-            
-            const content = record.interactContent as any;
-            
-            // 尝试从各个字段提取文章内容
-            let extractedContent: string | undefined;
-            let extractedTitle = '未命名文章';
-            
-            // 1. structuredResult.executionSummary.resultContent
-            const resultContent1 = content?.responseContent?.structuredResult?.executionSummary?.resultContent;
-            if (resultContent1 && typeof resultContent1 === 'string' && resultContent1.length > 100) {
-              extractedContent = resultContent1;
-            }
-            // 2. structuredResult.resultContent
-            else if (content?.responseContent?.structuredResult?.resultContent) {
-              extractedContent = content.responseContent.structuredResult.resultContent;
-            }
-            // 3. executorOutput.output
-            else if (content?.responseContent?.executorOutput?.output) {
-              extractedContent = content.responseContent.executorOutput.output;
-            }
-            // 4. executorOutput.result
-            else if (content?.responseContent?.executorOutput?.result) {
-              extractedContent = content.responseContent.executorOutput.result;
-            }
-            // 5. responseContent.result
-            else if (content?.responseContent?.result && typeof content.responseContent.result === 'string' && content.responseContent.result.length > 100) {
-              extractedContent = content.responseContent.result;
-            }
-            // 6. 直接从 responseContent 任意字段提取
-            else {
-              const keys = Object.keys(content?.responseContent || {});
-              for (const key of keys) {
-                const value = content.responseContent[key];
-                if (typeof value === 'string' && value.length > 100 && (value.includes('#') || value.includes('\n'))) {
-                  extractedContent = value;
-                  break;
-                }
-              }
-            }
-
-            if (extractedContent && extractedContent.length > 100) {
-              // 提取标题
-              const titleMatch = extractedContent.match(/^#{1,3}\s*([^\n]+)/);
-              if (titleMatch) {
-                extractedTitle = titleMatch[1].trim();
-              }
-              
-              console.log('[SubtaskEngine] 🔴 [补充文章内容] ✅ 从前序任务历史记录中找到文章内容:', {
-                title: extractedTitle,
-                contentLength: extractedContent.length,
-                agentId: record.interactAgent,
-                stepNo: record.stepNo
-              });
-              
-              articleContentData = {
-                title: extractedTitle,
-                content: extractedContent
-              };
-              break;
-            }
-          }
+        const articleContentData = await articleContentService.getArticleContent(task.commandResultId);
+        if (articleContentData) {
+          articleContent = articleContentData.content;
+          articleTitle = articleContentData.title || articleTitle;
+          console.log('[supplementArticleContentParams] ✅ 从 article_content 表获取文章内容');
         }
       }
 
-      if (!articleContentData) {
-        console.log('[SubtaskEngine] 🔴 [补充文章内容] ❌ 未找到文章内容，无法补充');
-        console.log('[SubtaskEngine] 🔴🔴🔴 ========== supplementArticleContentParams 结束（无文章内容）==========');
+      if (!articleContent) {
+        console.log('[supplementArticleContentParams] ⚠️ 未找到文章内容，无法补充');
         return mcpParams;
       }
 
-      console.log('[SubtaskEngine] 🔴 [补充文章内容] ✅ 找到文章内容:', {
-        title: articleContentData.title,
-        contentLength: articleContentData.content.length
-      });
-      console.log('[SubtaskEngine] 🔴🔴🔴 文章内容前500字符:', JSON.stringify(articleContentData.content.substring(0, 500)));
+      // 补充参数
+      const supplementedParams = { ...mcpParams.params };
 
-      // 4. 根据不同的 MCP 类型补充参数
-      const supplementedParams = { ...params };
-
-      // 公众号格式化任务：补充 accountId, title, content 参数
-      if (mcpParams.toolName?.toLowerCase().includes('wechat') || 
-          mcpParams.actionName?.toLowerCase().includes('format')) {
-        // 补充 accountId（如果没有）
+      if (isUploadDraft) {
+        // 🔴🔴🔴 上传类 MCP：始终覆盖文章内容（确保使用最新版本）
+        if (supplementedParams.articles && Array.isArray(supplementedParams.articles)) {
+          for (const article of supplementedParams.articles) {
+            article.content = articleContent;
+            if (articleTitle) {
+              article.title = articleTitle;
+            }
+          }
+          console.log('[supplementArticleContentParams] ✅ 已覆盖上传 MCP 的 articles.content，长度:', articleContent.length);
+        }
+        // 覆盖 content 参数
+        supplementedParams.content = articleContent;
+        if (articleTitle && !supplementedParams.title) {
+          supplementedParams.title = articleTitle;
+        }
+        // 补充 accountId
         if (!supplementedParams.accountId) {
-          supplementedParams.accountId = 'insurance-account'; // 默认账户ID
-          console.log('[SubtaskEngine] 🔴 [补充文章内容] ✅ 已补充 accountId 参数');
+          supplementedParams.accountId = 'insurance-account';
         }
-        // 补充 title（如果没有）
-        if (!supplementedParams.title && articleContentData.title) {
-          supplementedParams.title = articleContentData.title;
-          console.log('[SubtaskEngine] 🔴 [补充文章内容] ✅ 已补充 title 参数');
-        }
-        // 补充 content（如果没有）
-        if (!supplementedParams.content) {
-          supplementedParams.content = articleContentData.content;
-          console.log('[SubtaskEngine] 🔴 [补充文章内容] ✅ 已补充 content 参数');
-        }
-        console.log('[SubtaskEngine] 🔴 [补充文章内容] ✅ 已补充公众号格式化参数（accountId, title, content）');
+        console.log('[supplementArticleContentParams] ✅ 已补充上传类参数');
       }
 
-      // 合规审核任务：补充 articleTitle + articleContent + workspaceId 参数
-      if (mcpParams.toolName?.toLowerCase().includes('compliance') || 
-          mcpParams.actionName?.toLowerCase().includes('compliance') ||
-          mcpParams.actionName?.toLowerCase().includes('audit')) {
-        if (!supplementedParams.articleTitle && articleContentData.title) {
-          supplementedParams.articleTitle = articleContentData.title;
-          console.log('[SubtaskEngine] 🔴 [补充文章内容] ✅ 已补充 articleTitle 参数（合规审核）');
-        }
+      if (isComplianceAudit) {
+        // 合规校验：注入 articleContent
         if (!supplementedParams.articleContent) {
-          supplementedParams.articleContent = articleContentData.content;
-          console.log('[SubtaskEngine] 🔴 [补充文章内容] ✅ 已补充 articleContent 参数（合规审核）');
+          supplementedParams.articleContent = articleContent;
         }
-        // 补充 workspaceId 供 LLM 合规判定使用（BYOK 支持）
+        if (!supplementedParams.articleTitle && articleTitle) {
+          supplementedParams.articleTitle = articleTitle;
+        }
         if (!supplementedParams.workspaceId && task.workspaceId) {
           supplementedParams.workspaceId = task.workspaceId;
-          console.log('[SubtaskEngine] 🔴 [补充文章内容] ✅ 已补充 workspaceId 参数（合规审核 LLM BYOK）');
         }
+        console.log('[supplementArticleContentParams] ✅ 已补充合规校验参数');
       }
 
-      // 5. 返回补充后的参数
-      const result = {
+      return {
         ...mcpParams,
         params: supplementedParams
       };
 
-      console.log('[SubtaskEngine] 🔴🔴🔴 ========== supplementArticleContentParams - 最终结果 ==========');
-      console.log('[SubtaskEngine] 🔴 [补充文章内容] ✅ 补充完成，最终参数:', {
-        toolName: result.toolName,
-        actionName: result.actionName,
-        paramsKeys: Object.keys(result.params)
-      });
-      console.log('[SubtaskEngine] 🔴🔴🔴 最终 params 详情:', JSON.stringify(result.params, null, 2));
-      console.log('[SubtaskEngine] 🔴🔴🔴 ========== supplementArticleContentParams 结束 ==========');
-
-      return result;
-
     } catch (error) {
-      console.error('[SubtaskEngine] 🔴 [补充文章内容] ❌ 补充失败:', error);
-      console.log('[SubtaskEngine] 🔴🔴🔴 ========== supplementArticleContentParams 结束（异常）==========');
-      // 补充失败时返回原始参数
+      console.error('[supplementArticleContentParams] ❌ 补充失败:', error);
       return mcpParams;
     }
   }
@@ -6835,6 +6760,66 @@ export class SubtaskExecutionEngine {
    * Agent T 不再在 mcpParams.params 中嵌入完整文章内容（避免 JSON 输出超出 LLM token 限制被截断）
    * 系统在这里自动补充文章内容到 MCP 的 params 中
    */
+  /**
+   * 🔴🔴🔴 从任务的 resultData 中提取完整文章内容
+   * 优先级：modifiedArticle → resultContent.content → result.content → articleContent → resultText
+   * @returns 提取到的文章内容，如果无法提取则返回空字符串
+   */
+  private extractArticleFromResultData(resultData: any): string {
+    try {
+      const parsed = typeof resultData === 'string' ? JSON.parse(resultData) : resultData;
+      if (!parsed || typeof parsed !== 'object') return '';
+
+      // 1. 优先从 structuredResult.resultContent.modifiedArticle 获取（合规整改输出）
+      const sr = parsed.executorOutput?.structuredResult?.resultContent || parsed.structuredResult?.resultContent;
+      if (sr?.modifiedArticle && typeof sr.modifiedArticle === 'string' && sr.modifiedArticle.length > 200) {
+        return sr.modifiedArticle;
+      }
+
+      // 2. 从 structuredResult.resultContent.content 获取（信封格式输出）
+      if (sr?.content && typeof sr.content === 'string' && sr.content.length > 200) {
+        return sr.content;
+      }
+
+      // 3. 从 executorOutput.result.content 获取（信封格式输出）
+      const executorResult = parsed.executorOutput?.result || parsed.result;
+      if (executorResult?.content && typeof executorResult.content === 'string' && executorResult.content.length > 200) {
+        return executorResult.content;
+      }
+
+      // 4. 从 executorOutput.result 获取（纯字符串输出）
+      if (typeof executorResult === 'string' && executorResult.length > 200) {
+        // 检查是否是 HTML 文章（而非简短结论）
+        if (executorResult.includes('<section') || executorResult.includes('<p') || executorResult.includes('<div')) {
+          return executorResult;
+        }
+      }
+
+      return '';
+    } catch {
+      return '';
+    }
+  }
+
+  /**
+   * 🔴🔴🔴 判断文本是否是完整文章内容（而非简短回复）
+   * 完整文章特征：包含 HTML 标签或长度足够长
+   */
+  private isFullArticleContent(text: string): boolean {
+    if (!text || text.length < 200) return false;
+    // 包含 HTML 标签 → 是文章
+    if (text.includes('<section') || text.includes('<p') || text.includes('<div') || text.includes('<h')) {
+      return true;
+    }
+    // 纯文本但足够长（>500字）→ 可能是文章
+    if (text.length > 500 && !text.startsWith('【') && !text.startsWith('我已')) {
+      return true;
+    }
+    return false;
+  }
+
+
+
   private async injectArticleContentIntoMcpParams(
     task: typeof agentSubTasks.$inferSelect,
     mcpParams: {
@@ -6856,12 +6841,24 @@ export class SubtaskExecutionEngine {
         mcpParams.params?.content?.length > 100 ||
         mcpParams.params?.articles?.some((a: any) => a.content?.length > 100);
       
-      if (!isComplianceAudit && hasArticleContent) {
-        // 非合规校验 MCP，且已有文章内容 → 无需注入
+      // 🔴 关键修复：不再因为"已有文章内容"就跳过注入
+      // 原因：MCP 参数中的文章内容可能来自 priorStepOutput 的旧版本（如写作任务的原始文章），
+      // 而不是最新版本（如合规整改后的文章）。必须始终从前序任务获取最新版本覆盖。
+      const isUploadDraft = mcpParams.toolName?.toLowerCase().includes('draft') ||
+        mcpParams.toolName?.toLowerCase().includes('upload') ||
+        mcpParams.actionName?.toLowerCase().includes('draft') ||
+        mcpParams.actionName?.toLowerCase().includes('upload') ||
+        mcpParams.actionName?.toLowerCase().includes('草稿');
+      
+      // 非合规校验且非上传类 MCP，且已有文章内容 → 无需注入
+      if (!isComplianceAudit && !isUploadDraft && hasArticleContent) {
         return;
       }
       
-      // 从前序任务获取文章内容
+      // 🔴🔴🔴 重构：从前序任务获取最新版本的完整文章内容
+      // 核心策略：按 orderIndex DESC 遍历，找到最新的包含完整文章的前序任务
+      // 对于合规整改任务（insurance-d），优先从 resultData 提取 modifiedArticle，
+      // 如果没有修改（输出简短回复如"无需修改"），则跳过它继续找前序任务
       const previousTasks = await db
         .select({
           id: agentSubTasks.id,
@@ -6882,28 +6879,52 @@ export class SubtaskExecutionEngine {
         )
         .orderBy(desc(agentSubTasks.orderIndex));
       
-      // 查找写作任务或预览编辑任务的 resultText
       let articleContent = '';
       let articleTitle = '';
       
       for (const prevTask of previousTasks) {
-        // 优先从写作任务和预览编辑任务获取文章内容
+        // 只从写作任务和预览编辑任务获取文章内容
         const isWritingOrPreview = isWritingAgent(prevTask.fromParentsExecutor) ||
           prevTask.fromParentsExecutor === 'user_preview_edit';
         
-        if (isWritingOrPreview && prevTask.resultText && prevTask.resultText.length > 100) {
-          articleContent = prevTask.resultText;
-          // 尝试从 resultData 获取标题
-          const resultDataObj = typeof prevTask.resultData === 'string' 
-            ? JSON.parse(prevTask.resultData) 
-            : prevTask.resultData;
-          if (resultDataObj?.executorOutput?.structuredResult?.resultContent?.articleTitle) {
-            articleTitle = resultDataObj.executorOutput.structuredResult.resultContent.articleTitle;
-          } else if (resultDataObj?.articleTitle) {
-            articleTitle = resultDataObj.articleTitle;
+        if (!isWritingOrPreview) continue;
+        
+        // 🔴🔴🔴 核心改进：先从 resultData 提取完整文章，再兜底 resultText
+        // resultData 包含结构化输出（modifiedArticle/content），比 resultText 更可靠
+        let extractedContent = this.extractArticleFromResultData(prevTask.resultData);
+        
+        // 如果 resultData 提取不到，兜底使用 resultText
+        if (!extractedContent && prevTask.resultText && this.isFullArticleContent(prevTask.resultText)) {
+          extractedContent = prevTask.resultText;
+        }
+        
+        if (extractedContent) {
+          articleContent = extractedContent;
+          // 提取标题
+          articleTitle = this.extractArticleTitleFromResultData(prevTask.resultData);
+          if (!articleTitle && prevTask.resultText) {
+            // 兜底：从 resultText 的第一行提取
+            const firstLine = prevTask.resultText.split('\n')[0]?.replace(/<[^>]+>/g, '').trim();
+            if (firstLine && firstLine.length > 2 && firstLine.length < 50) {
+              articleTitle = firstLine;
+            }
           }
+          console.log('[injectArticleContentIntoMcpParams] ✅ 从前序任务获取到文章内容', {
+            orderIndex: prevTask.orderIndex,
+            executor: prevTask.fromParentsExecutor,
+            contentLength: articleContent.length,
+            source: extractedContent === prevTask.resultText ? 'resultText' : 'resultData',
+            title: articleTitle || '(无标题)'
+          });
           break;
         }
+        
+        // resultText 太短或不是完整文章 → 跳过此任务，继续找前序任务
+        console.log('[injectArticleContentIntoMcpParams] ⏭️ 跳过前序任务', {
+          orderIndex: prevTask.orderIndex,
+          executor: prevTask.fromParentsExecutor,
+          reason: prevTask.resultText ? `resultText长度=${prevTask.resultText.length}，非完整文章` : 'resultText为空'
+        });
       }
       
       if (!articleContent) {
@@ -6917,6 +6938,7 @@ export class SubtaskExecutionEngine {
               id: agentSubTasks.id,
               fromParentsExecutor: agentSubTasks.fromParentsExecutor,
               resultText: agentSubTasks.resultText,
+              resultData: agentSubTasks.resultData,
             })
             .from(agentSubTasks)
             .where(
@@ -6928,8 +6950,16 @@ export class SubtaskExecutionEngine {
             );
           
           for (const baseTask of baseArticleTasks) {
-            if (isWritingAgent(baseTask.fromParentsExecutor) && baseTask.resultText && baseTask.resultText.length > 100) {
-              articleContent = baseTask.resultText;
+            if (!isWritingAgent(baseTask.fromParentsExecutor)) continue;
+            
+            let extractedContent = this.extractArticleFromResultData(baseTask.resultData);
+            if (!extractedContent && baseTask.resultText && this.isFullArticleContent(baseTask.resultText)) {
+              extractedContent = baseTask.resultText;
+            }
+            
+            if (extractedContent) {
+              articleContent = extractedContent;
+              articleTitle = this.extractArticleTitleFromResultData(baseTask.resultData);
               console.log('[injectArticleContentIntoMcpParams] ✅ 从基础文章组获取到文章内容，长度:', articleContent.length);
               break;
             }
@@ -6949,7 +6979,24 @@ export class SubtaskExecutionEngine {
         }
       }
       
-      // 注入文章内容到 MCP 参数
+      // 🔴🔴🔴 注入文章内容到 MCP 参数
+      // 上传类 MCP：始终覆盖 MCP 参数中的文章内容（确保使用最新版本）
+      if (isUploadDraft) {
+        // 上传草稿箱 MCP：替换 articles 数组中的 content
+        if (mcpParams.params?.articles && Array.isArray(mcpParams.params.articles)) {
+          for (const article of mcpParams.params.articles) {
+            article.content = articleContent;
+            if (articleTitle) {
+              article.title = articleTitle;
+            }
+          }
+          console.log('[injectArticleContentIntoMcpParams] ✅ 已覆盖上传 MCP 的 articles.content，长度:', articleContent.length);
+        } else if (mcpParams.params?.content !== undefined) {
+          mcpParams.params.content = articleContent;
+          console.log('[injectArticleContentIntoMcpParams] ✅ 已覆盖上传 MCP 的 content，长度:', articleContent.length);
+        }
+      }
+      
       if (isComplianceAudit) {
         // 合规校验 MCP：注入 articleContent
         if (!mcpParams.params.articleContent || mcpParams.params.articleContent.length < 100) {
@@ -6963,7 +7010,7 @@ export class SubtaskExecutionEngine {
       }
       
       // 通用：如果 MCP 参数中缺少 content 且文章内容较短（<5000字），可以注入
-      if (!mcpParams.params.content && articleContent.length < 5000) {
+      if (!mcpParams.params.content && !isUploadDraft && articleContent.length < 5000) {
         mcpParams.params.content = articleContent;
       }
       
