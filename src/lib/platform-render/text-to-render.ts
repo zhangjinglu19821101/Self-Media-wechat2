@@ -106,70 +106,70 @@ export function plainTextToHtml(text: string): string {
 
     // 1. 第一段作为开头引导语（橙色加粗）
     if (index === 0) {
-      return `<p style="color:#E67E22; font-weight:bold; margin:0 0 1em; text-align:left;">${content}</p>`;
+      return `<p style="color:#E67E22; font-weight:bold; margin:0; padding:0 0 16px; line-height:1.6 !important;">${content}</p>`;
     }
 
-    // 2. 一级标题（一、二、三、等）→ 黑色居中h2 + 分割线hr
+    // 2. 一级标题（一、二、三、等）→ 黑色居中h2 + div分割线
     if (/^[一二三四五六七八九十]+[、.)\s]/.test(p)) {
-      return `<h2 style="color:#000000; font-weight:bold; text-align:center; margin:1em 0; font-size:14px;">${content}</h2>\n<hr style="border:none; border-top:1px solid #eee; width:90%; margin:0.5em auto;">`;
+      return `<h2 style="color:#000000; font-weight:bold; text-align:center; margin:0; padding:16px 0; font-size:16px; line-height:1.7 !important;">${content}</h2>\n<div style="width:90%; height:1px; background:#eee; margin:0 auto 16px;"></div>`;
     }
 
     // 4. 三级标题（1.1 2.1 等，或"真相一""要点二"等细分标题）→ 青绿色h4常规字重
     if (/^\d+\.\d+[.、)\s]/.test(p) || /^(真相|要点|重点|核心|关键)[一二三四五六七八九十]/.test(p)) {
-      return `<h4 style="color:#1A8A6F; margin:1em 0; font-size:14px; line-height:1.75; text-align:left;">${content}</h4>`;
+      return `<h4 style="color:#1A8A6F; margin:0; padding:16px 0 8px; font-size:14px; line-height:1.75 !important;">${content}</h4>`;
     }
 
     // 3. 二级标题（1. 2. 3. 等）→ 青绿色加粗h3
     if (/^\d+[.、)\s]/.test(p)) {
-      return `<h3 style="color:#1A8A6F; font-weight:bold; text-align:left; margin:1em 0; font-size:14px; line-height:1.75;">${content}</h3>`;
+      return `<h3 style="color:#1A8A6F; font-weight:bold; margin:0; padding:16px 0 8px; font-size:14px; line-height:1.75 !important;">${content}</h3>`;
     }
 
     // 6. 红色高危提醒
     if (/注意|提醒|警示|小心|务必|绝对不能|危险|⚠️|❗|❌|🚫|100%/.test(p)) {
-      return `<p style="color:#FF0000; font-weight:bold; text-align:left; margin:0 0 1em;">${content}</p>`;
+      return `<p style="color:#FF0000; font-weight:bold; margin:0; padding:0 0 16px; line-height:1.6 !important;">${content}</p>`;
     }
 
     // 7. 蓝色辅助提示（温和提示）
     if (/小提示|提示：|建议|💡|注意看/.test(p)) {
-      return `<p style="color:#3498db; text-align:left; margin:0 0 1em;">${content}</p>`;
+      return `<p style="color:#3498db; margin:0; padding:0 0 16px; line-height:1.6 !important;">${content}</p>`;
     }
 
     // 11. 引用区块（条款引用）
     if (/^【条款引用】|条款引用|根据.*条款|依据.*规定/.test(p)) {
-      return `<p style="color:#3E3E3E; text-align:left; margin:0 0 1em; padding-left:10px; border-left:2px solid #eee;">${content}</p>`;
+      return `<p style="margin:0; padding:0 0 16px 10px; border-left:2px solid #eee; line-height:1.6 !important;">${content}</p>`;
     }
 
     // 12. 小字备注/数据来源
     if (/^备注|^数据来源|^注：/.test(p)) {
-      return `<p style="font-size:12px; color:#666666; text-align:left; line-height:1.5; margin:0 0 1em;">${content}</p>`;
+      return `<p style="font-size:12px; color:#666666; margin:0; padding:0 0 16px; line-height:1.5 !important;">${content}</p>`;
     }
 
     // 13. 互动提问
     if (/互动提问|提问|欢迎在评论/.test(p)) {
-      return `<p style="color:#3E3E3E; text-align:left; margin:2em 0 1em;">${content}</p>`;
+      return `<p style="margin:0; padding:16px 0; line-height:1.6 !important;">${content}</p>`;
     }
 
     // 14. 免责声明
     if (/免责声明|声明|不构成/.test(p)) {
-      return `<p style="font-size:12px; color:#666666; text-align:left; line-height:1.5; margin:1em 0;">${content}</p>`;
+      return `<p style="font-size:12px; color:#666666; margin:0; padding:16px 0 0; line-height:1.5 !important;">${content}</p>`;
     }
 
     // 5. 正文段落（深灰、居左）
-    return `<p style="color:#3E3E3E; text-align:left; margin:0 0 1em;">${content}</p>`;
+    return `<p style="margin:0; padding:0 0 16px; line-height:1.6 !important;">${content}</p>`;
   });
 
-  // 使用标准 section 包裹
+  // 使用标准 section 包裹（样式已在各元素上内联，section 只保留背景和padding）
   const innerHtml = htmlParts.join('\n');
 
   // 自动补充互动提问（如果没有）
   const hasInteraction = /互动提问|提问|欢迎在评论/.test(text);
-  const interaction = hasInteraction ? '' : '\n<p style="color:#3E3E3E; text-align:left; margin:2em 0 1em;">【互动提问】你买保险时踩过坑吗？欢迎在评论区留言分享</p>';
+  const interaction = hasInteraction ? '' : '\n<p style="margin:0; padding:16px 0; line-height:1.6 !important;">【互动提问】你买保险时踩过坑吗？欢迎在评论区留言分享</p>';
 
   // 自动补充免责声明（如果没有）
   const hasDisclaimer = /免责声明|声明|不构成/.test(text);
-  const disclaimer = hasDisclaimer ? '' : '\n<p style="font-size:12px; color:#666666; text-align:left; line-height:1.5; margin:1em 0;">【免责声明】本文仅为知识科普，不构成投资/购买建议。</p>';
+  const disclaimer = hasDisclaimer ? '' : '\n<p style="font-size:12px; color:#666666; margin:0; padding:16px 0 0; line-height:1.5 !important;">【免责声明】本文仅为知识科普，不构成投资/购买建议。</p>';
 
-  return `<section style="background:#ffffff; padding:0 12px; font-size:14px; line-height:1.6;">\n${innerHtml}${interaction}${disclaimer}\n</section>`;
+  return `<section style="background:#ffffff; padding:0 12px; font-size:14px; line-height:1.6 !important; color:#3E3E3E;">\n${innerHtml}${interaction}${disclaimer}\n</section>`;
 }
 
 // ============ 小红书 ============
