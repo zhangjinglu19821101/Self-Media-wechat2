@@ -9,6 +9,8 @@
  * 失败时降级到 text-to-render.ts 的简单文本处理逻辑
  */
 
+import type { LLMClient } from 'coze-coding-dev-sdk';
+
 import type {
   PlatformType,
   PlatformRenderData,
@@ -88,7 +90,7 @@ export async function formatDirectPublishArticle(
 async function formatWithLLM(
   options: DirectPublishFormatOptions
 ): Promise<PlatformRenderData | null> {
-  const { platform, workspaceId, signal } = options;
+  const { platform, workspaceId } = options;
 
   // 获取 LLM Client
   const llmClient = await getLLMClient(workspaceId);
@@ -98,9 +100,9 @@ async function formatWithLLM(
 
   switch (platform) {
     case 'wechat_official':
-      return formatWechatWithLLM(llmClient, model, options, signal);
+      return formatWechatWithLLM(llmClient, model, options);
     case 'xiaohongshu':
-      return formatXhsWithLLM(llmClient, model, options, signal);
+      return formatXhsWithLLM(llmClient, model, options);
     default:
       return null;
   }
@@ -164,10 +166,9 @@ ${WECHAT_HTML_TEMPLATE_SPEC}
 - 文章末尾必须有免责声明`;
 
 async function formatWechatWithLLM(
-  llmClient: any,
+  llmClient: LLMClient,
   model: string,
   options: DirectPublishFormatOptions,
-  signal?: AbortSignal
 ): Promise<WechatPlatformRenderData | null> {
   const { textContent, articleTitle } = options;
 
@@ -182,7 +183,6 @@ ${textContent}`;
     ], {
       model,
       temperature: 0.1, // 低温度，保持忠实于原文
-      signal,
     });
 
     const htmlContent = extractHtmlFromResponse(response.content || '');
@@ -200,9 +200,9 @@ ${textContent}`;
       htmlContent,
       articleTitle: title,
     };
-  } catch (error: any) {
-    if (error.name === 'AbortError') return null;
-    console.error('[DirectPublishFormatter] 微信格式化LLM调用失败:', error?.message);
+  } catch (error: unknown) {
+    if (error instanceof Error && error.name === 'AbortError') return null;
+    console.error('[DirectPublishFormatter] 微信格式化LLM调用失败:', error instanceof Error ? error.message : String(error));
     return null;
   }
 }
@@ -215,7 +215,7 @@ const XHS_FORMAT_SYSTEM_PROMPT = `你是一个小红书内容策划专家。你�
 1. **概括而非截取** — 标题和要点必须是你对内容的理解和概括，不是简单截取原文
 2. **封面标题**：15字以内，吸引眼球但不标题党，有悬念或反差感
 3. **要点标题**：15字以内，简洁有力、引发好奇
-4. **要点内容**：50字以内，概括核心信息，像朋友分享的口吻
+4. **要点内容**：70-100字，详细概括核心信息，像朋友分享的口吻，信息量要充足
 5. **结尾金句**：20字以内，有温度有共鸣
 6. **语气风格**：有温度、接地气、像朋友在分享，不要AI感
 
@@ -230,7 +230,7 @@ const XHS_FORMAT_SYSTEM_PROMPT = `你是一个小红书内容策划专家。你�
   "coverTitle": "封面标题（≤15字）",
   "coverSubtitle": "封面副标题（≤30字，可选）",
   "points": [
-    { "title": "要点1标题（≤15字）", "content": "要点1概括（≤50字）" }
+    { "title": "要点1标题（≤15字）", "content": "要点1概括（70-100字）" }
   ],
   "endingConclusion": "结尾金句（≤20字）",
   "articleTitle": "文章简短标题（≤15字，用于任务列表）",
@@ -238,10 +238,9 @@ const XHS_FORMAT_SYSTEM_PROMPT = `你是一个小红书内容策划专家。你�
 }`;
 
 async function formatXhsWithLLM(
-  llmClient: any,
+  llmClient: LLMClient,
   model: string,
   options: DirectPublishFormatOptions,
-  signal?: AbortSignal
 ): Promise<XhsPlatformRenderData | null> {
   const { textContent, cardCountMode } = options;
 
@@ -253,7 +252,7 @@ async function formatXhsWithLLM(
 
 ${textContent}
 
-要求：提取${pointCount}个要点，每个要点有标题（≤15字）和概括内容（≤50字）。`;
+要求：提取${pointCount}个要点，每个要点有标题（≤15字）和概括内容（70-100字）。`;
 
   try {
     const response = await llmClient.invoke([
@@ -262,7 +261,6 @@ ${textContent}
     ], {
       model,
       temperature: 0.7, // 适中温度，生成更有创意的标题
-      signal,
     });
 
     const content = response.content || '';
@@ -290,20 +288,25 @@ ${textContent}
     const maxPoints = XHS_CARD_MODE_POINT_COUNT[effectiveCardCountMode] || 3;
     const points = (parsed.points || []).slice(0, maxPoints);
 
+    // 如果要点不足，从原文中提取补充内容填充（避免空白卡片）
+    while (points.length < maxPoints) {
+      const remainingText = textContent
+        .replace(/[#*`]/g, '')
+        .split(/[。\n！？]/)
+        .filter(s => s.trim().length > 10);
+      const supplementIdx = points.length;
+      const sourceLine = remainingText[supplementIdx] || remainingText[0] || '';
+      points.push({
+        title: `要点${supplementIdx + 1}`,
+        content: sourceLine.trim().substring(0, 100) || '详见正文',
+      });
+    }
+
     for (const point of points) {
       cards.push({
         type: 'point',
         title: (point.title || '').substring(0, 15) || '要点',
-        content: (point.content || '').substring(0, 80) || '',
-      });
-    }
-
-    // 如果要点不足，补齐
-    while (cards.length < maxPoints + 1) {
-      cards.push({
-        type: 'point',
-        title: `要点${cards.length}`,
-        content: '',
+        content: (point.content || '').substring(0, 100) || '',
       });
     }
 
@@ -321,9 +324,9 @@ ${textContent}
       textContent,
       articleTitle: (parsed.articleTitle || parsed.coverTitle || '文章预览').substring(0, 15),
     };
-  } catch (error: any) {
-    if (error.name === 'AbortError') return null;
-    console.error('[DirectPublishFormatter] 小红书格式化LLM调用失败:', error?.message);
+  } catch (error: unknown) {
+    if (error instanceof Error && error.name === 'AbortError') return null;
+    console.error('[DirectPublishFormatter] 小红书格式化LLM调用失败:', error instanceof Error ? error.message : String(error));
     return null;
   }
 }
@@ -333,7 +336,7 @@ ${textContent}
 /**
  * 获取 LLM Client（优先使用用户 BYOK Key）
  */
-async function getLLMClient(workspaceId?: string): Promise<any> {
+async function getLLMClient(workspaceId?: string): Promise<LLMClient> {
   if (workspaceId) {
     try {
       const { client } = await createUserLLMClient(workspaceId, { timeout: 60000 });

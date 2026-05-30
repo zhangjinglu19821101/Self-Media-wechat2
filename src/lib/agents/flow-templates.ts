@@ -275,7 +275,7 @@ export const WECHAT_DIRECT_PUBLISH_TEMPLATE = createFlowTemplate(
   '微信公众号',
   '公众号文章直接发布流程',
   [
-    { id: 'node-dp-wechat-1', executor: 'insurance-d', title: '格式化文章', description: '将用户文章格式化为公众号标准HTML排版（自动执行，无需确认）', styleKey: 'dp_write' },
+    { id: 'node-dp-wechat-1', executor: 'insurance-d', title: '格式化文章', description: '将用户文章格式化为公众号标准HTML排版（自动执行，无需确认）', styleKey: 'wechat_write' },
     { id: 'node-dp-wechat-2', executor: 'user_preview_edit', title: '预览修改文章', description: '用户预览格式化后的公众号文章，可修改调整或直接确认继续', styleKey: 'dp_preview' },
     { id: 'node-dp-wechat-3', executor: 'T', title: '合规校验', description: '对文章进行合规性校验，检查是否包含绝对化用语、虚假承诺、违规营销等内容', styleKey: 'dp_check' },
     { id: 'node-dp-wechat-4', executor: 'insurance-d', title: '完成合规整改', description: '依据合规校验结果，完成文章整改（修改违规内容、调整表述）', styleKey: 'dp_fix' },
@@ -296,7 +296,7 @@ export const XIAOHONGSHU_DIRECT_PUBLISH_TEMPLATE = createFlowTemplate(
   '小红书',
   '小红书图文直接发布流程',
   [
-    { id: 'node-dp-xhs-1', executor: 'insurance-xiaohongshu', title: '格式化图文', description: '将用户文章格式化为小红书标准JSON结构（自动执行，无需确认）', styleKey: 'dp_write' },
+    { id: 'node-dp-xhs-1', executor: 'insurance-xiaohongshu', title: '格式化图文', description: '将用户文章格式化为小红书标准JSON结构（自动执行，无需确认）', styleKey: 'dp_xhs_format' },
     { id: 'node-dp-xhs-2', executor: 'user_preview_edit', title: '预览修改图文', description: '用户预览格式化后的小红书图文内容，可修改标题/要点/正文/标签或直接确认继续', styleKey: 'dp_preview' },
     { id: 'node-dp-xhs-3', executor: 'T', title: '合规校验', description: '对小红书图文进行合规性校验，检查是否包含绝对化用语、虚假承诺、违规营销等内容', styleKey: 'dp_check' },
     { id: 'node-dp-xhs-4', executor: 'insurance-xiaohongshu', title: '完成合规整改', description: '依据合规校验结果，完成小红书图文整改', styleKey: 'dp_fix' },
@@ -317,7 +317,7 @@ export const ZHIHU_DIRECT_PUBLISH_TEMPLATE = createFlowTemplate(
   '知乎',
   '知乎文章直接发布流程',
   [
-    { id: 'node-dp-zhihu-1', executor: 'insurance-zhihu', title: '格式化文章', description: '将用户文章格式化为知乎标准排版格式（自动执行，无需确认）', styleKey: 'dp_write' },
+    { id: 'node-dp-zhihu-1', executor: 'insurance-zhihu', title: '格式化文章', description: '将用户文章格式化为知乎标准排版格式（自动执行，无需确认）', styleKey: 'dp_zhihu_format' },
     { id: 'node-dp-zhihu-2', executor: 'user_preview_edit', title: '预览修改文章', description: '用户预览格式化后的知乎文章，可修改调整或直接确认继续', styleKey: 'dp_preview' },
     { id: 'node-dp-zhihu-3', executor: 'T', title: '合规校验', description: '对文章进行合规性校验，检查是否包含绝对化用语、虚假承诺、违规营销等内容', styleKey: 'dp_check' },
     { id: 'node-dp-zhihu-4', executor: 'insurance-zhihu', title: '完成合规整改', description: '依据合规校验结果，完成文章整改（修改违规内容、调整表述）', styleKey: 'dp_fix' },

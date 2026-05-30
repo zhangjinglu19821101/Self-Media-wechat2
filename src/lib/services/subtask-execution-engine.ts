@@ -1611,8 +1611,9 @@ export class SubtaskExecutionEngine {
       return;
     }
 
-    // 🔥🔥🔥 直接发文模式改造：第一步就是 user_preview_edit，无需等待写作Agent格式化
-    // 用户已提供完整文章，直接让用户预览确认即可
+    // 🔥🔥🔥 直接发文模式改造：
+    // - 5步流程（有格式化步骤）：预览节点从格式化步骤获取文章
+    // - 4步流程（无格式化步骤）：预览节点直接使用用户提供的文章
     const taskMetadata = (task.metadata != null ? task.metadata : {}) as Record<string, unknown>;
     const isDirectPublish = taskMetadata.creationMode === 'direct_publish';
     const hasProvidedArticle = !!taskMetadata.providedArticle;
@@ -1702,17 +1703,33 @@ export class SubtaskExecutionEngine {
       task.metadata as Record<string, unknown>
     );
 
-    // 🔥🔥🔥 【改造】直接发文模式：始终优先使用 providedArticle
-    // 新流程中，直接发文的第一步就是 user_preview_edit，没有前序写作Agent格式化步骤
-    // 用户提供的原文是直接发文模式的核心内容源，应始终优先使用
-    // 注意：isDirectPublish 和 hasProvidedArticle 已在上方声明
+    // 🔥🔥🔥 【改造】直接发文模式：判断是否应该优先使用 providedArticle
+    // 5步流程（格式化→预览→校验→整改→上传）：
+    //   - 第2步 user_preview_edit：应从前序格式化步骤获取结果，不应使用 providedArticle
+    //   - 4步流程（无格式化步骤）：user_preview_edit 应使用 providedArticle
+    // 判断依据：当前节点之前是否有已完成的写作Agent（格式化步骤），
+    // 有 → 使用格式化后的文章；无 → 使用 providedArticle
     if (isDirectPublish && hasProvidedArticle) {
-      articleContent = taskMetadata.providedArticle as string;
-      articleTitle = (taskMetadata.providedArticleTitle as string) || articleTitle || '用户提供的文章';
-      console.log('[SubtaskEngine] 👁️ 直接发文模式：使用 metadata.providedArticle 作为文章内容', {
-        providedContentLength: articleContent.length,
-        title: articleTitle,
-      });
+      // 检查前序是否有已完成的写作Agent（格式化步骤）
+      const hasCompletedFormattingStep = previousTasks.some(t =>
+        isWritingAgent(t.fromParentsExecutor) && t.status === 'completed'
+      );
+      
+      if (hasCompletedFormattingStep) {
+        // 5步流程：格式化步骤已完成，优先使用格式化后的文章
+        console.log('[SubtaskEngine] 👁️ 直接发文5步流程：格式化步骤已完成，使用格式化后的文章', {
+          taskId: task.id,
+        });
+        // 不设置 articleContent，让后续 effectiveWritingTask 逻辑获取格式化结果
+      } else {
+        // 4步流程（无格式化步骤）：直接使用 providedArticle
+        articleContent = taskMetadata.providedArticle as string;
+        articleTitle = (taskMetadata.providedArticleTitle as string) || articleTitle || '用户提供的文章';
+        console.log('[SubtaskEngine] 👁️ 直接发文4步流程：使用 metadata.providedArticle 作为文章内容', {
+          providedContentLength: articleContent.length,
+          title: articleTitle,
+        });
+      }
     } else if (isDirectPublish && !hasProvidedArticle) {
       // 直接发文但没有 providedArticle（不应该发生，但做兜底）
       console.warn('[SubtaskEngine] ⚠️ 直接发文模式但未找到 providedArticle，尝试从前序任务获取');
@@ -1731,10 +1748,11 @@ export class SubtaskExecutionEngine {
     let platformRenderData: import('@/lib/platform-render/types').PlatformRenderData | Record<string, unknown> | null = null;
     let platformDataSource: typeof agentSubTasks.$inferSelect | undefined;
 
-    // 🔥🔥🔥 【改造】直接发文模式：跳过从格式化任务提取 platformRenderData
-    // 新流程中，直接发文第一步就是 user_preview_edit，没有写作Agent格式化步骤
-    // 直接发文的文章内容来自 providedArticle，应交给 shouldFormatInEngine 逻辑处理
-    const skipPlatformRenderExtraction = isDirectPublish && hasProvidedArticle;
+    // 🔥🔥🔥 【改造】直接发文模式：判断是否跳过 platformRenderData 提取
+    // 5步流程：格式化步骤完成后有 platformRenderData，不应跳过
+    // 4步流程：没有格式化步骤，使用 providedArticle，需要走 shouldFormatInEngine 逻辑
+    const skipPlatformRenderExtraction = isDirectPublish && hasProvidedArticle
+      && !previousTasks.some(t => isWritingAgent(t.fromParentsExecutor) && t.status === 'completed');
 
     if (skipPlatformRenderExtraction) {
       console.log('[SubtaskEngine] 👁️ 直接发文模式：跳过 platformRenderData 提取，使用 providedArticle');
