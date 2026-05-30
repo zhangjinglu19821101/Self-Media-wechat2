@@ -92,7 +92,9 @@ async function formatWithLLM(
 
   // 获取 LLM Client
   const llmClient = await getLLMClient(workspaceId);
-  const model = 'doubao-seed-2-0-mini-260215'; // 轻量模型，格式化任务足够
+  // 🔴 使用与 insurance-d 相同的高质量模型，确保 HTML 格式化效果一致
+  // doubao-seed-2-0-pro-260215 能更好地遵循公众号标准 HTML 格式规范
+  const model = 'doubao-seed-2-0-pro-260215';
 
   switch (platform) {
     case 'wechat_official':
