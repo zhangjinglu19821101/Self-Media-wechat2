@@ -7688,47 +7688,118 @@ export class SubtaskExecutionEngine {
       }
     }
 
-    // 🔴 临时修复：wechat add_draft 参数转换
+    // 🔴 修复：wechat add_draft 参数转换
     // 如果只有 content 没有 articles，自动转换为 articles 格式
+    // 使用公众号标准 HTML 格式化（formatDirectPublishArticle）
     let finalParams = mcpParams.params;
     if (mcpParams.toolName === 'wechat' && mcpParams.actionName === 'add_draft') {
       console.log('[SubtaskEngine] [command_result_id=' + task.commandResultId + '] 🔴 检测到 wechat add_draft，检查参数格式...');
       if (finalParams.articles) {
         console.log('[SubtaskEngine] [command_result_id=' + task.commandResultId + '] ✅ 已有 articles 参数，无需转换');
       } else if (finalParams.content) {
-        console.log('[SubtaskEngine] [command_result_id=' + task.commandResultId + '] ⚠️ 只有 content，转换为 articles 格式');
+        console.log('[SubtaskEngine] [command_result_id=' + task.commandResultId + '] ⚠️ 只有 content，转换为 articles 格式（使用公众号标准格式化）');
+        
         // 从 content 中提取标题（第一行或 # 开头的内容）
-        let title = '未命名文章';
+        let title = finalParams.title || '未命名文章';
         let contentText = finalParams.content;
         
-        // 尝试提取标题
-        const titleMatch = finalParams.content.match(/^#\s*(.+)$/m);
-        if (titleMatch) {
-          title = titleMatch[1].trim();
+        // 尝试提取标题（如果没有显式提供）
+        if (!finalParams.title) {
+          const titleMatch = finalParams.content.match(/^#\s*(.+)$/m);
+          if (titleMatch) {
+            title = titleMatch[1].trim();
+          } else {
+            // 从第一行提取标题（如果是纯文本）
+            const firstLine = finalParams.content.split('\n')[0];
+            if (firstLine && firstLine.length < 30 && !firstLine.includes('<')) {
+              title = firstLine.trim();
+            }
+          }
         }
         
-        // 转换 content 为 HTML 格式（简单处理）
-        const htmlContent = finalParams.content
-          .split('\n')
-          .map(line => {
-            if (line.startsWith('#### ')) return `<h4>${line.substring(5)}</h4>`;
-            if (line.startsWith('### ')) return `<h3>${line.substring(4)}</h3>`;
-            if (line.startsWith('## ')) return `<h2>${line.substring(3)}</h2>`;
-            if (line.startsWith('# ')) return `<h1>${line.substring(2)}</h1>`;
-            if (line.trim() === '') return '<br>';
-            return `<p>${line}</p>`;
-          })
-          .join('\n');
+        // 检查 content 是否已经是格式化后的 HTML（包含 <section> 标签）
+        const isAlreadyFormatted = contentText.includes('<section') && contentText.includes('style=');
+        
+        let htmlContent = contentText;
+        if (!isAlreadyFormatted) {
+          // 🔥 使用公众号标准 HTML 格式化（异步导入）
+          try {
+            const { formatDirectPublishArticle, plainTextToHtml } = await import('@/lib/services/direct-publish-formatter-service');
+            console.log('[SubtaskEngine] [command_result_id=' + task.commandResultId + '] 🔴 调用 formatDirectPublishArticle 进行格式化...');
+            
+            // 尝试使用 LLM 格式化（180秒超时）
+            const formattedResult = await formatDirectPublishArticle({
+              articleContent: contentText,
+              articleTitle: title,
+              platform: 'wechat_official',
+              workspaceId: task.workspaceId,
+            });
+            
+            if (formattedResult.platformRenderData?.htmlContent) {
+              htmlContent = formattedResult.platformRenderData.htmlContent;
+              console.log('[SubtaskEngine] [command_result_id=' + task.commandResultId + '] ✅ LLM 格式化成功，HTML 长度:', htmlContent.length);
+            } else {
+              // 降级到纯文本转 HTML
+              htmlContent = plainTextToHtml(contentText);
+              console.log('[SubtaskEngine] [command_result_id=' + task.commandResultId + '] ⚠️ 使用降级格式化，HTML 长度:', htmlContent.length);
+            }
+          } catch (formatError) {
+            console.error('[SubtaskEngine] [command_result_id=' + task.commandResultId + '] ❌ 格式化失败:', formatError);
+            // 降级：使用简单的 Markdown 转 HTML
+            htmlContent = contentText
+              .split('\n')
+              .map(line => {
+                if (line.startsWith('#### ')) return `<h4 style="color:#1A8A6F;font-weight:bold;text-align:left;margin:1em 0;font-size:14px;">${line.substring(5)}</h4>`;
+                if (line.startsWith('### ')) return `<h3 style="color:#1A8A6F;font-weight:bold;text-align:left;margin:1em 0;font-size:14px;line-height:1.75;">${line.substring(4)}</h3>`;
+                if (line.startsWith('## ')) return `<h2 style="color:#000000;font-weight:bold;text-align:center;margin:1em 0;font-size:14px;">${line.substring(3)}<hr style="border:none;border-top:1px solid #eee;width:90%;margin:0.5em auto;"></h2>`;
+                if (line.startsWith('# ')) return `<h2 style="color:#000000;font-weight:bold;text-align:center;margin:1em 0;font-size:14px;">${line.substring(2)}<hr style="border:none;border-top:1px solid #eee;width:90%;margin:0.5em auto;"></h2>`;
+                if (line.trim() === '') return '<br>';
+                return `<p style="color:#3E3E3E;text-align:left;margin:0 0 1em;font-size:14px;line-height:1.6;">${line}</p>`;
+              })
+              .join('\n');
+            // 添加 section 包裹
+            htmlContent = `<section style="background:#ffffff;padding:0 12px;font-size:14px;line-height:1.6;">${htmlContent}</section>`;
+          }
+        } else {
+          console.log('[SubtaskEngine] [command_result_id=' + task.commandResultId + '] ✅ content 已是格式化 HTML，直接使用');
+        }
+        
+        // 🔥 获取账号默认设置
+        const accountId = finalParams.accountId || task.metadata?.accountId || 'insurance-account';
+        let author = finalParams.author || '原创';
+        let digest = finalParams.digest || '';
+        
+        // 尝试获取账号默认设置
+        try {
+          const { getDraftDefaults } = await import('@/lib/wechat-official-account/api');
+          const draftDefaults = await getDraftDefaults(accountId);
+          if (draftDefaults) {
+            author = finalParams.author || draftDefaults.author || '原创';
+            console.log('[SubtaskEngine] [command_result_id=' + task.commandResultId + '] ✅ 获取账号默认设置，author:', author);
+          }
+        } catch (draftError) {
+          console.warn('[SubtaskEngine] [command_result_id=' + task.commandResultId + '] ⚠️ 获取账号默认设置失败:', draftError);
+        }
+        
+        // 生成摘要（120字）
+        if (!digest) {
+          // 从 HTML 中提取纯文本摘要
+          const plainText = htmlContent.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim();
+          digest = plainText.substring(0, 120) + (plainText.length > 120 ? '...' : '');
+        }
         
         finalParams = {
-          accountId: finalParams.accountId || 'insurance-account',
+          accountId: accountId,
           articles: [{
             title: title,
-            author: finalParams.author || '保险助手',
-            digest: finalParams.digest || finalParams.content.substring(0, 100) + '...',
-            content: `<div style="font-family: 'PingFang SC', 'Microsoft YaHei', sans-serif; line-height: 1.8;">${htmlContent}</div>`,
+            author: author,
+            digest: digest,
+            content: htmlContent,
             show_cover_pic: 0,  // 不显示封面（这样不需要 thumb_media_id）
             // thumb_media_id: 如果需要封面，需要先上传图片获取 media_id
+            // 🔥 新增：公众号草稿箱其他设置
+            need_open_comment: 1,  // 开启评论
+            only_fans_can_comment: 0,  // 所有人可评论
           }]
         };
         console.log('[SubtaskEngine] [command_result_id=' + task.commandResultId + '] 🔴 转换后的参数:', JSON.stringify(finalParams, null, 2));
