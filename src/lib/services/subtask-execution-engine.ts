@@ -7781,7 +7781,14 @@ export class SubtaskExecutionEngine {
           console.warn('[SubtaskEngine] [command_result_id=' + task.commandResultId + '] ⚠️ 获取账号默认设置失败:', draftError);
         }
         
-        // 生成摘要（120字）
+        // 🔥 强制截断 digest 到 120 字（微信公众号 API 限制）
+        // 即使 digest 已存在，也要截断（防止从前序任务传递过来的超长摘要）
+        if (digest && digest.length > 120) {
+          console.log('[SubtaskEngine] [command_result_id=' + task.commandResultId + '] ⚠️ digest 超长 (' + digest.length + '字)，截断到 120 字');
+          digest = digest.substring(0, 120) + '...';
+        }
+        
+        // 如果没有 digest，从 HTML 内容生成
         if (!digest) {
           // 从 HTML 中提取纯文本摘要
           const plainText = htmlContent.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim();
