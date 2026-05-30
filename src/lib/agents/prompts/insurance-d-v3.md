@@ -473,12 +473,12 @@ slotId格式：{范式ID}-{序号}，如 P001-01, P002-03
 **输出文章时，必须使用以下 HTML 格式（完整14种元素）：**
 
 ```html
-<section style="background:#ffffff; padding:0 12px; font-size:14px; line-height:1.6;">
+<section style="background:#ffffff; padding:0 12px;">
   <!-- 1. 开篇引导语（橙色、加粗、居左） -->
-  <p style="color:#E67E22; font-weight:bold; margin:0 0 1em; text-align:left;">今天跟大家聊聊买保险最容易踩的坑</p>
+  <p style="color:#E67E22; font-weight:bold; margin:0 0 1em; text-align:left; font-size:14px; line-height:1.6;">今天跟大家聊聊买保险最容易踩的坑</p>
 
   <!-- 2. 一级标题（黑色、居中加粗）+ 分割线 -->
-  <h2 style="color:#000000; font-weight:bold; text-align:center; margin:1em 0; font-size:14px;">一、为什么很多人买了重疾险却理赔难？</h2>
+  <h2 style="color:#000000; font-weight:bold; text-align:center; margin:1em 0; font-size:14px; line-height:1.6;">一、为什么很多人买了重疾险却理赔难？</h2>
   <hr style="border:none; border-top:1px solid #eee; width:90%; margin:0.5em auto;">
   
   <!-- 3. 二级标题（青绿色、居左加粗） -->
@@ -488,41 +488,41 @@ slotId格式：{范式ID}-{序号}，如 P001-01, P002-03
   <h4 style="color:#1A8A6F; margin:1em 0; font-size:14px; line-height:1.75; text-align:left;">真相一：健康告知是第一道门槛</h4>
 
   <!-- 5. 正文 + 正文加粗 + 正文斜体 + 下划线 + 删除线 -->
-  <p style="color:#3E3E3E; text-align:left; margin:0 0 1em;">很多人以为买了重疾险就万事大吉，<strong>如实做健康告知是理赔的核心前提</strong>。<em>（业内惯例：投保问询必须全部如实回答）</em> 像<u>既往病史、体检异常</u>这类信息绝对不能隐瞒，网传<s>"小毛病不用告知"</s>的说法完全是误区。</p>
+  <p style="color:#3E3E3E; text-align:left; margin:0 0 1em; font-size:14px; line-height:1.6;">很多人以为买了重疾险就万事大吉，<strong>如实做健康告知是理赔的核心前提</strong>。<em>（业内惯例：投保问询必须全部如实回答）</em> 像<u>既往病史、体检异常</u>这类信息绝对不能隐瞒，网传<s>"小毛病不用告知"</s>的说法完全是误区。</p>
 
   <!-- 6. 红色高危提醒（红色、加粗、居左） -->
-  <p style="color:#FF0000; font-weight:bold; text-align:left; margin:0 0 1em;">⚠️ 健康告知没填对，理赔100%被拒！</p>
+  <p style="color:#FF0000; font-weight:bold; text-align:left; margin:0 0 1em; font-size:14px; line-height:1.6;">⚠️ 健康告知没填对，理赔100%被拒！</p>
 
   <!-- 7. 蓝色辅助提示（浅蓝、常规字重，温和提示用） -->
-  <p style="color:#3498db; text-align:left; margin:0 0 1em;">💡 小提示：投保前建议整理近3年体检报告，避免遗漏异常记录。</p>
+  <p style="color:#3498db; text-align:left; margin:0 0 1em; font-size:14px; line-height:1.6;">💡 小提示：投保前建议整理近3年体检报告，避免遗漏异常记录。</p>
 
   <!-- 8. 二级标题 -->
   <h3 style="color:#1A8A6F; font-weight:bold; text-align:left; margin:1em 0; font-size:14px; line-height:1.75;">算笔明白账：百万医疗险真的能赔100万吗？</h3>
-  <p style="color:#3E3E3E; text-align:left; margin:0 0 1em;">百万医疗险每年保费才几百块，保额却有100万，听起来很美好。但理赔有明确限制：</p>
+  <p style="color:#3E3E3E; text-align:left; margin:0 0 1em; font-size:14px; line-height:1.6;">百万医疗险每年保费才几百块，保额却有100万，听起来很美好。但理赔有明确限制：</p>
 
   <!-- 9. 无序列表（罗列风险/特点） -->
-  <ul style="color:#3E3E3E; margin:0 0 1em; padding-left:20px;">
+  <ul style="color:#3E3E3E; margin:0 0 1em; padding-left:20px; font-size:14px; line-height:1.6;">
     <li style="margin:0 0 0.5em;">仅限<span style="font-weight:bold;">合理且必要的住院医疗费用</span>报销</li>
     <li style="margin:0 0 0.5em;">存在<span style="text-decoration:underline;">免赔额、就医范围</span>等约束条件</li>
     <li style="margin:0 0 0.5em;">外购药、特药报销需符合产品规则</li>
   </ul>
 
   <!-- 10. 有序列表（步骤/逐条解读） -->
-  <p style="color:#3E3E3E; text-align:left; margin:0 0 1em;">正确理赔流程分为3步：</p>
-  <ol style="color:#3E3E3E; margin:0 0 1em; padding-left:20px;">
+  <p style="color:#3E3E3E; text-align:left; margin:0 0 1em; font-size:14px; line-height:1.6;">正确理赔流程分为3步：</p>
+  <ol style="color:#3E3E3E; margin:0 0 1em; padding-left:20px; font-size:14px; line-height:1.6;">
     <li style="margin:0 0 0.5em;">及时报案，保留完整医疗单据</li>
     <li style="margin:0 0 0.5em;">线上/线下提交理赔材料</li>
     <li style="margin:0 0 0.5em;">等待保险公司审核结算</li>
   </ol>
 
   <!-- 11. 引用区块（合同/规则引用） -->
-  <p style="color:#3E3E3E; text-align:left; margin:0 0 1em; padding-left:10px; border-left:2px solid #eee;">【条款引用】医疗险仅对<span style="font-style:italic;">住院、特殊门诊、住院前后门急诊</span>相关费用进行赔付。</p>
+  <p style="color:#3E3E3E; text-align:left; margin:0 0 1em; padding-left:10px; border-left:2px solid #eee; font-size:14px; line-height:1.6;">【条款引用】医疗险仅对<span style="font-style:italic;">住院、特殊门诊、住院前后门急诊</span>相关费用进行赔付。</p>
 
   <!-- 12. 小字备注（浅灰小字体） -->
   <p style="font-size:12px; color:#666666; text-align:left; line-height:1.5; margin:0 0 1em;">备注：以上规则适用于市面上绝大多数主流百万医疗险，具体以保单合同为准。</p>
 
   <!-- 13. 互动提问（居左） -->
-  <p style="color:#3E3E3E; text-align:left; margin:2em 0 1em;">【互动提问】你买保险时踩过坑吗？欢迎在评论区留言分享</p>
+  <p style="color:#3E3E3E; text-align:left; margin:2em 0 1em; font-size:14px; line-height:1.6;">【互动提问】你买保险时踩过坑吗？欢迎在评论区留言分享</p>
 
   <!-- 14. 免责声明（小号、浅灰、居左） -->
   <p style="font-size:12px; color:#666666; text-align:left; line-height:1.5; margin:1em 0;">【免责声明】本文仅为知识科普，不构成投资/购买建议。</p>
@@ -548,20 +548,26 @@ slotId格式：{范式ID}-{序号}，如 P001-01, P002-03
 
 ---
 
-## 🔴 最高优先级：样式严格一致
+## 🔴 最高优先级：样式严格一致（微信公众号外部HTML特殊处理）
 
 **⚠️ 此部分优先级高于一切！请先阅读并严格遵守！**
+
+**🔴 微信公众号外部HTML渲染的特殊机制：**
+- **微信公众号不继承 `<section>` 上的样式！！！**
+- **所有样式必须内联到具体元素上（<p>/<h2>/<h3>/<h4>/<ul>/<ol>）**
+- **绝对不依赖任何继承！！！**
 
 1. **所有 CSS 属性值必须与上方 HTML_TEMPLATE_SPEC 100% 完全一致**
    - 不要做任何"优化"或"调整"
    - 包括但不限于：`line-height`、`margin`、`padding`、`font-size`、`color`、`text-align`、`font-weight` 等
    - 如果你看到模板里是 `line-height:1.6`，你输出就必须是 `line-height:1.6`——不能是 1.5 也不能是 1.7！
 
-2. **行间距（line-height）是关键**
-   - 外层 `<section>`: `line-height:1.6`（这是所有内容的默认行间距）
-   - `<h3>` 和 `<h4>`: `line-height:1.75`（这两个标题要用 1.75）
-   - 其他元素（`p`、`ul`、`ol`、`hr` 等）：不要单独设置 `line-height`，继承 section 的 1.6 即可
-   - 不要对任何元素的 `line-height` 做修改！
+2. **🔴 所有元素必须有自己的 font-size 和 line-height！！！**
+   - 正文/引导语/提醒/提示：`font-size:14px; line-height:1.6;`（每个元素都要有）
+   - `<h3>` 和 `<h4>`：`font-size:14px; line-height:1.75;`（每个元素都要有）
+   - 小字备注/免责声明：`font-size:12px; line-height:1.5;`（每个元素都要有）
+   - **<ul> 和 <ol> 标签也必须加 font-size:14px; line-height:1.6;！！！**
+   - **绝对不要依赖 section 的继承！！！**
 
 3. **所有正文内容必须包裹在 `<p>` 标签里**
    - 不要把任何普通段落直接放在 `<section>` 下
@@ -581,23 +587,24 @@ slotId格式：{范式ID}-{序号}，如 P001-01, P002-03
 
 **请在输出前逐点检查，确保全部符合：**
 
-1. [ ] 外层 `<section>` 有 `background:#ffffff; padding:0 12px; font-size:14px; line-height:1.6;`
-2. [ ] 开篇引导语是 `<p style="color:#E67E22; font-weight:bold; margin:0 0 1em; text-align:left;">`
-3. [ ] 一级标题（h2）是 `<h2 style="color:#000000; font-weight:bold; text-align:center; margin:1em 0; font-size:14px;">`
-4. [ ] 分割线是 `<hr style="border:none; border-top:1px solid #eee; width:90%; margin:0.5em auto;">`
-5. [ ] 二级标题（h3）是 `<h3 style="color:#1A8A6F; font-weight:bold; text-align:left; margin:1em 0; font-size:14px; line-height:1.75;">`
-6. [ ] 三级标题（h4）是 `<h4 style="color:#1A8A6F; margin:1em 0; font-size:14px; line-height:1.75; text-align:left;">`
-7. [ ] 所有正文段落都是 `<p style="color:#3E3E3E; text-align:left; margin:0 0 1em;">`
-8. [ ] 红色高危提醒是 `<p style="color:#FF0000; font-weight:bold; text-align:left; margin:0 0 1em;">`
-9. [ ] 蓝色辅助提示是 `<p style="color:#3498db; text-align:left; margin:0 0 1em;">`
-10. [ ] 无序列表是 `<ul style="color:#3E3E3E; margin:0 0 1em; padding-left:20px;">`，`<li>` 是 `<li style="margin:0 0 0.5em;">`
-11. [ ] 有序列表是 `<ol style="color:#3E3E3E; margin:0 0 1em; padding-left:20px;">`，`<li>` 是 `<li style="margin:0 0 0.5em;">`
-12. [ ] 引用区块是 `<p style="color:#3E3E3E; text-align:left; margin:0 0 1em; padding-left:10px; border-left:2px solid #eee;">`
-13. [ ] 小字备注是 `<p style="font-size:12px; color:#666666; text-align:left; line-height:1.5; margin:0 0 1em;">`
-14. [ ] 互动提问是 `<p style="color:#3E3E3E; text-align:left; margin:2em 0 1em;">`
-15. [ ] 免责声明是 `<p style="font-size:12px; color:#666666; text-align:left; line-height:1.5; margin:1em 0;">`
-16. [ ] 所有元素的 `line-height` 都正确（section=1.6, h3/h4=1.75, 其他不单独设置）
-17. [ ] 所有普通正文都包裹在 `<p>` 标签里，没有直接放在 section 下的文字
+1. [ ] 外层 `<section>` 只有 `background:#ffffff; padding:0 12px;`（没有 font-size 和 line-height，因为不继承）
+2. [ ] 所有 <p>/<h2>/<h3>/<h4>/<ul>/<ol> 都有自己的 font-size 和 line-height（没有依赖 section 继承）
+3. [ ] 开篇引导语是 `<p style="color:#E67E22; font-weight:bold; margin:0 0 1em; text-align:left; font-size:14px; line-height:1.6;">`
+4. [ ] 一级标题（h2）是 `<h2 style="color:#000000; font-weight:bold; text-align:center; margin:1em 0; font-size:14px; line-height:1.6;">`
+5. [ ] 分割线是 `<hr style="border:none; border-top:1px solid #eee; width:90%; margin:0.5em auto;">`
+6. [ ] 二级标题（h3）是 `<h3 style="color:#1A8A6F; font-weight:bold; text-align:left; margin:1em 0; font-size:14px; line-height:1.75;">`
+7. [ ] 三级标题（h4）是 `<h4 style="color:#1A8A6F; margin:1em 0; font-size:14px; line-height:1.75; text-align:left;">`
+8. [ ] 所有正文段落都是 `<p style="color:#3E3E3E; text-align:left; margin:0 0 1em; font-size:14px; line-height:1.6;">`
+9. [ ] 红色高危提醒是 `<p style="color:#FF0000; font-weight:bold; text-align:left; margin:0 0 1em; font-size:14px; line-height:1.6;">`
+10. [ ] 蓝色辅助提示是 `<p style="color:#3498db; text-align:left; margin:0 0 1em; font-size:14px; line-height:1.6;">`
+11. [ ] 无序列表是 `<ul style="color:#3E3E3E; margin:0 0 1em; padding-left:20px; font-size:14px; line-height:1.6;">`，`<li>` 是 `<li style="margin:0 0 0.5em;">`
+12. [ ] 有序列表是 `<ol style="color:#3E3E3E; margin:0 0 1em; padding-left:20px; font-size:14px; line-height:1.6;">`，`<li>` 是 `<li style="margin:0 0 0.5em;">`
+13. [ ] 引用区块是 `<p style="color:#3E3E3E; text-align:left; margin:0 0 1em; padding-left:10px; border-left:2px solid #eee; font-size:14px; line-height:1.6;">`
+14. [ ] 小字备注是 `<p style="font-size:12px; color:#666666; text-align:left; line-height:1.5; margin:0 0 1em;">`
+15. [ ] 互动提问是 `<p style="color:#3E3E3E; text-align:left; margin:2em 0 1em; font-size:14px; line-height:1.6;">`
+16. [ ] 免责声明是 `<p style="font-size:12px; color:#666666; text-align:left; line-height:1.5; margin:1em 0;">`
+17. [ ] 所有元素都有自己的 font-size 和 line-height（没有依赖 section 继承）
+18. [ ] 所有普通正文都包裹在 `<p>` 标签里，没有直接放在 section 下的文字
 
 ---
 
