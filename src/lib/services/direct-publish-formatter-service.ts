@@ -9,6 +9,8 @@
  * 失败时降级到 text-to-render.ts 的简单文本处理逻辑
  */
 
+import type { LLMClient } from 'coze-coding-dev-sdk';
+
 import type {
   PlatformType,
   PlatformRenderData,
@@ -88,17 +90,19 @@ export async function formatDirectPublishArticle(
 async function formatWithLLM(
   options: DirectPublishFormatOptions
 ): Promise<PlatformRenderData | null> {
-  const { platform, workspaceId, signal } = options;
+  const { platform, workspaceId } = options;
 
   // 获取 LLM Client
   const llmClient = await getLLMClient(workspaceId);
-  const model = 'doubao-seed-2-0-mini-260215'; // 轻量模型，格式化任务足够
+  // 🔴 使用与 insurance-d 相同的高质量模型，确保 HTML 格式化效果一致
+  // doubao-seed-2-0-pro-260215 能更好地遵循公众号标准 HTML 格式规范
+  const model = 'doubao-seed-2-0-pro-260215';
 
   switch (platform) {
     case 'wechat_official':
-      return formatWechatWithLLM(llmClient, model, options, signal);
+      return formatWechatWithLLM(llmClient, model, options);
     case 'xiaohongshu':
-      return formatXhsWithLLM(llmClient, model, options, signal);
+      return formatXhsWithLLM(llmClient, model, options);
     default:
       return null;
   }
@@ -108,29 +112,55 @@ async function formatWithLLM(
 
 /**
  * 微信公众号 HTML 样式模板
- * 与 insurance-d-v3.md 第四部分 HTML 输出格式完全对齐
+ * 与 insurance-d-v3.md v3.2 第四部分 HTML 输出格式完全对齐
+ * 公众号API零间距叠加终极模板 - 2026年5月更新
  */
 const WECHAT_HTML_TEMPLATE_SPEC = `
-<section style="background:#ffffff; padding:0 12px; font-size:14px; line-height:1.6;">
-  <!-- 开头引导语（橙色 #E67E22、加粗、居左） -->
-  <p style="color:#E67E22; font-weight:bold; margin:0 0 1em; text-align:left;">开头引导语</p>
+<!-- 公众号API零间距叠加终极模板 - 核心原理：所有间距用padding控制，避免与公众号默认margin叠加 -->
+<section style="margin:0; padding:0; border:0; outline:0; font-size:14px; line-height:1.6; color:#3E3E3E; background:#ffffff;">
+  <div style="padding:0 12px;">
 
-  <!-- 一级标题（黑色 #000000、加粗、居中）+ 分割线 -->
-  <h2 style="color:#000000; font-weight:bold; text-align:center; margin:1em 0; font-size:14px;">一级标题</h2>
-  <hr style="border:none; border-top:1px solid #eee; width:90%; margin:0.5em auto;">
+    <!-- 开篇引导语（橙色、加粗）段间距16px由padding-bottom控制 -->
+    <p style="margin:0; padding:0 0 16px; color:#E67E22; font-weight:bold; line-height:1.6;">开头引导语</p>
 
-  <!-- 二级标题（青绿色 #1A8A6F、加粗、居左） -->
-  <h3 style="color:#1A8A6F; font-weight:bold; text-align:left; margin:1em 0; font-size:14px; line-height:1.75;">二级标题</h3>
-  <!-- 正文（深灰 #3E3E3E、居左） -->
-  <p style="color:#3E3E3E; text-align:left; margin:0 0 1em;">正文内容</p>
+    <!-- 一级标题（黑色、居中加粗）上下间距16px由padding控制 -->
+    <p style="margin:0; padding:16px 0; color:#000000; font-weight:bold; text-align:center; font-size:16px; line-height:1.7;">一级标题</p>
+    
+    <!-- 分割线（下边距16px） -->
+    <div style="width:90%; height:1px; background:#eee; margin:0 auto 16px auto;"></div>
 
-  <!-- 重要提醒（红色 #FF0000、加粗、居左） -->
-  <p style="color:#FF0000; font-weight:bold; text-align:left; margin:0 0 1em;">⚠️ 重要提醒</p>
+    <!-- 二级标题（青绿色、加粗）上边距16px，下边距8px -->
+    <p style="margin:0; padding:16px 0 8px; color:#1A8A6F; font-weight:bold; line-height:1.75;">二级标题</p>
 
-  <!-- 互动提问（深灰、居左） -->
-  <p style="color:#3E3E3E; text-align:left; margin:2em 0 1em;">【互动提问】...</p>
-  <!-- 免责声明（小号12px、浅灰 #666666、居左） -->
-  <p style="font-size:12px; color:#666666; text-align:left; line-height:1.5; margin:1em 0;">【免责声明】本文仅为知识科普，不构成投资/购买建议。</p>
+    <!-- 正文段落 段间距16px统一标准 -->
+    <p style="margin:0; padding:0 0 16px; line-height:1.6;">正文内容</p>
+
+    <!-- 黄色背景强调框 -->
+    <div style="background:#FFF9E6; padding:12px; margin:0 0 16px 0;">
+      <p style="margin:0; padding:0; line-height:1.6;">强调内容</p>
+    </div>
+
+    <!-- 红色高危提醒 -->
+    <p style="margin:0; padding:0 0 16px; color:#FF0000; font-weight:bold; line-height:1.6;">⚠️ 重要提醒</p>
+
+    <!-- 蓝色辅助提示 -->
+    <p style="margin:0; padding:0 0 16px; color:#3498db; line-height:1.6;">💡 辅助提示</p>
+
+    <!-- 引用区块（左侧灰色边框） -->
+    <div style="padding-left:10px; border-left:2px solid #eee; margin:0 0 16px 0;">
+      <p style="margin:0; padding:0; line-height:1.6;">"引用内容"<br>—— 来源出处</p>
+    </div>
+
+    <!-- 小字备注 -->
+    <p style="margin:0; padding:0 0 16px; font-size:12px; color:#666666; line-height:1.5;">备注内容</p>
+
+    <!-- 互动提问 上下间距16px -->
+    <p style="margin:0; padding:16px 0; line-height:1.6;">【互动提问】...</p>
+
+    <!-- 免责声明 上边距16px，下边距0 -->
+    <p style="margin:0; padding:16px 0 0; font-size:12px; color:#666666; line-height:1.5;">【免责声明】本文仅为金融保险科普分享，不构成任何投保、投资建议。所有保险产品请仔细阅读保险合同条款，结合自身风险承受能力理性选择。</p>
+
+  </div>
 </section>
 `;
 
@@ -145,27 +175,32 @@ ${WECHAT_HTML_TEMPLATE_SPEC}
 
 排版识别规则：
 - 开头第一段话 → 橙色加粗引导语（color:#E67E22）
-- 带有"一、""二、""三、"等序号的大标题 → 黑色居中h2 + 分割线hr
-- 带有"1.""2.""3."等小标题 → 青绿色左对齐h3（color:#1A8A6F）
+- 带有"一、""二、""三、"等序号的大标题 → 黑色居中一级标题 + 分割线
+- 带有"1.""2.""3."等小标题 → 青绿色左对齐二级标题（color:#1A8A6F）
 - 含有"注意""提醒""警示""小心"等关键词 → 红色加粗提醒（color:#FF0000）
 - 含有"⚠️""❗""❌"等符号 → 红色加粗提醒
-- 正文段落 → 深灰正文（color:#3E3E3E）
-- 结尾提问或互动 → 深灰互动提问（margin:2em 0 1em）
+- 含有"建议""提示""可以选择"等 → 蓝色辅助提示（color:#3498db）
+- 含有"综上""总结""概括"等 + 需要突出的内容 → 黄色背景强调框（background:#FFF9E6）
+- 引用内容/数据来源 → 引用区块（左侧灰色边框）
+- 正文段落 → 深灰正文（color:#3E3E3E，默认继承）
+- 结尾提问或互动 → 互动提问
 - 如果原文没有免责声明，末尾自动添加标准免责声明（小号浅灰）
 
 输出要求：
 - 仅输出HTML代码，不要输出任何解释文字
-- 使用完整的 <section> 包裹
-- 一级标题用 <h2> + <hr> 分隔线
-- 二级标题用 <h3>
+- 使用完整的 <section> 包裹，外层 style 必须包含 margin:0; padding:0; border:0; outline:0;
+- 内层使用 <div style="padding:0 12px;"> 包裹所有内容
+- **🔴 一级标题用 <p> 标签，禁止使用 <h2>！**（公众号编辑器会重置h标签样式）
+- **🔴 二级标题用 <p> 标签，禁止使用 <h3>！**（同上）
+- **🔴 分割线用 <div>，禁止使用 <hr>！**（公众号编辑器会修改hr样式）
+- **🔴 所有间距使用padding控制，禁止使用margin控制段间距！**（公众号会叠加默认margin导致间距翻倍）
 - 所有样式必须使用内联style，不要使用class
 - 文章末尾必须有免责声明`;
 
 async function formatWechatWithLLM(
-  llmClient: any,
+  llmClient: LLMClient,
   model: string,
   options: DirectPublishFormatOptions,
-  signal?: AbortSignal
 ): Promise<WechatPlatformRenderData | null> {
   const { textContent, articleTitle } = options;
 
@@ -180,7 +215,6 @@ ${textContent}`;
     ], {
       model,
       temperature: 0.1, // 低温度，保持忠实于原文
-      signal,
     });
 
     const htmlContent = extractHtmlFromResponse(response.content || '');
@@ -198,9 +232,9 @@ ${textContent}`;
       htmlContent,
       articleTitle: title,
     };
-  } catch (error: any) {
-    if (error.name === 'AbortError') return null;
-    console.error('[DirectPublishFormatter] 微信格式化LLM调用失败:', error?.message);
+  } catch (error: unknown) {
+    if (error instanceof Error && error.name === 'AbortError') return null;
+    console.error('[DirectPublishFormatter] 微信格式化LLM调用失败:', error instanceof Error ? error.message : String(error));
     return null;
   }
 }
@@ -213,7 +247,7 @@ const XHS_FORMAT_SYSTEM_PROMPT = `你是一个小红书内容策划专家。你�
 1. **概括而非截取** — 标题和要点必须是你对内容的理解和概括，不是简单截取原文
 2. **封面标题**：15字以内，吸引眼球但不标题党，有悬念或反差感
 3. **要点标题**：15字以内，简洁有力、引发好奇
-4. **要点内容**：50字以内，概括核心信息，像朋友分享的口吻
+4. **要点内容**：70-100字，详细概括核心信息，像朋友分享的口吻，信息量要充足
 5. **结尾金句**：20字以内，有温度有共鸣
 6. **语气风格**：有温度、接地气、像朋友在分享，不要AI感
 
@@ -228,7 +262,7 @@ const XHS_FORMAT_SYSTEM_PROMPT = `你是一个小红书内容策划专家。你�
   "coverTitle": "封面标题（≤15字）",
   "coverSubtitle": "封面副标题（≤30字，可选）",
   "points": [
-    { "title": "要点1标题（≤15字）", "content": "要点1概括（≤50字）" }
+    { "title": "要点1标题（≤15字）", "content": "要点1概括（70-100字）" }
   ],
   "endingConclusion": "结尾金句（≤20字）",
   "articleTitle": "文章简短标题（≤15字，用于任务列表）",
@@ -236,10 +270,9 @@ const XHS_FORMAT_SYSTEM_PROMPT = `你是一个小红书内容策划专家。你�
 }`;
 
 async function formatXhsWithLLM(
-  llmClient: any,
+  llmClient: LLMClient,
   model: string,
   options: DirectPublishFormatOptions,
-  signal?: AbortSignal
 ): Promise<XhsPlatformRenderData | null> {
   const { textContent, cardCountMode } = options;
 
@@ -251,7 +284,7 @@ async function formatXhsWithLLM(
 
 ${textContent}
 
-要求：提取${pointCount}个要点，每个要点有标题（≤15字）和概括内容（≤50字）。`;
+要求：提取${pointCount}个要点，每个要点有标题（≤15字）和概括内容（70-100字）。`;
 
   try {
     const response = await llmClient.invoke([
@@ -260,7 +293,6 @@ ${textContent}
     ], {
       model,
       temperature: 0.7, // 适中温度，生成更有创意的标题
-      signal,
     });
 
     const content = response.content || '';
@@ -288,20 +320,25 @@ ${textContent}
     const maxPoints = XHS_CARD_MODE_POINT_COUNT[effectiveCardCountMode] || 3;
     const points = (parsed.points || []).slice(0, maxPoints);
 
+    // 如果要点不足，从原文中提取补充内容填充（避免空白卡片）
+    while (points.length < maxPoints) {
+      const remainingText = textContent
+        .replace(/[#*`]/g, '')
+        .split(/[。\n！？]/)
+        .filter(s => s.trim().length > 10);
+      const supplementIdx = points.length;
+      const sourceLine = remainingText[supplementIdx] || remainingText[0] || '';
+      points.push({
+        title: `要点${supplementIdx + 1}`,
+        content: sourceLine.trim().substring(0, 100) || '详见正文',
+      });
+    }
+
     for (const point of points) {
       cards.push({
         type: 'point',
         title: (point.title || '').substring(0, 15) || '要点',
-        content: (point.content || '').substring(0, 80) || '',
-      });
-    }
-
-    // 如果要点不足，补齐
-    while (cards.length < maxPoints + 1) {
-      cards.push({
-        type: 'point',
-        title: `要点${cards.length}`,
-        content: '',
+        content: (point.content || '').substring(0, 100) || '',
       });
     }
 
@@ -319,9 +356,9 @@ ${textContent}
       textContent,
       articleTitle: (parsed.articleTitle || parsed.coverTitle || '文章预览').substring(0, 15),
     };
-  } catch (error: any) {
-    if (error.name === 'AbortError') return null;
-    console.error('[DirectPublishFormatter] 小红书格式化LLM调用失败:', error?.message);
+  } catch (error: unknown) {
+    if (error instanceof Error && error.name === 'AbortError') return null;
+    console.error('[DirectPublishFormatter] 小红书格式化LLM调用失败:', error instanceof Error ? error.message : String(error));
     return null;
   }
 }
@@ -331,7 +368,7 @@ ${textContent}
 /**
  * 获取 LLM Client（优先使用用户 BYOK Key）
  */
-async function getLLMClient(workspaceId?: string): Promise<any> {
+async function getLLMClient(workspaceId?: string): Promise<LLMClient> {
   if (workspaceId) {
     try {
       const { client } = await createUserLLMClient(workspaceId, { timeout: 60000 });

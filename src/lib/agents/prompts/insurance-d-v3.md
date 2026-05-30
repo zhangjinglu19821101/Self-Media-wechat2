@@ -109,9 +109,9 @@
 1. **读取用户提供的完整文章**（来自前序任务或 metadata.providedArticle）
 2. **保持原文内容完全不变**（包括观点、案例、数据、结论）
 3. **仅做以下格式化工作**：
-   - 将纯文本转换为公众号标准 HTML 格式
+   - 将纯文本转换为公众号标准 HTML 格式（🔴 必须严格遵守第四部分的HTML输出格式规范，每个标签都必须包含完整的内联style属性！）
    - 添加段落排版（p 标签、缩进、行距）
-   - 添加标题层级（h2/h3）
+   - 添加标题层级（h2/h3，🔴 必须设置 font-size:14px 和 font-weight:bold，避免浏览器默认字号过大）
    - 添加强调格式（加粗、引用块）
    - 确保字数、段落长度符合公众号阅读习惯
 4. **输出格式与全文创作完全一致**（信封格式 ArticleOutputEnvelope）
@@ -470,43 +470,95 @@ slotId格式：{范式ID}-{序号}，如 P001-01, P002-03
 
 ### 📝 文章 HTML 输出格式
 
-**输出文章时，必须使用以下 HTML 格式：**
+**输出文章时，必须使用以下 HTML 格式（公众号API零间距叠加终极模板）：**
 
 ```html
-<section style="background:#ffffff; padding:0 12px; font-size:14px; line-height:1.6;">
-  <!-- 开头引导语（橙色、居左） -->
-  <p style="color:#E67E22; font-weight:bold; margin:0 0 1em; text-align:left;">今天跟大家聊聊买保险最容易踩的坑</p>
+<!-- 【公众号API零间距叠加终极模板 - 2026年5月更新】
+核心原理：
+1. 所有间距全部使用padding控制，彻底避免与公众号默认margin叠加
+2. 外层容器设置margin:0，清除所有默认边距
+3. 所有段落统一使用padding-bottom控制段间距
+4. 标题使用padding-top和padding-bottom控制上下间距
+5. 特殊元素（背景框、引用）使用内部padding控制间距
+-->
+<section style="margin:0; padding:0; border:0; outline:0; font-size:14px; line-height:1.6; color:#3E3E3E; background:#ffffff;">
+  <div style="padding:0 12px;">
 
-  <!-- 一级标题（黑色、居中）+ 分割线 -->
-  <h2 style="color:#000000; font-weight:bold; text-align:center; margin:1em 0; font-size:14px;">一、为什么很多人买了重疾险却理赔难？</h2>
-  <hr style="border:none; border-top:1px solid #eee; width:90%; margin:0.5em auto;">
-  
-  <!-- 二级标题（青绿色、居左） -->
-  <h3 style="color:#1A8A6F; font-weight:bold; text-align:left; margin:1em 0; font-size:14px; line-height:1.75;">保险公司不告诉你的3个拒赔真相</h3>
-  <!-- 正文（深灰、居左） -->
-  <p style="color:#3E3E3E; text-align:left; margin:0 0 1em;">很多人以为买了重疾险就万事大吉，真到理赔时才发现，这也不赔那也不赔。今天我就把保险公司不会告诉你的3个拒赔真相讲清楚...</p>
-  
-  <!-- 重要提醒（红色、居左） -->
-  <p style="color:#FF0000; font-weight:bold; text-align:left; margin:0 0 1em;">⚠️ 健康告知没填对，理赔100%被拒！</p>
+    <!-- 开篇引导语（橙色、加粗）
+         段间距：16px（由padding-bottom控制） -->
+    <p style="margin:0; padding:0 0 16px; color:#E67E22; font-weight:bold; line-height:1.6;">如果你买了百万医疗险，这篇文章一定要看完</p>
 
-  <!-- 二级标题（青绿色、居左） -->
-  <h3 style="color:#1A8A6F; font-weight:bold; text-align:left; margin:1em 0; font-size:14px; line-height:1.75;">算笔明白账：百万医疗险真的能赔100万吗？</h3>
-  <!-- 正文（深灰、居左） -->
-  <p style="color:#3E3E3E; text-align:left; margin:0 0 1em;">百万医疗险每年保费才几百块，保额却有100万，听起来很美好。但真到理赔时，你会发现...</p>
-  
-  <!-- 互动提问（居左） -->
-  <p style="color:#3E3E3E; text-align:left; margin:2em 0 1em;">【互动提问】你买保险时踩过坑吗？欢迎在评论区留言分享</p>
-  <!-- 免责声明（小号、居左、浅灰） -->
-  <p style="font-size:12px; color:#666666; text-align:left; line-height:1.5; margin:1em 0;">【免责声明】本文仅为知识科普，不构成投资/购买建议。</p>
+    <!-- 一级标题（黑色、居中加粗）
+         上下间距：16px（由padding-top和padding-bottom控制） -->
+    <p style="margin:0; padding:16px 0; color:#000000; font-weight:bold; text-align:center; font-size:16px; line-height:1.7;">一、为什么很多人买了重疾险却理赔难？</p>
+    
+    <!-- 分割线
+         下边距：16px（由margin-bottom控制，因为div没有默认margin） -->
+    <div style="width:90%; height:1px; background:#eee; margin:0 auto 16px auto;"></div>
+
+    <!-- 二级标题（青绿色、加粗）
+         上边距：16px，下边距：8px -->
+    <p style="margin:0; padding:16px 0 8px; color:#1A8A6F; font-weight:bold; line-height:1.75;">1.1 保险公司不告诉你的3个拒赔真相</p>
+
+    <!-- 正文段落
+         段间距：16px（统一标准） -->
+    <p style="margin:0; padding:0 0 16px; line-height:1.6;">很多人以为买了重疾险就万事大吉，真到理赔时才发现...</p>
+
+    <!-- 黄色背景强调框
+         外间距：16px（由div的margin-bottom控制）
+         内间距：12px（由div的padding控制） -->
+    <div style="background:#FFF9E6; padding:12px; margin:0 0 16px 0;">
+      <p style="margin:0; padding:0; line-height:1.6;">核心要点：医保能报销的药，医院不一定有；医院没有的药，百万医疗险不一定能报。</p>
+    </div>
+
+    <!-- 红色高危提醒 -->
+    <p style="margin:0; padding:0 0 16px; color:#FF0000; font-weight:bold; line-height:1.6;">⚠️ 健康告知没填对，理赔100%被拒！</p>
+
+    <!-- 蓝色辅助提示 -->
+    <p style="margin:0; padding:0 0 16px; color:#3498db; line-height:1.6;">💡 预算有限的朋友，可以选择性价比更高的组合方案。</p>
+
+    <!-- 引用区块（左侧灰色边框） -->
+    <div style="padding-left:10px; border-left:2px solid #eee; margin:0 0 16px 0;">
+      <p style="margin:0; padding:0; line-height:1.6;">"引用内容"<br>—— 来源出处</p>
+    </div>
+
+    <!-- 小字备注 -->
+    <p style="margin:0; padding:0 0 16px; font-size:12px; color:#666666; line-height:1.5;">备注：以上规则适用于市面上绝大多数主流产品，具体以合同为准。</p>
+
+    <!-- 互动提问
+         上下间距：16px -->
+    <p style="margin:0; padding:16px 0; line-height:1.6;">【互动提问】你买保险时踩过坑吗？欢迎在评论区留言分享</p>
+
+    <!-- 免责声明
+         上边距：16px，下边距：0 -->
+    <p style="margin:0; padding:16px 0 0; font-size:12px; color:#666666; line-height:1.5;">【免责声明】本文仅为金融保险科普分享，不构成任何投保、投资建议。所有保险产品请仔细阅读保险合同条款，结合自身风险承受能力理性选择。</p>
+
+  </div>
 </section>
 ```
 
-**输出要求：**
-1. 使用完整的 `<section>` 包裹
-2. 一级标题用 `<h2>` + `<hr>` 分隔线
-3. 二级标题用 `<h3>`
-4. 小标题必须是概括性、有实际意义的，禁止纯数字序号
-5. 文章末尾必须有免责声明
+**输出要求（🔴 HTML格式是硬性规范，必须100%遵循，不可省略任何style属性！）：**
+1. 使用完整的 `<section>` 包裹，**必须包含** `style="margin:0; padding:0; border:0; outline:0; font-size:14px; line-height:1.6; color:#3E3E3E; background:#ffffff;"`，内层使用 `<div style="padding:0 12px;">` 包裹所有内容
+2. **🔴 核心间距原则：所有间距使用padding控制，禁止使用margin！** 公众号编辑器会叠加默认margin，导致间距失控
+3. 一级标题用 `<p>` 标签（**禁止使用h2**，公众号编辑器会重置h标签样式），**必须设置** `style="margin:0; padding:16px 0; color:#000000; font-weight:bold; text-align:center; font-size:16px; line-height:1.7;"`
+4. 一级标题后用 `<div>` 分割线，**必须设置** `style="width:90%; height:1px; background:#eee; margin:0 auto 16px auto;"`（**禁止使用hr标签**）
+5. 二级标题用 `<p>` 标签（**禁止使用h3**），**必须设置** `style="margin:0; padding:16px 0 8px; color:#1A8A6F; font-weight:bold; line-height:1.75;"`
+6. 小标题必须是概括性、有实际意义的，禁止纯数字序号
+7. 正文段落用 `<p>` 包裹，**必须设置** `style="margin:0; padding:0 0 16px; line-height:1.6;"`（段间距16px由padding-bottom控制）
+8. 红色提醒：`style="margin:0; padding:0 0 16px; color:#FF0000; font-weight:bold; line-height:1.6;"`
+9. 蓝色提示：`style="margin:0; padding:0 0 16px; color:#3498db; line-height:1.6;"`
+10. 黄色强调框：外层 `<div style="background:#FFF9E6; padding:12px; margin:0 0 16px 0;">`，内部 `<p style="margin:0; padding:0; line-height:1.6;">`
+11. 引用区块：`<div style="padding-left:10px; border-left:2px solid #eee; margin:0 0 16px 0;">`，内部 `<p style="margin:0; padding:0; line-height:1.6;">`
+12. 文章末尾必须有免责声明：`style="margin:0; padding:16px 0 0; font-size:12px; color:#666666; line-height:1.5;"`
+13. **🔴 HTML标签的style属性必须内联写死，不可省略、不可简化！** LLM输出时常见的错误：
+   - ❌ `<h2>标题</h2>` （禁止使用h2，公众号编辑器会重置样式）
+   - ❌ `<h3>小标题</h3>` （禁止使用h3，同上）
+   - ❌ `<hr>` （禁止使用hr，公众号编辑器会修改hr样式）
+   - ❌ `<p>正文</p>` （缺少style，间距失控）
+   - ❌ 使用 `margin` 控制段间距（公众号编辑器会叠加默认margin导致间距翻倍）
+   - ✅ `<p style="margin:0; padding:16px 0; color:#000000; font-weight:bold; text-align:center; font-size:16px; line-height:1.7;">标题</p>`
+   - ✅ `<p style="margin:0; padding:16px 0 8px; color:#1A8A6F; font-weight:bold; line-height:1.75;">小标题</p>`
+   - ✅ `<p style="margin:0; padding:0 0 16px; line-height:1.6;">正文</p>`
 
 ### ⚠️ 返回格式
 
@@ -557,7 +609,7 @@ slotId格式：{范式ID}-{序号}，如 P001-01, P002-03
 
 ---
 
-**版本**: v3.1
-**最后更新**: 2026-02-24
+**版本**: v3.2
+**最后更新**: 2025-05-28
 **核心原则**: 固定铁律 + 动态规则 + 本次创作需求（需求文档3.2节）
-**Phase 3 新增**: 大纲确认双子任务模式 + 数字资产真实数据对接
+**v3.2 变更**: HTML模板升级为公众号API零间距叠加终极模板（padding替代margin、p替代h2/h3、div替代hr）

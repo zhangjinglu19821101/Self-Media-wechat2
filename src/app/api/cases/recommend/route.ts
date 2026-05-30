@@ -214,7 +214,8 @@ export async function POST(request: NextRequest) {
 
     // 模式2：推荐素材
     const { instruction, limit } = body;
-    if (!instruction) {
+    const trimmedInstruction = instruction?.trim();
+    if (!trimmedInstruction) {
       return NextResponse.json({
         success: false,
         error: '缺少 instruction 参数',
@@ -232,7 +233,7 @@ export async function POST(request: NextRequest) {
     const stopWords = /^(写一篇|写一个|帮我|请|关于|的|了|是|在|和|与|或|一篇|一个|怎么|如何|什么|为什么|哪些|那种|进行|做出|完成|创作|撰写|编写|生成|制作|提供|分析|解读|介绍|说明|解释|比较|对比|总结|整理|列出|描述|讲述|阐述)/;
     
     // 提取核心关键词：去除指令前缀停用词
-    let coreKeyword = instruction.trim();
+    let coreKeyword = trimmedInstruction;
     for (let i = 0; i < 5; i++) {
       const prev = coreKeyword;
       coreKeyword = coreKeyword.replace(stopWords, '').trim();
@@ -247,8 +248,8 @@ export async function POST(request: NextRequest) {
       searchKeywords.push(coreKeyword.slice(0, Math.min(6, coreKeyword.length)));
     }
     // 原始指令前10字（保留完整语义）
-    if (instruction.length >= 4) {
-      searchKeywords.push(instruction.slice(0, 10));
+    if (trimmedInstruction.length >= 4) {
+      searchKeywords.push(trimmedInstruction.slice(0, 10));
     }
     // 从核心关键词中提取2字短关键词（高召回）
     if (coreKeyword.length >= 4) {

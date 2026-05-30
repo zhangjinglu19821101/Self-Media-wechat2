@@ -12,13 +12,19 @@ import { db } from '@/lib/db';
 import { agentSubTasks } from '@/lib/db/schema';
 import { eq, desc, inArray, and, isNotNull } from 'drizzle-orm';
 import { WRITING_AGENT_IDS } from '@/lib/agents/agent-registry';
+import { requireAuth } from '@/lib/auth/context';
 
 export async function GET(request: NextRequest) {
   try {
+    // 认证检查
+    const authResult = await requireAuth(request);
+    if (authResult instanceof NextResponse) return authResult;
+
+    const workspaceId = authResult.workspaceId;
     const { searchParams } = new URL(request.url);
     const limit = parseInt(searchParams.get('limit') || '50', 10);
 
-    // 查询已完成的写作任务（不做 workspaceId 校验，任务 ID 已经足够唯一）
+    // 查询已完成的写作任务（按 workspaceId 隔离）
     const completedTasks = await db
       .select({
         id: agentSubTasks.id,
@@ -33,6 +39,7 @@ export async function GET(request: NextRequest) {
       .from(agentSubTasks)
       .where(and(
         eq(agentSubTasks.status, 'completed'),
+        eq(agentSubTasks.workspaceId, workspaceId),
         inArray(agentSubTasks.fromParentsExecutor, WRITING_AGENT_IDS),
         isNotNull(agentSubTasks.completedAt)
       ))

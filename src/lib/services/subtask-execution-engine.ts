@@ -1611,16 +1611,17 @@ export class SubtaskExecutionEngine {
       return;
     }
 
-    // 🔥🔥🔥 直接发文模式：已废弃特殊处理
-    // 新流程中，直接发文也走写作Agent格式化（orderIndex=1），
-    // 预览确认节点（orderIndex=2）获取前序格式化任务输出，与AI创作完全一致
-    // 保留 providedArticle 检测仅用于日志标记
+    // 🔥🔥🔥 直接发文模式改造：
+    // - 5步流程（有格式化步骤）：预览节点从格式化步骤获取文章
+    // - 4步流程（无格式化步骤）：预览节点直接使用用户提供的文章
     const taskMetadata = (task.metadata != null ? task.metadata : {}) as Record<string, unknown>;
     const isDirectPublish = taskMetadata.creationMode === 'direct_publish';
+    const hasProvidedArticle = !!taskMetadata.providedArticle;
 
     if (isDirectPublish) {
-      console.log('[SubtaskEngine] 👁️ 直接发文模式：预览格式化后的文章（与AI创作一致）', {
+      console.log('[SubtaskEngine] 👁️ 直接发文模式：用户直接预览自己提供的文章（无需AI格式化）', {
         taskId: task.id,
+        hasProvidedArticle,
       });
     }
 
@@ -1702,20 +1703,36 @@ export class SubtaskExecutionEngine {
       task.metadata as Record<string, unknown>
     );
 
-    // 🔥🔥🔥 【Bug修复】直接发文模式：始终优先使用 providedArticle
-    // 原因：直接发文流程中，insurance-d（创作Agent）不适合做纯格式化工作，
-    // 它的输出可能只包含 briefResponse（如"已将文章格式化"）而不含实际文章内容。
-    // 用户提供的原文是直接发文模式的核心内容源，应始终优先使用。
-    // 注意：isDirectPublish 已在上方（第1619行）声明，此处复用
-    const hasProvidedArticle = !!taskMetadata.providedArticle;
+    // 🔥🔥🔥 【改造】直接发文模式：判断是否应该优先使用 providedArticle
+    // 5步流程（格式化→预览→校验→整改→上传）：
+    //   - 第2步 user_preview_edit：应从前序格式化步骤获取结果，不应使用 providedArticle
+    //   - 4步流程（无格式化步骤）：user_preview_edit 应使用 providedArticle
+    // 判断依据：当前节点之前是否有已完成的写作Agent（格式化步骤），
+    // 有 → 使用格式化后的文章；无 → 使用 providedArticle
     if (isDirectPublish && hasProvidedArticle) {
-      articleContent = taskMetadata.providedArticle as string;
-      articleTitle = (taskMetadata.providedArticleTitle as string) || articleTitle || '用户提供的文章';
-      console.log('[SubtaskEngine] 👁️ 直接发文模式：使用 metadata.providedArticle 作为文章内容', {
-        providedContentLength: articleContent.length,
-        title: articleTitle,
-        writingTaskResultPreview: effectiveWritingTask?.resultText?.substring(0, 100),
-      });
+      // 检查前序是否有已完成的写作Agent（格式化步骤）
+      const hasCompletedFormattingStep = previousTasks.some(t =>
+        isWritingAgent(t.fromParentsExecutor) && t.status === 'completed'
+      );
+      
+      if (hasCompletedFormattingStep) {
+        // 5步流程：格式化步骤已完成，优先使用格式化后的文章
+        console.log('[SubtaskEngine] 👁️ 直接发文5步流程：格式化步骤已完成，使用格式化后的文章', {
+          taskId: task.id,
+        });
+        // 不设置 articleContent，让后续 effectiveWritingTask 逻辑获取格式化结果
+      } else {
+        // 4步流程（无格式化步骤）：直接使用 providedArticle
+        articleContent = taskMetadata.providedArticle as string;
+        articleTitle = (taskMetadata.providedArticleTitle as string) || articleTitle || '用户提供的文章';
+        console.log('[SubtaskEngine] 👁️ 直接发文4步流程：使用 metadata.providedArticle 作为文章内容', {
+          providedContentLength: articleContent.length,
+          title: articleTitle,
+        });
+      }
+    } else if (isDirectPublish && !hasProvidedArticle) {
+      // 直接发文但没有 providedArticle（不应该发生，但做兜底）
+      console.warn('[SubtaskEngine] ⚠️ 直接发文模式但未找到 providedArticle，尝试从前序任务获取');
     } else if (effectiveWritingTask) {
       // 非直接发文模式：从写作任务提取文章内容
       articleContent = effectiveWritingTask.resultText || '';
@@ -1731,12 +1748,11 @@ export class SubtaskExecutionEngine {
     let platformRenderData: import('@/lib/platform-render/types').PlatformRenderData | Record<string, unknown> | null = null;
     let platformDataSource: typeof agentSubTasks.$inferSelect | undefined;
 
-    // 🔥🔥🔥 【Bug修复】直接发文模式：跳过从格式化任务提取 platformRenderData
-    // 原因：直接发文模式下，insurance-d 格式化任务可能只输出 briefResponse（如"已将文章格式化"），
-    // 从中提取的 platformRenderData.htmlContent 会是 briefResponse 的 HTML 包装，
-    // 前端公众号预览优先使用 platformRenderData.htmlContent，会覆盖掉正确的 articleContent。
-    // 直接发文模式的文章内容来自 providedArticle，应交给 shouldFormatInEngine 逻辑处理。
-    const skipPlatformRenderExtraction = isDirectPublish && hasProvidedArticle;
+    // 🔥🔥🔥 【改造】直接发文模式：判断是否跳过 platformRenderData 提取
+    // 5步流程：格式化步骤完成后有 platformRenderData，不应跳过
+    // 4步流程：没有格式化步骤，使用 providedArticle，需要走 shouldFormatInEngine 逻辑
+    const skipPlatformRenderExtraction = isDirectPublish && hasProvidedArticle
+      && !previousTasks.some(t => isWritingAgent(t.fromParentsExecutor) && t.status === 'completed');
 
     if (skipPlatformRenderExtraction) {
       console.log('[SubtaskEngine] 👁️ 直接发文模式：跳过 platformRenderData 提取，使用 providedArticle');
@@ -5127,25 +5143,90 @@ export class SubtaskExecutionEngine {
         }
       }
 
-      // 3. 如果仍然没有，从前序任务（order_index - 1）的 result_text 数据库字段获取
+      // 3. 如果仍然没有，从前序任务获取文章内容
+      // 🔴🔴🔴 【修复】区分两种写作场景：
+      // - 撰写新文章（前序任务无预览修改节点）：需要获取分析任务的结果（orderIndex - 1）
+      // - 合规整改（前序任务有预览修改节点）：需要获取预览修改节点的格式化 HTML
       if (!priorStepOutputText && task.orderIndex > 1) {
-        console.log('[SubtaskEngine] [command_result_id=' + task.commandResultId + '] 尝试从前序任务 result_text 获取内容，前序 order_index=' + (task.orderIndex - 1));
-        const predecessorTask = await db
-          .select({ resultText: agentSubTasks.resultText })
+        const isWritingTask = isWritingAgent(task.fromParentsExecutor);
+        
+        // 先检查前序任务是否包含预览修改节点
+        const prevTasks = await db
+          .select({
+            orderIndex: agentSubTasks.orderIndex,
+            fromParentsExecutor: agentSubTasks.fromParentsExecutor,
+            taskTitle: agentSubTasks.taskTitle,
+            resultText: agentSubTasks.resultText,
+            resultData: agentSubTasks.resultData,
+          })
           .from(agentSubTasks)
           .where(
             and(
               eq(agentSubTasks.commandResultId, task.commandResultId as any),
-              eq(agentSubTasks.orderIndex, task.orderIndex - 1)
+              eq(agentSubTasks.status, 'completed'),
+              eq(agentSubTasks.workspaceId, task.workspaceId),
+              lt(agentSubTasks.orderIndex, task.orderIndex)
             )
           )
-          .limit(1);
+          .orderBy(desc(agentSubTasks.orderIndex));
         
-        if (predecessorTask.length > 0 && predecessorTask[0].resultText && predecessorTask[0].resultText.length > 50) {
-          priorStepOutputText = predecessorTask[0].resultText;
-          console.log('[SubtaskEngine] [command_result_id=' + task.commandResultId + '] ✅ 从前序任务 result_text 获取到内容，长度:', priorStepOutputText.length);
+        const hasPreviewEditTask = prevTasks.some(t => t.fromParentsExecutor === 'user_preview_edit');
+        // 判断是否是"整改"任务：前序任务包含预览修改节点
+        const isRectifyTask = isWritingTask && hasPreviewEditTask;
+        
+        console.log('[SubtaskEngine] [command_result_id=' + task.commandResultId + '] 尝试从前序任务获取内容', {
+          currentOrderIndex: task.orderIndex,
+          executor: task.fromParentsExecutor,
+          isWritingTask,
+          hasPreviewEditTask,
+          isRectifyTask,
+          prevTasksCount: prevTasks.length
+        });
+        
+        if (isRectifyTask) {
+          // 合规整改任务：需要获取包含文章内容的前序任务（预览修改节点）
+          for (const prevTask of prevTasks) {
+            // 优先找预览修改节点（包含格式化后的 HTML）
+            if (prevTask.fromParentsExecutor !== 'user_preview_edit') continue;
+            
+            // 从 resultData 提取完整文章（可能包含 HTML 格式）
+            let extractedContent = this.extractArticleFromResultData(prevTask.resultData);
+            
+            // 兜底：使用 resultText
+            if (!extractedContent && prevTask.resultText && prevTask.resultText.length > 50) {
+              extractedContent = prevTask.resultText;
+            }
+            
+            if (extractedContent) {
+              priorStepOutputText = extractedContent;
+              console.log('[SubtaskEngine] [command_result_id=' + task.commandResultId + '] ✅ 从预览修改节点获取到文章内容（整改任务）', {
+                orderIndex: prevTask.orderIndex,
+                executor: prevTask.fromParentsExecutor,
+                contentLength: priorStepOutputText.length,
+                source: extractedContent === prevTask.resultText ? 'resultText' : 'resultData'
+              });
+              break;
+            }
+          }
         } else {
-          console.log('[SubtaskEngine] [command_result_id=' + task.commandResultId + '] ⚠️  前序任务 result_text 为空或内容过短');
+          // 撰写新文章或非写作任务：简单获取 orderIndex - 1 的内容（分析结果/大纲等）
+          const predecessorTask = await db
+            .select({ resultText: agentSubTasks.resultText })
+            .from(agentSubTasks)
+            .where(
+              and(
+                eq(agentSubTasks.commandResultId, task.commandResultId as any),
+                eq(agentSubTasks.orderIndex, task.orderIndex - 1)
+              )
+            )
+            .limit(1);
+          
+          if (predecessorTask.length > 0 && predecessorTask[0].resultText && predecessorTask[0].resultText.length > 50) {
+            priorStepOutputText = predecessorTask[0].resultText;
+            console.log('[SubtaskEngine] [command_result_id=' + task.commandResultId + '] ✅ 从前序任务 result_text 获取到内容，长度:', priorStepOutputText.length);
+          } else {
+            console.log('[SubtaskEngine] [command_result_id=' + task.commandResultId + '] ⚠️  前序任务 result_text 为空或内容过短');
+          }
         }
       }
     } catch (error) {
@@ -6792,6 +6873,17 @@ export class SubtaskExecutionEngine {
     try {
       const parsed = typeof resultData === 'string' ? JSON.parse(resultData) : resultData;
       if (!parsed || typeof parsed !== 'object') return '';
+
+      // 🔥🔥🔥 【优先级0】直接发文格式化后的 HTML（platformRenderData.htmlContent）
+      // 这是最精美的格式，由 formatDirectPublishArticle 生成的公众号 HTML
+      const platformRenderData = parsed.platformRenderData || parsed.executorOutput?.platformRenderData;
+      if (platformRenderData?.htmlContent && typeof platformRenderData.htmlContent === 'string' && platformRenderData.htmlContent.length > 200) {
+        // 确认是 HTML 格式（包含排版标签）
+        if (platformRenderData.htmlContent.includes('<section') || platformRenderData.htmlContent.includes('<p') || platformRenderData.htmlContent.includes('<div')) {
+          console.log('[SubtaskEngine] ✅ 从 platformRenderData.htmlContent 提取文章内容（直接发文格式化HTML）');
+          return platformRenderData.htmlContent;
+        }
+      }
 
       // 1. 优先从 structuredResult.resultContent.modifiedArticle 获取（合规整改输出）
       const sr = parsed.executorOutput?.structuredResult?.resultContent || parsed.structuredResult?.resultContent;

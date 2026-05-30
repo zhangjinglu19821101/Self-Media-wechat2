@@ -14,7 +14,7 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Eye, Copy, Download, CheckCircle2, ChevronLeft, ChevronRight, ImageIcon } from 'lucide-react';
@@ -22,6 +22,7 @@ import { toast } from 'sonner';
 import Link from 'next/link';
 import { getCurrentWorkspaceId } from '@/lib/api/client';
 import { getCurrentBeijingTime } from '@/lib/utils/date-time';
+import * as VisuallyHidden from '@radix-ui/react-visually-hidden';
 
 // ============ 共享解析模块 ============
 import { 
@@ -149,7 +150,8 @@ export function XiaohongshuPreview({
           
           // 🔥 P1 修复：检查 HTTP 状态码
           if (!response.ok) {
-            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            const errorText = await response.text().catch(() => '');
+            throw new Error(`HTTP ${response.status}: ${errorText || response.statusText}`);
           }
           
           const data = await response.json();
@@ -248,7 +250,15 @@ export function XiaohongshuPreview({
                   : String(rd.executorOutput.output);
               } else if (rd.result) {
                 rawContent = typeof rd.result === 'object' ? rd.result : String(rd.result);
+              } else if (rd.executorOutput?.structuredResult?.resultContent) {
+                // 🔥 信封格式兜底：从 structuredResult.resultContent 提取
+                rawContent = rd.executorOutput.structuredResult.resultContent;
               }
+            }
+
+            // 🔥 最终兜底：从 task.resultData 直接提取信封格式的 result.content
+            if (!rawContent && task?.resultData?.result?.content) {
+              rawContent = task.resultData.result;
             }
 
             const parsed = parseXhsContent(rawContent);
@@ -371,6 +381,18 @@ export function XiaohongshuPreview({
     setCurrentPage(0);
   }, [content?.title]);
 
+  // 🔥 修复：关闭对话框时重置状态，确保下次打开时重新加载
+  useEffect(() => {
+    if (!open) {
+      if (!externalContent) {
+        setContent(null);
+      }
+      setCurrentPage(0);
+      setPersistedCards([]);
+      loadingRef.current = false;
+    }
+  }, [open, externalContent]);
+
   // 如果没有内容，不渲染
   if (!content && !open) {
     return (
@@ -399,6 +421,9 @@ export function XiaohongshuPreview({
               </Badge>
             )}
           </DialogTitle>
+          <DialogDescription asChild>
+            <VisuallyHidden.Root>小红书图文内容预览</VisuallyHidden.Root>
+          </DialogDescription>
         </DialogHeader>
 
         {loading ? (
