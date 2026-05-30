@@ -6647,9 +6647,9 @@ export class SubtaskExecutionEngine {
             if (articleTitle) {
               article.title = articleTitle;
             }
-            // 🔥 强制截断 digest 到 120 字（微信公众号 API 限制）
+            // 🔥 强制截断 digest 到 120 字（微信公众号 API 限制，不加省略号避免超限）
             if (article.digest && article.digest.length > 120) {
-              article.digest = article.digest.substring(0, 120) + '...';
+              article.digest = article.digest.substring(0, 120);
             }
           }
           console.log('[supplementArticleContentParams] ✅ 已覆盖上传 MCP 的 articles.content，长度:', articleContent.length);
@@ -7699,12 +7699,12 @@ export class SubtaskExecutionEngine {
     if (mcpParams.toolName === 'wechat' && mcpParams.actionName === 'add_draft') {
       console.log('[SubtaskEngine] [command_result_id=' + task.commandResultId + '] 🔴 检测到 wechat add_draft，检查参数格式...');
       if (finalParams.articles) {
-        // 🔥 强制截断 articles[].digest 到 120 字（微信公众号 API 限制）
+        // 🔥 强制截断 articles[].digest 到 120 字（微信公众号 API 限制，不加省略号避免超限）
         // 即使 articles 已存在，也要截断（防止从前序任务传递过来的超长摘要）
         for (const article of finalParams.articles) {
           if (article.digest && article.digest.length > 120) {
             console.log('[SubtaskEngine] [command_result_id=' + task.commandResultId + '] ⚠️ articles[].digest 超长 (' + article.digest.length + '字)，截断到 120 字');
-            article.digest = article.digest.substring(0, 120) + '...';
+            article.digest = article.digest.substring(0, 120);
           }
         }
         console.log('[SubtaskEngine] [command_result_id=' + task.commandResultId + '] ✅ 已有 articles 参数，已校验 digest 长度');
@@ -7793,18 +7793,18 @@ export class SubtaskExecutionEngine {
           console.warn('[SubtaskEngine] [command_result_id=' + task.commandResultId + '] ⚠️ 获取账号默认设置失败:', draftError);
         }
         
-        // 🔥 强制截断 digest 到 120 字（微信公众号 API 限制）
+        // 🔥 强制截断 digest 到 120 字（微信公众号 API 限制，不加省略号避免超限）
         // 即使 digest 已存在，也要截断（防止从前序任务传递过来的超长摘要）
         if (digest && digest.length > 120) {
           console.log('[SubtaskEngine] [command_result_id=' + task.commandResultId + '] ⚠️ digest 超长 (' + digest.length + '字)，截断到 120 字');
-          digest = digest.substring(0, 120) + '...';
+          digest = digest.substring(0, 120);
         }
         
         // 如果没有 digest，从 HTML 内容生成
         if (!digest) {
           // 从 HTML 中提取纯文本摘要
           const plainText = htmlContent.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim();
-          digest = plainText.substring(0, 120) + (plainText.length > 120 ? '...' : '');
+          digest = plainText.substring(0, 120);
         }
         
         finalParams = {
@@ -10211,7 +10211,7 @@ ${userFeedbackText}
           for (const article of finalParams.articles) {
             if (article.digest && article.digest.length > 120) {
               console.log('[executeCapability] digest 超长 (' + article.digest.length + '字)，截断到 120 字');
-              article.digest = article.digest.substring(0, 120) + '...';
+              article.digest = article.digest.substring(0, 120);
             }
           }
         }
@@ -10219,7 +10219,7 @@ ${userFeedbackText}
         // 处理单个 digest 字段
         if (finalParams.digest && finalParams.digest.length > 120) {
           console.log('[executeCapability] digest 超长 (' + finalParams.digest.length + '字)，截断到 120 字');
-          finalParams.digest = finalParams.digest.substring(0, 120) + '...';
+          finalParams.digest = finalParams.digest.substring(0, 120);
         }
       }
 

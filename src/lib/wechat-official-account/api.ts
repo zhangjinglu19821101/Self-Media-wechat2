@@ -170,15 +170,50 @@ export async function addDraft(
   const url = `${WECHAT_API_CONFIG.baseUrl}/draft/add?access_token=${token}`;
 
   try {
+    // 🔥🔥🔥 最终防线：强制截断 digest 到 120 字（微信 API 硬限制）
+    // ⚠️ substring(0, 120) + '...' 会产生 123 字超限！必须 substring(0, 120) 不加省略号
+    const MAX_DIGEST_LENGTH = 120;
+    const safeArticles = articles.map((article, index) => {
+      if (article.digest) {
+        const originalLength = article.digest.length;
+        if (originalLength > MAX_DIGEST_LENGTH) {
+          const truncated = article.digest.substring(0, MAX_DIGEST_LENGTH);
+          console.log(`[微信公众号] 文章 ${index + 1} digest 超长 (原${originalLength}字)，截断到 ${MAX_DIGEST_LENGTH} 字`);
+          return {
+            ...article,
+            digest: truncated,
+          };
+        } else {
+          console.log(`[微信公众号] 文章 ${index + 1} digest 正常 (${originalLength}字，限制${MAX_DIGEST_LENGTH}字)`);
+        }
+      } else {
+        console.log(`[微信公众号] 文章 ${index + 1} 无 digest 字段，微信将自动从 content 生成`);
+      }
+      return article;
+    });
+
     // 🔴 上传草稿单独设置更长的超时时间：2 分钟
     // 因为上传大文章需要更长时间
     const uploadTimeout = 120000;
     
     // 🔴 计算文章内容大小，用于调试
-    const requestBody = JSON.stringify({ articles });
+    const requestBody = JSON.stringify({ articles: safeArticles });
     const requestSizeKB = (requestBody.length / 1024).toFixed(2);
     console.log(`[微信公众号] 开始上传草稿，文章数量: ${articles.length}, 请求大小: ${requestSizeKB} KB`);
-    console.log(`[微信公众号] 请求体预览:`, requestBody.substring(0, 500));
+    
+    // 🔥 最终验证：确认截断后所有 digest 都不超过 120 字
+    for (let i = 0; i < safeArticles.length; i++) {
+      const digestLen = safeArticles[i].digest?.length || 0;
+      if (digestLen > 120) {
+        console.error(`[微信公众号] ❌ 严重：文章 ${i + 1} digest 截断后仍为 ${digestLen} 字（限制 120 字）！强制再次截断`);
+        safeArticles[i].digest = safeArticles[i].digest!.substring(0, 120);
+      } else {
+        console.log(`[微信公众号] ✅ 文章 ${i + 1} digest 最终长度: ${digestLen} 字（限制 120 字）`);
+      }
+    }
+    // 重新计算请求体（因为可能再次截断）
+    const finalRequestBody = JSON.stringify({ articles: safeArticles });
+    console.log(`[微信公众号] 请求体预览:`, finalRequestBody.substring(0, 500));
     
     // 记录开始时间
     const startTime = Date.now();
@@ -188,7 +223,7 @@ export async function addDraft(
       headers: {
         'Content-Type': 'application/json',
       },
-      body: requestBody,
+      body: finalRequestBody,
       signal: AbortSignal.timeout(uploadTimeout),
     });
 

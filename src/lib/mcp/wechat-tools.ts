@@ -242,8 +242,30 @@ export async function wechatAddDraft(params: WechatAddDraftParams): Promise<Wech
       })
     );
 
+    // 🔥🔥🔥 强制截断 digest 到 120 字（微信 API 限制）
+    // ⚠️ substring(0, 120) + '...' 会产生 123 字超限！必须 substring(0, 120) 不加省略号
+    const MAX_DIGEST_LENGTH = 120;
+    const articlesWithTruncatedDigest = articlesWithThumb.map((article, index) => {
+      if (article.digest) {
+        const originalLength = article.digest.length;
+        if (originalLength > MAX_DIGEST_LENGTH) {
+          const truncated = article.digest.substring(0, MAX_DIGEST_LENGTH);
+          console.log(`[MCP Tool] 文章 ${index + 1} digest 超长 (原${originalLength}字)，截断到 ${MAX_DIGEST_LENGTH} 字`);
+          return {
+            ...article,
+            digest: truncated,
+          };
+        } else {
+          console.log(`[MCP Tool] 文章 ${index + 1} digest 正常 (${originalLength}字，限制${MAX_DIGEST_LENGTH}字)`);
+        }
+      } else {
+        console.log(`[MCP Tool] 文章 ${index + 1} 无 digest 字段，微信将自动从 content 生成`);
+      }
+      return article;
+    });
+
     // 调用 API 添加草稿
-    const result = await addDraft(account, articlesWithThumb);
+    const result = await addDraft(account, articlesWithTruncatedDigest);
 
     const endTime = Date.now();
     const duration = endTime - startTime;

@@ -111,7 +111,7 @@ export class ContentAdapter {
 
   private extractDigest(text: string, maxLen: number): string {
     const firstSentence = text.split(/[。！？\n]/)[0];
-    return firstSentence.length > maxLen ? firstSentence.slice(0, maxLen) + '...' : firstSentence;
+    return firstSentence.length > maxLen ? firstSentence.slice(0, maxLen) : firstSentence;
   }
 
   private htmlToPlainText(html: string): string {
