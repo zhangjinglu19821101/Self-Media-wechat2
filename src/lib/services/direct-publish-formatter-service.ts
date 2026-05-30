@@ -119,12 +119,12 @@ const WECHAT_HTML_TEMPLATE_SPEC = `
   <!-- 1. 开篇引导语（橙色、加粗、居左） -->
   <p style="color:#E67E22; font-weight:bold; margin:0 0 1em; text-align:left;">今天跟大家聊聊买保险最容易踩的坑</p>
 
-  <!-- 2. 一级标题（黑色、居中加粗）+ 分割线 -->
-  <h2 style="color:#000000; font-weight:bold; text-align:center; margin:1em 0; font-size:14px;">一、为什么很多人买了重疾险却理赔难？</h2>
+  <!-- 2. 一级标题（黑色、居中加粗，比正文稍大）+ 分割线 -->
+  <h2 style="color:#000000; font-weight:bold; text-align:center; margin:1em 0; font-size:16px; line-height:1.75;">一、为什么很多人买了重疾险却理赔难？</h2>
   <hr style="border:none; border-top:1px solid #eee; width:90%; margin:0.5em auto;">
 
-  <!-- 3. 二级标题（青绿色、居左加粗） -->
-  <h3 style="color:#1A8A6F; font-weight:bold; text-align:left; margin:1em 0; font-size:14px; line-height:1.75;">保险公司不告诉你的3个拒赔真相</h3>
+  <!-- 3. 二级标题（青绿色、居左加粗，比正文稍大） -->
+  <h3 style="color:#1A8A6F; font-weight:bold; text-align:left; margin:1em 0; font-size:15px; line-height:1.75;">保险公司不告诉你的3个拒赔真相</h3>
 
   <!-- 4. 三级标题（青绿色、居左常规字重） -->
   <h4 style="color:#1A8A6F; margin:1em 0; font-size:14px; line-height:1.75; text-align:left;">真相一：健康告知是第一道门槛</h4>
@@ -139,7 +139,7 @@ const WECHAT_HTML_TEMPLATE_SPEC = `
   <p style="color:#3498db; text-align:left; margin:0 0 1em;">💡 小提示：投保前建议整理近3年体检报告，避免遗漏异常记录。</p>
 
   <!-- 8. 二级标题 -->
-  <h3 style="color:#1A8A6F; font-weight:bold; text-align:left; margin:1em 0; font-size:14px; line-height:1.75;">算笔明白账：百万医疗险真的能赔100万吗？</h3>
+  <h3 style="color:#1A8A6F; font-weight:bold; text-align:left; margin:1em 0; font-size:15px; line-height:1.75;">算笔明白账：百万医疗险真的能赔100万吗？</h3>
   <p style="color:#3E3E3E; text-align:left; margin:0 0 1em;">百万医疗险每年保费才几百块，保额却有100万，听起来很美好。但理赔有明确限制：</p>
 
   <!-- 9. 无序列表（罗列风险/特点） -->
@@ -176,7 +176,8 @@ const WECHAT_FORMAT_SYSTEM_PROMPT = `你是一个微信公众号文章排版专�
 核心规则：
 1. **保持原文内容完全不变** — 不改写、不删减、不增加任何段落
 2. **仅做排版格式化** — 添加HTML标签和内联样式，调整排版结构
-3. **使用以下样式模板**（每个元素的内联样式必须严格一致）：
+3. **所有正文段落必须包裹在 <p> 标签里** — 不能直接放在 <section> 标签下，必须有 <p> 包裹
+4. **使用以下样式模板**（每个元素的内联样式必须严格一致）：
 
 ${WECHAT_HTML_TEMPLATE_SPEC}
 

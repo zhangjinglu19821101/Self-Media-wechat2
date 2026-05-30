@@ -111,7 +111,7 @@ export function plainTextToHtml(text: string): string {
 
     // 2. 一级标题（一、二、三、等）→ 黑色居中h2 + 分割线hr
     if (/^[一二三四五六七八九十]+[、.)\s]/.test(p)) {
-      return `<h2 style="color:#000000; font-weight:bold; text-align:center; margin:1em 0; font-size:14px;">${content}</h2>\n<hr style="border:none; border-top:1px solid #eee; width:90%; margin:0.5em auto;">`;
+      return `<h2 style="color:#000000; font-weight:bold; text-align:center; margin:1em 0; font-size:16px;">${content}</h2>\n<hr style="border:none; border-top:1px solid #eee; width:90%; margin:0.5em auto;">`;
     }
 
     // 4. 三级标题（1.1 2.1 等，或"真相一""要点二"等细分标题）→ 青绿色h4常规字重
@@ -121,7 +121,7 @@ export function plainTextToHtml(text: string): string {
 
     // 3. 二级标题（1. 2. 3. 等）→ 青绿色加粗h3
     if (/^\d+[.、)\s]/.test(p)) {
-      return `<h3 style="color:#1A8A6F; font-weight:bold; text-align:left; margin:1em 0; font-size:14px; line-height:1.75;">${content}</h3>`;
+      return `<h3 style="color:#1A8A6F; font-weight:bold; text-align:left; margin:1em 0; font-size:15px; line-height:1.75;">${content}</h3>`;
     }
 
     // 6. 红色高危提醒

@@ -478,11 +478,11 @@ slotId格式：{范式ID}-{序号}，如 P001-01, P002-03
   <p style="color:#E67E22; font-weight:bold; margin:0 0 1em; text-align:left;">今天跟大家聊聊买保险最容易踩的坑</p>
 
   <!-- 2. 一级标题（黑色、居中加粗）+ 分割线 -->
-  <h2 style="color:#000000; font-weight:bold; text-align:center; margin:1em 0; font-size:14px;">一、为什么很多人买了重疾险却理赔难？</h2>
+  <h2 style="color:#000000; font-weight:bold; text-align:center; margin:1em 0; font-size:16px;">一、为什么很多人买了重疾险却理赔难？</h2>
   <hr style="border:none; border-top:1px solid #eee; width:90%; margin:0.5em auto;">
   
   <!-- 3. 二级标题（青绿色、居左加粗） -->
-  <h3 style="color:#1A8A6F; font-weight:bold; text-align:left; margin:1em 0; font-size:14px; line-height:1.75;">保险公司不告诉你的3个拒赔真相</h3>
+  <h3 style="color:#1A8A6F; font-weight:bold; text-align:left; margin:1em 0; font-size:15px; line-height:1.75;">保险公司不告诉你的3个拒赔真相</h3>
 
   <!-- 4. 三级标题（青绿色、居左常规字重） -->
   <h4 style="color:#1A8A6F; margin:1em 0; font-size:14px; line-height:1.75; text-align:left;">真相一：健康告知是第一道门槛</h4>
@@ -531,17 +531,20 @@ slotId格式：{范式ID}-{序号}，如 P001-01, P002-03
 
 **输出要求：**
 1. 使用完整的 `<section>` 包裹
-2. 一级标题用 `<h2>` + `<hr>` 分隔线（黑色居中加粗）
-3. 二级标题用 `<h3>`（青绿色加粗居左）
-4. 三级标题用 `<h4>`（青绿色常规字重居左，用于"真相一""要点二"等细分标题）
-5. 小标题必须是概括性、有实际意义的，禁止纯数字序号
-6. 高危提醒用红色加粗（`color:#FF0000`，如"务必""绝对不能""100%"等强提醒）
-7. 温和提示用蓝色常规字重（`color:#3498db`，如"小提示""建议""💡"等）
-8. 并列要点用 `<ul>/<li>` 无序列表；步骤/流程用 `<ol>/<li>` 有序列表
-9. 引用条款/规则用引用区块（`border-left:2px solid #eee; padding-left:10px`）
-10. 备注说明用小字（`font-size:12px; color:#666666`）
-11. 正文强调用 `<strong>` 加粗、`<em>` 斜体、`<u>` 下划线、`<s>` 删除线
-12. 文章末尾必须有互动提问 + 免责声明
+2. **🔴 强制规则：所有正文内容必须包裹在 `<p>` 标签里，禁止直接放在 `<section>` 下！**
+   - 例外：`<h2>/<h3>/<h4>/<ul>/<ol>/<hr>` 这些标签可以直接在 `<section>` 下
+   - 所有段落性文字、提示、备注、互动提问、免责声明等，必须用 `<p>` 包裹
+3. 一级标题用 `<h2>` + `<hr>` 分隔线（黑色居中加粗，`font-size:16px`）
+4. 二级标题用 `<h3>`（青绿色加粗居左，`font-size:15px`）
+5. 三级标题用 `<h4>`（青绿色常规字重居左，用于"真相一""要点二"等细分标题）
+6. 小标题必须是概括性、有实际意义的，禁止纯数字序号
+7. 高危提醒用红色加粗（`color:#FF0000`，如"务必""绝对不能""100%"等强提醒）
+8. 温和提示用蓝色常规字重（`color:#3498db`，如"小提示""建议""💡"等）
+9. 并列要点用 `<ul>/<li>` 无序列表；步骤/流程用 `<ol>/<li>` 有序列表
+10. 引用条款/规则用引用区块（`border-left:2px solid #eee; padding-left:10px`）
+11. 备注说明用小字（`font-size:12px; color:#666666`）
+12. 正文强调用 `<strong>` 加粗、`<em>` 斜体、`<u>` 下划线、`<s>` 删除线
+13. 文章末尾必须有互动提问 + 免责声明
 
 ### ⚠️ 返回格式
 
