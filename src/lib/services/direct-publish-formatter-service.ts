@@ -119,37 +119,37 @@ const WECHAT_HTML_TEMPLATE_SPEC = `
   <!-- 1. 开篇引导语（橙色、加粗、居左） -->
   <p style="color:#E67E22; font-weight:bold; margin:0 0 1em; text-align:left;">今天跟大家聊聊买保险最容易踩的坑</p>
 
-  <!-- 2. 一级标题（黑色、居中加粗，比正文稍大）+ 分割线 -->
-  <h2 style="color:#000000; font-weight:bold; text-align:center; margin:1em 0; font-size:16px; line-height:1.75;">一、为什么很多人买了重疾险却理赔难？</h2>
+  <!-- 2. 一级标题（黑色、居中加粗）+ 分割线 -->
+  <h2 style="color:#000000; font-weight:bold; text-align:center; margin:1em 0; font-size:14px;">一、为什么很多人买了重疾险却理赔难？</h2>
   <hr style="border:none; border-top:1px solid #eee; width:90%; margin:0.5em auto;">
+  
+  <!-- 3. 二级标题（青绿色、居左加粗） -->
+  <h3 style="color:#1A8A6F; font-weight:bold; text-align:left; margin:1em 0; font-size:14px; line-height:1.75;">保险公司不告诉你的3个拒赔真相</h3>
 
-  <!-- 3. 二级标题（青绿色、居左加粗，比正文稍大） -->
-  <h3 style="color:#1A8A6F; font-weight:bold; text-align:left; margin:1em 0; font-size:15px; line-height:1.75;">保险公司不告诉你的3个拒赔真相</h3>
-
-  <!-- 4. 三级标题（青绿色、居左常规字重） -->
+  <!-- 4. 三级标题（青绿色、居左常规字重 新增） -->
   <h4 style="color:#1A8A6F; margin:1em 0; font-size:14px; line-height:1.75; text-align:left;">真相一：健康告知是第一道门槛</h4>
 
-  <!-- 5. 默认正文 + 正文加粗 + 正文斜体 + 下划线 + 删除线 -->
+  <!-- 5. 默认正文 + 正文加粗 + 正文斜体 + 下划线 + 删除线（全正文样式演示） -->
   <p style="color:#3E3E3E; text-align:left; margin:0 0 1em;">很多人以为买了重疾险就万事大吉，<strong>如实做健康告知是理赔的核心前提</strong>。<em>（业内惯例：投保问询必须全部如实回答）</em> 像<u>既往病史、体检异常</u>这类信息绝对不能隐瞒，网传<s>“小毛病不用告知”</s>的说法完全是误区。</p>
 
-  <!-- 6. 红色高危提醒（红色、加粗、居左） -->
+  <!-- 6. 红色高危提醒（红色、加粗、居左 已有） -->
   <p style="color:#FF0000; font-weight:bold; text-align:left; margin:0 0 1em;">⚠️ 健康告知没填对，理赔100%被拒！</p>
 
-  <!-- 7. 蓝色辅助提示（浅蓝、常规字重，温和提示用） -->
+  <!-- 7. 蓝色辅助提示（浅蓝、常规字重 新增，温和提示用） -->
   <p style="color:#3498db; text-align:left; margin:0 0 1em;">💡 小提示：投保前建议整理近3年体检报告，避免遗漏异常记录。</p>
 
   <!-- 8. 二级标题 -->
-  <h3 style="color:#1A8A6F; font-weight:bold; text-align:left; margin:1em 0; font-size:15px; line-height:1.75;">算笔明白账：百万医疗险真的能赔100万吗？</h3>
+  <h3 style="color:#1A8A6F; font-weight:bold; text-align:left; margin:1em 0; font-size:14px; line-height:1.75;">算笔明白账：百万医疗险真的能赔100万吗？</h3>
   <p style="color:#3E3E3E; text-align:left; margin:0 0 1em;">百万医疗险每年保费才几百块，保额却有100万，听起来很美好。但理赔有明确限制：</p>
 
-  <!-- 9. 无序列表（罗列风险/特点） -->
+  <!-- 9. 无序列表（罗列风险/特点 新增） -->
   <ul style="color:#3E3E3E; margin:0 0 1em; padding-left:20px;">
     <li style="margin:0 0 0.5em;">仅限<span style="font-weight:bold;">合理且必要的住院医疗费用</span>报销</li>
     <li style="margin:0 0 0.5em;">存在<span style="text-decoration:underline;">免赔额、就医范围</span>等约束条件</li>
     <li style="margin:0 0 0.5em;">外购药、特药报销需符合产品规则</li>
   </ul>
 
-  <!-- 10. 有序列表（步骤/逐条解读） -->
+  <!-- 10. 有序列表（步骤/逐条解读 新增） -->
   <p style="color:#3E3E3E; text-align:left; margin:0 0 1em;">正确理赔流程分为3步：</p>
   <ol style="color:#3E3E3E; margin:0 0 1em; padding-left:20px;">
     <li style="margin:0 0 0.5em;">及时报案，保留完整医疗单据</li>
@@ -157,16 +157,16 @@ const WECHAT_HTML_TEMPLATE_SPEC = `
     <li style="margin:0 0 0.5em;">等待保险公司审核结算</li>
   </ol>
 
-  <!-- 11. 引用区块（合同/规则引用） -->
+  <!-- 11. 引用区块（合同/规则引用 新增） -->
   <p style="color:#3E3E3E; text-align:left; margin:0 0 1em; padding-left:10px; border-left:2px solid #eee;">【条款引用】医疗险仅对<span style="font-style:italic;">住院、特殊门诊、住院前后门急诊</span>相关费用进行赔付。</p>
 
-  <!-- 12. 小字备注（浅灰小字体） -->
+  <!-- 12. 小字备注（浅灰小字体 新增） -->
   <p style="font-size:12px; color:#666666; text-align:left; line-height:1.5; margin:0 0 1em;">备注：以上规则适用于市面上绝大多数主流百万医疗险，具体以保单合同为准。</p>
 
-  <!-- 13. 互动提问（居左） -->
+  <!-- 13. 互动提问（居左 已有） -->
   <p style="color:#3E3E3E; text-align:left; margin:2em 0 1em;">【互动提问】你买保险时踩过坑吗？欢迎在评论区留言分享</p>
 
-  <!-- 14. 免责声明（小号、浅灰、居左） -->
+  <!-- 14. 免责声明（小号、浅灰、居左 已有） -->
   <p style="font-size:12px; color:#666666; text-align:left; line-height:1.5; margin:1em 0;">【免责声明】本文仅为知识科普，不构成投资/购买建议。</p>
 </section>
 `;

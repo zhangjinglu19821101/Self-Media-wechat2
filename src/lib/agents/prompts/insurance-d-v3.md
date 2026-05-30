@@ -478,11 +478,11 @@ slotId格式：{范式ID}-{序号}，如 P001-01, P002-03
   <p style="color:#E67E22; font-weight:bold; margin:0 0 1em; text-align:left;">今天跟大家聊聊买保险最容易踩的坑</p>
 
   <!-- 2. 一级标题（黑色、居中加粗）+ 分割线 -->
-  <h2 style="color:#000000; font-weight:bold; text-align:center; margin:1em 0; font-size:16px;">一、为什么很多人买了重疾险却理赔难？</h2>
+  <h2 style="color:#000000; font-weight:bold; text-align:center; margin:1em 0; font-size:14px;">一、为什么很多人买了重疾险却理赔难？</h2>
   <hr style="border:none; border-top:1px solid #eee; width:90%; margin:0.5em auto;">
   
   <!-- 3. 二级标题（青绿色、居左加粗） -->
-  <h3 style="color:#1A8A6F; font-weight:bold; text-align:left; margin:1em 0; font-size:15px; line-height:1.75;">保险公司不告诉你的3个拒赔真相</h3>
+  <h3 style="color:#1A8A6F; font-weight:bold; text-align:left; margin:1em 0; font-size:14px; line-height:1.75;">保险公司不告诉你的3个拒赔真相</h3>
 
   <!-- 4. 三级标题（青绿色、居左常规字重） -->
   <h4 style="color:#1A8A6F; margin:1em 0; font-size:14px; line-height:1.75; text-align:left;">真相一：健康告知是第一道门槛</h4>
