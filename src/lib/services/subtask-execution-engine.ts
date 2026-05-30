@@ -1611,16 +1611,16 @@ export class SubtaskExecutionEngine {
       return;
     }
 
-    // 🔥🔥🔥 直接发文模式：已废弃特殊处理
-    // 新流程中，直接发文也走写作Agent格式化（orderIndex=1），
-    // 预览确认节点（orderIndex=2）获取前序格式化任务输出，与AI创作完全一致
-    // 保留 providedArticle 检测仅用于日志标记
+    // 🔥🔥🔥 直接发文模式改造：第一步就是 user_preview_edit，无需等待写作Agent格式化
+    // 用户已提供完整文章，直接让用户预览确认即可
     const taskMetadata = (task.metadata != null ? task.metadata : {}) as Record<string, unknown>;
     const isDirectPublish = taskMetadata.creationMode === 'direct_publish';
+    const hasProvidedArticle = !!taskMetadata.providedArticle;
 
     if (isDirectPublish) {
-      console.log('[SubtaskEngine] 👁️ 直接发文模式：预览格式化后的文章（与AI创作一致）', {
+      console.log('[SubtaskEngine] 👁️ 直接发文模式：用户直接预览自己提供的文章（无需AI格式化）', {
         taskId: task.id,
+        hasProvidedArticle,
       });
     }
 
@@ -1702,20 +1702,20 @@ export class SubtaskExecutionEngine {
       task.metadata as Record<string, unknown>
     );
 
-    // 🔥🔥🔥 【Bug修复】直接发文模式：始终优先使用 providedArticle
-    // 原因：直接发文流程中，insurance-d（创作Agent）不适合做纯格式化工作，
-    // 它的输出可能只包含 briefResponse（如"已将文章格式化"）而不含实际文章内容。
-    // 用户提供的原文是直接发文模式的核心内容源，应始终优先使用。
-    // 注意：isDirectPublish 已在上方（第1619行）声明，此处复用
-    const hasProvidedArticle = !!taskMetadata.providedArticle;
+    // 🔥🔥🔥 【改造】直接发文模式：始终优先使用 providedArticle
+    // 新流程中，直接发文的第一步就是 user_preview_edit，没有前序写作Agent格式化步骤
+    // 用户提供的原文是直接发文模式的核心内容源，应始终优先使用
+    // 注意：isDirectPublish 和 hasProvidedArticle 已在上方声明
     if (isDirectPublish && hasProvidedArticle) {
       articleContent = taskMetadata.providedArticle as string;
       articleTitle = (taskMetadata.providedArticleTitle as string) || articleTitle || '用户提供的文章';
       console.log('[SubtaskEngine] 👁️ 直接发文模式：使用 metadata.providedArticle 作为文章内容', {
         providedContentLength: articleContent.length,
         title: articleTitle,
-        writingTaskResultPreview: effectiveWritingTask?.resultText?.substring(0, 100),
       });
+    } else if (isDirectPublish && !hasProvidedArticle) {
+      // 直接发文但没有 providedArticle（不应该发生，但做兜底）
+      console.warn('[SubtaskEngine] ⚠️ 直接发文模式但未找到 providedArticle，尝试从前序任务获取');
     } else if (effectiveWritingTask) {
       // 非直接发文模式：从写作任务提取文章内容
       articleContent = effectiveWritingTask.resultText || '';
@@ -1731,11 +1731,9 @@ export class SubtaskExecutionEngine {
     let platformRenderData: import('@/lib/platform-render/types').PlatformRenderData | Record<string, unknown> | null = null;
     let platformDataSource: typeof agentSubTasks.$inferSelect | undefined;
 
-    // 🔥🔥🔥 【Bug修复】直接发文模式：跳过从格式化任务提取 platformRenderData
-    // 原因：直接发文模式下，insurance-d 格式化任务可能只输出 briefResponse（如"已将文章格式化"），
-    // 从中提取的 platformRenderData.htmlContent 会是 briefResponse 的 HTML 包装，
-    // 前端公众号预览优先使用 platformRenderData.htmlContent，会覆盖掉正确的 articleContent。
-    // 直接发文模式的文章内容来自 providedArticle，应交给 shouldFormatInEngine 逻辑处理。
+    // 🔥🔥🔥 【改造】直接发文模式：跳过从格式化任务提取 platformRenderData
+    // 新流程中，直接发文第一步就是 user_preview_edit，没有写作Agent格式化步骤
+    // 直接发文的文章内容来自 providedArticle，应交给 shouldFormatInEngine 逻辑处理
     const skipPlatformRenderExtraction = isDirectPublish && hasProvidedArticle;
 
     if (skipPlatformRenderExtraction) {
