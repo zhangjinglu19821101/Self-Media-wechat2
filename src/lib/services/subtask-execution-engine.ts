@@ -6791,6 +6791,17 @@ export class SubtaskExecutionEngine {
       const parsed = typeof resultData === 'string' ? JSON.parse(resultData) : resultData;
       if (!parsed || typeof parsed !== 'object') return '';
 
+      // 🔥🔥🔥 【优先级0】直接发文格式化后的 HTML（platformRenderData.htmlContent）
+      // 这是最精美的格式，由 formatDirectPublishArticle 生成的公众号 HTML
+      const platformRenderData = parsed.platformRenderData || parsed.executorOutput?.platformRenderData;
+      if (platformRenderData?.htmlContent && typeof platformRenderData.htmlContent === 'string' && platformRenderData.htmlContent.length > 200) {
+        // 确认是 HTML 格式（包含排版标签）
+        if (platformRenderData.htmlContent.includes('<section') || platformRenderData.htmlContent.includes('<p') || platformRenderData.htmlContent.includes('<div')) {
+          console.log('[SubtaskEngine] ✅ 从 platformRenderData.htmlContent 提取文章内容（直接发文格式化HTML）');
+          return platformRenderData.htmlContent;
+        }
+      }
+
       // 1. 优先从 structuredResult.resultContent.modifiedArticle 获取（合规整改输出）
       const sr = parsed.executorOutput?.structuredResult?.resultContent || parsed.structuredResult?.resultContent;
       if (sr?.modifiedArticle && typeof sr.modifiedArticle === 'string' && sr.modifiedArticle.length > 200) {
