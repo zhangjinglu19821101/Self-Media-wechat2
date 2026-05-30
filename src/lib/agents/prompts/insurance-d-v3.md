@@ -109,9 +109,9 @@
 1. **读取用户提供的完整文章**（来自前序任务或 metadata.providedArticle）
 2. **保持原文内容完全不变**（包括观点、案例、数据、结论）
 3. **仅做以下格式化工作**：
-   - 将纯文本转换为公众号标准 HTML 格式
+   - 将纯文本转换为公众号标准 HTML 格式（🔴 必须严格遵守第四部分的HTML输出格式规范，每个标签都必须包含完整的内联style属性！）
    - 添加段落排版（p 标签、缩进、行距）
-   - 添加标题层级（h2/h3）
+   - 添加标题层级（h2/h3，🔴 必须设置 font-size:14px 和 font-weight:bold，避免浏览器默认字号过大）
    - 添加强调格式（加粗、引用块）
    - 确保字数、段落长度符合公众号阅读习惯
 4. **输出格式与全文创作完全一致**（信封格式 ArticleOutputEnvelope）
@@ -501,12 +501,20 @@ slotId格式：{范式ID}-{序号}，如 P001-01, P002-03
 </section>
 ```
 
-**输出要求：**
-1. 使用完整的 `<section>` 包裹
-2. 一级标题用 `<h2>` + `<hr>` 分隔线
-3. 二级标题用 `<h3>`
+**输出要求（🔴 HTML格式是硬性规范，必须100%遵循，不可省略任何style属性！）：**
+1. 使用完整的 `<section>` 包裹，**必须包含** `style="background:#ffffff; padding:0 12px; font-size:14px; line-height:1.6;"`
+2. 一级标题用 `<h2>` + `<hr>` 分隔线，**h2必须设置** `style="color:#000000; font-weight:bold; text-align:center; margin:1em 0; font-size:14px;"`，**禁止**省略font-size或font-weight
+3. 二级标题用 `<h3>`，**h3必须设置** `style="color:#1A8A6F; font-weight:bold; text-align:left; margin:1em 0; font-size:14px; line-height:1.75;"`，**禁止**省略font-size或font-weight
 4. 小标题必须是概括性、有实际意义的，禁止纯数字序号
-5. 文章末尾必须有免责声明
+5. 正文段落用 `<p>` 包裹，**必须设置** `style="color:#3E3E3E; text-align:left; margin:0 0 1em;"`
+6. 文章末尾必须有免责声明
+7. **🔴 HTML标签的style属性必须内联写死，不可省略、不可简化！** LLM输出时常见的错误：
+   - ❌ `<h2>标题</h2>` （缺少style，浏览器默认h2字号极大、加粗失效）
+   - ❌ `<h3>小标题</h3>` （缺少style，小标题字体比正文还大）
+   - ❌ `<p>正文</p>` （缺少style，行间距可能异常）
+   - ✅ `<h2 style="color:#000000; font-weight:bold; text-align:center; margin:1em 0; font-size:14px;">标题</h2>`
+   - ✅ `<h3 style="color:#1A8A6F; font-weight:bold; text-align:left; margin:1em 0; font-size:14px; line-height:1.75;">小标题</h3>`
+   - ✅ `<p style="color:#3E3E3E; text-align:left; margin:0 0 1em;">正文</p>`
 
 ### ⚠️ 返回格式
 
