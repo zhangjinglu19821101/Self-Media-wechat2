@@ -203,7 +203,55 @@ async function formatWechatWithLLM(
   options: DirectPublishFormatOptions,
 ): Promise<WechatPlatformRenderData | null> {
   const { textContent, articleTitle } = options;
+  const textLength = textContent.length;
 
+  // 🔴 长文章分段格式化：超过 2000 字时，按章节分段调用 LLM，避免输出截断
+  // dubao-seed-2-0-pro 默认 max_output_tokens=4096，约能输出 3000-4000 中文字符
+  // 长文章的 HTML（含内联样式）通常是原文 2-3 倍，容易超出模型输出上限
+  const CHUNK_THRESHOLD = 2000;
+
+  let htmlContent: string | null = null;
+
+  if (textLength > CHUNK_THRESHOLD) {
+    console.log(`[DirectPublishFormatter] 文章较长(${textLength}字)，启用分段格式化`);
+    htmlContent = await formatWechatChunked(llmClient, model, textContent);
+  }
+
+  // 短文章或分段格式化失败时，尝试整体格式化
+  if (!htmlContent) {
+    htmlContent = await formatWechatWhole(llmClient, model, textContent);
+  }
+
+  // 🔴 截断检测：检查 HTML 是否包含原文的关键段落
+  if (htmlContent && !isHtmlContentComplete(htmlContent, textContent)) {
+    console.warn(`[DirectPublishFormatter] ⚠️ HTML内容疑似截断，原文${textLength}字，HTML正文${stripHtmlTags(htmlContent).length}字`);
+  }
+
+  if (!htmlContent || htmlContent.length < 50) {
+    console.warn('[DirectPublishFormatter] LLM返回的HTML内容过短，可能格式化失败');
+    return null;
+  }
+
+  // 从 HTML 或原文提取标题
+  const title = articleTitle || extractTitleFromHtml(htmlContent) || extractTitleFromText(textContent) || '文章预览';
+
+  return {
+    platform: 'wechat_official',
+    htmlContent,
+    articleTitle: title,
+  };
+}
+
+// ============ 微信公众号分段格式化 ============
+
+/**
+ * 整体格式化（短文章）
+ */
+async function formatWechatWhole(
+  llmClient: LLMClient,
+  model: string,
+  textContent: string,
+): Promise<string | null> {
   const userPrompt = `请将以下纯文本文章格式化为公众号标准HTML排版：
 
 ${textContent}`;
@@ -214,29 +262,196 @@ ${textContent}`;
       { role: 'user', content: userPrompt },
     ], {
       model,
-      temperature: 0.1, // 低温度，保持忠实于原文
+      temperature: 0.1,
     });
 
-    const htmlContent = extractHtmlFromResponse(response.content || '');
-
-    if (!htmlContent || htmlContent.length < 50) {
-      console.warn('[DirectPublishFormatter] LLM返回的HTML内容过短，可能格式化失败');
-      return null;
+    const html = extractHtmlFromResponse(response.content || '');
+    if (html && html.length >= 50 && isHtmlContentComplete(html, textContent)) {
+      return html;
     }
-
-    // 从 HTML 或原文提取标题
-    const title = articleTitle || extractTitleFromHtml(htmlContent) || extractTitleFromText(textContent) || '文章预览';
-
-    return {
-      platform: 'wechat_official',
-      htmlContent,
-      articleTitle: title,
-    };
+    console.warn('[DirectPublishFormatter] 整体格式化结果不完整，将尝试分段格式化');
+    return null;
   } catch (error: unknown) {
     if (error instanceof Error && error.name === 'AbortError') return null;
-    console.error('[DirectPublishFormatter] 微信格式化LLM调用失败:', error instanceof Error ? error.message : String(error));
+    console.error('[DirectPublishFormatter] 整体格式化LLM调用失败:', error instanceof Error ? error.message : String(error));
     return null;
   }
+}
+
+/**
+ * 分段格式化（长文章）
+ * 按章节标题（一、二、三、...）切分，逐段调用 LLM，最后拼接
+ */
+async function formatWechatChunked(
+  llmClient: LLMClient,
+  model: string,
+  textContent: string,
+): Promise<string | null> {
+  // 按一级标题（如 "一、"、"二、"、"1."、"2." 等）切分
+  const sections = splitArticleByHeadings(textContent);
+  if (sections.length <= 1) {
+    // 无法有效分段，回退整体格式化
+    console.log('[DirectPublishFormatter] 无法有效分段（仅1段），回退整体格式化');
+    return null;
+  }
+
+  console.log(`[DirectPublishFormatter] 文章分为 ${sections.length} 段进行格式化`);
+
+  const formattedParts: string[] = [];
+
+  for (let i = 0; i < sections.length; i++) {
+    const section = sections[i];
+    console.log(`[DirectPublishFormatter] 格式化第 ${i + 1}/${sections.length} 段（${section.length}字）`);
+
+    const partPrompt = `请将以下纯文本${sections.length > 1 ? '片段' : '文章'}格式化为公众号标准HTML排版。
+${i > 0 ? '注意：这是文章的第' + (i + 1) + '部分，不需要添加开头引导语和<section>外层标签，只输出本段的HTML内容。' : ''}
+${i < sections.length - 1 ? '注意：这是文章的中间部分，不需要添加免责声明和</section></div>结尾标签。' : ''}
+
+${section}`;
+
+    try {
+      const response = await llmClient.invoke([
+        { role: 'system', content: WECHAT_FORMAT_SYSTEM_PROMPT },
+        { role: 'user', content: partPrompt },
+      ], {
+        model,
+        temperature: 0.1,
+      });
+
+      const partHtml = extractHtmlFromResponse(response.content || '');
+      if (partHtml && partHtml.length >= 20) {
+        formattedParts.push(partHtml);
+      } else {
+        console.warn(`[DirectPublishFormatter] 第 ${i + 1} 段格式化失败，使用原文兜底`);
+        formattedParts.push(`<p style="margin:0; padding:0 0 16px; font-size:14px; line-height:1.6;">${escapeHtml(section)}</p>`);
+      }
+    } catch (error: unknown) {
+      console.error(`[DirectPublishFormatter] 第 ${i + 1} 段格式化失败:`, error instanceof Error ? error.message : String(error));
+      formattedParts.push(`<p style="margin:0; padding:0 0 16px; font-size:14px; line-height:1.6;">${escapeHtml(section)}</p>`);
+    }
+  }
+
+  // 拼接各段 HTML
+  // 策略：提取第一段的 <section><div> 开头 + 所有段的内容 + 最后一段的 </div></section> 结尾
+  if (formattedParts.length === 0) return null;
+
+  const mergedHtml = mergeChunkedHtml(formattedParts);
+  return mergedHtml;
+}
+
+/**
+ * 按章节标题切分文章
+ * 识别 "一、" "二、" "1." "2." 等标题作为分隔点
+ */
+function splitArticleByHeadings(text: string): string[] {
+  // 匹配中文序号标题（一、二、三、...九、十）
+  // 或数字序号标题（1. 2. 3. 等），必须出现在行首
+  const headingRegex = /^(?:[一二三四五六七八九十]+、|\d+\.)\s*.+/gm;
+
+  const matches: { index: number; length: number }[] = [];
+  let match: RegExpExecArray | null;
+  while ((match = headingRegex.exec(text)) !== null) {
+    matches.push({ index: match.index, length: match[0].length });
+  }
+
+  if (matches.length === 0) return [text];
+
+  const sections: string[] = [];
+
+  // 第0段：第一个标题之前的内容（如果有）
+  if (matches[0].index > 0) {
+    sections.push(text.substring(0, matches[0].index).trim());
+  }
+
+  // 每个标题到下一个标题之间的内容
+  for (let i = 0; i < matches.length; i++) {
+    const start = matches[i].index;
+    const end = i + 1 < matches.length ? matches[i + 1].index : text.length;
+    const section = text.substring(start, end).trim();
+    if (section.length > 0) {
+      sections.push(section);
+    }
+  }
+
+  return sections.filter(s => s.length > 0);
+}
+
+/**
+ * 合并分段 HTML
+ * 提取第一段的 <section><div> 包裹结构 + 所有段的内容 + 结尾标签
+ */
+function mergeChunkedHtml(parts: string[]): string {
+  if (parts.length === 0) return '';
+  if (parts.length === 1) return parts[0];
+
+  // 提取每段的核心 HTML 内容（去掉 <section> 和 <div> 包裹标签）
+  const innerParts: string[] = [];
+
+  for (const part of parts) {
+    // 移除 <section> 和 <div> 包裹，只保留内部内容
+    let inner = part;
+    // 移除开头的 <section...> 和 <div...>
+    inner = inner.replace(/^\s*<section[^>]*>\s*/i, '');
+    inner = inner.replace(/^\s*<div[^>]*>\s*/i, '');
+    // 移除结尾的 </div> 和 </section>
+    inner = inner.replace(/\s*<\/div>\s*$/i, '');
+    inner = inner.replace(/\s*<\/section>\s*$/i, '');
+    innerParts.push(inner.trim());
+  }
+
+  // 使用标准包裹结构重新组合
+  return `<section style="margin:0; padding:0; border:0; outline:0; font-size:14px; line-height:1.6; color:#3E3E3E; background:#ffffff;">
+  <div style="padding:0 12px;">
+    ${innerParts.join('\n    ')}
+  </div>
+</section>`;
+}
+
+/**
+ * 截断检测：比较 HTML 去标签后的纯文本与原文的覆盖率
+ * 覆盖率 < 80% 说明 LLM 输出可能被截断
+ */
+function isHtmlContentComplete(htmlContent: string, originalText: string): boolean {
+  const htmlPlainText = stripHtmlTags(htmlContent).trim();
+  const originalPlainText = originalText.trim();
+
+  if (!htmlPlainText || !originalPlainText) return true; // 空内容无法判断，默认通过
+
+  // 检查原文中是否有关键段落完全丢失
+  // 将原文按段落分割，检查每段是否在 HTML 中有对应内容
+  const originalParagraphs = originalPlainText
+    .split(/\n+/)
+    .map(p => p.trim())
+    .filter(p => p.length >= 20); // 只检查长度 >= 20 的段落（排除短标题等）
+
+  if (originalParagraphs.length === 0) return true;
+
+  let matchedCount = 0;
+  for (const para of originalParagraphs) {
+    // 取段落的前 30 字符作为匹配关键词
+    const key = para.substring(0, 30).replace(/[，。、；：""''！？\s]/g, '');
+    if (key.length >= 5 && htmlPlainText.includes(key)) {
+      matchedCount++;
+    }
+  }
+
+  const coverage = matchedCount / originalParagraphs.length;
+  if (coverage < 0.8) {
+    console.warn(`[DirectPublishFormatter] 截断检测: 覆盖率=${(coverage * 100).toFixed(1)}%, 匹配${matchedCount}/${originalParagraphs.length}段`);
+    return false;
+  }
+  return true;
+}
+
+/**
+ * HTML 转义（用于兜底场景）
+ */
+function escapeHtml(text: string): string {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/\n/g, '<br/>\n');
 }
 
 // ============ 小红书 LLM 格式化 ============

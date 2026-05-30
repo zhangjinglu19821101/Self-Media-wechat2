@@ -11661,7 +11661,49 @@ ${resultData.executionSummary}
     } catch (error) {
       console.error('[SubtaskEngine] Agent B 调用失败:', error);
       
-      // 构造失败决策
+      // 🔴🔴🔴 P0 修复：Agent B LLM 调用失败时，优先信任执行者的完成判断
+      // 当执行者已报告任务完成（isTaskDown=true 或 isCompleted=true），
+      // 不应因 Agent B 的 LLM 调用失败（如计费欠费、超时等）而阻塞整个流程
+      const executorCompleted = executionContext.executorFeedback?.isTaskDown === true 
+        || executionContext.executorFeedback?.isCompleted === true;
+      const hasMcpSuccess = executionContext.mcpExecutionHistory 
+        && executionContext.mcpExecutionHistory.length > 0
+        && this.hasValidMcpResult(executionContext.mcpExecutionHistory, task.orderIndex);
+      
+      if (executorCompleted || hasMcpSuccess) {
+        console.log('[SubtaskEngine] ✅ Agent B LLM 调用失败，但执行者已报告完成，自动返回 COMPLETE');
+        const completeReason = executorCompleted 
+          ? 'Agent B 调用失败，但执行者已报告任务完成（isTaskDown/isCompleted=true）' 
+          : 'Agent B 调用失败，但已有有效的 MCP 合规审核结果';
+        return {
+          type: 'COMPLETE',
+          reasonCode: 'EXECUTOR_COMPLETED_AGENT_B_FAILED',
+          reasoning: completeReason + '。LLM 错误：' + (error instanceof Error ? error.message : String(error)),
+          context: {
+            executionSummary: '执行者已完成任务，Agent B 审核因 LLM 调用失败而跳过',
+            riskLevel: 'low',
+            suggestedAction: '任务已完成，继续下一步'
+          },
+          data: {
+            completionResult: {
+              success: true,
+              completionType: 'executor_completed_agent_b_skipped',
+              agentBError: error instanceof Error ? error.message : String(error)
+            }
+          },
+          _debug: {
+            error: 'Agent B LLM call failed but executor completed',
+            executorFeedback: {
+              isTaskDown: executionContext.executorFeedback?.isTaskDown,
+              isCompleted: executionContext.executorFeedback?.isCompleted,
+              hasMcpSuccess
+            },
+            timestamp: new Date().toISOString()
+          }
+        };
+      }
+      
+      // 构造失败决策（执行者未完成时才降级为 NEED_USER）
       const agentBFailedDecision: AgentBDecision = {
         type: 'NEED_USER',
         reasonCode: 'USER_CONFIRM',
@@ -11679,10 +11721,6 @@ ${resultData.executionSummary}
           }
         }
       };
-      
-      // 🔴🔴🔴 【删除重复记录】recordAgentInteraction 已在 handleDecisionType 中调用
-      // catch 块中的失败决策也由 handleDecisionType 统一记录
-      // if (currentIteration !== undefined) { ... }
       
       // 返回失败决策 + 调试信息
       return {
