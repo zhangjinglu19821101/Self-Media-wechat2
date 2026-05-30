@@ -470,126 +470,78 @@ slotId格式：{范式ID}-{序号}，如 P001-01, P002-03
 
 ### 📝 文章 HTML 输出格式
 
-<!-- 
-【公众号通用排版模板 - 给LLM的样式规范】
-1. 所有字体大小统一使用px单位，禁止使用em/rem
-2. 所有间距统一使用px单位，禁止使用em/rem
-3. 关键样式必须加!important，防止被公众号编辑器覆盖
-4. 严格按照以下组件样式生成，不要添加任何额外的CSS
-5. 正文默认字号14px，行高1.6；小字12px，行高1.5
-6. 所有颜色严格使用下方指定的十六进制值
+<!-- 【公众号API上传专用模板 - 2026年5月更新】
+使用说明：
+1. 所有单位必须使用px，禁止使用em/rem
+2. 所有样式必须写在style属性内，禁止使用<style>标签
+3. 禁止使用任何不在白名单内的CSS属性
+4. 所有段落使用<p>标签，标题也使用<p>标签，不要使用<h1>-<h6>
+5. 分割线使用<div>标签，不要使用<hr>
+6. 背景框使用<div>标签包裹<p>标签
 -->
 
 ```html
-<section style="background:#ffffff; padding:0 12px; font-size:14px; line-height:1.6 !important; color:#3E3E3E;">
-  <!-- 组件1：开篇引导语（橙色、加粗、居左）
-       用途：文章开头的吸引性语句
-       颜色：#E67E22 | 字号：14px | 字重：bold | 行高：1.6
-       下边距：16px -->
-  <p style="color:#E67E22; font-weight:bold; margin:0; padding:0 0 16px; line-height:1.6 !important;">今天跟大家聊聊买保险最容易踩的坑</p>
+<section style="margin:0; padding:0; border:0; outline:0; font-size:14px; line-height:1.6; color:#3E3E3E; background:#ffffff;">
+  <div style="padding:0 12px;">
 
-  <!-- 组件2：一级标题（黑色、居中加粗）+ 分割线
-       用途：文章大章节标题
-       颜色：#000000 | 字号：16px | 字重：bold | 行高：1.7
-       上下边距：16px | 分割线：#eee 1px 宽度90% -->
-  <h2 style="color:#000000; font-weight:bold; text-align:center; margin:0; padding:16px 0; font-size:16px; line-height:1.7 !important;">一、为什么很多人买了重疾险却理赔难？</h2>
-  <div style="width:90%; height:1px; background:#eee; margin:0 auto 16px;"></div>
-  
-  <!-- 组件3：二级标题（青绿色、居左加粗）
-       用途：大章节下的子标题
-       颜色：#1A8A6F | 字号：14px | 字重：bold | 行高：1.75
-       上边距：16px | 下边距：8px -->
-  <h3 style="color:#1A8A6F; font-weight:bold; margin:0; padding:16px 0 8px; font-size:14px; line-height:1.75 !important;">保险公司不告诉你的3个拒赔真相</h3>
+    <!-- 开篇引导语（橙色、加粗） -->
+    <p style="margin:0 0 16px 0; padding:0; color:#E67E22; font-weight:bold; line-height:1.6;">如果你买了百万医疗险，这篇文章一定要看完，因为 DRG 改革正悄悄改变它的理赔规则。多数人未遇到问题，基本没有意识去关注它。正因如此，我希望通过这篇文章帮你了解 DRG 改革对老百姓的影响。</p>
 
-  <!-- 组件4：三级标题（青绿色、居左常规字重）
-       用途：子标题下的细分标题
-       颜色：#1A8A6F | 字号：14px | 字重：normal | 行高：1.75
-       上边距：16px | 下边距：8px -->
-  <h4 style="color:#1A8A6F; margin:0; padding:16px 0 8px; font-size:14px; line-height:1.75 !important;">真相一：健康告知是第一道门槛</h4>
+    <!-- 一级标题（黑色、居中加粗）+ 分割线 -->
+    <p style="margin:16px 0; padding:0; color:#000000; font-weight:bold; text-align:center; font-size:16px; line-height:1.7;">一、DRG 改革：看病省钱了，同时也带来了你不知道的看病难题</p>
+    <div style="width:90%; height:1px; background:#eee; margin:0 auto 16px auto;"></div>
 
-  <!-- 组件5：正文（深灰色、居左）
-       用途：普通正文内容
-       颜色：#3E3E3E | 字号：14px | 字重：normal | 行高：1.6
-       下边距：16px
-       支持内联样式：<strong>加粗</strong>、<em>斜体</em>、<u>下划线</u>、<s>删除线</s> -->
-  <p style="margin:0; padding:0 0 16px; line-height:1.6 !important;">很多人以为买了重疾险就万事大吉，<strong>如实做健康告知是理赔的核心前提</strong>。<em>（业内惯例：投保问询必须全部如实回答）</em> 像<u>既往病史、体检异常</u>这类信息绝对不能隐瞒，网传<s>"小毛病不用告知"</s>的说法完全是误区。</p>
+    <!-- 二级标题（青绿色、加粗） -->
+    <p style="margin:16px 0 8px 0; padding:0; color:#1A8A6F; font-weight:bold; line-height:1.75;">1.1 DRG 改革的核心逻辑：治疗超支，医院买单，让医生不敢过度医疗</p>
 
-  <!-- 组件6：红色高危提醒（红色、加粗、居左）
-       用途：重要风险提示、警告信息
-       颜色：#FF0000 | 字号：14px | 字重：bold | 行高：1.6
-       下边距：16px -->
-  <p style="color:#FF0000; font-weight:bold; margin:0; padding:0 0 16px; line-height:1.6 !important;">⚠️ 健康告知没填对，理赔100%被拒！</p>
+    <!-- 正文 -->
+    <p style="margin:0 0 16px 0; padding:0; line-height:1.6;">先说说大家都能看到的好处：老百姓到医院看病，医生都会主动替我们省钱了，老百姓担心花费昂贵、过度医疗的心可以暂时放下了。</p>
+    <p style="margin:0 0 16px 0; padding:0; line-height:1.6;">医生为啥会帮我们省钱？因为 DRG 改革的一项核心措施就是：医保局给每个具体疾病设定了报销金额的上限，超过上限的部分医院要自行承担；</p>
+    <p style="margin:0 0 16px 0; padding:0; line-height:1.6;">而医院会把这个压力传导到每个科室和医生个人，并且与医生的绩效工资直接挂钩。所以医生为了满足考核要求，避免绩效工资受损，不会过度医疗。</p>
 
-  <!-- 组件7：蓝色辅助提示（浅蓝色、常规字重、居左）
-       用途：温和提示、小技巧、注意事项
-       颜色：#3498db | 字号：14px | 字重：normal | 行高：1.6
-       下边距：16px -->
-  <p style="color:#3498db; margin:0; padding:0 0 16px; line-height:1.6 !important;">💡 小提示：投保前建议整理近3年体检报告，避免遗漏异常记录。</p>
+    <!-- 黄色背景强调框 -->
+    <div style="background:#FFF9E6; padding:12px; margin:0 0 16px 0;">
+      <p style="margin:0; padding:0; line-height:1.6;">综上概括一下：医保能报销的药，医院不一定有；医院没有的药，百万医疗险不一定能报。 这就是 DRG 改革下，你购买的百万医疗险所面临的处境，也是大多数人没有意识到的保障隐患。</p>
+    </div>
 
-  <!-- 组件8：黄色强调框（黄色背景、深灰色文字、居左）
-       用途：重点内容强调、核心结论
-       背景色：#FFF9E6 | 边框色：#FFE082 | 内边距：12px
-       下边距：16px -->
-  <div style="background:#FFF9E6; border-left:4px solid #FFE082; padding:12px; margin:0 0 16px; line-height:1.6 !important;">
-    <p style="margin:0; padding:0; line-height:1.6 !important;">核心结论：买保险不是看保额高低，而是看条款是否符合自己的需求。</p>
+    <!-- 红色高危提醒 -->
+    <p style="margin:0 0 16px 0; padding:0; color:#FF0000; font-weight:bold; line-height:1.6;">⚠️ 特别提醒：即使购买了不限清单院外购药责任，也不是随便买药都能报，务必关注保险公司对院外购药的报销要求（提前向保险公司申请最稳妥）</p>
+
+    <!-- 蓝色辅助提示 -->
+    <p style="margin:0 0 16px 0; padding:0; color:#3498db; line-height:1.6;">💡 预算有限的朋友，可以选择 "含不限清单院外购药的普通百万医疗险 + 公立医院特需门诊开处方" 的组合方案，性价比最高。</p>
+
+    <!-- 引用区块（左侧灰色边框） -->
+    <div style="padding-left:10px; border-left:2px solid #eee; margin:0 0 16px 0;">
+      <p style="margin:0; padding:0; line-height:1.6;">"对于基本医保以外的医疗服务，可不纳入报量范围。例如不纳入基本医保报销范围的特需医疗、国际医疗的用药。"<br>—— 国家医保局《关于报送第十一批国家组织药品集中采购品种需求量的通知》（医保办发〔2025〕22 号）</p>
+    </div>
+
+    <!-- 小字备注 -->
+    <p style="margin:0 0 16px 0; padding:0; font-size:12px; color:#666666; line-height:1.5;">备注：以上规则适用于市面上绝大多数主流百万医疗险，具体以保单合同为准。</p>
+
+    <!-- 互动提问 -->
+    <p style="margin:16px 0; padding:0; line-height:1.6;">【互动提问】你买的百万医疗险包含不限清单院外购药责任吗？欢迎在评论区留言咨询</p>
+
+    <!-- 免责声明 -->
+    <p style="margin:16px 0 0 0; padding:0; font-size:12px; color:#666666; line-height:1.5;">【免责声明】本文仅为金融保险科普分享，不构成任何投保、投资建议。所有保险产品请仔细阅读保险合同条款，结合自身风险承受能力理性选择。</p>
+
   </div>
-
-  <!-- 组件9：灰色背景块（浅灰色背景、深灰色文字、居左）
-       用途：数据展示、案例背景、补充说明
-       背景色：#F5F5F5 | 内边距：12px
-       下边距：16px -->
-  <div style="background:#F5F5F5; padding:12px; margin:0 0 16px; line-height:1.6 !important;">
-    <p style="margin:0; padding:0; line-height:1.6 !important;">2025年行业数据：重疾险拒赔案件中，60%以上是因为未如实告知健康状况。</p>
-  </div>
-
-  <!-- 组件10：无序列表（深灰色、居左）
-       用途：罗列风险、特点、注意事项
-       缩进：20px | 列表项下边距：8px
-       支持内联样式：<strong>加粗</strong>、<u>下划线</u> -->
-  <p style="margin:0; padding:0 0 8px; line-height:1.6 !important;">百万医疗险理赔有明确限制：</p>
-  <ul style="margin:0; padding:0 0 16px 20px; line-height:1.6 !important;">
-    <li style="margin:0; padding:0 0 8px; line-height:1.6 !important;">仅限<strong>合理且必要的住院医疗费用</strong>报销</li>
-    <li style="margin:0; padding:0 0 8px; line-height:1.6 !important;">存在<u>免赔额、就医范围</u>等约束条件</li>
-    <li style="margin:0; padding:0; line-height:1.6 !important;">外购药、特药报销需符合产品规则</li>
-  </ul>
-
-  <!-- 组件11：有序列表（深灰色、居左）
-       用途：步骤说明、逐条解读
-       缩进：20px | 列表项下边距：8px -->
-  <p style="margin:0; padding:0 0 8px; line-height:1.6 !important;">正确理赔流程分为3步：</p>
-  <ol style="margin:0; padding:0 0 16px 20px; line-height:1.6 !important;">
-    <li style="margin:0; padding:0 0 8px; line-height:1.6 !important;">及时报案，保留完整医疗单据</li>
-    <li style="margin:0; padding:0 0 8px; line-height:1.6 !important;">线上/线下提交理赔材料</li>
-    <li style="margin:0; padding:0; line-height:1.6 !important;">等待保险公司审核结算</li>
-  </ol>
-
-  <!-- 组件12：引用区块（深灰色、左侧灰色边框、居左）
-       用途：条款引用、官方文件、专家观点
-       左边框：#eee 2px | 左内边距：10px
-       下边距：16px -->
-  <p style="margin:0; padding:0 0 16px 10px; border-left:2px solid #eee; line-height:1.6 !important;">【条款引用】医疗险仅对<em>住院、特殊门诊、住院前后门急诊</em>相关费用进行赔付。</p>
-
-  <!-- 组件13：小字备注（浅灰色、小号字体、居左）
-       用途：补充说明、数据来源、注意事项
-       颜色：#666666 | 字号：12px | 行高：1.5
-       下边距：16px -->
-  <p style="font-size:12px; color:#666666; margin:0; padding:0 0 16px; line-height:1.5 !important;">备注：以上规则适用于市面上绝大多数主流百万医疗险，具体以保单合同为准。</p>
-
-  <!-- 组件14：互动提问（深灰色、居左）
-       用途：引导用户评论、互动
-       颜色：#3E3E3E | 字号：14px | 行高：1.6
-       上下边距：16px -->
-  <p style="margin:0; padding:16px 0; line-height:1.6 !important;">【互动提问】你买保险时踩过坑吗？欢迎在评论区留言分享</p>
-
-  <!-- 组件15：免责声明（浅灰色、小号字体、居左）
-       用途：文章末尾的法律免责声明
-       颜色：#666666 | 字号：12px | 行高：1.5
-       上边距：16px -->
-  <p style="font-size:12px; color:#666666; margin:0; padding:16px 0 0; line-height:1.5 !important;">【免责声明】本文仅为知识科普，不构成投资/购买建议。</p>
 </section>
 ```
 
 **输出要求：**
+1. 使用完整的 `<section>` 包裹，外层 `<section>` 必须包含 `margin:0; padding:0; border:0; outline:0; font-size:14px; line-height:1.6; color:#3E3E3E; background:#ffffff;`
+2. 内层必须有一个 `<div style="padding:0 12px;">` 包裹所有内容
+3. **🔴 强制规则：所有内容必须使用 `<p>` 标签！禁止使用 `<h1>`-`<h6>` 标签！**
+   - 一级标题：`<p style="margin:16px 0; padding:0; color:#000000; font-weight:bold; text-align:center; font-size:16px; line-height:1.7;">标题文字</p>`
+   - 二级标题：`<p style="margin:16px 0 8px 0; padding:0; color:#1A8A6F; font-weight:bold; line-height:1.75;">标题文字</p>`
+   - 正文：`<p style="margin:0 0 16px 0; padding:0; line-height:1.6;">正文内容</p>`
+4. **分割线使用 `<div>` 标签，禁止使用 `<hr>`**：
+   `<div style="width:90%; height:1px; background:#eee; margin:0 auto 16px auto;"></div>`
+5. **背景框使用 `<div>` 包裹 `<p>`**：
+   `<div style="background:#FFF9E6; padding:12px; margin:0 0 16px 0;"><p style="margin:0; padding:0; line-height:1.6;">内容</p></div>`
+6. **禁止使用 `!important`**，公众号 API 上传不需要
+7. 所有单位使用 px，禁止 em/rem
+8. 所有样式写在 style 属性内，禁止 `<style>` 标签
 1. 使用完整的 `<section>` 包裹，section 上必须有 `font-size:14px; line-height:1.6 !important; color:#3E3E3E;`
 2. **🔴 强制规则：所有样式必须加 `!important`，防止被公众号编辑器覆盖！**
 3. **🔴 强制规则：所有正文内容必须包裹在 `<p>` 标签里，禁止直接放在 `<section>` 下！**
