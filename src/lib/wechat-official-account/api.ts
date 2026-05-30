@@ -11,6 +11,9 @@ import {
   getDraftDefaults,  // 🔥 新增
 } from '@/config/wechat-official-account.config';
 
+// 🔥 re-export getDraftDefaults 供其他模块使用
+export { getDraftDefaults };
+
 /**
  * Access Token 缓存
  */

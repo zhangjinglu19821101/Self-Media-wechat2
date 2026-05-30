@@ -10188,10 +10188,33 @@ ${userFeedbackText}
         params: agentBOutput.params,
       });
 
+      // 🔥🔥🔥 【紧急修复】公众号 add_draft 的 digest 截断逻辑
+      // executeCapability 是另一条 MCP 执行路径，也需要截断 digest
+      let finalParams = agentBOutput.params || {};
+      if (agentBOutput.toolName === 'wechat' && agentBOutput.actionName === 'add_draft') {
+        console.log('[executeCapability] 检测到 wechat add_draft，检查参数格式');
+        
+        // 处理 articles 数组格式
+        if (finalParams.articles && Array.isArray(finalParams.articles)) {
+          for (const article of finalParams.articles) {
+            if (article.digest && article.digest.length > 120) {
+              console.log('[executeCapability] digest 超长 (' + article.digest.length + '字)，截断到 120 字');
+              article.digest = article.digest.substring(0, 120) + '...';
+            }
+          }
+        }
+        
+        // 处理单个 digest 字段
+        if (finalParams.digest && finalParams.digest.length > 120) {
+          console.log('[executeCapability] digest 超长 (' + finalParams.digest.length + '字)，截断到 120 字');
+          finalParams.digest = finalParams.digest.substring(0, 120) + '...';
+        }
+      }
+
       const mcpResult = await genericMCPCall(
         agentBOutput.toolName,
         agentBOutput.actionName,
-        agentBOutput.params || {}
+        finalParams
       );
 
       console.log('📤 MCP 执行结果:', mcpResult);
