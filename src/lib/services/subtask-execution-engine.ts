@@ -6647,6 +6647,10 @@ export class SubtaskExecutionEngine {
             if (articleTitle) {
               article.title = articleTitle;
             }
+            // 🔥 强制截断 digest 到 120 字（微信公众号 API 限制）
+            if (article.digest && article.digest.length > 120) {
+              article.digest = article.digest.substring(0, 120) + '...';
+            }
           }
           console.log('[supplementArticleContentParams] ✅ 已覆盖上传 MCP 的 articles.content，长度:', articleContent.length);
         }
@@ -7695,7 +7699,15 @@ export class SubtaskExecutionEngine {
     if (mcpParams.toolName === 'wechat' && mcpParams.actionName === 'add_draft') {
       console.log('[SubtaskEngine] [command_result_id=' + task.commandResultId + '] 🔴 检测到 wechat add_draft，检查参数格式...');
       if (finalParams.articles) {
-        console.log('[SubtaskEngine] [command_result_id=' + task.commandResultId + '] ✅ 已有 articles 参数，无需转换');
+        // 🔥 强制截断 articles[].digest 到 120 字（微信公众号 API 限制）
+        // 即使 articles 已存在，也要截断（防止从前序任务传递过来的超长摘要）
+        for (const article of finalParams.articles) {
+          if (article.digest && article.digest.length > 120) {
+            console.log('[SubtaskEngine] [command_result_id=' + task.commandResultId + '] ⚠️ articles[].digest 超长 (' + article.digest.length + '字)，截断到 120 字');
+            article.digest = article.digest.substring(0, 120) + '...';
+          }
+        }
+        console.log('[SubtaskEngine] [command_result_id=' + task.commandResultId + '] ✅ 已有 articles 参数，已校验 digest 长度');
       } else if (finalParams.content) {
         console.log('[SubtaskEngine] [command_result_id=' + task.commandResultId + '] ⚠️ 只有 content，转换为 articles 格式（使用公众号标准格式化）');
         
