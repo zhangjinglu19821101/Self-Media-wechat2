@@ -5125,25 +5125,90 @@ export class SubtaskExecutionEngine {
         }
       }
 
-      // 3. 如果仍然没有，从前序任务（order_index - 1）的 result_text 数据库字段获取
+      // 3. 如果仍然没有，从前序任务获取文章内容
+      // 🔴🔴🔴 【修复】区分两种写作场景：
+      // - 撰写新文章（前序任务无预览修改节点）：需要获取分析任务的结果（orderIndex - 1）
+      // - 合规整改（前序任务有预览修改节点）：需要获取预览修改节点的格式化 HTML
       if (!priorStepOutputText && task.orderIndex > 1) {
-        console.log('[SubtaskEngine] [command_result_id=' + task.commandResultId + '] 尝试从前序任务 result_text 获取内容，前序 order_index=' + (task.orderIndex - 1));
-        const predecessorTask = await db
-          .select({ resultText: agentSubTasks.resultText })
+        const isWritingTask = isWritingAgent(task.fromParentsExecutor);
+        
+        // 先检查前序任务是否包含预览修改节点
+        const prevTasks = await db
+          .select({
+            orderIndex: agentSubTasks.orderIndex,
+            fromParentsExecutor: agentSubTasks.fromParentsExecutor,
+            taskTitle: agentSubTasks.taskTitle,
+            resultText: agentSubTasks.resultText,
+            resultData: agentSubTasks.resultData,
+          })
           .from(agentSubTasks)
           .where(
             and(
               eq(agentSubTasks.commandResultId, task.commandResultId as any),
-              eq(agentSubTasks.orderIndex, task.orderIndex - 1)
+              eq(agentSubTasks.status, 'completed'),
+              eq(agentSubTasks.workspaceId, task.workspaceId),
+              lt(agentSubTasks.orderIndex, task.orderIndex)
             )
           )
-          .limit(1);
+          .orderBy(desc(agentSubTasks.orderIndex));
         
-        if (predecessorTask.length > 0 && predecessorTask[0].resultText && predecessorTask[0].resultText.length > 50) {
-          priorStepOutputText = predecessorTask[0].resultText;
-          console.log('[SubtaskEngine] [command_result_id=' + task.commandResultId + '] ✅ 从前序任务 result_text 获取到内容，长度:', priorStepOutputText.length);
+        const hasPreviewEditTask = prevTasks.some(t => t.fromParentsExecutor === 'user_preview_edit');
+        // 判断是否是"整改"任务：前序任务包含预览修改节点
+        const isRectifyTask = isWritingTask && hasPreviewEditTask;
+        
+        console.log('[SubtaskEngine] [command_result_id=' + task.commandResultId + '] 尝试从前序任务获取内容', {
+          currentOrderIndex: task.orderIndex,
+          executor: task.fromParentsExecutor,
+          isWritingTask,
+          hasPreviewEditTask,
+          isRectifyTask,
+          prevTasksCount: prevTasks.length
+        });
+        
+        if (isRectifyTask) {
+          // 合规整改任务：需要获取包含文章内容的前序任务（预览修改节点）
+          for (const prevTask of prevTasks) {
+            // 优先找预览修改节点（包含格式化后的 HTML）
+            if (prevTask.fromParentsExecutor !== 'user_preview_edit') continue;
+            
+            // 从 resultData 提取完整文章（可能包含 HTML 格式）
+            let extractedContent = this.extractArticleFromResultData(prevTask.resultData);
+            
+            // 兜底：使用 resultText
+            if (!extractedContent && prevTask.resultText && prevTask.resultText.length > 50) {
+              extractedContent = prevTask.resultText;
+            }
+            
+            if (extractedContent) {
+              priorStepOutputText = extractedContent;
+              console.log('[SubtaskEngine] [command_result_id=' + task.commandResultId + '] ✅ 从预览修改节点获取到文章内容（整改任务）', {
+                orderIndex: prevTask.orderIndex,
+                executor: prevTask.fromParentsExecutor,
+                contentLength: priorStepOutputText.length,
+                source: extractedContent === prevTask.resultText ? 'resultText' : 'resultData'
+              });
+              break;
+            }
+          }
         } else {
-          console.log('[SubtaskEngine] [command_result_id=' + task.commandResultId + '] ⚠️  前序任务 result_text 为空或内容过短');
+          // 撰写新文章或非写作任务：简单获取 orderIndex - 1 的内容（分析结果/大纲等）
+          const predecessorTask = await db
+            .select({ resultText: agentSubTasks.resultText })
+            .from(agentSubTasks)
+            .where(
+              and(
+                eq(agentSubTasks.commandResultId, task.commandResultId as any),
+                eq(agentSubTasks.orderIndex, task.orderIndex - 1)
+              )
+            )
+            .limit(1);
+          
+          if (predecessorTask.length > 0 && predecessorTask[0].resultText && predecessorTask[0].resultText.length > 50) {
+            priorStepOutputText = predecessorTask[0].resultText;
+            console.log('[SubtaskEngine] [command_result_id=' + task.commandResultId + '] ✅ 从前序任务 result_text 获取到内容，长度:', priorStepOutputText.length);
+          } else {
+            console.log('[SubtaskEngine] [command_result_id=' + task.commandResultId + '] ⚠️  前序任务 result_text 为空或内容过短');
+          }
         }
       }
     } catch (error) {
