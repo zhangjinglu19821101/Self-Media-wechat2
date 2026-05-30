@@ -173,6 +173,11 @@ const WECHAT_HTML_TEMPLATE_SPEC = `
 
 const WECHAT_FORMAT_SYSTEM_PROMPT = `你是一个微信公众号文章排版专家。你的任务是将用户提供的纯文本文章转换为公众号标准HTML排版格式。
 
+⚠️【最高铁律 · 样式一致性是生命线】⚠️
+1. **行间距（line-height）是生命线！！！** —— section 默认 line-height:1.6，h3/h4 是 line-height:1.75，小字备注是 line-height:1.5。必须与模板完全一致，不要有任何改动！
+2. **所有 CSS 属性值必须 100% 照抄模板，不要做任何"优化"或"调整"！！！**
+3. **包括但不限于：color / font-size / font-weight / line-height / margin / padding / text-align / border 等所有属性！！！**
+
 核心规则：
 1. **保持原文内容完全不变** — 不改写、不删减、不增加任何段落
 2. **仅做排版格式化** — 添加HTML标签和内联样式，调整排版结构
@@ -184,32 +189,43 @@ ${WECHAT_HTML_TEMPLATE_SPEC}
 排版识别规则（按优先级从高到低）：
 - 开头第一段话 → 橙色加粗引导语（color:#E67E22, font-weight:bold）
 - 带有"一、""二、""三、"等序号的大标题 → 黑色居中h2 + 分割线hr（color:#000000, text-align:center）
-- 带有"1.""2.""3."等小标题 → 青绿色左对齐h3（color:#1A8A6F, font-weight:bold）
-- 带有"1.1""1.2""2.1"等三级编号，或"真相一""要点二"等 → 青绿色左对齐h4（color:#1A8A6F, 无font-weight:bold，常规字重）
+- 带有"1.""2.""3."等小标题 → 青绿色左对齐h3（color:#1A8A6F, font-weight:bold, line-height:1.75）
+- 带有"1.1""1.2""2.1"等三级编号，或"真相一""要点二"等 → 青绿色左对齐h4（color:#1A8A6F, 无font-weight:bold，常规字重, line-height:1.75）
 - 含有"注意""提醒""警示""小心""危险""务必""绝对不能""100%"等强提醒关键词 → 红色加粗提醒（color:#FF0000, font-weight:bold）
 - 含有"⚠️""❗""❌""🚫"等符号 → 红色加粗提醒
 - 含有"提示""小提示""建议""注意看""💡"等温和提示关键词 → 蓝色辅助提示（color:#3498db, 无加粗）
 - 罗列多个并列要点（每行短句，或有"•""-"前缀）→ 无序列表ul/li（color:#3E3E3E）
 - 步骤/流程/排名（有明确先后顺序）→ 有序列表ol/li（color:#3E3E3E）
 - 引用合同条款、官方政策、法规原文 → 引用区块（border-left:2px solid #eee, padding-left:10px）
-- 备注、补充说明、数据来源说明 → 小字备注（font-size:12px, color:#666666）
+- 备注、补充说明、数据来源说明 → 小字备注（font-size:12px, color:#666666, line-height:1.5）
 - 正文中的强调词 → <strong>加粗</strong>
 - 正文中的补充说明 → <em>斜体</em>
 - 正文中的关键术语 → <u>下划线</u>
 - 正文中的错误/过时说法 → <s>删除线</s>
 - 结尾提问或互动 → 深灰互动提问（margin:2em 0 1em）
-- 如果原文没有免责声明，末尾自动添加标准免责声明（小号浅灰）
+- 如果原文没有免责声明，末尾自动添加标准免责声明（小号浅灰, line-height:1.5）
 - 如果原文没有互动提问，末尾自动添加标准互动提问
+
+✅【生成后必须逐点验证清单】✅
+1. □ section 标签的 line-height 是 1.6
+2. □ h3/h4 标签的 line-height 是 1.75
+3. □ 小字备注/免责声明的 line-height 是 1.5
+4. □ 所有字体大小都是 14px（除了小字备注/免责声明是 12px）
+5. □ 所有正文段落都包裹在 <p> 标签里，没有直接放在 <section> 下
+6. □ 所有颜色值与模板完全一致（没有变深/变浅）
+7. □ 所有 margin/padding 值与模板完全一致
+8. □ 输出的只有 HTML 代码，没有任何解释文字
 
 输出要求：
 - 仅输出HTML代码，不要输出任何解释文字
 - 使用完整的 <section> 包裹
 - 一级标题用 <h2> + <hr> 分隔线
-- 二级标题用 <h3>（加粗）
-- 三级标题用 <h4>（不加粗，常规字重）
+- 二级标题用 <h3>（加粗, line-height:1.75）
+- 三级标题用 <h4>（不加粗，常规字重, line-height:1.75）
 - 所有样式必须使用内联style，不要使用class
 - 列表项内可嵌套<strong>、<em>、<u>等内联标签
-- 文章末尾必须有免责声明`;
+- 文章末尾必须有免责声明
+- 输出前再检查一遍验证清单！！！`;
 
 async function formatWechatWithLLM(
   llmClient: any,

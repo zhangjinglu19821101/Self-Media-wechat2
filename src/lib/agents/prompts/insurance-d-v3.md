@@ -546,6 +546,61 @@ slotId格式：{范式ID}-{序号}，如 P001-01, P002-03
 12. 正文强调用 `<strong>` 加粗、`<em>` 斜体、`<u>` 下划线、`<s>` 删除线
 13. 文章末尾必须有互动提问 + 免责声明
 
+---
+
+## 🔴 最高优先级：样式严格一致
+
+**⚠️ 此部分优先级高于一切！请先阅读并严格遵守！**
+
+1. **所有 CSS 属性值必须与上方 HTML_TEMPLATE_SPEC 100% 完全一致**
+   - 不要做任何"优化"或"调整"
+   - 包括但不限于：`line-height`、`margin`、`padding`、`font-size`、`color`、`text-align`、`font-weight` 等
+   - 如果你看到模板里是 `line-height:1.6`，你输出就必须是 `line-height:1.6`——不能是 1.5 也不能是 1.7！
+
+2. **行间距（line-height）是关键**
+   - 外层 `<section>`: `line-height:1.6`（这是所有内容的默认行间距）
+   - `<h3>` 和 `<h4>`: `line-height:1.75`（这两个标题要用 1.75）
+   - 其他元素（`p`、`ul`、`ol`、`hr` 等）：不要单独设置 `line-height`，继承 section 的 1.6 即可
+   - 不要对任何元素的 `line-height` 做修改！
+
+3. **所有正文内容必须包裹在 `<p>` 标签里**
+   - 不要把任何普通段落直接放在 `<section>` 下
+   - 只有以下元素可以是 section 的直接子元素：
+     - 标题（`<h2>`、`<h3>`、`<h4>`）
+     - 分割线（`<hr>`）
+     - 无序列表（`<ul>`）
+     - 有序列表（`<ol>`）
+     - 引用区块（`<p>` 带左边框）
+     - 小字备注（`<p>` 带 font-size:12px）
+     - 互动提问（`<p>`）
+     - 免责声明（`<p>` 带 font-size:12px）
+
+---
+
+## ✅ 生成后验证清单
+
+**请在输出前逐点检查，确保全部符合：**
+
+1. [ ] 外层 `<section>` 有 `background:#ffffff; padding:0 12px; font-size:14px; line-height:1.6;`
+2. [ ] 开篇引导语是 `<p style="color:#E67E22; font-weight:bold; margin:0 0 1em; text-align:left;">`
+3. [ ] 一级标题（h2）是 `<h2 style="color:#000000; font-weight:bold; text-align:center; margin:1em 0; font-size:14px;">`
+4. [ ] 分割线是 `<hr style="border:none; border-top:1px solid #eee; width:90%; margin:0.5em auto;">`
+5. [ ] 二级标题（h3）是 `<h3 style="color:#1A8A6F; font-weight:bold; text-align:left; margin:1em 0; font-size:14px; line-height:1.75;">`
+6. [ ] 三级标题（h4）是 `<h4 style="color:#1A8A6F; margin:1em 0; font-size:14px; line-height:1.75; text-align:left;">`
+7. [ ] 所有正文段落都是 `<p style="color:#3E3E3E; text-align:left; margin:0 0 1em;">`
+8. [ ] 红色高危提醒是 `<p style="color:#FF0000; font-weight:bold; text-align:left; margin:0 0 1em;">`
+9. [ ] 蓝色辅助提示是 `<p style="color:#3498db; text-align:left; margin:0 0 1em;">`
+10. [ ] 无序列表是 `<ul style="color:#3E3E3E; margin:0 0 1em; padding-left:20px;">`，`<li>` 是 `<li style="margin:0 0 0.5em;">`
+11. [ ] 有序列表是 `<ol style="color:#3E3E3E; margin:0 0 1em; padding-left:20px;">`，`<li>` 是 `<li style="margin:0 0 0.5em;">`
+12. [ ] 引用区块是 `<p style="color:#3E3E3E; text-align:left; margin:0 0 1em; padding-left:10px; border-left:2px solid #eee;">`
+13. [ ] 小字备注是 `<p style="font-size:12px; color:#666666; text-align:left; line-height:1.5; margin:0 0 1em;">`
+14. [ ] 互动提问是 `<p style="color:#3E3E3E; text-align:left; margin:2em 0 1em;">`
+15. [ ] 免责声明是 `<p style="font-size:12px; color:#666666; text-align:left; line-height:1.5; margin:1em 0;">`
+16. [ ] 所有元素的 `line-height` 都正确（section=1.6, h3/h4=1.75, 其他不单独设置）
+17. [ ] 所有普通正文都包裹在 `<p>` 标签里，没有直接放在 section 下的文字
+
+---
+
 ### ⚠️ 返回格式
 
 **🔴 必须遵循 `executor-standard-result.md` 定义的完整标准格式！**
