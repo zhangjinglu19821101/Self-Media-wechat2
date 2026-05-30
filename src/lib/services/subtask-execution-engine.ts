@@ -7736,7 +7736,8 @@ export class SubtaskExecutionEngine {
         if (!isAlreadyFormatted) {
           // 🔥 使用公众号标准 HTML 格式化（异步导入）
           try {
-            const { formatDirectPublishArticle, plainTextToHtml } = await import('@/lib/services/direct-publish-formatter-service');
+            const { formatDirectPublishArticle } = await import('@/lib/services/direct-publish-formatter-service');
+            const { plainTextToHtml } = await import('@/lib/platform-render/text-to-render');
             console.log('[SubtaskEngine] [command_result_id=' + task.commandResultId + '] 🔴 调用 formatDirectPublishArticle 进行格式化...');
             
             // 尝试使用 LLM 格式化（180秒超时）

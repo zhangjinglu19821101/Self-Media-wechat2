@@ -82,70 +82,94 @@ function generateWechatRenderData(
 
 /**
  * 纯文本 → HTML（微信公众号标准样式）
- * 
- * 转换规则：
+ *
+ * 转换规则（14种元素，降级路径，LLM格式化失败时使用）：
  * 1. 使用公众号标准 section 包裹
  * 2. 连续空行分段 → <p>
  * 3. 段落内换行 → <br>
  * 4. 保留原文结构
- * 5. 样式与 insurance-d 输出格式完全一致
+ * 5. 样式与 insurance-d-v3.md 第四部分完全对齐
  */
-function plainTextToHtml(text: string): string {
+export function plainTextToHtml(text: string): string {
   const paragraphs = text
     .split(/\n\s*\n/)  // 连续空行分段
     .map(p => p.trim())
     .filter(p => p.length > 0);
 
   const htmlParts = paragraphs.map((p, index) => {
-    // 段落内换行转 <br>
+    // 段落内换行转 <br>（先做HTML转义）
     const content = p
       .replace(/&/g, '&amp;')
       .replace(/</g, '&lt;')
       .replace(/>/g, '&gt;')
       .replace(/\n/g, '<br>');
-    
-    // 第一段作为开头引导语（橙色加粗）
+
+    // 1. 第一段作为开头引导语（橙色加粗）
     if (index === 0) {
       return `<p style="color:#E67E22; font-weight:bold; margin:0 0 1em; text-align:left;">${content}</p>`;
     }
-    
-    // 识别标题模式（一、二、三、等）
+
+    // 2. 一级标题（一、二、三、等）→ 黑色居中h2 + 分割线hr
     if (/^[一二三四五六七八九十]+[、.)\s]/.test(p)) {
       return `<h2 style="color:#000000; font-weight:bold; text-align:center; margin:1em 0; font-size:14px;">${content}</h2>\n<hr style="border:none; border-top:1px solid #eee; width:90%; margin:0.5em auto;">`;
     }
-    
-    // 识别小标题模式（1. 2. 3. 等）
+
+    // 4. 三级标题（1.1 2.1 等，或"真相一""要点二"等细分标题）→ 青绿色h4常规字重
+    if (/^\d+\.\d+[.、)\s]/.test(p) || /^(真相|要点|重点|核心|关键)[一二三四五六七八九十]/.test(p)) {
+      return `<h4 style="color:#1A8A6F; margin:1em 0; font-size:14px; line-height:1.75; text-align:left;">${content}</h4>`;
+    }
+
+    // 3. 二级标题（1. 2. 3. 等）→ 青绿色加粗h3
     if (/^\d+[.、)\s]/.test(p)) {
       return `<h3 style="color:#1A8A6F; font-weight:bold; text-align:left; margin:1em 0; font-size:14px; line-height:1.75;">${content}</h3>`;
     }
-    
-    // 识别提醒关键词
-    if (/注意|提醒|警示|小心|⚠️|❗|❌/.test(p)) {
+
+    // 6. 红色高危提醒
+    if (/注意|提醒|警示|小心|务必|绝对不能|危险|⚠️|❗|❌|🚫|100%/.test(p)) {
       return `<p style="color:#FF0000; font-weight:bold; text-align:left; margin:0 0 1em;">${content}</p>`;
     }
-    
-    // 识别互动提问
-    if (/互动提问|提问|欢迎/.test(p)) {
+
+    // 7. 蓝色辅助提示（温和提示）
+    if (/小提示|提示：|建议|💡|注意看/.test(p)) {
+      return `<p style="color:#3498db; text-align:left; margin:0 0 1em;">${content}</p>`;
+    }
+
+    // 11. 引用区块（条款引用）
+    if (/^【条款引用】|条款引用|根据.*条款|依据.*规定/.test(p)) {
+      return `<p style="color:#3E3E3E; text-align:left; margin:0 0 1em; padding-left:10px; border-left:2px solid #eee;">${content}</p>`;
+    }
+
+    // 12. 小字备注/数据来源
+    if (/^备注|^数据来源|^注：/.test(p)) {
+      return `<p style="font-size:12px; color:#666666; text-align:left; line-height:1.5; margin:0 0 1em;">${content}</p>`;
+    }
+
+    // 13. 互动提问
+    if (/互动提问|提问|欢迎在评论/.test(p)) {
       return `<p style="color:#3E3E3E; text-align:left; margin:2em 0 1em;">${content}</p>`;
     }
-    
-    // 识别免责声明
+
+    // 14. 免责声明
     if (/免责声明|声明|不构成/.test(p)) {
       return `<p style="font-size:12px; color:#666666; text-align:left; line-height:1.5; margin:1em 0;">${content}</p>`;
     }
-    
-    // 正文段落（深灰、居左）- 样式与标准模板完全一致
+
+    // 5. 正文段落（深灰、居左）
     return `<p style="color:#3E3E3E; text-align:left; margin:0 0 1em;">${content}</p>`;
   });
 
-  // 使用标准 section 包裹，样式与 insurance-d 输出格式完全一致
+  // 使用标准 section 包裹
   const innerHtml = htmlParts.join('\n');
-  
-  // 检查是否已有免责声明，没有则自动添加
+
+  // 自动补充互动提问（如果没有）
+  const hasInteraction = /互动提问|提问|欢迎在评论/.test(text);
+  const interaction = hasInteraction ? '' : '\n<p style="color:#3E3E3E; text-align:left; margin:2em 0 1em;">【互动提问】你买保险时踩过坑吗？欢迎在评论区留言分享</p>';
+
+  // 自动补充免责声明（如果没有）
   const hasDisclaimer = /免责声明|声明|不构成/.test(text);
   const disclaimer = hasDisclaimer ? '' : '\n<p style="font-size:12px; color:#666666; text-align:left; line-height:1.5; margin:1em 0;">【免责声明】本文仅为知识科普，不构成投资/购买建议。</p>';
-  
-  return `<section style="background:#ffffff; padding:0 12px; font-size:14px; line-height:1.6;">\n${innerHtml}${disclaimer}\n</section>`;
+
+  return `<section style="background:#ffffff; padding:0 12px; font-size:14px; line-height:1.6;">\n${innerHtml}${interaction}${disclaimer}\n</section>`;
 }
 
 // ============ 小红书 ============

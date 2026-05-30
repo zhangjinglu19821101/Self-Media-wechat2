@@ -470,43 +470,78 @@ slotId格式：{范式ID}-{序号}，如 P001-01, P002-03
 
 ### 📝 文章 HTML 输出格式
 
-**输出文章时，必须使用以下 HTML 格式：**
+**输出文章时，必须使用以下 HTML 格式（完整14种元素）：**
 
 ```html
 <section style="background:#ffffff; padding:0 12px; font-size:14px; line-height:1.6;">
-  <!-- 开头引导语（橙色、居左） -->
+  <!-- 1. 开篇引导语（橙色、加粗、居左） -->
   <p style="color:#E67E22; font-weight:bold; margin:0 0 1em; text-align:left;">今天跟大家聊聊买保险最容易踩的坑</p>
 
-  <!-- 一级标题（黑色、居中）+ 分割线 -->
+  <!-- 2. 一级标题（黑色、居中加粗）+ 分割线 -->
   <h2 style="color:#000000; font-weight:bold; text-align:center; margin:1em 0; font-size:14px;">一、为什么很多人买了重疾险却理赔难？</h2>
   <hr style="border:none; border-top:1px solid #eee; width:90%; margin:0.5em auto;">
   
-  <!-- 二级标题（青绿色、居左） -->
+  <!-- 3. 二级标题（青绿色、居左加粗） -->
   <h3 style="color:#1A8A6F; font-weight:bold; text-align:left; margin:1em 0; font-size:14px; line-height:1.75;">保险公司不告诉你的3个拒赔真相</h3>
-  <!-- 正文（深灰、居左） -->
-  <p style="color:#3E3E3E; text-align:left; margin:0 0 1em;">很多人以为买了重疾险就万事大吉，真到理赔时才发现，这也不赔那也不赔。今天我就把保险公司不会告诉你的3个拒赔真相讲清楚...</p>
-  
-  <!-- 重要提醒（红色、居左） -->
+
+  <!-- 4. 三级标题（青绿色、居左常规字重） -->
+  <h4 style="color:#1A8A6F; margin:1em 0; font-size:14px; line-height:1.75; text-align:left;">真相一：健康告知是第一道门槛</h4>
+
+  <!-- 5. 正文 + 正文加粗 + 正文斜体 + 下划线 + 删除线 -->
+  <p style="color:#3E3E3E; text-align:left; margin:0 0 1em;">很多人以为买了重疾险就万事大吉，<strong>如实做健康告知是理赔的核心前提</strong>。<em>（业内惯例：投保问询必须全部如实回答）</em> 像<u>既往病史、体检异常</u>这类信息绝对不能隐瞒，网传<s>"小毛病不用告知"</s>的说法完全是误区。</p>
+
+  <!-- 6. 红色高危提醒（红色、加粗、居左） -->
   <p style="color:#FF0000; font-weight:bold; text-align:left; margin:0 0 1em;">⚠️ 健康告知没填对，理赔100%被拒！</p>
 
-  <!-- 二级标题（青绿色、居左） -->
+  <!-- 7. 蓝色辅助提示（浅蓝、常规字重，温和提示用） -->
+  <p style="color:#3498db; text-align:left; margin:0 0 1em;">💡 小提示：投保前建议整理近3年体检报告，避免遗漏异常记录。</p>
+
+  <!-- 8. 二级标题 -->
   <h3 style="color:#1A8A6F; font-weight:bold; text-align:left; margin:1em 0; font-size:14px; line-height:1.75;">算笔明白账：百万医疗险真的能赔100万吗？</h3>
-  <!-- 正文（深灰、居左） -->
-  <p style="color:#3E3E3E; text-align:left; margin:0 0 1em;">百万医疗险每年保费才几百块，保额却有100万，听起来很美好。但真到理赔时，你会发现...</p>
-  
-  <!-- 互动提问（居左） -->
+  <p style="color:#3E3E3E; text-align:left; margin:0 0 1em;">百万医疗险每年保费才几百块，保额却有100万，听起来很美好。但理赔有明确限制：</p>
+
+  <!-- 9. 无序列表（罗列风险/特点） -->
+  <ul style="color:#3E3E3E; margin:0 0 1em; padding-left:20px;">
+    <li style="margin:0 0 0.5em;">仅限<span style="font-weight:bold;">合理且必要的住院医疗费用</span>报销</li>
+    <li style="margin:0 0 0.5em;">存在<span style="text-decoration:underline;">免赔额、就医范围</span>等约束条件</li>
+    <li style="margin:0 0 0.5em;">外购药、特药报销需符合产品规则</li>
+  </ul>
+
+  <!-- 10. 有序列表（步骤/逐条解读） -->
+  <p style="color:#3E3E3E; text-align:left; margin:0 0 1em;">正确理赔流程分为3步：</p>
+  <ol style="color:#3E3E3E; margin:0 0 1em; padding-left:20px;">
+    <li style="margin:0 0 0.5em;">及时报案，保留完整医疗单据</li>
+    <li style="margin:0 0 0.5em;">线上/线下提交理赔材料</li>
+    <li style="margin:0 0 0.5em;">等待保险公司审核结算</li>
+  </ol>
+
+  <!-- 11. 引用区块（合同/规则引用） -->
+  <p style="color:#3E3E3E; text-align:left; margin:0 0 1em; padding-left:10px; border-left:2px solid #eee;">【条款引用】医疗险仅对<span style="font-style:italic;">住院、特殊门诊、住院前后门急诊</span>相关费用进行赔付。</p>
+
+  <!-- 12. 小字备注（浅灰小字体） -->
+  <p style="font-size:12px; color:#666666; text-align:left; line-height:1.5; margin:0 0 1em;">备注：以上规则适用于市面上绝大多数主流百万医疗险，具体以保单合同为准。</p>
+
+  <!-- 13. 互动提问（居左） -->
   <p style="color:#3E3E3E; text-align:left; margin:2em 0 1em;">【互动提问】你买保险时踩过坑吗？欢迎在评论区留言分享</p>
-  <!-- 免责声明（小号、居左、浅灰） -->
+
+  <!-- 14. 免责声明（小号、浅灰、居左） -->
   <p style="font-size:12px; color:#666666; text-align:left; line-height:1.5; margin:1em 0;">【免责声明】本文仅为知识科普，不构成投资/购买建议。</p>
 </section>
 ```
 
 **输出要求：**
 1. 使用完整的 `<section>` 包裹
-2. 一级标题用 `<h2>` + `<hr>` 分隔线
-3. 二级标题用 `<h3>`
-4. 小标题必须是概括性、有实际意义的，禁止纯数字序号
-5. 文章末尾必须有免责声明
+2. 一级标题用 `<h2>` + `<hr>` 分隔线（黑色居中加粗）
+3. 二级标题用 `<h3>`（青绿色加粗居左）
+4. 三级标题用 `<h4>`（青绿色常规字重居左，用于"真相一""要点二"等细分标题）
+5. 小标题必须是概括性、有实际意义的，禁止纯数字序号
+6. 高危提醒用红色加粗（`color:#FF0000`，如"务必""绝对不能""100%"等强提醒）
+7. 温和提示用蓝色常规字重（`color:#3498db`，如"小提示""建议""💡"等）
+8. 并列要点用 `<ul>/<li>` 无序列表；步骤/流程用 `<ol>/<li>` 有序列表
+9. 引用条款/规则用引用区块（`border-left:2px solid #eee; padding-left:10px`）
+10. 备注说明用小字（`font-size:12px; color:#666666`）
+11. 正文强调用 `<strong>` 加粗、`<em>` 斜体、`<u>` 下划线、`<s>` 删除线
+12. 文章末尾必须有互动提问 + 免责声明
 
 ### ⚠️ 返回格式
 
