@@ -215,8 +215,8 @@ export function invalidateAllClientCache(): void {
 // ==================== 兼容便捷方法 ====================
 
 /** 获取平台默认 LLM Client（用于无需按 workspace 隔离的场景） */
-export function getPlatformLLM(): LLMClient {
-  return getPlatformLLMClient();
+export function getPlatformLLM(options?: { timeout?: number }): LLMClient {
+  return getPlatformLLMClient(options);
 }
 
 /** 获取平台默认 Embedding Client */

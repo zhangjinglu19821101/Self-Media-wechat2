@@ -334,15 +334,20 @@ ${textContent}
  * 获取 LLM Client（优先使用用户 BYOK Key）
  */
 async function getLLMClient(workspaceId?: string): Promise<any> {
+  // 🔴 使用 180 秒超时，与写作 Agent 一致
+  // 高质量模型 doubao-seed-2-0-pro-260215 响应时间通常需要 65-80 秒
+  // 60 秒超时会导致超时触发降级逻辑，用户看到的文章格式不美观
+  const FORMAT_TIMEOUT = 180000;
+
   if (workspaceId) {
     try {
-      const { client } = await createUserLLMClient(workspaceId, { timeout: 60000 });
+      const { client } = await createUserLLMClient(workspaceId, { timeout: FORMAT_TIMEOUT });
       return client;
     } catch {
       // BYOK 失败，降级到平台 Key
     }
   }
-  return getPlatformLLM();
+  return getPlatformLLM({ timeout: FORMAT_TIMEOUT });
 }
 
 /**
