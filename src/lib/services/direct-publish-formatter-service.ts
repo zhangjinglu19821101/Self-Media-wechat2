@@ -115,120 +115,181 @@ async function formatWithLLM(
  * 与 insurance-d-v3.md 第四部分 HTML 输出格式完全对齐。
  */
 const WECHAT_HTML_TEMPLATE_SPEC = `
-<section style="background:#ffffff; padding:0 12px;">
-  <!-- 1. 开篇引导语（橙色、加粗、居左） -->
-  <p style="color:#E67E22; font-weight:bold; margin:0 0 1em; text-align:left; font-size:14px; line-height:1.6;">今天跟大家聊聊买保险最容易踩的坑</p>
+<!-- 
+【公众号通用排版模板 - 给LLM的样式规范】
+1. 所有字体大小统一使用px单位，禁止使用em/rem
+2. 所有间距统一使用px单位，禁止使用em/rem
+3. 关键样式必须加!important，防止被公众号编辑器覆盖
+4. 严格按照以下组件样式生成，不要添加任何额外的CSS
+5. 正文默认字号14px，行高1.6；小字12px，行高1.5
+6. 所有颜色严格使用下方指定的十六进制值
+-->
 
-  <!-- 2. 一级标题（黑色、居中加粗）+ 分割线 -->
-  <h2 style="color:#000000; font-weight:bold; text-align:center; margin:1em 0; font-size:14px; line-height:1.6;">一、为什么很多人买了重疾险却理赔难？</h2>
-  <hr style="border:none; border-top:1px solid #eee; width:90%; margin:0.5em auto;">
+<section style="background:#ffffff; padding:0 12px; font-size:14px; line-height:1.6 !important; color:#3E3E3E;">
+  <!-- 组件1：开篇引导语（橙色、加粗、居左）
+       用途：文章开头的吸引性语句
+       颜色：#E67E22 | 字号：14px | 字重：bold | 行高：1.6
+       下边距：16px -->
+  <p style="color:#E67E22; font-weight:bold; margin:0; padding:0 0 16px; line-height:1.6 !important;">今天跟大家聊聊买保险最容易踩的坑</p>
+
+  <!-- 组件2：一级标题（黑色、居中加粗）+ 分割线
+       用途：文章大章节标题
+       颜色：#000000 | 字号：16px | 字重：bold | 行高：1.7
+       上下边距：16px | 分割线：#eee 1px 宽度90% -->
+  <h2 style="color:#000000; font-weight:bold; text-align:center; margin:0; padding:16px 0; font-size:16px; line-height:1.7 !important;">一、为什么很多人买了重疾险却理赔难？</h2>
+  <div style="width:90%; height:1px; background:#eee; margin:0 auto 16px;"></div>
   
-  <!-- 3. 二级标题（青绿色、居左加粗） -->
-  <h3 style="color:#1A8A6F; font-weight:bold; text-align:left; margin:1em 0; font-size:14px; line-height:1.75;">保险公司不告诉你的3个拒赔真相</h3>
+  <!-- 组件3：二级标题（青绿色、居左加粗）
+       用途：大章节下的子标题
+       颜色：#1A8A6F | 字号：14px | 字重：bold | 行高：1.75
+       上边距：16px | 下边距：8px -->
+  <h3 style="color:#1A8A6F; font-weight:bold; margin:0; padding:16px 0 8px; font-size:14px; line-height:1.75 !important;">保险公司不告诉你的3个拒赔真相</h3>
 
-  <!-- 4. 三级标题（青绿色、居左常规字重 新增） -->
-  <h4 style="color:#1A8A6F; margin:1em 0; font-size:14px; line-height:1.75; text-align:left;">真相一：健康告知是第一道门槛</h4>
+  <!-- 组件4：三级标题（青绿色、居左常规字重）
+       用途：子标题下的细分标题
+       颜色：#1A8A6F | 字号：14px | 字重：normal | 行高：1.75
+       上边距：16px | 下边距：8px -->
+  <h4 style="color:#1A8A6F; margin:0; padding:16px 0 8px; font-size:14px; line-height:1.75 !important;">真相一：健康告知是第一道门槛</h4>
 
-  <!-- 5. 默认正文 + 正文加粗 + 正文斜体 + 下划线 + 删除线（全正文样式演示） -->
-  <p style="color:#3E3E3E; text-align:left; margin:0 0 1em; font-size:14px; line-height:1.6;">很多人以为买了重疾险就万事大吉，<strong>如实做健康告知是理赔的核心前提</strong>。<em>（业内惯例：投保问询必须全部如实回答）</em> 像<u>既往病史、体检异常</u>这类信息绝对不能隐瞒，网传<s>“小毛病不用告知”</s>的说法完全是误区。</p>
+  <!-- 组件5：正文（深灰色、居左）
+       用途：普通正文内容
+       颜色：#3E3E3E | 字号：14px | 字重：normal | 行高：1.6
+       下边距：16px
+       支持内联样式：<strong>加粗</strong>、<em>斜体</em>、<u>下划线</u>、<s>删除线</s> -->
+  <p style="margin:0; padding:0 0 16px; line-height:1.6 !important;">很多人以为买了重疾险就万事大吉，<strong>如实做健康告知是理赔的核心前提</strong>。<em>（业内惯例：投保问询必须全部如实回答）</em> 像<u>既往病史、体检异常</u>这类信息绝对不能隐瞒，网传<s>"小毛病不用告知"</s>的说法完全是误区。</p>
 
-  <!-- 6. 红色高危提醒（红色、加粗、居左 已有） -->
-  <p style="color:#FF0000; font-weight:bold; text-align:left; margin:0 0 1em; font-size:14px; line-height:1.6;">⚠️ 健康告知没填对，理赔100%被拒！</p>
+  <!-- 组件6：红色高危提醒（红色、加粗、居左）
+       用途：重要风险提示、警告信息
+       颜色：#FF0000 | 字号：14px | 字重：bold | 行高：1.6
+       下边距：16px -->
+  <p style="color:#FF0000; font-weight:bold; margin:0; padding:0 0 16px; line-height:1.6 !important;">⚠️ 健康告知没填对，理赔100%被拒！</p>
 
-  <!-- 7. 蓝色辅助提示（浅蓝、常规字重 新增，温和提示用） -->
-  <p style="color:#3498db; text-align:left; margin:0 0 1em; font-size:14px; line-height:1.6;">💡 小提示：投保前建议整理近3年体检报告，避免遗漏异常记录。</p>
+  <!-- 组件7：蓝色辅助提示（浅蓝色、常规字重、居左）
+       用途：温和提示、小技巧、注意事项
+       颜色：#3498db | 字号：14px | 字重：normal | 行高：1.6
+       下边距：16px -->
+  <p style="color:#3498db; margin:0; padding:0 0 16px; line-height:1.6 !important;">💡 小提示：投保前建议整理近3年体检报告，避免遗漏异常记录。</p>
 
-  <!-- 8. 二级标题 -->
-  <h3 style="color:#1A8A6F; font-weight:bold; text-align:left; margin:1em 0; font-size:14px; line-height:1.75;">算笔明白账：百万医疗险真的能赔100万吗？</h3>
-  <p style="color:#3E3E3E; text-align:left; margin:0 0 1em; font-size:14px; line-height:1.6;">百万医疗险每年保费才几百块，保额却有100万，听起来很美好。但理赔有明确限制：</p>
+  <!-- 组件8：黄色强调框（黄色背景、深灰色文字、居左）
+       用途：重点内容强调、核心结论
+       背景色：#FFF9E6 | 边框色：#FFE082 | 内边距：12px
+       下边距：16px -->
+  <div style="background:#FFF9E6; border-left:4px solid #FFE082; padding:12px; margin:0 0 16px; line-height:1.6 !important;">
+    <p style="margin:0; padding:0; line-height:1.6 !important;">核心结论：买保险不是看保额高低，而是看条款是否符合自己的需求。</p>
+  </div>
 
-  <!-- 9. 无序列表（罗列风险/特点 新增） -->
-  <ul style="color:#3E3E3E; margin:0 0 1em; padding-left:20px; font-size:14px; line-height:1.6;">
-    <li style="margin:0 0 0.5em;">仅限<span style="font-weight:bold;">合理且必要的住院医疗费用</span>报销</li>
-    <li style="margin:0 0 0.5em;">存在<span style="text-decoration:underline;">免赔额、就医范围</span>等约束条件</li>
-    <li style="margin:0 0 0.5em;">外购药、特药报销需符合产品规则</li>
+  <!-- 组件9：灰色背景块（浅灰色背景、深灰色文字、居左）
+       用途：数据展示、案例背景、补充说明
+       背景色：#F5F5F5 | 内边距：12px
+       下边距：16px -->
+  <div style="background:#F5F5F5; padding:12px; margin:0 0 16px; line-height:1.6 !important;">
+    <p style="margin:0; padding:0; line-height:1.6 !important;">2025年行业数据：重疾险拒赔案件中，60%以上是因为未如实告知健康状况。</p>
+  </div>
+
+  <!-- 组件10：无序列表（深灰色、居左）
+       用途：罗列风险、特点、注意事项
+       缩进：20px | 列表项下边距：8px
+       支持内联样式：<strong>加粗</strong>、<u>下划线</u> -->
+  <p style="margin:0; padding:0 0 8px; line-height:1.6 !important;">百万医疗险理赔有明确限制：</p>
+  <ul style="margin:0; padding:0 0 16px 20px; line-height:1.6 !important;">
+    <li style="margin:0; padding:0 0 8px; line-height:1.6 !important;">仅限<strong>合理且必要的住院医疗费用</strong>报销</li>
+    <li style="margin:0; padding:0 0 8px; line-height:1.6 !important;">存在<u>免赔额、就医范围</u>等约束条件</li>
+    <li style="margin:0; padding:0; line-height:1.6 !important;">外购药、特药报销需符合产品规则</li>
   </ul>
 
-  <!-- 10. 有序列表（步骤/逐条解读 新增） -->
-  <p style="color:#3E3E3E; text-align:left; margin:0 0 1em; font-size:14px; line-height:1.6;">正确理赔流程分为3步：</p>
-  <ol style="color:#3E3E3E; margin:0 0 1em; padding-left:20px; font-size:14px; line-height:1.6;">
-    <li style="margin:0 0 0.5em;">及时报案，保留完整医疗单据</li>
-    <li style="margin:0 0 0.5em;">线上/线下提交理赔材料</li>
-    <li style="margin:0 0 0.5em;">等待保险公司审核结算</li>
+  <!-- 组件11：有序列表（深灰色、居左）
+       用途：步骤说明、逐条解读
+       缩进：20px | 列表项下边距：8px -->
+  <p style="margin:0; padding:0 0 8px; line-height:1.6 !important;">正确理赔流程分为3步：</p>
+  <ol style="margin:0; padding:0 0 16px 20px; line-height:1.6 !important;">
+    <li style="margin:0; padding:0 0 8px; line-height:1.6 !important;">及时报案，保留完整医疗单据</li>
+    <li style="margin:0; padding:0 0 8px; line-height:1.6 !important;">线上/线下提交理赔材料</li>
+    <li style="margin:0; padding:0; line-height:1.6 !important;">等待保险公司审核结算</li>
   </ol>
 
-  <!-- 11. 引用区块（合同/规则引用 新增） -->
-  <p style="color:#3E3E3E; text-align:left; margin:0 0 1em; padding-left:10px; border-left:2px solid #eee; font-size:14px; line-height:1.6;">【条款引用】医疗险仅对<span style="font-style:italic;">住院、特殊门诊、住院前后门急诊</span>相关费用进行赔付。</p>
+  <!-- 组件12：引用区块（深灰色、左侧灰色边框、居左）
+       用途：条款引用、官方文件、专家观点
+       左边框：#eee 2px | 左内边距：10px
+       下边距：16px -->
+  <p style="margin:0; padding:0 0 16px 10px; border-left:2px solid #eee; line-height:1.6 !important;">【条款引用】医疗险仅对<em>住院、特殊门诊、住院前后门急诊</em>相关费用进行赔付。</p>
 
-  <!-- 12. 小字备注（浅灰小字体 新增） -->
-  <p style="font-size:12px; color:#666666; text-align:left; line-height:1.5; margin:0 0 1em;">备注：以上规则适用于市面上绝大多数主流百万医疗险，具体以保单合同为准。</p>
+  <!-- 组件13：小字备注（浅灰色、小号字体、居左）
+       用途：补充说明、数据来源、注意事项
+       颜色：#666666 | 字号：12px | 行高：1.5
+       下边距：16px -->
+  <p style="font-size:12px; color:#666666; margin:0; padding:0 0 16px; line-height:1.5 !important;">备注：以上规则适用于市面上绝大多数主流百万医疗险，具体以保单合同为准。</p>
 
-  <!-- 13. 互动提问（居左 已有） -->
-  <p style="color:#3E3E3E; text-align:left; margin:2em 0 1em; font-size:14px; line-height:1.6;">【互动提问】你买保险时踩过坑吗？欢迎在评论区留言分享</p>
+  <!-- 组件14：互动提问（深灰色、居左）
+       用途：引导用户评论、互动
+       颜色：#3E3E3E | 字号：14px | 行高：1.6
+       上下边距：16px -->
+  <p style="margin:0; padding:16px 0; line-height:1.6 !important;">【互动提问】你买保险时踩过坑吗？欢迎在评论区留言分享</p>
 
-  <!-- 14. 免责声明（小号、浅灰、居左 已有） -->
-  <p style="font-size:12px; color:#666666; text-align:left; line-height:1.5; margin:1em 0;">【免责声明】本文仅为知识科普，不构成投资/购买建议。</p>
+  <!-- 组件15：免责声明（浅灰色、小号字体、居左）
+       用途：文章末尾的法律免责声明
+       颜色：#666666 | 字号：12px | 行高：1.5
+       上边距：16px -->
+  <p style="font-size:12px; color:#666666; margin:0; padding:16px 0 0; line-height:1.5 !important;">【免责声明】本文仅为知识科普，不构成投资/购买建议。</p>
 </section>
 `;
 
 const WECHAT_FORMAT_SYSTEM_PROMPT = `你是一个微信公众号文章排版专家。你的任务是将用户提供的纯文本文章转换为公众号标准HTML排版格式。
 
-⚠️【最高铁律 · 样式一致性是生命线】⚠️
-1. **所有样式必须内联到具体元素上，绝对不依赖 <section> 的样式继承！！！**
-2. **每个 <p>/<h2>/<h3>/<h4>/<ul>/<ol> 都必须有自己的 font-size 和 line-height 内联样式！！！**
-3. **行间距（line-height）是生命线！！！** —— 正文/引导语/提醒/提示是 line-height:1.6，h3/h4 是 line-height:1.75，小字备注是 line-height:1.5。必须与模板完全一致，不要有任何改动！
-4. **所有 CSS 属性值必须 100% 照抄模板，不要做任何"优化"或"调整"！！！**
-5. **包括但不限于：color / font-size / font-weight / line-height / margin / padding / text-align / border 等所有属性！！！**
+⚠️【公众号样式铁律】⚠️
+1. **所有样式必须加 !important** — 防止被公众号编辑器覆盖
+2. **所有字体大小使用 px 单位** — 禁止使用 em/rem
+3. **所有间距使用 px 单位** — 禁止使用 em/rem，用 padding 替代 margin
+4. **每个元素必须有 font-size 和 line-height** — 不依赖继承
+5. **正文默认：14px / line-height:1.6**
+6. **小字备注：12px / line-height:1.5**
+7. **h2 一级标题：16px / line-height:1.7**
+8. **h3/h4 标题：14px / line-height:1.75**
 
 核心规则：
 1. **保持原文内容完全不变** — 不改写、不删减、不增加任何段落
-2. **仅做排版格式化** — 添加HTML标签和内联样式，调整排版结构
-3. **所有正文段落必须包裹在 <p> 标签里** — 不能直接放在 <section> 标签下，必须有 <p> 包裹
+2. **仅做排版格式化** — 添加HTML标签和内联样式
+3. **所有正文段落必须包裹在 <p> 标签里**
 4. **使用以下样式模板**（每个元素的内联样式必须严格一致）：
 
 ${WECHAT_HTML_TEMPLATE_SPEC}
 
 排版识别规则（按优先级从高到低）：
-- 开头第一段话 → 橙色加粗引导语（color:#E67E22, font-weight:bold, font-size:14px, line-height:1.6）
-- 带有"一、""二、""三、"等序号的大标题 → 黑色居中h2 + 分割线hr（color:#000000, text-align:center, font-size:14px, line-height:1.6）
-- 带有"1.""2.""3."等小标题 → 青绿色左对齐h3（color:#1A8A6F, font-weight:bold, font-size:14px, line-height:1.75）
-- 带有"1.1""1.2""2.1"等三级编号，或"真相一""要点二"等 → 青绿色左对齐h4（color:#1A8A6F, 无font-weight:bold，常规字重, font-size:14px, line-height:1.75）
-- 含有"注意""提醒""警示""小心""危险""务必""绝对不能""100%"等强提醒关键词 → 红色加粗提醒（color:#FF0000, font-weight:bold, font-size:14px, line-height:1.6）
-- 含有"⚠️""❗""❌""🚫"等符号 → 红色加粗提醒（font-size:14px, line-height:1.6）
-- 含有"提示""小提示""建议""注意看""💡"等温和提示关键词 → 蓝色辅助提示（color:#3498db, 无加粗, font-size:14px, line-height:1.6）
-- 罗列多个并列要点（每行短句，或有"•""-"前缀）→ 无序列表ul/li（color:#3E3E3E, ul要有font-size:14px, line-height:1.6）
-- 步骤/流程/排名（有明确先后顺序）→ 有序列表ol/li（color:#3E3E3E, ol要有font-size:14px, line-height:1.6）
-- 引用合同条款、官方政策、法规原文 → 引用区块（border-left:2px solid #eee, padding-left:10px, font-size:14px, line-height:1.6）
-- 备注、补充说明、数据来源说明 → 小字备注（font-size:12px, color:#666666, line-height:1.5）
-- 正文中的强调词 → <strong>加粗</strong>
-- 正文中的补充说明 → <em>斜体</em>
-- 正文中的关键术语 → <u>下划线</u>
-- 正文中的错误/过时说法 → <s>删除线</s>
-- 结尾提问或互动 → 深灰互动提问（margin:2em 0 1em, font-size:14px, line-height:1.6）
-- 如果原文没有免责声明，末尾自动添加标准免责声明（小号浅灰, line-height:1.5）
-- 如果原文没有互动提问，末尾自动添加标准互动提问
+- 开头第一段话 → 橙色加粗引导语（组件1）
+- "一、""二、""三、"等大标题 → 黑色居中h2 + div分割线（组件2）
+- "1.""2.""3."等子标题 → 青绿色加粗h3（组件3）
+- "真相一""要点二"等细分标题 → 青绿色常规h4（组件4）
+- 普通正文 → 深灰正文p（组件5）
+- 含"注意""警示""务必""100%" → 红色加粗提醒（组件6）
+- 含"⚠️""❗""❌" → 红色加粗提醒（组件6）
+- 含"提示""建议""💡" → 蓝色辅助提示（组件7）
+- 核心结论、重点强调 → 黄色强调框div（组件8）
+- 数据展示、案例背景 → 灰色背景块div（组件9）
+- 罗列并列要点 → 无序列表ul/li（组件10）
+- 步骤流程 → 有序列表ol/li（组件11）
+- 条款引用 → 左边框引用区块（组件12）
+- 补充说明/数据来源 → 小字备注（组件13）
+- 结尾互动 → 互动提问（组件14）
+- 法律免责 → 免责声明（组件15）
 
-✅【生成后必须逐点验证清单】✅
-1. □ 所有 <p>/<h2>/<h3>/<h4>/<ul>/<ol> 都有自己的 font-size 和 line-height 内联样式（没有依赖 section 继承）
-2. □ 正文/引导语/提醒/提示的 line-height 是 1.6
-3. □ h3/h4 标签的 line-height 是 1.75
-4. □ 小字备注/免责声明的 line-height 是 1.5
-5. □ 所有字体大小都是 14px（除了小字备注/免责声明是 12px）
-6. □ 所有正文段落都包裹在 <p> 标签里，没有直接放在 <section> 下
-7. □ 所有颜色值与模板完全一致（没有变深/变浅）
-8. □ 所有 margin/padding 值与模板完全一致
-9. □ 输出的只有 HTML 代码，没有任何解释文字
+✅【生成后验证清单】✅
+1. □ 所有样式都有 !important
+2. □ 所有字体大小是 px 单位（14px或12px）
+3. □ 所有间距是 px 单位（16px/8px等）
+4. □ 正文 line-height 是 1.6
+5. □ h3/h4 line-height 是 1.75
+6. □ 小字备注 line-height 是 1.5
+7. □ h2 字号是 16px（不是14px）
+8. □ 分割线用 <div> 不是 <hr>
+9. □ 只有 HTML 代码，没有解释文字
 
 输出要求：
-- 仅输出HTML代码，不要输出任何解释文字
-- 使用完整的 <section> 包裹
-- 一级标题用 <h2> + <hr> 分隔线
-- 二级标题用 <h3>（加粗, line-height:1.75）
-- 三级标题用 <h4>（不加粗，常规字重, line-height:1.75）
-- 所有样式必须使用内联style，不要使用class
-- 列表项内可嵌套<strong>、<em>、<u>等内联标签
-- 文章末尾必须有免责声明
-- 输出前再检查一遍验证清单！！！`;
+- 仅输出HTML代码
+- 使用完整 <section> 包裹
+- 一级标题用 <h2> + <div> 分割线
+- 二级标题用 <h3>（加粗）
+- 三级标题用 <h4>（不加粗）
+- 所有样式必须使用内联style + !important
+- 文章末尾必须有免责声明`;
 
 async function formatWechatWithLLM(
   llmClient: any,

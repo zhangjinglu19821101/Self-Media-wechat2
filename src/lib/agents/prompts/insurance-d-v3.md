@@ -470,81 +470,146 @@ slotId格式：{范式ID}-{序号}，如 P001-01, P002-03
 
 ### 📝 文章 HTML 输出格式
 
-**输出文章时，必须使用以下 HTML 格式（完整14种元素）：**
+<!-- 
+【公众号通用排版模板 - 给LLM的样式规范】
+1. 所有字体大小统一使用px单位，禁止使用em/rem
+2. 所有间距统一使用px单位，禁止使用em/rem
+3. 关键样式必须加!important，防止被公众号编辑器覆盖
+4. 严格按照以下组件样式生成，不要添加任何额外的CSS
+5. 正文默认字号14px，行高1.6；小字12px，行高1.5
+6. 所有颜色严格使用下方指定的十六进制值
+-->
 
 ```html
-<section style="background:#ffffff; padding:0 12px;">
-  <!-- 1. 开篇引导语（橙色、加粗、居左） -->
-  <p style="color:#E67E22; font-weight:bold; margin:0 0 1em; text-align:left; font-size:14px; line-height:1.6;">今天跟大家聊聊买保险最容易踩的坑</p>
+<section style="background:#ffffff; padding:0 12px; font-size:14px; line-height:1.6 !important; color:#3E3E3E;">
+  <!-- 组件1：开篇引导语（橙色、加粗、居左）
+       用途：文章开头的吸引性语句
+       颜色：#E67E22 | 字号：14px | 字重：bold | 行高：1.6
+       下边距：16px -->
+  <p style="color:#E67E22; font-weight:bold; margin:0; padding:0 0 16px; line-height:1.6 !important;">今天跟大家聊聊买保险最容易踩的坑</p>
 
-  <!-- 2. 一级标题（黑色、居中加粗）+ 分割线 -->
-  <h2 style="color:#000000; font-weight:bold; text-align:center; margin:1em 0; font-size:14px; line-height:1.6;">一、为什么很多人买了重疾险却理赔难？</h2>
-  <hr style="border:none; border-top:1px solid #eee; width:90%; margin:0.5em auto;">
+  <!-- 组件2：一级标题（黑色、居中加粗）+ 分割线
+       用途：文章大章节标题
+       颜色：#000000 | 字号：16px | 字重：bold | 行高：1.7
+       上下边距：16px | 分割线：#eee 1px 宽度90% -->
+  <h2 style="color:#000000; font-weight:bold; text-align:center; margin:0; padding:16px 0; font-size:16px; line-height:1.7 !important;">一、为什么很多人买了重疾险却理赔难？</h2>
+  <div style="width:90%; height:1px; background:#eee; margin:0 auto 16px;"></div>
   
-  <!-- 3. 二级标题（青绿色、居左加粗） -->
-  <h3 style="color:#1A8A6F; font-weight:bold; text-align:left; margin:1em 0; font-size:14px; line-height:1.75;">保险公司不告诉你的3个拒赔真相</h3>
+  <!-- 组件3：二级标题（青绿色、居左加粗）
+       用途：大章节下的子标题
+       颜色：#1A8A6F | 字号：14px | 字重：bold | 行高：1.75
+       上边距：16px | 下边距：8px -->
+  <h3 style="color:#1A8A6F; font-weight:bold; margin:0; padding:16px 0 8px; font-size:14px; line-height:1.75 !important;">保险公司不告诉你的3个拒赔真相</h3>
 
-  <!-- 4. 三级标题（青绿色、居左常规字重） -->
-  <h4 style="color:#1A8A6F; margin:1em 0; font-size:14px; line-height:1.75; text-align:left;">真相一：健康告知是第一道门槛</h4>
+  <!-- 组件4：三级标题（青绿色、居左常规字重）
+       用途：子标题下的细分标题
+       颜色：#1A8A6F | 字号：14px | 字重：normal | 行高：1.75
+       上边距：16px | 下边距：8px -->
+  <h4 style="color:#1A8A6F; margin:0; padding:16px 0 8px; font-size:14px; line-height:1.75 !important;">真相一：健康告知是第一道门槛</h4>
 
-  <!-- 5. 正文 + 正文加粗 + 正文斜体 + 下划线 + 删除线 -->
-  <p style="color:#3E3E3E; text-align:left; margin:0 0 1em; font-size:14px; line-height:1.6;">很多人以为买了重疾险就万事大吉，<strong>如实做健康告知是理赔的核心前提</strong>。<em>（业内惯例：投保问询必须全部如实回答）</em> 像<u>既往病史、体检异常</u>这类信息绝对不能隐瞒，网传<s>"小毛病不用告知"</s>的说法完全是误区。</p>
+  <!-- 组件5：正文（深灰色、居左）
+       用途：普通正文内容
+       颜色：#3E3E3E | 字号：14px | 字重：normal | 行高：1.6
+       下边距：16px
+       支持内联样式：<strong>加粗</strong>、<em>斜体</em>、<u>下划线</u>、<s>删除线</s> -->
+  <p style="margin:0; padding:0 0 16px; line-height:1.6 !important;">很多人以为买了重疾险就万事大吉，<strong>如实做健康告知是理赔的核心前提</strong>。<em>（业内惯例：投保问询必须全部如实回答）</em> 像<u>既往病史、体检异常</u>这类信息绝对不能隐瞒，网传<s>"小毛病不用告知"</s>的说法完全是误区。</p>
 
-  <!-- 6. 红色高危提醒（红色、加粗、居左） -->
-  <p style="color:#FF0000; font-weight:bold; text-align:left; margin:0 0 1em; font-size:14px; line-height:1.6;">⚠️ 健康告知没填对，理赔100%被拒！</p>
+  <!-- 组件6：红色高危提醒（红色、加粗、居左）
+       用途：重要风险提示、警告信息
+       颜色：#FF0000 | 字号：14px | 字重：bold | 行高：1.6
+       下边距：16px -->
+  <p style="color:#FF0000; font-weight:bold; margin:0; padding:0 0 16px; line-height:1.6 !important;">⚠️ 健康告知没填对，理赔100%被拒！</p>
 
-  <!-- 7. 蓝色辅助提示（浅蓝、常规字重，温和提示用） -->
-  <p style="color:#3498db; text-align:left; margin:0 0 1em; font-size:14px; line-height:1.6;">💡 小提示：投保前建议整理近3年体检报告，避免遗漏异常记录。</p>
+  <!-- 组件7：蓝色辅助提示（浅蓝色、常规字重、居左）
+       用途：温和提示、小技巧、注意事项
+       颜色：#3498db | 字号：14px | 字重：normal | 行高：1.6
+       下边距：16px -->
+  <p style="color:#3498db; margin:0; padding:0 0 16px; line-height:1.6 !important;">💡 小提示：投保前建议整理近3年体检报告，避免遗漏异常记录。</p>
 
-  <!-- 8. 二级标题 -->
-  <h3 style="color:#1A8A6F; font-weight:bold; text-align:left; margin:1em 0; font-size:14px; line-height:1.75;">算笔明白账：百万医疗险真的能赔100万吗？</h3>
-  <p style="color:#3E3E3E; text-align:left; margin:0 0 1em; font-size:14px; line-height:1.6;">百万医疗险每年保费才几百块，保额却有100万，听起来很美好。但理赔有明确限制：</p>
+  <!-- 组件8：黄色强调框（黄色背景、深灰色文字、居左）
+       用途：重点内容强调、核心结论
+       背景色：#FFF9E6 | 边框色：#FFE082 | 内边距：12px
+       下边距：16px -->
+  <div style="background:#FFF9E6; border-left:4px solid #FFE082; padding:12px; margin:0 0 16px; line-height:1.6 !important;">
+    <p style="margin:0; padding:0; line-height:1.6 !important;">核心结论：买保险不是看保额高低，而是看条款是否符合自己的需求。</p>
+  </div>
 
-  <!-- 9. 无序列表（罗列风险/特点） -->
-  <ul style="color:#3E3E3E; margin:0 0 1em; padding-left:20px; font-size:14px; line-height:1.6;">
-    <li style="margin:0 0 0.5em;">仅限<span style="font-weight:bold;">合理且必要的住院医疗费用</span>报销</li>
-    <li style="margin:0 0 0.5em;">存在<span style="text-decoration:underline;">免赔额、就医范围</span>等约束条件</li>
-    <li style="margin:0 0 0.5em;">外购药、特药报销需符合产品规则</li>
+  <!-- 组件9：灰色背景块（浅灰色背景、深灰色文字、居左）
+       用途：数据展示、案例背景、补充说明
+       背景色：#F5F5F5 | 内边距：12px
+       下边距：16px -->
+  <div style="background:#F5F5F5; padding:12px; margin:0 0 16px; line-height:1.6 !important;">
+    <p style="margin:0; padding:0; line-height:1.6 !important;">2025年行业数据：重疾险拒赔案件中，60%以上是因为未如实告知健康状况。</p>
+  </div>
+
+  <!-- 组件10：无序列表（深灰色、居左）
+       用途：罗列风险、特点、注意事项
+       缩进：20px | 列表项下边距：8px
+       支持内联样式：<strong>加粗</strong>、<u>下划线</u> -->
+  <p style="margin:0; padding:0 0 8px; line-height:1.6 !important;">百万医疗险理赔有明确限制：</p>
+  <ul style="margin:0; padding:0 0 16px 20px; line-height:1.6 !important;">
+    <li style="margin:0; padding:0 0 8px; line-height:1.6 !important;">仅限<strong>合理且必要的住院医疗费用</strong>报销</li>
+    <li style="margin:0; padding:0 0 8px; line-height:1.6 !important;">存在<u>免赔额、就医范围</u>等约束条件</li>
+    <li style="margin:0; padding:0; line-height:1.6 !important;">外购药、特药报销需符合产品规则</li>
   </ul>
 
-  <!-- 10. 有序列表（步骤/逐条解读） -->
-  <p style="color:#3E3E3E; text-align:left; margin:0 0 1em; font-size:14px; line-height:1.6;">正确理赔流程分为3步：</p>
-  <ol style="color:#3E3E3E; margin:0 0 1em; padding-left:20px; font-size:14px; line-height:1.6;">
-    <li style="margin:0 0 0.5em;">及时报案，保留完整医疗单据</li>
-    <li style="margin:0 0 0.5em;">线上/线下提交理赔材料</li>
-    <li style="margin:0 0 0.5em;">等待保险公司审核结算</li>
+  <!-- 组件11：有序列表（深灰色、居左）
+       用途：步骤说明、逐条解读
+       缩进：20px | 列表项下边距：8px -->
+  <p style="margin:0; padding:0 0 8px; line-height:1.6 !important;">正确理赔流程分为3步：</p>
+  <ol style="margin:0; padding:0 0 16px 20px; line-height:1.6 !important;">
+    <li style="margin:0; padding:0 0 8px; line-height:1.6 !important;">及时报案，保留完整医疗单据</li>
+    <li style="margin:0; padding:0 0 8px; line-height:1.6 !important;">线上/线下提交理赔材料</li>
+    <li style="margin:0; padding:0; line-height:1.6 !important;">等待保险公司审核结算</li>
   </ol>
 
-  <!-- 11. 引用区块（合同/规则引用） -->
-  <p style="color:#3E3E3E; text-align:left; margin:0 0 1em; padding-left:10px; border-left:2px solid #eee; font-size:14px; line-height:1.6;">【条款引用】医疗险仅对<span style="font-style:italic;">住院、特殊门诊、住院前后门急诊</span>相关费用进行赔付。</p>
+  <!-- 组件12：引用区块（深灰色、左侧灰色边框、居左）
+       用途：条款引用、官方文件、专家观点
+       左边框：#eee 2px | 左内边距：10px
+       下边距：16px -->
+  <p style="margin:0; padding:0 0 16px 10px; border-left:2px solid #eee; line-height:1.6 !important;">【条款引用】医疗险仅对<em>住院、特殊门诊、住院前后门急诊</em>相关费用进行赔付。</p>
 
-  <!-- 12. 小字备注（浅灰小字体） -->
-  <p style="font-size:12px; color:#666666; text-align:left; line-height:1.5; margin:0 0 1em;">备注：以上规则适用于市面上绝大多数主流百万医疗险，具体以保单合同为准。</p>
+  <!-- 组件13：小字备注（浅灰色、小号字体、居左）
+       用途：补充说明、数据来源、注意事项
+       颜色：#666666 | 字号：12px | 行高：1.5
+       下边距：16px -->
+  <p style="font-size:12px; color:#666666; margin:0; padding:0 0 16px; line-height:1.5 !important;">备注：以上规则适用于市面上绝大多数主流百万医疗险，具体以保单合同为准。</p>
 
-  <!-- 13. 互动提问（居左） -->
-  <p style="color:#3E3E3E; text-align:left; margin:2em 0 1em; font-size:14px; line-height:1.6;">【互动提问】你买保险时踩过坑吗？欢迎在评论区留言分享</p>
+  <!-- 组件14：互动提问（深灰色、居左）
+       用途：引导用户评论、互动
+       颜色：#3E3E3E | 字号：14px | 行高：1.6
+       上下边距：16px -->
+  <p style="margin:0; padding:16px 0; line-height:1.6 !important;">【互动提问】你买保险时踩过坑吗？欢迎在评论区留言分享</p>
 
-  <!-- 14. 免责声明（小号、浅灰、居左） -->
-  <p style="font-size:12px; color:#666666; text-align:left; line-height:1.5; margin:1em 0;">【免责声明】本文仅为知识科普，不构成投资/购买建议。</p>
+  <!-- 组件15：免责声明（浅灰色、小号字体、居左）
+       用途：文章末尾的法律免责声明
+       颜色：#666666 | 字号：12px | 行高：1.5
+       上边距：16px -->
+  <p style="font-size:12px; color:#666666; margin:0; padding:16px 0 0; line-height:1.5 !important;">【免责声明】本文仅为知识科普，不构成投资/购买建议。</p>
 </section>
 ```
 
 **输出要求：**
-1. 使用完整的 `<section>` 包裹
-2. **🔴 强制规则：所有正文内容必须包裹在 `<p>` 标签里，禁止直接放在 `<section>` 下！**
-   - 例外：`<h2>/<h3>/<h4>/<ul>/<ol>/<hr>` 这些标签可以直接在 `<section>` 下
+1. 使用完整的 `<section>` 包裹，section 上必须有 `font-size:14px; line-height:1.6 !important; color:#3E3E3E;`
+2. **🔴 强制规则：所有样式必须加 `!important`，防止被公众号编辑器覆盖！**
+3. **🔴 强制规则：所有正文内容必须包裹在 `<p>` 标签里，禁止直接放在 `<section>` 下！**
+   - 例外：`<h2>/<h3>/<h4>/<ul>/<ol>/<div>` 这些标签可以直接在 `<section>` 下
    - 所有段落性文字、提示、备注、互动提问、免责声明等，必须用 `<p>` 包裹
-3. 一级标题用 `<h2>` + `<hr>` 分隔线（黑色居中加粗，`font-size:16px`）
-4. 二级标题用 `<h3>`（青绿色加粗居左，`font-size:15px`）
-5. 三级标题用 `<h4>`（青绿色常规字重居左，用于"真相一""要点二"等细分标题）
-6. 小标题必须是概括性、有实际意义的，禁止纯数字序号
-7. 高危提醒用红色加粗（`color:#FF0000`，如"务必""绝对不能""100%"等强提醒）
-8. 温和提示用蓝色常规字重（`color:#3498db`，如"小提示""建议""💡"等）
-9. 并列要点用 `<ul>/<li>` 无序列表；步骤/流程用 `<ol>/<li>` 有序列表
-10. 引用条款/规则用引用区块（`border-left:2px solid #eee; padding-left:10px`）
-11. 备注说明用小字（`font-size:12px; color:#666666`）
-12. 正文强调用 `<strong>` 加粗、`<em>` 斜体、`<u>` 下划线、`<s>` 删除线
-13. 文章末尾必须有互动提问 + 免责声明
+4. 一级标题用 `<h2>` + `<div>` 分割线（黑色居中加粗，`font-size:16px`）
+5. 二级标题用 `<h3>`（青绿色加粗居左，`font-size:14px`）
+6. 三级标题用 `<h4>`（青绿色常规字重居左，用于"真相一""要点二"等细分标题）
+7. 小标题必须是概括性、有实际意义的，禁止纯数字序号
+8. 高危提醒用红色加粗（`color:#FF0000; font-weight:bold`）
+9. 温和提示用蓝色常规字重（`color:#3498db`）
+10. **核心结论用黄色强调框**（`background:#FFF9E6; border-left:4px solid #FFE082`）
+11. **数据展示用灰色背景块**（`background:#F5F5F5; padding:12px`）
+12. 并列要点用 `<ul>/<li>` 无序列表；步骤/流程用 `<ol>/<li>` 有序列表
+13. 引用条款/规则用引用区块（`border-left:2px solid #eee; padding-left:10px`）
+14. 备注说明用小字（`font-size:12px; color:#666666; line-height:1.5 !important`）
+15. 正文强调用 `<strong>` 加粗、`<em>` 斜体、`<u>` 下划线、`<s>` 删除线
+16. 文章末尾必须有互动提问 + 免责声明
+17. **所有间距使用 padding 而非 margin**（更稳定的间距）
+18. **分割线使用 `<div>` 而非 `<hr>`**（公众号对 hr 支持不稳定）
 
 ---
 
