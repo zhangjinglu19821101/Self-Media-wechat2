@@ -156,6 +156,20 @@ const WRITING_AGENT_MODEL = 'doubao-seed-2-0-pro-260215';
  * @param apiKey - API Key（来自 SDK Config 或用户 Key）
  * @param modelBaseUrl - 模型 API 基础 URL
  * @param options - 配置选项
+ * 
+ * 🔴 关键修复：必须使用 streaming: true
+ * Coze API（/api/v3/chat/completions）无论是否请求流式，都返回 SSE 格式。
+ * 若 streaming: false，ChatOpenAI 的 invoke() 尝试解析 JSON 响应，
+ * 遇到 SSE 格式会报 TypeError: Cannot read properties of undefined (reading 'message')。
+ * streaming: true 时，ChatOpenAI 使用 SSE 解析器，能正确处理 Coze API 的响应格式。
+ * 
+ * 🔴 关键修复：apiKey 参数名
+ * @langchain/openai v1.2+ 已将 openAIApiKey 参数重命名为 apiKey，
+ * 使用旧名 openAIApiKey 会被静默忽略，导致 API Key 为 undefined。
+ * 
+ * 🔴 关键修复：defaultHeaders
+ * 与 SDK 保持一致的 Authorization + X-Client-Sdk headers，
+ * 确保 Coze API 能正确识别请求来源。
  */
 function createDirectChatOpenAI(
   apiKey: string,
@@ -169,11 +183,67 @@ function createDirectChatOpenAI(
     model: WRITING_AGENT_MODEL,
     temperature: options.temperature ?? 0.3,
     maxTokens: options.maxOutputTokens ?? WRITING_AGENT_MAX_OUTPUT_TOKENS,
-    openAIApiKey: apiKey,
+    // 🔴 修复：使用 apiKey 参数名（非 openAIApiKey，v1.2+ 已废弃旧名）
+    apiKey: apiKey,
+    // 🔴 修复：必须 streaming: true，否则 Coze API SSE 格式响应无法被正确解析
+    streaming: true,
     configuration: {
       baseURL: modelBaseUrl,
+      // 🔴 修复：与 SDK 保持一致的 headers
+      defaultHeaders: {
+        'Authorization': `Bearer ${apiKey}`,
+        'X-Client-Sdk': 'coze-coding-dev-sdk-typescript/0.3.0',
+      },
     },
   });
+}
+
+/**
+ * 🔴 Coze API 错误增强
+ * 
+ * ChatOpenAI 在处理 Coze API 的非标准 SSE 错误响应时，
+ * 可能抛出无意义的 TypeError（如 "Cannot read properties of undefined (reading 'message')"）。
+ * 此函数将此类错误转换为更有意义的错误消息，
+ * 并在可能的情况下使用 SDK LLMClient 获取真实错误信息。
+ */
+function enhanceCozeApiError(error: any): Error {
+  // 如果已经是 APIError（SDK 抛出的有意义的错误），直接返回
+  if (error?.code === 'ErrBalanceOverdue' || error?.code === 'ErrNotFound') {
+    return error;
+  }
+  
+  // 如果错误消息已经包含有意义的 Coze 错误信息，直接返回
+  const msg = error?.message || '';
+  if (msg.includes('资源点不足') || msg.includes('ErrBalanceOverdue') || 
+      msg.includes('not found') || msg.includes('model not found')) {
+    return error;
+  }
+  
+  // TypeError: Cannot read properties of undefined — Coze API SSE 格式错误
+  if (error instanceof TypeError && msg.includes('Cannot read properties')) {
+    const enhancedError = new Error(
+      `Coze API 返回非标准格式错误（ChatOpenAI 无法解析 SSE 格式错误响应）。` +
+      `可能原因：1. API Key 无效或缺失 2. 资源点不足(ErrBalanceOverdue) 3. 模型不存在。` +
+      `原始错误: ${msg}`
+    );
+    (enhancedError as any).code = 'ERR_COZE_API_PARSE_FAILURE';
+    (enhancedError as any).originalError = error;
+    return enhancedError;
+  }
+  
+  // Missing credentials — API Key 参数名错误
+  if (msg.includes('Missing credentials')) {
+    const enhancedError = new Error(
+      `LLM API Key 缺失。可能原因：1. apiKey 参数名使用了废弃的 openAIApiKey（v1.2+ 应使用 apiKey）` +
+      `2. 环境变量未配置 COZE_WORKLOAD_IDENTITY_API_KEY。原始错误: ${msg}`
+    );
+    (enhancedError as any).code = 'ERR_MISSING_API_KEY';
+    (enhancedError as any).originalError = error;
+    return enhancedError;
+  }
+  
+  // 其他错误：保留原始信息
+  return error;
 }
 
 /**
@@ -359,6 +429,12 @@ export async function callLLM(
           if (error.message?.includes('熔断器开启')) return false;
           // 🔴 P0 修复：被取消的请求不可重试（已被新请求替代）
           if (error.message?.includes('请求被取消')) return false;
+          // 🔴 修复：余额不足/模型不存在等业务错误不可重试（重试也会失败）
+          const errCode = (error as any)?.code || '';
+          if (errCode === 'ErrBalanceOverdue' || errCode === 'ErrNotFound' || 
+              errCode === 'ERR_COZE_API_PARSE_FAILURE' || errCode === 'ERR_MISSING_API_KEY') return false;
+          if (error.message?.includes('资源点不足') || error.message?.includes('余额不足')) return false;
+          if (error.message?.includes('model not found') || error.message?.includes('模型不存在')) return false;
           // 超时、网络错误、5xx、429 可重试
           const msg = error.message?.toLowerCase() || '';
           if (msg.includes('timeout') || msg.includes('超时')) return true;
@@ -517,15 +593,40 @@ async function callLLMInternal(
       ];
       
       responsePromiseResolved = false;
-      const directResponsePromise = directLlm.invoke(langchainMessages).then((res) => {
-        responsePromiseResolved = true;
-        console.log(`🤖 [LLM调用] LLM 响应成功 (${Date.now() - startTime}ms)`);
-        return res;
-      }).catch((error) => {
-        responsePromiseResolved = true;
-        console.error(`🤖 [LLM调用] LLM 调用失败:`, error);
-        throw error;
-      });
+      // 🔴 修复：使用流式调用（stream）而非 invoke
+      // Coze API 无论是否请求流式都返回 SSE 格式，invoke() 无法解析 SSE 错误响应，
+      // 而 stream() 使用 SSE 解析器能正确处理。流式调用还支持逐 chunk 输出日志。
+      const directResponsePromise = (async () => {
+        try {
+          const stream = await directLlm.stream(langchainMessages);
+          let fullContent = '';
+          let chunkCount = 0;
+          let lastChunk: any = null;
+          for await (const chunk of stream) {
+            if (chunk.content) {
+              fullContent += chunk.content.toString();
+              chunkCount++;
+            }
+            lastChunk = chunk;
+          }
+          responsePromiseResolved = true;
+          console.log(`🤖 [LLM调用] LLM 响应成功 (${Date.now() - startTime}ms, ${chunkCount} chunks, ${fullContent.length} chars)`);
+          // 🔴 兼容性：返回与 invoke() 相同格式的 AIMessage-like 对象
+          // 保留 response_metadata（含 finish_reason）供下游截断检测使用
+          return {
+            content: fullContent,
+            response_metadata: lastChunk?.response_metadata || {},
+          };
+        } catch (error: any) {
+          responsePromiseResolved = true;
+          // 🔴 修复：Coze API 错误增强
+          // ChatOpenAI 可能抛出 TypeError（无法解析 SSE 格式的错误响应），
+          // 需要将此类错误转换为更有意义的错误消息
+          const enhancedError = enhanceCozeApiError(error);
+          console.error(`🤖 [LLM调用] LLM 调用失败:`, enhancedError.message);
+          throw enhancedError;
+        }
+      })();
       
       const timeoutPromise = new Promise<never>((_, reject) => {
         const timeoutId = setTimeout(() => {
