@@ -475,15 +475,15 @@ export function XiaohongshuPreview({
                         }}
                       >
                         {/* 封面卡 */}
-                        <div className="flex-shrink-0 h-full flex items-center justify-center p-6" style={{ width: `${100 / totalCards}%` }}>
+                        <div className="flex-shrink-0 h-full flex items-center justify-center p-4" style={{ width: `${100 / totalCards}%` }}>
                           <div
-                            className="w-full h-full rounded-2xl flex flex-col justify-center px-5 py-6 text-white shadow-lg"
+                            className="w-full h-full rounded-2xl flex flex-col justify-center px-5 py-5 text-white shadow-lg overflow-y-auto"
                             style={{
                               background: `linear-gradient(135deg, ${GRADIENT_SCHEMES[0].from}, ${GRADIENT_SCHEMES[0].to})`,
                             }}
                           >
-                            <div className="text-xs opacity-70 mb-3 font-medium">📕 封面</div>
-                            <div className="text-xl font-bold leading-tight mb-3">{content.title}</div>
+                            <div className="text-xs opacity-70 mb-2 font-medium">📕 封面</div>
+                            <div className="text-lg font-bold leading-tight mb-2">{content.title}</div>
                             {content.intro && (
                               <div className="text-sm opacity-90 leading-relaxed">{content.intro}</div>
                             )}
@@ -494,17 +494,17 @@ export function XiaohongshuPreview({
                         {content.points?.map((point, idx) => {
                           const scheme = GRADIENT_SCHEMES[(idx + 1) % GRADIENT_SCHEMES.length];
                           return (
-                            <div key={idx} className="flex-shrink-0 h-full flex items-center justify-center p-6" style={{ width: `${100 / totalCards}%` }}>
+                            <div key={idx} className="flex-shrink-0 h-full flex items-center justify-center p-4" style={{ width: `${100 / totalCards}%` }}>
                               <div
-                                className="w-full h-full rounded-2xl flex flex-col justify-center px-5 py-6 text-white shadow-lg"
+                                className="w-full h-full rounded-2xl flex flex-col px-5 py-5 text-white shadow-lg overflow-y-auto"
                                 style={{
                                   background: `linear-gradient(135deg, ${scheme.from}, ${scheme.to})`,
                                 }}
                               >
-                                <div className="text-xs opacity-70 mb-3 font-medium">📌 要点 {idx + 1}</div>
-                                <div className="text-xl font-bold leading-tight mb-3">{point.title}</div>
+                                <div className="text-xs opacity-70 mb-2 font-medium">📌 要点 {idx + 1}</div>
+                                <div className="text-lg font-bold leading-tight mb-2">{point.title}</div>
                                 {point.content && (
-                                  <div className="text-sm opacity-90 leading-relaxed">{point.content}</div>
+                                  <div className="text-sm opacity-90 leading-relaxed flex-1">{point.content}</div>
                                 )}
                               </div>
                             </div>
@@ -513,17 +513,17 @@ export function XiaohongshuPreview({
                         
                         {/* 结尾卡 */}
                         {content.conclusion && (
-                          <div className="flex-shrink-0 h-full flex items-center justify-center p-6" style={{ width: `${100 / totalCards}%` }}>
+                          <div className="flex-shrink-0 h-full flex items-center justify-center p-4" style={{ width: `${100 / totalCards}%` }}>
                             <div
-                              className="w-full h-full rounded-2xl flex flex-col justify-center px-5 py-6 text-white shadow-lg"
+                              className="w-full h-full rounded-2xl flex flex-col px-5 py-5 text-white shadow-lg overflow-y-auto"
                               style={{
                                 background: 'linear-gradient(135deg, #374151, #111827)',
                               }}
                             >
-                              <div className="text-xs opacity-70 mb-3 font-medium">✨ 结语</div>
-                              <div className="text-xl font-bold leading-tight mb-3">{content.conclusion}</div>
+                              <div className="text-xs opacity-70 mb-2 font-medium">✨ 结语</div>
+                              <div className="text-lg font-bold leading-tight mb-2">{content.conclusion}</div>
                               {content.tags && content.tags.length > 0 && (
-                                <div className="flex flex-wrap gap-2 mt-4">
+                                <div className="flex flex-wrap gap-2 mt-3">
                                   {content.tags.map((tag, tIdx) => (
                                     <span key={tIdx} className="text-xs bg-white/20 px-2.5 py-1 rounded-full">
                                       #{tag}
