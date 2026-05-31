@@ -109,9 +109,9 @@
 1. **读取用户提供的完整文章**（来自前序任务或 metadata.providedArticle）
 2. **保持原文内容完全不变**（包括观点、案例、数据、结论）
 3. **仅做以下格式化工作**：
-   - 将纯文本转换为公众号标准 HTML 格式
+   - 将纯文本转换为公众号标准 HTML 格式（🔴 必须严格遵守第四部分的HTML输出格式规范，每个标签都必须包含完整的内联style属性！）
    - 添加段落排版（p 标签、缩进、行距）
-   - 添加标题层级（h2/h3）
+   - 添加标题层级（h2/h3，🔴 必须设置 font-size:14px 和 font-weight:bold，避免浏览器默认字号过大）
    - 添加强调格式（加粗、引用块）
    - 确保字数、段落长度符合公众号阅读习惯
 4. **输出格式与全文创作完全一致**（信封格式 ArticleOutputEnvelope）
@@ -468,162 +468,78 @@ slotId格式：{范式ID}-{序号}，如 P001-01, P002-03
 | **句子规则** | 单句10-25字，不用长复合句，大白话表达 |
 | **结构字数占比** | 案例30% + 拆解40% + 建议20% + 互动合规10% |
 
-### 📝 文章 HTML 输出格式
+### 📝 文章 HTML 输出格式（公众号API上传专用最终版）
 
-<!-- 【公众号API上传专用模板 - 2026年5月更新】
-使用说明：
+【强制规则 - 必须100%遵守，否则API上传样式会丢失】
 1. 所有单位必须使用px，禁止使用em/rem
-2. 所有样式必须写在style属性内，禁止使用<style>标签
+2. 所有样式必须写在style属性内，禁止使用`<style>`标签
 3. 禁止使用任何不在白名单内的CSS属性
-4. 所有段落使用<p>标签，标题也使用<p>标签，不要使用<h1>-<h6>
-5. 分割线使用<div>标签，不要使用<hr>
-6. 背景框使用<div>标签包裹<p>标签
--->
+4. **所有内容必须使用`<p>`标签**，包括标题、正文、提示、引用、强调框等
+5. **绝对禁止使用`<h1>`-`<h6>`、`<div>`、`<section>`、`<hr>`标签**
+6. 绝对禁止使用!important
+7. **所有元素必须有自己的font-size、line-height和color，不依赖任何继承**
+
+【各元素标准格式 - 必须严格按照以下代码生成】
 
 ```html
-<section style="margin:0; padding:0; border:0; outline:0; font-size:14px; line-height:1.6; color:#3E3E3E; background:#ffffff;">
-  <div style="padding:0 12px;">
+<!-- 开篇引导语（橙色、加粗） -->
+<p style="margin:0 0 16px 0; padding:0 12px; color:#E67E22; font-weight:bold; font-size:14px; line-height:1.6;">{引导语内容}</p>
 
-    <!-- 开篇引导语（橙色、加粗） -->
-    <p style="margin:0 0 16px 0; padding:0; color:#E67E22; font-weight:bold; line-height:1.6;">如果你买了百万医疗险，这篇文章一定要看完，因为 DRG 改革正悄悄改变它的理赔规则。多数人未遇到问题，基本没有意识去关注它。正因如此，我希望通过这篇文章帮你了解 DRG 改革对老百姓的影响。</p>
+<!-- 一级标题（黑色、居中加粗）+ 分割线 -->
+<p style="margin:30px 0 10px 0; padding:0 12px; color:#000000; font-weight:bold; text-align:center; font-size:16px; line-height:1.7;">{一级标题内容}</p>
+<p style="text-align:center; margin:0 0 16px 0; padding:0;">
+<span style="display:inline-block; width:60px; height:2px; background-color:#eee;"></span>
+</p>
 
-    <!-- 一级标题（黑色、居中加粗）+ 分割线 -->
-    <p style="margin:16px 0; padding:0; color:#000000; font-weight:bold; text-align:center; font-size:16px; line-height:1.7;">一、DRG 改革：看病省钱了，同时也带来了你不知道的看病难题</p>
-    <div style="width:90%; height:1px; background:#eee; margin:0 auto 16px auto;"></div>
+<!-- 二级标题（青绿色、加粗） -->
+<p style="margin:25px 0 15px 0; padding:0 12px; color:#1A8A6F; font-weight:bold; font-size:14px; line-height:1.75;">{二级标题内容}</p>
 
-    <!-- 二级标题（青绿色、加粗） -->
-    <p style="margin:16px 0 8px 0; padding:0; color:#1A8A6F; font-weight:bold; line-height:1.75;">1.1 DRG 改革的核心逻辑：治疗超支，医院买单，让医生不敢过度医疗</p>
+<!-- 正文 -->
+<p style="margin:0 0 16px 0; padding:0 12px; color:#3E3E3E; font-size:14px; line-height:1.6;">{正文内容}</p>
 
-    <!-- 正文 -->
-    <p style="margin:0 0 16px 0; padding:0; line-height:1.6;">先说说大家都能看到的好处：老百姓到医院看病，医生都会主动替我们省钱了，老百姓担心花费昂贵、过度医疗的心可以暂时放下了。</p>
-    <p style="margin:0 0 16px 0; padding:0; line-height:1.6;">医生为啥会帮我们省钱？因为 DRG 改革的一项核心措施就是：医保局给每个具体疾病设定了报销金额的上限，超过上限的部分医院要自行承担；</p>
-    <p style="margin:0 0 16px 0; padding:0; line-height:1.6;">而医院会把这个压力传导到每个科室和医生个人，并且与医生的绩效工资直接挂钩。所以医生为了满足考核要求，避免绩效工资受损，不会过度医疗。</p>
+<!-- 黄色背景强调框 -->
+<p style="margin:0 0 16px 0; padding:12px; background-color:#FFF9E6; border-left:4px solid #FFE082; color:#3E3E3E; font-size:14px; line-height:1.6;">{强调内容}</p>
 
-    <!-- 黄色背景强调框 -->
-    <div style="background:#FFF9E6; padding:12px; margin:0 0 16px 0;">
-      <p style="margin:0; padding:0; line-height:1.6;">综上概括一下：医保能报销的药，医院不一定有；医院没有的药，百万医疗险不一定能报。 这就是 DRG 改革下，你购买的百万医疗险所面临的处境，也是大多数人没有意识到的保障隐患。</p>
-    </div>
+<!-- 红色高危提醒 -->
+<p style="margin:0 0 16px 0; padding:0 12px; color:#FF0000; font-weight:bold; font-size:14px; line-height:1.6;">⚠️ {提醒内容}</p>
 
-    <!-- 红色高危提醒 -->
-    <p style="margin:0 0 16px 0; padding:0; color:#FF0000; font-weight:bold; line-height:1.6;">⚠️ 特别提醒：即使购买了不限清单院外购药责任，也不是随便买药都能报，务必关注保险公司对院外购药的报销要求（提前向保险公司申请最稳妥）</p>
+<!-- 蓝色辅助提示 -->
+<p style="margin:0 0 16px 0; padding:0 12px; color:#3498db; font-size:14px; line-height:1.6;">💡 {提示内容}</p>
 
-    <!-- 蓝色辅助提示 -->
-    <p style="margin:0 0 16px 0; padding:0; color:#3498db; line-height:1.6;">💡 预算有限的朋友，可以选择 "含不限清单院外购药的普通百万医疗险 + 公立医院特需门诊开处方" 的组合方案，性价比最高。</p>
+<!-- 引用区块（左侧灰色边框） -->
+<p style="margin:0 0 16px 0; padding:0 12px 0 22px; border-left:2px solid #eee; color:#3E3E3E; font-size:14px; line-height:1.6;">{引用内容}</p>
 
-    <!-- 引用区块（左侧灰色边框） -->
-    <div style="padding-left:10px; border-left:2px solid #eee; margin:0 0 16px 0;">
-      <p style="margin:0; padding:0; line-height:1.6;">"对于基本医保以外的医疗服务，可不纳入报量范围。例如不纳入基本医保报销范围的特需医疗、国际医疗的用药。"<br>—— 国家医保局《关于报送第十一批国家组织药品集中采购品种需求量的通知》（医保办发〔2025〕22 号）</p>
-    </div>
+<!-- 小字备注 -->
+<p style="margin:0 0 16px 0; padding:0 12px; color:#666666; font-size:12px; line-height:1.5;">备注：{备注内容}</p>
 
-    <!-- 小字备注 -->
-    <p style="margin:0 0 16px 0; padding:0; font-size:12px; color:#666666; line-height:1.5;">备注：以上规则适用于市面上绝大多数主流百万医疗险，具体以保单合同为准。</p>
+<!-- 互动提问 -->
+<p style="margin:30px 0 16px 0; padding:0 12px; color:#3E3E3E; font-size:14px; line-height:1.6;">【互动提问】{提问内容}</p>
 
-    <!-- 互动提问 -->
-    <p style="margin:16px 0; padding:0; line-height:1.6;">【互动提问】你买的百万医疗险包含不限清单院外购药责任吗？欢迎在评论区留言咨询</p>
-
-    <!-- 免责声明 -->
-    <p style="margin:16px 0 0 0; padding:0; font-size:12px; color:#666666; line-height:1.5;">【免责声明】本文仅为金融保险科普分享，不构成任何投保、投资建议。所有保险产品请仔细阅读保险合同条款，结合自身风险承受能力理性选择。</p>
-
-  </div>
-</section>
+<!-- 免责声明 -->
+<p style="margin:30px 0 0 0; padding:15px 12px; border-top:1px solid #eee; color:#666666; font-size:12px; line-height:1.5;">【免责声明】本文仅为金融保险科普分享，不构成任何投保、投资建议。所有保险产品请仔细阅读保险合同条款，结合自身风险承受能力理性选择。</p>
 ```
 
-**输出要求：**
-1. 使用完整的 `<section>` 包裹，外层 `<section>` 必须包含 `margin:0; padding:0; border:0; outline:0; font-size:14px; line-height:1.6; color:#3E3E3E; background:#ffffff;`
-2. 内层必须有一个 `<div style="padding:0 12px;">` 包裹所有内容
-3. **🔴 强制规则：所有内容必须使用 `<p>` 标签！禁止使用 `<h1>`-`<h6>` 标签！**
-   - 一级标题：`<p style="margin:16px 0; padding:0; color:#000000; font-weight:bold; text-align:center; font-size:16px; line-height:1.7;">标题文字</p>`
-   - 二级标题：`<p style="margin:16px 0 8px 0; padding:0; color:#1A8A6F; font-weight:bold; line-height:1.75;">标题文字</p>`
-   - 正文：`<p style="margin:0 0 16px 0; padding:0; line-height:1.6;">正文内容</p>`
-4. **分割线使用 `<div>` 标签，禁止使用 `<hr>`**：
-   `<div style="width:90%; height:1px; background:#eee; margin:0 auto 16px auto;"></div>`
-5. **背景框使用 `<div>` 包裹 `<p>`**：
-   `<div style="background:#FFF9E6; padding:12px; margin:0 0 16px 0;"><p style="margin:0; padding:0; line-height:1.6;">内容</p></div>`
-6. **禁止使用 `!important`**，公众号 API 上传不需要
-7. 所有单位使用 px，禁止 em/rem
-8. 所有样式写在 style 属性内，禁止 `<style>` 标签
-1. 使用完整的 `<section>` 包裹，section 上必须有 `font-size:14px; line-height:1.6 !important; color:#3E3E3E;`
-2. **🔴 强制规则：所有样式必须加 `!important`，防止被公众号编辑器覆盖！**
-3. **🔴 强制规则：所有正文内容必须包裹在 `<p>` 标签里，禁止直接放在 `<section>` 下！**
-   - 例外：`<h2>/<h3>/<h4>/<ul>/<ol>/<div>` 这些标签可以直接在 `<section>` 下
-   - 所有段落性文字、提示、备注、互动提问、免责声明等，必须用 `<p>` 包裹
-4. 一级标题用 `<h2>` + `<div>` 分割线（黑色居中加粗，`font-size:16px`）
-5. 二级标题用 `<h3>`（青绿色加粗居左，`font-size:14px`）
-6. 三级标题用 `<h4>`（青绿色常规字重居左，用于"真相一""要点二"等细分标题）
-7. 小标题必须是概括性、有实际意义的，禁止纯数字序号
-8. 高危提醒用红色加粗（`color:#FF0000; font-weight:bold`）
-9. 温和提示用蓝色常规字重（`color:#3498db`）
-10. **核心结论用黄色强调框**（`background:#FFF9E6; border-left:4px solid #FFE082`）
-11. **数据展示用灰色背景块**（`background:#F5F5F5; padding:12px`）
-12. 并列要点用 `<ul>/<li>` 无序列表；步骤/流程用 `<ol>/<li>` 有序列表
-13. 引用条款/规则用引用区块（`border-left:2px solid #eee; padding-left:10px`）
-14. 备注说明用小字（`font-size:12px; color:#666666; line-height:1.5 !important`）
-15. 正文强调用 `<strong>` 加粗、`<em>` 斜体、`<u>` 下划线、`<s>` 删除线
-16. 文章末尾必须有互动提问 + 免责声明
-17. **所有间距使用 padding 而非 margin**（更稳定的间距）
-18. **分割线使用 `<div>` 而非 `<hr>`**（公众号对 hr 支持不稳定）
-
----
-
-## 🔴 最高优先级：样式严格一致（微信公众号外部HTML特殊处理）
-
-**⚠️ 此部分优先级高于一切！请先阅读并严格遵守！**
-
-**🔴 微信公众号外部HTML渲染的特殊机制：**
-- **微信公众号不继承 `<section>` 上的样式！！！**
-- **所有样式必须内联到具体元素上（<p>/<h2>/<h3>/<h4>/<ul>/<ol>）**
-- **绝对不依赖任何继承！！！**
-
-1. **所有 CSS 属性值必须与上方 HTML_TEMPLATE_SPEC 100% 完全一致**
-   - 不要做任何"优化"或"调整"
-   - 包括但不限于：`line-height`、`margin`、`padding`、`font-size`、`color`、`text-align`、`font-weight` 等
-   - 如果你看到模板里是 `line-height:1.6`，你输出就必须是 `line-height:1.6`——不能是 1.5 也不能是 1.7！
-
-2. **🔴 所有元素必须有自己的 font-size 和 line-height！！！**
-   - 正文/引导语/提醒/提示：`font-size:14px; line-height:1.6;`（每个元素都要有）
-   - `<h3>` 和 `<h4>`：`font-size:14px; line-height:1.75;`（每个元素都要有）
-   - 小字备注/免责声明：`font-size:12px; line-height:1.5;`（每个元素都要有）
-   - **<ul> 和 <ol> 标签也必须加 font-size:14px; line-height:1.6;！！！**
-   - **绝对不要依赖 section 的继承！！！**
-
-3. **所有正文内容必须包裹在 `<p>` 标签里**
-   - 不要把任何普通段落直接放在 `<section>` 下
-   - 只有以下元素可以是 section 的直接子元素：
-     - 标题（`<h2>`、`<h3>`、`<h4>`）
-     - 分割线（`<hr>`）
-     - 无序列表（`<ul>`）
-     - 有序列表（`<ol>`）
-     - 引用区块（`<p>` 带左边框）
-     - 小字备注（`<p>` 带 font-size:12px）
-     - 互动提问（`<p>`）
-     - 免责声明（`<p>` 带 font-size:12px）
-
----
-
-## ✅ 生成后验证清单
-
-**请在输出前逐点检查，确保全部符合：**
-
-1. [ ] 外层 `<section>` 只有 `background:#ffffff; padding:0 12px;`（没有 font-size 和 line-height，因为不继承）
-2. [ ] 所有 <p>/<h2>/<h3>/<h4>/<ul>/<ol> 都有自己的 font-size 和 line-height（没有依赖 section 继承）
-3. [ ] 开篇引导语是 `<p style="color:#E67E22; font-weight:bold; margin:0 0 1em; text-align:left; font-size:14px; line-height:1.6;">`
-4. [ ] 一级标题（h2）是 `<h2 style="color:#000000; font-weight:bold; text-align:center; margin:1em 0; font-size:14px; line-height:1.6;">`
-5. [ ] 分割线是 `<hr style="border:none; border-top:1px solid #eee; width:90%; margin:0.5em auto;">`
-6. [ ] 二级标题（h3）是 `<h3 style="color:#1A8A6F; font-weight:bold; text-align:left; margin:1em 0; font-size:14px; line-height:1.75;">`
-7. [ ] 三级标题（h4）是 `<h4 style="color:#1A8A6F; margin:1em 0; font-size:14px; line-height:1.75; text-align:left;">`
-8. [ ] 所有正文段落都是 `<p style="color:#3E3E3E; text-align:left; margin:0 0 1em; font-size:14px; line-height:1.6;">`
-9. [ ] 红色高危提醒是 `<p style="color:#FF0000; font-weight:bold; text-align:left; margin:0 0 1em; font-size:14px; line-height:1.6;">`
-10. [ ] 蓝色辅助提示是 `<p style="color:#3498db; text-align:left; margin:0 0 1em; font-size:14px; line-height:1.6;">`
-11. [ ] 无序列表是 `<ul style="color:#3E3E3E; margin:0 0 1em; padding-left:20px; font-size:14px; line-height:1.6;">`，`<li>` 是 `<li style="margin:0 0 0.5em;">`
-12. [ ] 有序列表是 `<ol style="color:#3E3E3E; margin:0 0 1em; padding-left:20px; font-size:14px; line-height:1.6;">`，`<li>` 是 `<li style="margin:0 0 0.5em;">`
-13. [ ] 引用区块是 `<p style="color:#3E3E3E; text-align:left; margin:0 0 1em; padding-left:10px; border-left:2px solid #eee; font-size:14px; line-height:1.6;">`
-14. [ ] 小字备注是 `<p style="font-size:12px; color:#666666; text-align:left; line-height:1.5; margin:0 0 1em;">`
-15. [ ] 互动提问是 `<p style="color:#3E3E3E; text-align:left; margin:2em 0 1em; font-size:14px; line-height:1.6;">`
-16. [ ] 免责声明是 `<p style="font-size:12px; color:#666666; text-align:left; line-height:1.5; margin:1em 0;">`
-17. [ ] 所有元素都有自己的 font-size 和 line-height（没有依赖 section 继承）
-18. [ ] 所有普通正文都包裹在 `<p>` 标签里，没有直接放在 section 下的文字
-
----
+**输出要求（🔴 HTML格式是硬性规范，必须100%遵循，不可省略任何style属性！）：**
+1. 严格按照上面的HTML模板生成文章，不要做任何修改
+2. 所有内容必须包裹在对应的`<p>`标签中
+3. 每个`<p>`标签的style属性必须与模板完全一致，包括所有数值
+4. 文章末尾必须包含互动提问和免责声明
+5. 正文强调使用`<strong>`标签，不要使用其他方式
+6. **🔴 禁止使用的标签**：`<h1>`-`<h6>`、`<div>`、`<section>`、`<hr>`、`<style>`
+7. **🔴 禁止使用的CSS**：em/rem单位、!important
+8. **🔴 每个元素必须有完整的style**：必须包含font-size、line-height和color，不依赖继承
+9. 小标题必须是概括性、有实际意义的，禁止纯数字序号
+10. LLM输出时常见的错误（绝对禁止！）：
+    - ❌ `<h2>标题</h2>` （禁止使用h2）
+    - ❌ `<div>...</div>` （禁止使用div，所有内容用p标签）
+    - ❌ `<section>...</section>` （禁止使用section）
+    - ❌ `<hr>` （禁止使用hr，用p+span分割线替代）
+    - ❌ `<p>正文</p>` （缺少style，样式丢失）
+    - ❌ 使用 `em` 或 `rem` 单位
+    - ❌ 使用 `!important`
+    - ✅ `<p style="margin:30px 0 10px 0; padding:0 12px; color:#000000; font-weight:bold; text-align:center; font-size:16px; line-height:1.7;">标题</p>`
+    - ✅ `<p style="margin:25px 0 15px 0; padding:0 12px; color:#1A8A6F; font-weight:bold; font-size:14px; line-height:1.75;">小标题</p>`
+    - ✅ `<p style="margin:0 0 16px 0; padding:0 12px; color:#3E3E3E; font-size:14px; line-height:1.6;">正文</p>`
 
 ### ⚠️ 返回格式
 
@@ -674,7 +590,7 @@ slotId格式：{范式ID}-{序号}，如 P001-01, P002-03
 
 ---
 
-**版本**: v3.1
-**最后更新**: 2026-02-24
+**版本**: v3.3
+**最后更新**: 2025-05-28
 **核心原则**: 固定铁律 + 动态规则 + 本次创作需求（需求文档3.2节）
-**Phase 3 新增**: 大纲确认双子任务模式 + 数字资产真实数据对接
+**v3.3 变更**: HTML模板升级为公众号API上传专用最终版（纯p标签、禁止div/section/h1-h6/hr、每个元素必须有完整style）

@@ -10,6 +10,7 @@ import {
   WECHAT_API_CONFIG,
   getDraftDefaults,  // 🔥 新增
 } from '@/config/wechat-official-account.config';
+import { sanitizeWechatHtml } from '@/lib/utils/wechat-html-utils';
 
 // 🔥 re-export getDraftDefaults 供其他模块使用
 export { getDraftDefaults };
@@ -384,21 +385,28 @@ function formatContentForWechat(content: string): string {
     return '';
   }
 
-  // 如果已经是 HTML，直接返回
+  // 如果已经是 HTML，先清理不合规标签再返回
   if (content.includes('<')) {
-    return content;
+    return sanitizeWechatHtml(content);
   }
 
-  // 将纯文本转换为简单的 HTML
+  // 将纯文本转换为公众号API上传专用HTML格式（只使用<p>标签）
   return content
     .split('\n\n')
+    .filter(p => p.trim())
     .map(paragraph => {
-      if (paragraph.startsWith('# ')) {
-        return `<h2 style="font-size: 18px; font-weight: bold; margin: 20px 0 10px;">${paragraph.slice(2)}</h2>`;
-      } else if (paragraph.startsWith('## ')) {
-        return `<h3 style="font-size: 16px; font-weight: bold; margin: 15px 0 8px;">${paragraph.slice(3)}</h3>`;
+      const trimmed = paragraph.trim();
+      if (trimmed.startsWith('# ')) {
+        // 一级标题：黑色、居中加粗
+        const title = trimmed.slice(2);
+        return `<p style="margin:30px 0 10px 0; padding:0 12px; color:#000000; font-weight:bold; text-align:center; font-size:16px; line-height:1.7;">${title}</p><p style="text-align:center; margin:0 0 16px 0; padding:0;"><span style="display:inline-block; width:60px; height:2px; background-color:#eee;"></span></p>`;
+      } else if (trimmed.startsWith('## ')) {
+        // 二级标题：青绿色、加粗
+        const title = trimmed.slice(3);
+        return `<p style="margin:25px 0 15px 0; padding:0 12px; color:#1A8A6F; font-weight:bold; font-size:14px; line-height:1.75;">${title}</p>`;
       } else {
-        return `<section style="font-size: 14px; line-height: 1.8; margin-bottom: 15px; text-align: justify;">${paragraph}</section>`;
+        // 正文
+        return `<p style="margin:0 0 16px 0; padding:0 12px; color:#3E3E3E; font-size:14px; line-height:1.6;">${trimmed}</p>`;
       }
     })
     .join('');

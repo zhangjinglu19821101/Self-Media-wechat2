@@ -14,7 +14,7 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Eye, Copy, Download, CheckCircle2, ChevronLeft, ChevronRight, ImageIcon } from 'lucide-react';
@@ -22,6 +22,7 @@ import { toast } from 'sonner';
 import Link from 'next/link';
 import { getCurrentWorkspaceId } from '@/lib/api/client';
 import { getCurrentBeijingTime } from '@/lib/utils/date-time';
+import * as VisuallyHidden from '@radix-ui/react-visually-hidden';
 
 // ============ 共享解析模块 ============
 import { 
@@ -149,7 +150,8 @@ export function XiaohongshuPreview({
           
           // 🔥 P1 修复：检查 HTTP 状态码
           if (!response.ok) {
-            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            const errorText = await response.text().catch(() => '');
+            throw new Error(`HTTP ${response.status}: ${errorText || response.statusText}`);
           }
           
           const data = await response.json();
@@ -248,7 +250,15 @@ export function XiaohongshuPreview({
                   : String(rd.executorOutput.output);
               } else if (rd.result) {
                 rawContent = typeof rd.result === 'object' ? rd.result : String(rd.result);
+              } else if (rd.executorOutput?.structuredResult?.resultContent) {
+                // 🔥 信封格式兜底：从 structuredResult.resultContent 提取
+                rawContent = rd.executorOutput.structuredResult.resultContent;
               }
+            }
+
+            // 🔥 最终兜底：从 task.resultData 直接提取信封格式的 result.content
+            if (!rawContent && task?.resultData?.result?.content) {
+              rawContent = task.resultData.result;
             }
 
             const parsed = parseXhsContent(rawContent);
@@ -371,6 +381,18 @@ export function XiaohongshuPreview({
     setCurrentPage(0);
   }, [content?.title]);
 
+  // 🔥 修复：关闭对话框时重置状态，确保下次打开时重新加载
+  useEffect(() => {
+    if (!open) {
+      if (!externalContent) {
+        setContent(null);
+      }
+      setCurrentPage(0);
+      setPersistedCards([]);
+      loadingRef.current = false;
+    }
+  }, [open, externalContent]);
+
   // 如果没有内容，不渲染
   if (!content && !open) {
     return (
@@ -399,6 +421,9 @@ export function XiaohongshuPreview({
               </Badge>
             )}
           </DialogTitle>
+          <DialogDescription asChild>
+            <VisuallyHidden.Root>小红书图文内容预览</VisuallyHidden.Root>
+          </DialogDescription>
         </DialogHeader>
 
         {loading ? (
@@ -450,15 +475,15 @@ export function XiaohongshuPreview({
                         }}
                       >
                         {/* 封面卡 */}
-                        <div className="flex-shrink-0 h-full flex items-center justify-center p-6" style={{ width: `${100 / totalCards}%` }}>
+                        <div className="flex-shrink-0 h-full flex items-center justify-center p-4" style={{ width: `${100 / totalCards}%` }}>
                           <div
-                            className="w-full h-full rounded-2xl flex flex-col justify-center px-5 py-6 text-white shadow-lg"
+                            className="w-full h-full rounded-2xl flex flex-col justify-center px-5 py-5 text-white shadow-lg overflow-y-auto"
                             style={{
                               background: `linear-gradient(135deg, ${GRADIENT_SCHEMES[0].from}, ${GRADIENT_SCHEMES[0].to})`,
                             }}
                           >
-                            <div className="text-xs opacity-70 mb-3 font-medium">📕 封面</div>
-                            <div className="text-xl font-bold leading-tight mb-3">{content.title}</div>
+                            <div className="text-xs opacity-70 mb-2 font-medium">📕 封面</div>
+                            <div className="text-lg font-bold leading-tight mb-2">{content.title}</div>
                             {content.intro && (
                               <div className="text-sm opacity-90 leading-relaxed">{content.intro}</div>
                             )}
@@ -469,17 +494,17 @@ export function XiaohongshuPreview({
                         {content.points?.map((point, idx) => {
                           const scheme = GRADIENT_SCHEMES[(idx + 1) % GRADIENT_SCHEMES.length];
                           return (
-                            <div key={idx} className="flex-shrink-0 h-full flex items-center justify-center p-6" style={{ width: `${100 / totalCards}%` }}>
+                            <div key={idx} className="flex-shrink-0 h-full flex items-center justify-center p-4" style={{ width: `${100 / totalCards}%` }}>
                               <div
-                                className="w-full h-full rounded-2xl flex flex-col justify-center px-5 py-6 text-white shadow-lg"
+                                className="w-full h-full rounded-2xl flex flex-col px-5 py-5 text-white shadow-lg overflow-y-auto"
                                 style={{
                                   background: `linear-gradient(135deg, ${scheme.from}, ${scheme.to})`,
                                 }}
                               >
-                                <div className="text-xs opacity-70 mb-3 font-medium">📌 要点 {idx + 1}</div>
-                                <div className="text-xl font-bold leading-tight mb-3">{point.title}</div>
+                                <div className="text-xs opacity-70 mb-2 font-medium">📌 要点 {idx + 1}</div>
+                                <div className="text-lg font-bold leading-tight mb-2">{point.title}</div>
                                 {point.content && (
-                                  <div className="text-sm opacity-90 leading-relaxed">{point.content}</div>
+                                  <div className="text-sm opacity-90 leading-relaxed flex-1">{point.content}</div>
                                 )}
                               </div>
                             </div>
@@ -488,17 +513,17 @@ export function XiaohongshuPreview({
                         
                         {/* 结尾卡 */}
                         {content.conclusion && (
-                          <div className="flex-shrink-0 h-full flex items-center justify-center p-6" style={{ width: `${100 / totalCards}%` }}>
+                          <div className="flex-shrink-0 h-full flex items-center justify-center p-4" style={{ width: `${100 / totalCards}%` }}>
                             <div
-                              className="w-full h-full rounded-2xl flex flex-col justify-center px-5 py-6 text-white shadow-lg"
+                              className="w-full h-full rounded-2xl flex flex-col px-5 py-5 text-white shadow-lg overflow-y-auto"
                               style={{
                                 background: 'linear-gradient(135deg, #374151, #111827)',
                               }}
                             >
-                              <div className="text-xs opacity-70 mb-3 font-medium">✨ 结语</div>
-                              <div className="text-xl font-bold leading-tight mb-3">{content.conclusion}</div>
+                              <div className="text-xs opacity-70 mb-2 font-medium">✨ 结语</div>
+                              <div className="text-lg font-bold leading-tight mb-2">{content.conclusion}</div>
                               {content.tags && content.tags.length > 0 && (
-                                <div className="flex flex-wrap gap-2 mt-4">
+                                <div className="flex flex-wrap gap-2 mt-3">
                                   {content.tags.map((tag, tIdx) => (
                                     <span key={tIdx} className="text-xs bg-white/20 px-2.5 py-1 rounded-full">
                                       #{tag}

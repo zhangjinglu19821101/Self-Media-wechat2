@@ -118,6 +118,7 @@ function getDatePlusDays(dateStr: string, days: number): string {
 
 
 import { LLMClient, Config } from 'coze-coding-dev-sdk';
+import { ChatOpenAI } from '@langchain/openai';
 import { loadAgentPrompt, hasAgentPrompt } from './agents/prompt-loader';
 import { isWritingAgent } from './agents/agent-registry';
 import { createUserLLMClient, getPlatformLLM } from './llm/factory';
@@ -131,6 +132,159 @@ import {
   printAllCacheStats,
   startCacheCleanup,
 } from './cache';
+// ==================== 写作 Agent 直接调用支持 ====================
+
+/**
+ * 写作 Agent 需要输出长文本（可达 15000+ 中文字符），
+ * 但 coze-coding-dev-sdk 的 LLMConfig 不支持 max_output_tokens，
+ * 导致 SDK 默认 max_output_tokens=4096（约 3000-4000 中文字），
+ * 长文章必然被截断。
+ * 
+ * 解决方案：对写作 Agent 绕过 SDK，直接使用 @langchain/openai 的 ChatOpenAI，
+ * 通过 modelKwargs 传递 max_output_tokens 参数。
+ */
+
+/** 写作 Agent 最大输出 tokens（16384 ≈ 12000+ 中文字） */
+const WRITING_AGENT_MAX_OUTPUT_TOKENS = 16384;
+
+/** 写作 Agent 使用的模型 */
+const WRITING_AGENT_MODEL = 'doubao-seed-2-0-pro-260215';
+
+/**
+ * 创建直接调用的 ChatOpenAI 实例（绕过 SDK，支持 max_output_tokens）
+ * 
+ * @param apiKey - API Key（来自 SDK Config 或用户 Key）
+ * @param modelBaseUrl - 模型 API 基础 URL
+ * @param options - 配置选项
+ * 
+ * 🔴 关键修复：必须使用 streaming: true
+ * Coze API（/api/v3/chat/completions）无论是否请求流式，都返回 SSE 格式。
+ * 若 streaming: false，ChatOpenAI 的 invoke() 尝试解析 JSON 响应，
+ * 遇到 SSE 格式会报 TypeError: Cannot read properties of undefined (reading 'message')。
+ * streaming: true 时，ChatOpenAI 使用 SSE 解析器，能正确处理 Coze API 的响应格式。
+ * 
+ * 🔴 关键修复：apiKey 参数名
+ * @langchain/openai v1.2+ 已将 openAIApiKey 参数重命名为 apiKey，
+ * 使用旧名 openAIApiKey 会被静默忽略，导致 API Key 为 undefined。
+ * 
+ * 🔴 关键修复：defaultHeaders
+ * 与 SDK 保持一致的 Authorization + X-Client-Sdk headers，
+ * 确保 Coze API 能正确识别请求来源。
+ */
+function createDirectChatOpenAI(
+  apiKey: string,
+  modelBaseUrl: string,
+  options: {
+    temperature?: number;
+    maxOutputTokens?: number;
+  } = {}
+): ChatOpenAI {
+  return new ChatOpenAI({
+    model: WRITING_AGENT_MODEL,
+    temperature: options.temperature ?? 0.3,
+    maxTokens: options.maxOutputTokens ?? WRITING_AGENT_MAX_OUTPUT_TOKENS,
+    // 🔴 修复：使用 apiKey 参数名（非 openAIApiKey，v1.2+ 已废弃旧名）
+    apiKey: apiKey,
+    // 🔴 修复：必须 streaming: true，否则 Coze API SSE 格式响应无法被正确解析
+    streaming: true,
+    configuration: {
+      baseURL: modelBaseUrl,
+      // 🔴 修复：与 SDK 保持一致的 headers
+      defaultHeaders: {
+        'Authorization': `Bearer ${apiKey}`,
+        'X-Client-Sdk': 'coze-coding-dev-sdk-typescript/0.3.0',
+      },
+    },
+  });
+}
+
+/**
+ * 🔴 Coze API 错误增强
+ * 
+ * ChatOpenAI 在处理 Coze API 的非标准 SSE 错误响应时，
+ * 可能抛出无意义的 TypeError（如 "Cannot read properties of undefined (reading 'message')"）。
+ * 此函数将此类错误转换为更有意义的错误消息，
+ * 并在可能的情况下使用 SDK LLMClient 获取真实错误信息。
+ */
+function enhanceCozeApiError(error: any): Error {
+  // 如果已经是 APIError（SDK 抛出的有意义的错误），直接返回
+  if (error?.code === 'ErrBalanceOverdue' || error?.code === 'ErrNotFound') {
+    return error;
+  }
+  
+  // 如果错误消息已经包含有意义的 Coze 错误信息，直接返回
+  const msg = error?.message || '';
+  if (msg.includes('资源点不足') || msg.includes('ErrBalanceOverdue') || 
+      msg.includes('not found') || msg.includes('model not found')) {
+    return error;
+  }
+  
+  // TypeError: Cannot read properties of undefined — Coze API SSE 格式错误
+  if (error instanceof TypeError && msg.includes('Cannot read properties')) {
+    const enhancedError = new Error(
+      `Coze API 返回非标准格式错误（ChatOpenAI 无法解析 SSE 格式错误响应）。` +
+      `可能原因：1. API Key 无效或缺失 2. 资源点不足(ErrBalanceOverdue) 3. 模型不存在。` +
+      `原始错误: ${msg}`
+    );
+    (enhancedError as any).code = 'ERR_COZE_API_PARSE_FAILURE';
+    (enhancedError as any).originalError = error;
+    return enhancedError;
+  }
+  
+  // Missing credentials — API Key 参数名错误
+  if (msg.includes('Missing credentials')) {
+    const enhancedError = new Error(
+      `LLM API Key 缺失。可能原因：1. apiKey 参数名使用了废弃的 openAIApiKey（v1.2+ 应使用 apiKey）` +
+      `2. 环境变量未配置 COZE_WORKLOAD_IDENTITY_API_KEY。原始错误: ${msg}`
+    );
+    (enhancedError as any).code = 'ERR_MISSING_API_KEY';
+    (enhancedError as any).originalError = error;
+    return enhancedError;
+  }
+  
+  // 其他错误：保留原始信息
+  return error;
+}
+
+/**
+ * 获取 LLM 调用所需的 API Key 和 Base URL
+ * 优先使用用户 Key，否则使用平台 Key
+ */
+async function getLLMCredentials(workspaceId?: string): Promise<{
+  apiKey: string;
+  modelBaseUrl: string;
+  source: string;
+}> {
+  const sdkConfig = new Config();
+  
+  if (workspaceId) {
+    try {
+      const userClient = await createUserLLMClient(workspaceId);
+      if (userClient.isUserKey) {
+        // 用户自有 Key — 需要解密获取
+        const { userApiKeyService } = await import('@/lib/services/user-api-key-service');
+        const userKey = await userApiKeyService.getActiveKeyDecrypted(workspaceId);
+        if (userKey) {
+          return {
+            apiKey: userKey.apiKey,
+            modelBaseUrl: sdkConfig.modelBaseUrl,
+            source: `user-key-${userKey.id.slice(0, 8)}`,
+          };
+        }
+      }
+    } catch {
+      // 降级到平台 Key
+    }
+  }
+  
+  // 平台 Key
+  return {
+    apiKey: sdkConfig.apiKey,
+    modelBaseUrl: sdkConfig.modelBaseUrl,
+    source: 'platform-default',
+  };
+}
+
 import { getMemoryContext, saveAgentExperience } from './agent-memory-helper';
 
 // ============================================
@@ -275,6 +429,12 @@ export async function callLLM(
           if (error.message?.includes('熔断器开启')) return false;
           // 🔴 P0 修复：被取消的请求不可重试（已被新请求替代）
           if (error.message?.includes('请求被取消')) return false;
+          // 🔴 修复：余额不足/模型不存在等业务错误不可重试（重试也会失败）
+          const errCode = (error as any)?.code || '';
+          if (errCode === 'ErrBalanceOverdue' || errCode === 'ErrNotFound' || 
+              errCode === 'ERR_COZE_API_PARSE_FAILURE' || errCode === 'ERR_MISSING_API_KEY') return false;
+          if (error.message?.includes('资源点不足') || error.message?.includes('余额不足')) return false;
+          if (error.message?.includes('model not found') || error.message?.includes('模型不存在')) return false;
           // 超时、网络错误、5xx、429 可重试
           const msg = error.message?.toLowerCase() || '';
           if (msg.includes('timeout') || msg.includes('超时')) return true;
@@ -373,7 +533,7 @@ async function callLLMInternal(
     console.log(`   超时: ${timeout}ms`);
     console.log('');
     
-    const messages = [
+    const messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = [
       { role: 'system', content: fullSystemPrompt },
       { role: 'user', content: userPrompt },
     ];
@@ -396,70 +556,147 @@ async function callLLMInternal(
 
     // 调用 LLM（带超时）— 按 workspace llmKeySource 策略选择 Key
     const workspaceId = options?.workspaceId;
-    let llm: LLMClient;
-    let llmSource = 'platform-default';
-    if (workspaceId) {
-      const userClient = await createUserLLMClient(workspaceId, { timeout });
-      llm = userClient.client;
-      llmSource = userClient.source;
-    } else {
-      llm = getLLMClient();
-    }
-    console.log(`🤖 [LLM调用] LLM 来源: ${llmSource}`);
     const startTime = Date.now();
     console.log(`🤖 [LLM调用] 开始调用 LLM (Agent ${agentId})...`);
     console.log(`🤖 [LLM调用] 超时设置: ${timeout}ms`);
     
-    // 根据 agentId 选择合适的模型
-    const llmConfig: Record<string, unknown> = { temperature };
-    if (_usesHighQualityModel) {
-      // 写作类 Agent + deai-optimizer 使用更好的模型，确保格式正确性
-      llmConfig.model = 'doubao-seed-2-0-pro-260215';
-      console.log(`🤖 [LLM调用] ${agentId} 使用模型: doubao-seed-2-0-pro-260215`);
-    }
+    // 🔴 文章截断修复：写作 Agent 使用直接 ChatOpenAI 调用，支持 max_output_tokens
+    // coze-coding-dev-sdk 的 LLMConfig 不支持 max_output_tokens，
+    // 导致默认 max_output_tokens=4096（约 3000-4000 中文字），长文必然被截断
+    // 复用上方已定义的 _usesHighQualityModel 变量（第431行）
+    const _useDirectChatOpenAI = _usesHighQualityModel;
     
-    // 🔴 P1 修复：将 inflight AbortController 的信号传递给 LLM 调用
-    // 这样在超时重试时，旧请求可以被真正中断（而非仅靠 Promise.race 忽略结果）
-    if (abortController.signal) {
-      llmConfig.signal = abortController.signal;
-    }
-
-    // 使用 Promise.race 实现超时（双重保障：AbortController + setTimeout）
     let responsePromiseResolved = false;
     let timeoutPromiseRejected = false;
+    let response: any;
     
-    const responsePromise = llm.invoke(messages, llmConfig).then((response) => {
-      responsePromiseResolved = true;
-      console.log(`🤖 [LLM调用] LLM 响应成功 (${Date.now() - startTime}ms)`);
-      return response;
-    }).catch((error) => {
-      responsePromiseResolved = true;
-      console.error(`🤖 [LLM调用] LLM 调用失败:`, error);
-      throw error;
-    });
-
-    const timeoutPromise = new Promise<never>((_, reject) => {
-      const timeoutId = setTimeout(() => {
-        if (!responsePromiseResolved) {
-          timeoutPromiseRejected = true;
-          console.error(`🤖 [LLM调用] LLM 调用超时 (${timeout}ms)，强制终止！`);
-          reject(new Error(`LLM 调用超时 (${timeout}ms)`));
-        }
-      }, timeout);
+    if (_useDirectChatOpenAI) {
+      // ===== 写作 Agent 路径：直接使用 ChatOpenAI，设置 max_output_tokens =====
+      console.log(`🤖 [LLM调用] ${agentId} 使用直接 ChatOpenAI 模式 (max_output_tokens=${WRITING_AGENT_MAX_OUTPUT_TOKENS})`);
+      console.log(`🤖 [LLM调用] ${agentId} 使用模型: ${WRITING_AGENT_MODEL}`);
       
-      // 清理定时器
-      responsePromise.finally(() => {
-        clearTimeout(timeoutId);
+      const credentials = await getLLMCredentials(workspaceId);
+      console.log(`🤖 [LLM调用] LLM 来源: ${credentials.source}`);
+      
+      const directLlm = createDirectChatOpenAI(
+        credentials.apiKey,
+        credentials.modelBaseUrl,
+        {
+          temperature,
+          maxOutputTokens: WRITING_AGENT_MAX_OUTPUT_TOKENS,
+        }
+      );
+      
+      const langchainMessages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = [
+        { role: 'system', content: fullSystemPrompt },
+        { role: 'user', content: userPrompt },
+      ];
+      
+      responsePromiseResolved = false;
+      // 🔴 修复：使用流式调用（stream）而非 invoke
+      // Coze API 无论是否请求流式都返回 SSE 格式，invoke() 无法解析 SSE 错误响应，
+      // 而 stream() 使用 SSE 解析器能正确处理。流式调用还支持逐 chunk 输出日志。
+      const directResponsePromise = (async () => {
+        try {
+          const stream = await directLlm.stream(langchainMessages);
+          let fullContent = '';
+          let chunkCount = 0;
+          let lastChunk: any = null;
+          for await (const chunk of stream) {
+            if (chunk.content) {
+              fullContent += chunk.content.toString();
+              chunkCount++;
+            }
+            lastChunk = chunk;
+          }
+          responsePromiseResolved = true;
+          console.log(`🤖 [LLM调用] LLM 响应成功 (${Date.now() - startTime}ms, ${chunkCount} chunks, ${fullContent.length} chars)`);
+          // 🔴 兼容性：返回与 invoke() 相同格式的 AIMessage-like 对象
+          // 保留 response_metadata（含 finish_reason）供下游截断检测使用
+          return {
+            content: fullContent,
+            response_metadata: lastChunk?.response_metadata || {},
+          };
+        } catch (error: any) {
+          responsePromiseResolved = true;
+          // 🔴 修复：Coze API 错误增强
+          // ChatOpenAI 可能抛出 TypeError（无法解析 SSE 格式的错误响应），
+          // 需要将此类错误转换为更有意义的错误消息
+          const enhancedError = enhanceCozeApiError(error);
+          console.error(`🤖 [LLM调用] LLM 调用失败:`, enhancedError.message);
+          throw enhancedError;
+        }
+      })();
+      
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        const timeoutId = setTimeout(() => {
+          if (!responsePromiseResolved) {
+            timeoutPromiseRejected = true;
+            console.error(`🤖 [LLM调用] LLM 调用超时 (${timeout}ms)，强制终止！`);
+            reject(new Error(`LLM 调用超时 (${timeout}ms)`));
+          }
+        }, timeout);
+        directResponsePromise.finally(() => clearTimeout(timeoutId));
       });
-    });
+      
+      response = await Promise.race([directResponsePromise, timeoutPromise]);
+      
+    } else {
+      // ===== 其他 Agent 路径：使用 SDK 的 LLMClient =====
+      let llm: LLMClient;
+      let llmSource = 'platform-default';
+      if (workspaceId) {
+        const userClient = await createUserLLMClient(workspaceId, { timeout });
+        llm = userClient.client;
+        llmSource = userClient.source;
+      } else {
+        llm = getLLMClient();
+      }
+      console.log(`🤖 [LLM调用] LLM 来源: ${llmSource}`);
+      
+      const llmConfig: Record<string, unknown> = { temperature };
+      
+      // 🔴 P1 修复：将 inflight AbortController 的信号传递给 LLM 调用
+      if (abortController.signal) {
+        llmConfig.signal = abortController.signal;
+      }
 
-    console.log(`🤖 [LLM调用] 等待 LLM 响应...`);
-    const response = await Promise.race([responsePromise, timeoutPromise]);
+      responsePromiseResolved = false;
+      const sdkResponsePromise = llm.invoke(messages, llmConfig).then((res) => {
+        responsePromiseResolved = true;
+        console.log(`🤖 [LLM调用] LLM 响应成功 (${Date.now() - startTime}ms)`);
+        return res;
+      }).catch((error) => {
+        responsePromiseResolved = true;
+        console.error(`🤖 [LLM调用] LLM 调用失败:`, error);
+        throw error;
+      });
+
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        const timeoutId = setTimeout(() => {
+          if (!responsePromiseResolved) {
+            timeoutPromiseRejected = true;
+            console.error(`🤖 [LLM调用] LLM 调用超时 (${timeout}ms)，强制终止！`);
+            reject(new Error(`LLM 调用超时 (${timeout}ms)`));
+          }
+        }, timeout);
+        sdkResponsePromise.finally(() => clearTimeout(timeoutId));
+      });
+
+      response = await Promise.race([sdkResponsePromise, timeoutPromise]);
+    }
+
     const latency = Date.now() - startTime;
     console.log(`🤖 [LLM调用] LLM 调用完成，总耗时: ${latency}ms`);
 
     // 🔴 P0 修复：检测空响应（LLM SDK 在超时边缘可能返回空响应对象而非抛错）
-    const responseContentLength = response.content?.length || 0;
+    // 🔴 兼容 ChatOpenAI 的 AIMessage 格式：content 可能是 string 或 ContentBlock[]
+    const _responseContent = typeof response.content === 'string'
+      ? response.content
+      : Array.isArray(response.content)
+        ? response.content.map((c: any) => typeof c === 'string' ? c : c.text || '').join('')
+        : String(response.content || '');
+    const responseContentLength = _responseContent.length;
     if (responseContentLength < 10) {
       console.error(`🔴 [LLM Guard] Agent ${agentId} 返回空响应或极短响应 (${responseContentLength} 字符)`);
       console.error(`🔴 [LLM Guard] 响应时间 ${latency}ms 接近超时阈值 ${timeout}ms，可能是超时边缘返回`);
@@ -468,7 +705,7 @@ async function callLLMInternal(
 
     // 🔴 P0 修复：检测 LLM 响应截断（JSON 不完整）
     // 🔴 P1 修复：增加 SDK finish_reason 检查（最可靠的截断指标）
-    const trimmedContent = (response.content as string).trim();
+    const trimmedContent = _responseContent.trim();
     const lastChar = trimmedContent.slice(-1);
     const openBraces = (trimmedContent.match(/\{/g) || []).length;
     const closeBraces = (trimmedContent.match(/\}/g) || []).length;
@@ -479,7 +716,10 @@ async function callLLMInternal(
     // 🔴 P1 修复：移除反斜杠，因为合法JSON可能以转义反斜杠结尾（如 "value\\"）
     const endsWithIncompleteToken = ['{', '[', '"', ',', ':'].includes(lastChar);
     // 🔴 P1 修复：检查 SDK 的 finish_reason（最可靠的截断指标）
-    const finishReason = (response as any).response_metadata?.finish_reason || (response as any).finish_reason;
+    // 兼容 SDK LLMResponse 和 LangChain AIMessage 的 metadata 格式
+    const finishReason = (response as any).response_metadata?.finish_reason
+      || (response as any).finish_reason
+      || (response as any).lc?.finishReason;
     const isSdkTruncated = finishReason === 'length';
 
     if (isSdkTruncated || isBracesImbalanced || isBracketsImbalanced || endsWithIncompleteToken) {
@@ -496,7 +736,7 @@ async function callLLMInternal(
       console.log(`🟡 [LLM Guard] 将交由解析器层 attemptTruncationRepair 尝试修复`);
       
       // 返回新的字符串而非修改原对象
-      return (response.content as string) + truncationWarning;
+      return _responseContent + truncationWarning;
     }
 
     // 🔥 完整打印 LLM 的返回结果
@@ -510,29 +750,34 @@ async function callLLMInternal(
     console.log('');
 
     // 记录 token 使用情况
-    if (response.usage) {
+    // 兼容 SDK LLMResponse 和 LangChain AIMessage 的 usage 格式
+    const _usage = response.usage_metadata || response.usage;
+    if (_usage) {
       console.log('🔢 Token 使用情况:');
-      console.log(`   输入: ${response.usage.input_tokens}`);
-      console.log(`   输出: ${response.usage.output_tokens}`);
-      console.log(`   总计: ${response.usage.total_tokens}`);
+      const inputTokens = _usage.input_tokens || _usage.promptTokens || 0;
+      const outputTokens = _usage.output_tokens || _usage.completionTokens || 0;
+      const totalTokens = _usage.total_tokens || _usage.totalTokens || 0;
+      console.log(`   输入: ${inputTokens}`);
+      console.log(`   输出: ${outputTokens}`);
+      console.log(`   总计: ${totalTokens}`);
       console.log('');
     }
 
     console.log('📝 返回内容:');
     console.log('───────────────────────────────────────────────────────────────────────────────');
-    console.log(response.content);
+    console.log(_responseContent);
     console.log('───────────────────────────────────────────────────────────────────────────────');
     console.log('');
 
     console.log('📊 响应统计:');
-    console.log(`   内容长度: ${response.content?.length || 0} 字符`);
+    console.log(`   内容长度: ${_responseContent.length} 字符`);
     console.log('═══════════════════════════════════════════════════════════════════════════');
     console.log('');
 
     console.log(`✅ LLM 响应成功 (${latency}ms)`);
-    console.log(`   - 响应长度: ${response.content?.length || 0}`);
+    console.log(`   - 响应长度: ${_responseContent.length}`);
 
-    return response.content;
+    return _responseContent;
   } catch (error) {
     // 🔴 P0 修复：如果是被取消的请求（前一个请求被重试取消），直接抛出
     if (abortController.signal.aborted) {
