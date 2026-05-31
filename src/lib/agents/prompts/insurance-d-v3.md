@@ -468,97 +468,78 @@ slotId格式：{范式ID}-{序号}，如 P001-01, P002-03
 | **句子规则** | 单句10-25字，不用长复合句，大白话表达 |
 | **结构字数占比** | 案例30% + 拆解40% + 建议20% + 互动合规10% |
 
-### 📝 文章 HTML 输出格式
+### 📝 文章 HTML 输出格式（公众号API上传专用最终版）
 
-**输出文章时，必须使用以下 HTML 格式（公众号API零间距叠加终极模板）：**
+【强制规则 - 必须100%遵守，否则API上传样式会丢失】
+1. 所有单位必须使用px，禁止使用em/rem
+2. 所有样式必须写在style属性内，禁止使用`<style>`标签
+3. 禁止使用任何不在白名单内的CSS属性
+4. **所有内容必须使用`<p>`标签**，包括标题、正文、提示、引用、强调框等
+5. **绝对禁止使用`<h1>`-`<h6>`、`<div>`、`<section>`、`<hr>`标签**
+6. 绝对禁止使用!important
+7. **所有元素必须有自己的font-size、line-height和color，不依赖任何继承**
+
+【各元素标准格式 - 必须严格按照以下代码生成】
 
 ```html
-<!-- 【公众号API零间距叠加终极模板 - 2026年5月更新】
-核心原理：
-1. 所有间距全部使用padding控制，彻底避免与公众号默认margin叠加
-2. 外层容器设置margin:0，清除所有默认边距
-3. 所有段落统一使用padding-bottom控制段间距
-4. 标题使用padding-top和padding-bottom控制上下间距
-5. 特殊元素（背景框、引用）使用内部padding控制间距
--->
-<section style="margin:0; padding:0; border:0; outline:0; font-size:14px; line-height:1.6; color:#3E3E3E; background:#ffffff;">
-  <div style="padding:0 12px;">
+<!-- 开篇引导语（橙色、加粗） -->
+<p style="margin:0 0 16px 0; padding:0 12px; color:#E67E22; font-weight:bold; font-size:14px; line-height:1.6;">{引导语内容}</p>
 
-    <!-- 开篇引导语（橙色、加粗）
-         段间距：16px（由padding-bottom控制） -->
-    <p style="margin:0; padding:0 0 16px; color:#E67E22; font-weight:bold; line-height:1.6;">如果你买了百万医疗险，这篇文章一定要看完</p>
+<!-- 一级标题（黑色、居中加粗）+ 分割线 -->
+<p style="margin:30px 0 10px 0; padding:0 12px; color:#000000; font-weight:bold; text-align:center; font-size:16px; line-height:1.7;">{一级标题内容}</p>
+<p style="text-align:center; margin:0 0 16px 0; padding:0;">
+<span style="display:inline-block; width:60px; height:2px; background-color:#eee;"></span>
+</p>
 
-    <!-- 一级标题（黑色、居中加粗）
-         上下间距：16px（由padding-top和padding-bottom控制） -->
-    <p style="margin:0; padding:16px 0; color:#000000; font-weight:bold; text-align:center; font-size:16px; line-height:1.7;">一、为什么很多人买了重疾险却理赔难？</p>
-    
-    <!-- 分割线
-         下边距：16px（由margin-bottom控制，因为div没有默认margin） -->
-    <div style="width:90%; height:1px; background:#eee; margin:0 auto 16px auto;"></div>
+<!-- 二级标题（青绿色、加粗） -->
+<p style="margin:25px 0 15px 0; padding:0 12px; color:#1A8A6F; font-weight:bold; font-size:14px; line-height:1.75;">{二级标题内容}</p>
 
-    <!-- 二级标题（青绿色、加粗）
-         上边距：16px，下边距：8px -->
-    <p style="margin:0; padding:16px 0 8px; color:#1A8A6F; font-weight:bold; line-height:1.75;">1.1 保险公司不告诉你的3个拒赔真相</p>
+<!-- 正文 -->
+<p style="margin:0 0 16px 0; padding:0 12px; color:#3E3E3E; font-size:14px; line-height:1.6;">{正文内容}</p>
 
-    <!-- 正文段落
-         段间距：16px（统一标准） -->
-    <p style="margin:0; padding:0 0 16px; line-height:1.6;">很多人以为买了重疾险就万事大吉，真到理赔时才发现...</p>
+<!-- 黄色背景强调框 -->
+<p style="margin:0 0 16px 0; padding:12px; background-color:#FFF9E6; border-left:4px solid #FFE082; color:#3E3E3E; font-size:14px; line-height:1.6;">{强调内容}</p>
 
-    <!-- 黄色背景强调框
-         外间距：16px（由div的margin-bottom控制）
-         内间距：12px（由div的padding控制） -->
-    <div style="background:#FFF9E6; padding:12px; margin:0 0 16px 0;">
-      <p style="margin:0; padding:0; line-height:1.6;">核心要点：医保能报销的药，医院不一定有；医院没有的药，百万医疗险不一定能报。</p>
-    </div>
+<!-- 红色高危提醒 -->
+<p style="margin:0 0 16px 0; padding:0 12px; color:#FF0000; font-weight:bold; font-size:14px; line-height:1.6;">⚠️ {提醒内容}</p>
 
-    <!-- 红色高危提醒 -->
-    <p style="margin:0; padding:0 0 16px; color:#FF0000; font-weight:bold; line-height:1.6;">⚠️ 健康告知没填对，理赔100%被拒！</p>
+<!-- 蓝色辅助提示 -->
+<p style="margin:0 0 16px 0; padding:0 12px; color:#3498db; font-size:14px; line-height:1.6;">💡 {提示内容}</p>
 
-    <!-- 蓝色辅助提示 -->
-    <p style="margin:0; padding:0 0 16px; color:#3498db; line-height:1.6;">💡 预算有限的朋友，可以选择性价比更高的组合方案。</p>
+<!-- 引用区块（左侧灰色边框） -->
+<p style="margin:0 0 16px 0; padding:0 12px 0 22px; border-left:2px solid #eee; color:#3E3E3E; font-size:14px; line-height:1.6;">{引用内容}</p>
 
-    <!-- 引用区块（左侧灰色边框） -->
-    <div style="padding-left:10px; border-left:2px solid #eee; margin:0 0 16px 0;">
-      <p style="margin:0; padding:0; line-height:1.6;">"引用内容"<br>—— 来源出处</p>
-    </div>
+<!-- 小字备注 -->
+<p style="margin:0 0 16px 0; padding:0 12px; color:#666666; font-size:12px; line-height:1.5;">备注：{备注内容}</p>
 
-    <!-- 小字备注 -->
-    <p style="margin:0; padding:0 0 16px; font-size:12px; color:#666666; line-height:1.5;">备注：以上规则适用于市面上绝大多数主流产品，具体以合同为准。</p>
+<!-- 互动提问 -->
+<p style="margin:30px 0 16px 0; padding:0 12px; color:#3E3E3E; font-size:14px; line-height:1.6;">【互动提问】{提问内容}</p>
 
-    <!-- 互动提问
-         上下间距：16px -->
-    <p style="margin:0; padding:16px 0; line-height:1.6;">【互动提问】你买保险时踩过坑吗？欢迎在评论区留言分享</p>
-
-    <!-- 免责声明
-         上边距：16px，下边距：0 -->
-    <p style="margin:0; padding:16px 0 0; font-size:12px; color:#666666; line-height:1.5;">【免责声明】本文仅为金融保险科普分享，不构成任何投保、投资建议。所有保险产品请仔细阅读保险合同条款，结合自身风险承受能力理性选择。</p>
-
-  </div>
-</section>
+<!-- 免责声明 -->
+<p style="margin:30px 0 0 0; padding:15px 12px; border-top:1px solid #eee; color:#666666; font-size:12px; line-height:1.5;">【免责声明】本文仅为金融保险科普分享，不构成任何投保、投资建议。所有保险产品请仔细阅读保险合同条款，结合自身风险承受能力理性选择。</p>
 ```
 
 **输出要求（🔴 HTML格式是硬性规范，必须100%遵循，不可省略任何style属性！）：**
-1. 使用完整的 `<section>` 包裹，**必须包含** `style="margin:0; padding:0; border:0; outline:0; font-size:14px; line-height:1.6; color:#3E3E3E; background:#ffffff;"`，内层使用 `<div style="padding:0 12px;">` 包裹所有内容
-2. **🔴 核心间距原则：所有间距使用padding控制，禁止使用margin！** 公众号编辑器会叠加默认margin，导致间距失控
-3. 一级标题用 `<p>` 标签（**禁止使用h2**，公众号编辑器会重置h标签样式），**必须设置** `style="margin:0; padding:16px 0; color:#000000; font-weight:bold; text-align:center; font-size:16px; line-height:1.7;"`
-4. 一级标题后用 `<div>` 分割线，**必须设置** `style="width:90%; height:1px; background:#eee; margin:0 auto 16px auto;"`（**禁止使用hr标签**）
-5. 二级标题用 `<p>` 标签（**禁止使用h3**），**必须设置** `style="margin:0; padding:16px 0 8px; color:#1A8A6F; font-weight:bold; line-height:1.75;"`
-6. 小标题必须是概括性、有实际意义的，禁止纯数字序号
-7. 正文段落用 `<p>` 包裹，**必须设置** `style="margin:0; padding:0 0 16px; line-height:1.6;"`（段间距16px由padding-bottom控制）
-8. 红色提醒：`style="margin:0; padding:0 0 16px; color:#FF0000; font-weight:bold; line-height:1.6;"`
-9. 蓝色提示：`style="margin:0; padding:0 0 16px; color:#3498db; line-height:1.6;"`
-10. 黄色强调框：外层 `<div style="background:#FFF9E6; padding:12px; margin:0 0 16px 0;">`，内部 `<p style="margin:0; padding:0; line-height:1.6;">`
-11. 引用区块：`<div style="padding-left:10px; border-left:2px solid #eee; margin:0 0 16px 0;">`，内部 `<p style="margin:0; padding:0; line-height:1.6;">`
-12. 文章末尾必须有免责声明：`style="margin:0; padding:16px 0 0; font-size:12px; color:#666666; line-height:1.5;"`
-13. **🔴 HTML标签的style属性必须内联写死，不可省略、不可简化！** LLM输出时常见的错误：
-   - ❌ `<h2>标题</h2>` （禁止使用h2，公众号编辑器会重置样式）
-   - ❌ `<h3>小标题</h3>` （禁止使用h3，同上）
-   - ❌ `<hr>` （禁止使用hr，公众号编辑器会修改hr样式）
-   - ❌ `<p>正文</p>` （缺少style，间距失控）
-   - ❌ 使用 `margin` 控制段间距（公众号编辑器会叠加默认margin导致间距翻倍）
-   - ✅ `<p style="margin:0; padding:16px 0; color:#000000; font-weight:bold; text-align:center; font-size:16px; line-height:1.7;">标题</p>`
-   - ✅ `<p style="margin:0; padding:16px 0 8px; color:#1A8A6F; font-weight:bold; line-height:1.75;">小标题</p>`
-   - ✅ `<p style="margin:0; padding:0 0 16px; line-height:1.6;">正文</p>`
+1. 严格按照上面的HTML模板生成文章，不要做任何修改
+2. 所有内容必须包裹在对应的`<p>`标签中
+3. 每个`<p>`标签的style属性必须与模板完全一致，包括所有数值
+4. 文章末尾必须包含互动提问和免责声明
+5. 正文强调使用`<strong>`标签，不要使用其他方式
+6. **🔴 禁止使用的标签**：`<h1>`-`<h6>`、`<div>`、`<section>`、`<hr>`、`<style>`
+7. **🔴 禁止使用的CSS**：em/rem单位、!important
+8. **🔴 每个元素必须有完整的style**：必须包含font-size、line-height和color，不依赖继承
+9. 小标题必须是概括性、有实际意义的，禁止纯数字序号
+10. LLM输出时常见的错误（绝对禁止！）：
+    - ❌ `<h2>标题</h2>` （禁止使用h2）
+    - ❌ `<div>...</div>` （禁止使用div，所有内容用p标签）
+    - ❌ `<section>...</section>` （禁止使用section）
+    - ❌ `<hr>` （禁止使用hr，用p+span分割线替代）
+    - ❌ `<p>正文</p>` （缺少style，样式丢失）
+    - ❌ 使用 `em` 或 `rem` 单位
+    - ❌ 使用 `!important`
+    - ✅ `<p style="margin:30px 0 10px 0; padding:0 12px; color:#000000; font-weight:bold; text-align:center; font-size:16px; line-height:1.7;">标题</p>`
+    - ✅ `<p style="margin:25px 0 15px 0; padding:0 12px; color:#1A8A6F; font-weight:bold; font-size:14px; line-height:1.75;">小标题</p>`
+    - ✅ `<p style="margin:0 0 16px 0; padding:0 12px; color:#3E3E3E; font-size:14px; line-height:1.6;">正文</p>`
 
 ### ⚠️ 返回格式
 
@@ -609,7 +590,7 @@ slotId格式：{范式ID}-{序号}，如 P001-01, P002-03
 
 ---
 
-**版本**: v3.2
+**版本**: v3.3
 **最后更新**: 2025-05-28
 **核心原则**: 固定铁律 + 动态规则 + 本次创作需求（需求文档3.2节）
-**v3.2 变更**: HTML模板升级为公众号API零间距叠加终极模板（padding替代margin、p替代h2/h3、div替代hr）
+**v3.3 变更**: HTML模板升级为公众号API上传专用最终版（纯p标签、禁止div/section/h1-h6/hr、每个元素必须有完整style）

@@ -237,10 +237,8 @@ function EditFormPanel({
             placeholder={`请粘贴 HTML 样式代码...
 
 示例：
-<section style="text-align:center; background:#fff; padding:0 10px;">
-  <h2 style="color:#52C41A; font-weight:bold;">标题</h2>
-  <p style="color:#3E3E3E;">正文内容...</p>
-</section>
+<p style="margin:0 0 16px 0; padding:0 12px; color:#000000; font-weight:bold; text-align:center; font-size:16px; line-height:1.7;">标题</p>
+<p style="margin:0 0 16px 0; padding:0 12px; color:#3E3E3E; font-size:14px; line-height:1.6;">正文内容...</p>
 
 右侧浮动窗口将实时预览效果`}
             value={htmlContent}
