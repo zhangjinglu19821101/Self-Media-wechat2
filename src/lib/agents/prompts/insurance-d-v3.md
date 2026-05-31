@@ -483,40 +483,40 @@ slotId格式：{范式ID}-{序号}，如 P001-01, P002-03
 
 ```html
 <!-- 开篇引导语（橙色、加粗） -->
-<p style="margin:0 0 16px 0; padding:0 12px; color:#E67E22; font-weight:bold; font-size:14px; line-height:1.6;">{引导语内容}</p>
+<p style="margin:0 0 12px 0; padding:0 12px; color:#E67E22; font-weight:bold; font-size:14px; line-height:1.6;">{引导语内容}</p>
 
 <!-- 一级标题（黑色、居中加粗）+ 分割线 -->
-<p style="margin:30px 0 10px 0; padding:0 12px; color:#000000; font-weight:bold; text-align:center; font-size:16px; line-height:1.7;">{一级标题内容}</p>
-<p style="text-align:center; margin:0 0 16px 0; padding:0;">
+<p style="margin:20px 0 8px 0; padding:0 12px; color:#000000; font-weight:bold; text-align:center; font-size:16px; line-height:1.7;">{一级标题内容}</p>
+<p style="text-align:center; margin:0 0 12px 0; padding:0;">
 <span style="display:inline-block; width:60px; height:2px; background-color:#eee;"></span>
 </p>
 
 <!-- 二级标题（青绿色、加粗） -->
-<p style="margin:25px 0 15px 0; padding:0 12px; color:#1A8A6F; font-weight:bold; font-size:14px; line-height:1.75;">{二级标题内容}</p>
+<p style="margin:18px 0 10px 0; padding:0 12px; color:#1A8A6F; font-weight:bold; font-size:14px; line-height:1.75;">{二级标题内容}</p>
 
 <!-- 正文 -->
-<p style="margin:0 0 16px 0; padding:0 12px; color:#3E3E3E; font-size:14px; line-height:1.6;">{正文内容}</p>
+<p style="margin:0 0 12px 0; padding:0 12px; color:#3E3E3E; font-size:14px; line-height:1.6;">{正文内容}</p>
 
 <!-- 黄色背景强调框 -->
-<p style="margin:0 0 16px 0; padding:12px; background-color:#FFF9E6; border-left:4px solid #FFE082; color:#3E3E3E; font-size:14px; line-height:1.6;">{强调内容}</p>
+<p style="margin:0 0 12px 0; padding:12px; background-color:#FFF9E6; border-left:4px solid #FFE082; color:#3E3E3E; font-size:14px; line-height:1.6;">{强调内容}</p>
 
 <!-- 红色高危提醒 -->
-<p style="margin:0 0 16px 0; padding:0 12px; color:#FF0000; font-weight:bold; font-size:14px; line-height:1.6;">⚠️ {提醒内容}</p>
+<p style="margin:0 0 12px 0; padding:0 12px; color:#FF0000; font-weight:bold; font-size:14px; line-height:1.6;">⚠️ {提醒内容}</p>
 
 <!-- 蓝色辅助提示 -->
-<p style="margin:0 0 16px 0; padding:0 12px; color:#3498db; font-size:14px; line-height:1.6;">💡 {提示内容}</p>
+<p style="margin:0 0 12px 0; padding:0 12px; color:#3498db; font-size:14px; line-height:1.6;">💡 {提示内容}</p>
 
 <!-- 引用区块（左侧灰色边框） -->
-<p style="margin:0 0 16px 0; padding:0 12px 0 22px; border-left:2px solid #eee; color:#3E3E3E; font-size:14px; line-height:1.6;">{引用内容}</p>
+<p style="margin:0 0 12px 0; padding:0 12px 0 22px; border-left:2px solid #eee; color:#3E3E3E; font-size:14px; line-height:1.6;">{引用内容}</p>
 
 <!-- 小字备注 -->
-<p style="margin:0 0 16px 0; padding:0 12px; color:#666666; font-size:12px; line-height:1.5;">备注：{备注内容}</p>
+<p style="margin:0 0 12px 0; padding:0 12px; color:#666666; font-size:12px; line-height:1.5;">备注：{备注内容}</p>
 
 <!-- 互动提问 -->
-<p style="margin:30px 0 16px 0; padding:0 12px; color:#3E3E3E; font-size:14px; line-height:1.6;">【互动提问】{提问内容}</p>
+<p style="margin:20px 0 12px 0; padding:0 12px; color:#3E3E3E; font-size:14px; line-height:1.6;">【互动提问】{提问内容}</p>
 
 <!-- 免责声明 -->
-<p style="margin:30px 0 0 0; padding:15px 12px; border-top:1px solid #eee; color:#666666; font-size:12px; line-height:1.5;">【免责声明】本文仅为金融保险科普分享，不构成任何投保、投资建议。所有保险产品请仔细阅读保险合同条款，结合自身风险承受能力理性选择。</p>
+<p style="margin:20px 0 0 0; padding:15px 12px; border-top:1px solid #eee; color:#666666; font-size:12px; line-height:1.5;">【免责声明】本文仅为金融保险科普分享，不构成任何投保、投资建议。所有保险产品请仔细阅读保险合同条款，结合自身风险承受能力理性选择。</p>
 ```
 
 **输出要求（🔴 HTML格式是硬性规范，必须100%遵循，不可省略任何style属性！）：**
@@ -537,9 +537,9 @@ slotId格式：{范式ID}-{序号}，如 P001-01, P002-03
     - ❌ `<p>正文</p>` （缺少style，样式丢失）
     - ❌ 使用 `em` 或 `rem` 单位
     - ❌ 使用 `!important`
-    - ✅ `<p style="margin:30px 0 10px 0; padding:0 12px; color:#000000; font-weight:bold; text-align:center; font-size:16px; line-height:1.7;">标题</p>`
-    - ✅ `<p style="margin:25px 0 15px 0; padding:0 12px; color:#1A8A6F; font-weight:bold; font-size:14px; line-height:1.75;">小标题</p>`
-    - ✅ `<p style="margin:0 0 16px 0; padding:0 12px; color:#3E3E3E; font-size:14px; line-height:1.6;">正文</p>`
+    - ✅ `<p style="margin:20px 0 8px 0; padding:0 12px; color:#000000; font-weight:bold; text-align:center; font-size:16px; line-height:1.7;">标题</p>`
+    - ✅ `<p style="margin:18px 0 10px 0; padding:0 12px; color:#1A8A6F; font-weight:bold; font-size:14px; line-height:1.75;">小标题</p>`
+    - ✅ `<p style="margin:0 0 12px 0; padding:0 12px; color:#3E3E3E; font-size:14px; line-height:1.6;">正文</p>`
 
 ### ⚠️ 返回格式
 
