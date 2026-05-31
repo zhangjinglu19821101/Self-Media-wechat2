@@ -6674,7 +6674,11 @@ export class SubtaskExecutionEngine {
         }
         // 覆盖 content 参数
         supplementedParams.content = articleContent;
-        if (articleTitle && !supplementedParams.title) {
+        // 🔴 修复：始终用提取到的文章标题覆盖，与 articles 数组处理保持一致
+        // 原逻辑 `if (articleTitle && !supplementedParams.title)` 会导致：
+        // 当 Agent T 的 LLM 输出已包含 title 字段（即使为空/错误值）时，articleTitle 无法覆盖
+        // 导致上传到草稿箱的文章没有标题（"未命名文章"）
+        if (articleTitle) {
           supplementedParams.title = articleTitle;
         }
         // 补充 accountId
