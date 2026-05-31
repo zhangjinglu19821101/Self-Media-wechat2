@@ -9087,6 +9087,25 @@ export class SubtaskExecutionEngine {
           console.log('[SubtaskEngine] 🔥 格式化模式前缀已注入，平台:', fmtPlatformLabel, 'executor:', task.fromParentsExecutor);
         }
 
+        // 🔥🔥🔥 合规整改：格式保持前缀（按平台区分）
+        // 根因：去AI化优化(deai-optimizer)已将公众号文章统一为纯 <p> 标签行内样式格式
+        // sanitizeWechatHtml 能无损处理 <p> 格式，但会破坏 <h>/<hr>/<section> 等标签
+        // 小红书/知乎/头条输出 JSON/纯文本，不需要 HTML 格式约束
+        let complianceRevisionPrefix = '';
+        const _isComplianceRevisionTask = isWritingAgent(task.fromParentsExecutor)
+          && (task.taskTitle?.includes('合规整改') || task.taskDescription?.includes('合规整改'));
+        if (_isComplianceRevisionTask) {
+          const _executorPlatform = getPlatformForExecutor(task.fromParentsExecutor);
+          if (_executorPlatform === 'wechat_official') {
+            // 公众号：严格保持纯 <p> 标签 HTML 格式
+            complianceRevisionPrefix = `\n【合规整改格式保持 - 最高优先级指令】\n你正在执行"合规整改"任务。前序文章已完成去AI化优化，使用纯 <p> 标签 + 行内样式格式。你修改文章内容时必须严格遵守以下格式规则：\n1. 必须保持前序文章的 <p> 标签格式，严禁使用 <h1>-<h6>、<div>、<section>、<hr> 等标签\n2. 所有样式必须写在 <p> 标签的 style 属性中（如 font-weight:bold; font-size:18px 实现标题效果）\n3. 修改文字内容时，只修改需要整改的文本，未涉及的段落保持原样\n4. 不得改变文章的整体排版和格式结构\n5. 如果需要添加新段落，必须使用 <p> 标签并配以行内样式\n\n`;
+          } else {
+            // 小红书/知乎/头条：保持原输出格式，仅修改内容
+            complianceRevisionPrefix = `\n【合规整改格式保持 - 最高优先级指令】\n你正在执行"合规整改"任务。修改内容时必须严格遵守以下规则：\n1. 保持前序文章的输出格式不变（JSON/纯文本等），仅修改需要整改的文本内容\n2. 未涉及的段落/字段保持原样，不得改变整体结构\n3. 不得增删字段或改变数据格式\n\n`;
+          }
+          console.log('[SubtaskEngine] 🔥 合规整改格式保持前缀已注入，executor:', task.fromParentsExecutor, 'platform:', _executorPlatform);
+        }
+
         // 🔥🔥🔥 【P0修复】提前读取内容模板，获取 cardCountMode 和 promptInstruction
         // cardCountMode 优先级：1. 内容模板的 cardCountMode  2. metadata 中的 imageCountMode（兼容旧数据）3. 小红书默认 5-card
         const VALID_CARD_COUNT_MODES = ['3-card', '5-card', '7-card'] as const;
@@ -9295,8 +9314,8 @@ export class SubtaskExecutionEngine {
           executorType, // 🔥 传递 executorType 决定加载哪个提示词文件
           subTaskRole: taskSubTaskRole, // 🔥 Phase 3.5: 传递子任务角色（outline_generation / full_article）
           taskInstruction: isFullArticleTask && _confirmedOutline
-            ? `${formatModePrefix}${adaptationModePrefix}${platformPrefix}【已确认的创作大纲（以大纲为骨架展开，核心结构和论点不得改变，细节允许自然调整）】\n\n${_confirmedOutline}\n\n原始创作指令：${task.taskDescription}`
-            : `${formatModePrefix}${adaptationModePrefix}${platformPrefix}${task.taskDescription || ''}`,
+            ? `${complianceRevisionPrefix}${formatModePrefix}${adaptationModePrefix}${platformPrefix}【已确认的创作大纲（以大纲为骨架展开，核心结构和论点不得改变，细节允许自然调整）】\n\n${_confirmedOutline}\n\n原始创作指令：${task.taskDescription}`
+            : `${complianceRevisionPrefix}${formatModePrefix}${adaptationModePrefix}${platformPrefix}${task.taskDescription || ''}`,
           userOpinion: _userOpinionAndMaterials?.userOpinion ?? task.userOpinion,
           materials: _materialsContent ? [_materialsContent] : undefined,
           targetWordCount: taskExtension.targetWordCount,
@@ -10344,8 +10363,18 @@ ${userFeedbackText}
       selectedPrecedentInfo = '';
     }
 
+    // 🔴 合规整改格式保持约束（按平台区分）：确保合规整改时维持去AI化后的格式
+    const _reExecIsComplianceRevision = task.taskTitle?.includes('合规整改') || task.taskDescription?.includes('合规整改');
+    const _reExecPlatform = getPlatformForExecutor(task.fromParentsExecutor);
+    const reExecComplianceRevisionPrefix = _reExecIsComplianceRevision
+      ? _reExecPlatform === 'wechat_official'
+        ? `\n【🔴 格式保持硬约束（合规整改）】\n你正在执行合规整改任务。前序文章已完成去AI化优化，使用纯 <p> 标签格式。整改时必须严格遵守以下格式规则：\n1. 只使用 <p> 标签包裹所有内容（标题效果用 <p style="font-weight:bold; font-size:18px;"> 实现）\n2. 严禁使用 <h1>-<h6>、<hr>、<div>、<section> 标签\n3. 所有样式必须写在 <p> 标签的行内 style 属性中\n4. 保持原文的段落结构、装饰线、背景色等视觉效果（用 <p style="..."> 实现）\n5. 整改仅修改合规问题内容，不改变HTML格式结构\n`
+        : `\n【🔴 格式保持硬约束（合规整改）】\n你正在执行合规整改任务。整改时必须严格遵守以下规则：\n1. 保持前序文章的输出格式不变（JSON/纯文本等），仅修改需要整改的内容\n2. 不得增删字段或改变数据格式\n3. 未涉及的段落/字段保持原样\n`
+      : '';
+
     // ========== 🔴 构建精简的 prompt ==========
     const prompt = `
+${reExecComplianceRevisionPrefix}
 【当前任务】
 任务标题：${task.taskTitle}
 任务描述：${task.taskDescription || '无'}
