@@ -7751,8 +7751,21 @@ export class SubtaskExecutionEngine {
           }
         }
         
-        // 检查 content 是否已经是格式化后的 HTML（包含 <section> 标签）
-        const isAlreadyFormatted = contentText.includes('<section') && contentText.includes('style=');
+        // 检查 content 是否已经是格式化后的 HTML
+        // 路径A（tryAutoUploadToWechat）直接使用 insurance-d 原始输出经 sanitizeWechatHtml 处理后上传，
+        // 格式效果最好。路径B（MCP）之前因为此检查只识别 <section> 标签，导致 insurance-d v3.3 的
+        // <p style=...> 输出被误判为"未格式化"，触发 formatDirectPublishArticle（LLM重新格式化），
+        // 产生与路径A不同的HTML结构/样式，导致格式退化。
+        // 修复：扩展识别条件，覆盖所有写作 Agent 已格式化的 HTML 输出：
+        //   - <section style=...> ：旧版 insurance-d 输出
+        //   - <p style=...> ：insurance-d v3.3+ 输出
+        //   - <h1>-<h6 style=...> ：极早期 insurance-d 输出
+        const isAlreadyFormatted = contentText.includes('style=') && (
+          contentText.includes('<section') ||
+          contentText.includes('<p style') ||
+          contentText.includes('<p\nstyle') ||
+          /<h[1-6][>\s]/i.test(contentText)
+        );
         
         let htmlContent = contentText;
         if (!isAlreadyFormatted) {
