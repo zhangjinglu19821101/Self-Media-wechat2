@@ -40,6 +40,7 @@ import { promptAssemblerService } from '@/lib/services/prompt-assembler-service'
 import { digitalAssetService } from '@/lib/services/digital-asset-service';
 import { loadAgentPrompt, loadFeaturePrompt } from '@/lib/agents/prompt-loader';
 import { isWritingAgent, getPlatformForExecutor, WRITING_AGENT_INFO, WRITING_AGENTS } from '@/lib/agents/agent-registry';
+import { PLATFORM_LABELS } from '@/lib/db/schema/style-template';
 import { isVirtualExecutor, USER_PREVIEW_EDIT_EXECUTOR } from '@/lib/agents/flow-templates';
 import { 
   extractResultTextFromResultData as extractResultTextCore,
@@ -1892,7 +1893,7 @@ export class SubtaskExecutionEngine {
       if (data?.result?.articleTitle) return data.result.articleTitle;
       // 顶层 articleTitle
       if (data?.articleTitle) return data.articleTitle;
-      // executorOutput.structuredResult.articleTitle
+      // executorOutput.structuredResult.articleTitle（结构化输出）
       if (data?.executorOutput?.structuredResult?.articleTitle) return data.executorOutput.structuredResult.articleTitle;
       // executorOutput.structuredResult.resultContent.articleTitle（合规整改输出格式）
       if (data?.executorOutput?.structuredResult?.resultContent?.articleTitle) return data.executorOutput.structuredResult.resultContent.articleTitle;
@@ -2993,6 +2994,62 @@ export class SubtaskExecutionEngine {
       
       // 🔴 修复：类型转换！ExecutorDirectResult → ExecutorAgentResult
       const resultToSave = convertExecutorDirectToAgentResult(executorResult);
+
+      // 🔴🔴🔴 【修复】写作 Agent 执行完成后，注入 articleTitle 到 resultData
+      // 确保下游任务（合规校验/合规整改/上传草稿箱）都能提取到文章标题
+      if (isWritingAgent(task.fromParentsExecutor) && resultToSave.executorOutput) {
+        const existingTitle = this.extractArticleTitleFromResultData(resultToSave);
+        if (!existingTitle) {
+          // 从 LLM 输出或前序任务中获取标题
+          let injectedTitle = '';
+          // 1. 从 executorResult 的结构化输出提取
+          const structuredAny = executorResult.structuredResult as unknown as Record<string, unknown> | undefined;
+          if (structuredAny?.articleTitle && typeof structuredAny.articleTitle === 'string') {
+            injectedTitle = structuredAny.articleTitle;
+          } else if (typeof executorResult.result === 'object' && executorResult.result && (executorResult.result as Record<string, unknown>)?.articleTitle) {
+            injectedTitle = String((executorResult.result as Record<string, unknown>).articleTitle);
+          }
+          // 2. 从前序任务提取
+          if (!injectedTitle) {
+            const prevTasksForTitle = await db
+              .select({ resultData: agentSubTasks.resultData, fromParentsExecutor: agentSubTasks.fromParentsExecutor, taskTitle: agentSubTasks.taskTitle })
+              .from(agentSubTasks)
+              .where(
+                and(
+                  eq(agentSubTasks.commandResultId, task.commandResultId as any),
+                  lt(agentSubTasks.orderIndex, task.orderIndex),
+                  eq(agentSubTasks.status, 'completed'),
+                  eq(agentSubTasks.workspaceId, task.workspaceId)
+                )
+              )
+              .orderBy(desc(agentSubTasks.orderIndex))
+              .limit(5);
+            for (const pt of prevTasksForTitle) {
+              const t = this.extractArticleTitleFromResultData(pt.resultData, pt.taskTitle);
+              if (t) { injectedTitle = t; break; }
+            }
+          }
+          // 3. 从 metadata 获取（直接发文模式）
+          if (!injectedTitle) {
+            const taskMeta = typeof task.metadata === 'string' ? JSON.parse(task.metadata) : task.metadata;
+            if (taskMeta?.providedArticleTitle) {
+              injectedTitle = taskMeta.providedArticleTitle;
+            }
+          }
+          if (injectedTitle) {
+            // 注入到多个位置，确保下游 extractArticleTitleFromResultData 能提取到
+            (resultToSave as unknown as Record<string, unknown>).articleTitle = injectedTitle;
+            if (resultToSave.executorOutput.result && typeof resultToSave.executorOutput.result === 'object') {
+              (resultToSave.executorOutput.result as Record<string, unknown>).articleTitle = injectedTitle;
+            }
+            if (resultToSave.executorOutput.structuredResult) {
+              (resultToSave.executorOutput.structuredResult as Record<string, unknown>).articleTitle = injectedTitle;
+            }
+            console.log('[SubtaskEngine] 📝 注入 articleTitle 到写作 Agent resultData:', injectedTitle);
+          }
+        }
+      }
+
       const resultJson = JSON.stringify(resultToSave);
       
       // 🔴 正常流程：根据 isCompleted 或 isTaskDown 判断状态
@@ -6611,6 +6668,10 @@ export class SubtaskExecutionEngine {
         )
         .orderBy(desc(agentSubTasks.orderIndex));
 
+      // 🔴🔴🔴 标题兜底值：从 user_preview_edit 节点或 metadata 获取
+      // 当合规整改等中间任务的 resultData 中不含 articleTitle 时，需要从前序预览节点获取
+      let fallbackArticleTitle = '';
+      
       for (const prevTask of previousTasks) {
         const isWritingOrPreview = isWritingAgent(prevTask.fromParentsExecutor) ||
           prevTask.fromParentsExecutor === 'user_preview_edit';
@@ -6627,14 +6688,43 @@ export class SubtaskExecutionEngine {
         
         if (extractedContent) {
           articleContent = extractedContent;
-          articleTitle = this.extractArticleTitleFromResultData(prevTask.resultData);
+          // 🔴🔴🔴 修复：传入 fallback 标题，确保合规整改等中间任务没有 articleTitle 时也能获取到标题
+          articleTitle = this.extractArticleTitleFromResultData(prevTask.resultData, fallbackArticleTitle || undefined);
           console.log('[supplementArticleContentParams] ✅ 从前序任务获取到文章内容', {
             orderIndex: prevTask.orderIndex,
             executor: prevTask.fromParentsExecutor,
-            contentLength: articleContent.length
+            contentLength: articleContent.length,
+            articleTitle: articleTitle || '(无标题)',
           });
           break;
         }
+        
+        // 🔴🔴🔴 即使当前任务没有完整文章内容，也尝试提取标题作为后续任务的 fallback
+        if (!fallbackArticleTitle) {
+          const extractedTitle = this.extractArticleTitleFromResultData(prevTask.resultData);
+          if (extractedTitle) {
+            fallbackArticleTitle = extractedTitle;
+            console.log('[supplementArticleContentParams] 📝 记录前序任务的标题作为 fallback:', fallbackArticleTitle, {
+              orderIndex: prevTask.orderIndex,
+              executor: prevTask.fromParentsExecutor,
+            });
+          }
+        }
+      }
+      
+      // 🔴🔴🔴 如果遍历完所有前序任务仍未获取到标题，从 task metadata 获取（直接发文模式）
+      if (!articleTitle && !fallbackArticleTitle) {
+        const taskMetadata = typeof task.metadata === 'string' ? JSON.parse(task.metadata) : task.metadata;
+        if (taskMetadata?.providedArticleTitle) {
+          fallbackArticleTitle = taskMetadata.providedArticleTitle as string;
+          console.log('[supplementArticleContentParams] 📝 从 metadata.providedArticleTitle 获取标题:', fallbackArticleTitle);
+        }
+      }
+      
+      // 使用 fallback 标题
+      if (!articleTitle && fallbackArticleTitle) {
+        articleTitle = fallbackArticleTitle;
+        console.log('[supplementArticleContentParams] 📝 使用 fallback 标题:', articleTitle);
       }
 
       // 兜底：从 priorStepOutput 获取
@@ -7014,6 +7104,8 @@ export class SubtaskExecutionEngine {
       
       let articleContent = '';
       let articleTitle = '';
+      // 🔴🔴🔴 标题 fallback：遍历前序任务时，即使当前任务没有完整文章，也收集标题作为后续 fallback
+      let fallbackArticleTitle = '';
       
       for (const prevTask of previousTasks) {
         // 只从写作任务和预览编辑任务获取文章内容
@@ -7033,8 +7125,8 @@ export class SubtaskExecutionEngine {
         
         if (extractedContent) {
           articleContent = extractedContent;
-          // 提取标题
-          articleTitle = this.extractArticleTitleFromResultData(prevTask.resultData);
+          // 🔴🔴🔴 修复：传入 fallback 标题，确保合规整改等中间任务没有 articleTitle 时也能获取到标题
+          articleTitle = this.extractArticleTitleFromResultData(prevTask.resultData, fallbackArticleTitle || undefined);
           if (!articleTitle && prevTask.resultText) {
             // 兜底：从 resultText 的第一行提取
             const firstLine = prevTask.resultText.split('\n')[0]?.replace(/<[^>]+>/g, '').trim();
@@ -7053,11 +7145,35 @@ export class SubtaskExecutionEngine {
         }
         
         // resultText 太短或不是完整文章 → 跳过此任务，继续找前序任务
+        // 🔴🔴🔴 即使跳过，也收集标题作为 fallback
+        if (!fallbackArticleTitle) {
+          const extractedTitle = this.extractArticleTitleFromResultData(prevTask.resultData);
+          if (extractedTitle) {
+            fallbackArticleTitle = extractedTitle;
+            console.log('[injectArticleContentIntoMcpParams] 📝 记录前序任务的标题作为 fallback:', fallbackArticleTitle, {
+              orderIndex: prevTask.orderIndex,
+              executor: prevTask.fromParentsExecutor,
+            });
+          }
+        }
         console.log('[injectArticleContentIntoMcpParams] ⏭️ 跳过前序任务', {
           orderIndex: prevTask.orderIndex,
           executor: prevTask.fromParentsExecutor,
           reason: prevTask.resultText ? `resultText长度=${prevTask.resultText.length}，非完整文章` : 'resultText为空'
         });
+      }
+      
+      // 🔴🔴🔴 标题 fallback：如果遍历完仍无标题，从 metadata 获取（直接发文模式）
+      if (!articleTitle && !fallbackArticleTitle) {
+        const taskMetadata = typeof task.metadata === 'string' ? JSON.parse(task.metadata) : task.metadata;
+        if (taskMetadata?.providedArticleTitle) {
+          fallbackArticleTitle = taskMetadata.providedArticleTitle as string;
+          console.log('[injectArticleContentIntoMcpParams] 📝 从 metadata.providedArticleTitle 获取标题:', fallbackArticleTitle);
+        }
+      }
+      if (!articleTitle && fallbackArticleTitle) {
+        articleTitle = fallbackArticleTitle;
+        console.log('[injectArticleContentIntoMcpParams] 📝 使用 fallback 标题:', articleTitle);
       }
       
       if (!articleContent) {
@@ -7092,8 +7208,8 @@ export class SubtaskExecutionEngine {
             
             if (extractedContent) {
               articleContent = extractedContent;
-              articleTitle = this.extractArticleTitleFromResultData(baseTask.resultData);
-              console.log('[injectArticleContentIntoMcpParams] ✅ 从基础文章组获取到文章内容，长度:', articleContent.length);
+              articleTitle = this.extractArticleTitleFromResultData(baseTask.resultData, fallbackArticleTitle || undefined);
+              console.log('[injectArticleContentIntoMcpParams] ✅ 从基础文章组获取到文章内容，长度:', articleContent.length, '标题:', articleTitle || '(无)');
               break;
             }
           }
@@ -10665,7 +10781,10 @@ ${agentBDecision ?
           });
         }
         updateData.taskTitle = extractedTitle;
-        // 不再调用 syncArticleTitleToGroup —— 同组其他子任务保留原始标题
+        // 🔴🔴🔴 【新增】同步《文章标题》+平台名称到同组其他子任务
+        this.syncArticleTitleToGroupV2(task, extractedTitle).catch(err => {
+          console.error('[SubtaskEngine] ❌ 同步标题到同组失败:', err instanceof Error ? err.message : String(err));
+        });
       }
     } catch (titleErr) {
       console.error('[SubtaskEngine] ❌ 提取文章标题失败:', {
@@ -13272,23 +13391,101 @@ ${resultData.executionSummary}
   private extractArticleTitle(result: any, task: typeof agentSubTasks.$inferSelect): string | null {
     if (!result || typeof result !== 'object') return null;
 
-    // 对写作类 Agent 任务的子任务提取标题
-    if (task.fromParentsExecutor !== 'insurance-d' && task.fromParentsExecutor !== 'insurance-xiaohongshu') return null;
+    // 🔴🔴🔴 【修复】支持所有写作 Agent 和预览修改节点，不再硬编码
+    if (!isWritingAgent(task.fromParentsExecutor) && task.fromParentsExecutor !== USER_PREVIEW_EDIT_EXECUTOR) return null;
 
-    const articleTitle = result.articleTitle;
+    let articleTitle = result.articleTitle;
+    // 兼容 executorOutput 内的结构
+    if (!articleTitle && result.executorOutput?.result?.articleTitle) {
+      articleTitle = result.executorOutput.result.articleTitle;
+    }
+    if (!articleTitle && result.executorOutput?.structuredResult?.articleTitle) {
+      articleTitle = result.executorOutput.structuredResult.articleTitle;
+    }
+    if (!articleTitle && result.executorOutput?.structuredResult?.resultContent?.articleTitle) {
+      articleTitle = result.executorOutput.structuredResult.resultContent.articleTitle;
+    }
+
     if (typeof articleTitle === 'string' && articleTitle.trim().length > 0) {
-      return articleTitle.trim().substring(0, 50);
+      // 🔴🔴🔴 【新增】添加平台前缀，使任务列表更易于区分
+      // 格式：《文章标题》- 平台名称
+      const platformLabel = this.getPlatformLabelForTask(task);
+      const titleText = articleTitle.trim().substring(0, 50);
+      return platformLabel ? `《${titleText}》- ${platformLabel}` : `《${titleText}》`;
     }
 
     return null;
   }
 
   /**
-   * 🔥 将文章标题同步到同 commandResultId 的所有子任务
-   * 这样在任务列表中，同一组的所有子任务都能显示正确的文章主题
+   * 🔴🔴🔴 【新增】根据任务信息获取平台标签
+   * 用于任务标题中显示平台名称，方便用户区分不同平台的任务
    */
-  // syncArticleTitleToGroup 已删除 —— 不再将文章标题同步到同组其他子任务
-  // 原因：覆盖了"生成创作大纲"、"合规校验"等原始子任务标题
+  private getPlatformLabelForTask(task: typeof agentSubTasks.$inferSelect): string {
+    const taskMetadata = typeof task.metadata === 'string' ? JSON.parse(task.metadata) : task.metadata;
+    const platform = taskMetadata?.platform || taskMetadata?.adaptationPlatform;
+    if (platform && PLATFORM_LABELS[platform as keyof typeof PLATFORM_LABELS]) {
+      return PLATFORM_LABELS[platform as keyof typeof PLATFORM_LABELS];
+    }
+    // 兜底：从 executor 推断平台
+    const executorPlatform = getPlatformForExecutor(task.fromParentsExecutor);
+    return PLATFORM_LABELS[executorPlatform as keyof typeof PLATFORM_LABELS] || executorPlatform;
+  }
+
+  /**
+   * 🔴🔴🔴 【新增V2】将《文章标题》+平台名称 更新到同组所有子任务
+   * 
+   * 设计原则：
+   * - 不覆盖功能性标题（如"生成创作大纲"、"合规校验"）
+   * - 在功能性标题前面添加《文章标题》- 平台名称 前缀
+   * - 格式：《文章标题》- 平台名称 | 功能性标题
+   * - 这样用户可以在任务列表中快速区分不同平台和不同文章的任务
+   */
+  private async syncArticleTitleToGroupV2(
+    task: typeof agentSubTasks.$inferSelect,
+    articleTitleWithPlatform: string
+  ): Promise<void> {
+    try {
+      const commandResultId = task.commandResultId;
+      if (!commandResultId) return;
+
+      // 查找同组的所有其他子任务
+      const siblingTasks = await db
+        .select({
+          id: agentSubTasks.id,
+          taskTitle: agentSubTasks.taskTitle,
+          orderIndex: agentSubTasks.orderIndex,
+        })
+        .from(agentSubTasks)
+        .where(
+          and(
+            eq(agentSubTasks.commandResultId, commandResultId as any),
+            ne(agentSubTasks.id, task.id)
+          )
+        );
+
+      for (const sibling of siblingTasks) {
+        const currentTitle = sibling.taskTitle || '';
+        // 检查是否已经有《》前缀（避免重复添加）
+        if (currentTitle.startsWith('《')) continue;
+        
+        // 构建新标题：在原始功能性标题前添加《文章标题》- 平台名称
+        const newTitle = currentTitle 
+          ? `${articleTitleWithPlatform} | ${currentTitle}` 
+          : articleTitleWithPlatform;
+
+        await db
+          .update(agentSubTasks)
+          .set({ taskTitle: newTitle, updatedAt: getCurrentBeijingTime().toISOString() })
+          .where(eq(agentSubTasks.id, sibling.id));
+      }
+    } catch (err) {
+      console.error('[SubtaskEngine] ❌ 同步文章标题到同组子任务失败:', {
+        taskId: task.id.slice(0, 8),
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
 
   /**
    * 从 resultData 中提取文本内容，写入 result_text 字段

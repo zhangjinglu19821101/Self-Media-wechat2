@@ -978,6 +978,9 @@ export function AgentTaskListNormal({ agentId, showPanel, onTogglePanel, refresh
         
         // 清理标题前缀/后缀
         const cleanTitle = (t: string) => t
+          // 🔴 新格式：《文章标题》- 平台名称 | 功能性标题 → 提取《文章标题》- 平台名称
+          .replace(/\s*\|.*$/, '')
+          // 移除旧的平台前缀
           .replace(/^\[微信公众号\]\s*/, '')
           .replace(/^\[小红书\]\s*/, '')
           .replace(/^\[知乎\]\s*/, '')
@@ -992,12 +995,13 @@ export function AgentTaskListNormal({ agentId, showPanel, onTogglePanel, refresh
 
         // 写作类 executor（其 taskTitle 是文章标题）
         // 使用 agent-registry 统一常量，新增平台时无需修改此处
-        const writingExecutors = WRITING_AGENT_IDS;
+        // 🔴 新增 user_preview_edit：直接发文模式下标题从预览修改节点获取
+        const titleRelevantExecutors = [...WRITING_AGENT_IDS, 'user_preview_edit'];
 
-        // 优先级1：从写作类子任务中提取文章标题（最准确）
+        // 优先级1：从写作类/预览修改子任务中提取文章标题（最准确）
         let title = '主任务';
         for (const subTask of groupSubTasks) {
-          if (writingExecutors.includes(subTask.executor) && subTask.taskTitle && !isGenericTitle(subTask.taskTitle)) {
+          if (titleRelevantExecutors.includes(subTask.executor) && subTask.taskTitle && !isGenericTitle(subTask.taskTitle)) {
             const cleaned = cleanTitle(subTask.taskTitle);
             if (cleaned.length > 3) {
               title = cleaned;
