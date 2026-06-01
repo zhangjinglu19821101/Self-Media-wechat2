@@ -26,7 +26,10 @@ importers:
         version: 5.2.2(react-hook-form@7.72.0(react@19.2.3))
       '@langchain/core':
         specifier: 1.1.36
-        version: 1.1.36(openai@6.33.0(ws@8.20.0)(zod@3.25.76))(ws@8.20.0)
+        version: 1.1.36(ws@8.20.0)
+      '@langchain/openai':
+        specifier: 1.3.1
+        version: 1.3.1(@langchain/core@1.1.36(ws@8.20.0))(ws@8.20.0)
       '@modelcontextprotocol/sdk':
         specifier: ^1.26.0
         version: 1.28.0(@cfworker/json-schema@4.1.1)(zod@3.25.76)
@@ -137,7 +140,7 @@ importers:
         version: 3.0.3
       chromadb:
         specifier: 1.7.3
-        version: 1.7.3(openai@6.33.0(ws@8.20.0)(zod@3.25.76))
+        version: 1.7.3
       class-variance-authority:
         specifier: ^0.7.1
         version: 0.7.1
@@ -149,7 +152,7 @@ importers:
         version: 1.1.1(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(react-dom@19.2.3(react@19.2.3))(react@19.2.3)
       coze-coding-dev-sdk:
         specifier: ^0.7.15
-        version: 0.7.17(openai@6.33.0(ws@8.20.0)(zod@3.25.76))(ws@8.20.0)
+        version: 0.7.17(ws@8.20.0)
       date-fns:
         specifier: ^4.1.0
         version: 4.1.0
@@ -176,7 +179,7 @@ importers:
         version: 9.0.3
       langsmith:
         specifier: ^0.5.15
-        version: 0.5.15(openai@6.33.0(ws@8.20.0)(zod@3.25.76))(ws@8.20.0)
+        version: 0.5.15(ws@8.20.0)
       lucide-react:
         specifier: ^0.468.0
         version: 0.468.0(react@19.2.3)
@@ -6567,7 +6570,7 @@ snapshots:
       '@jridgewell/resolve-uri': 3.1.2
       '@jridgewell/sourcemap-codec': 1.5.5
 
-  '@langchain/core@1.1.36(openai@6.33.0(ws@8.20.0)(zod@3.25.76))(ws@8.20.0)':
+  '@langchain/core@1.1.36(ws@8.20.0)':
     dependencies:
       '@cfworker/json-schema': 4.1.1
       '@standard-schema/spec': 1.1.0
@@ -6575,7 +6578,7 @@ snapshots:
       camelcase: 6.3.0
       decamelize: 1.2.0
       js-tiktoken: 1.0.21
-      langsmith: 0.5.15(openai@6.33.0(ws@8.20.0)(zod@3.25.76))(ws@8.20.0)
+      langsmith: 0.5.15(ws@8.20.0)
       mustache: 4.2.0
       p-queue: 6.6.2
       uuid: 11.1.0
@@ -6587,9 +6590,9 @@ snapshots:
       - openai
       - ws
 
-  '@langchain/openai@1.3.1(@langchain/core@1.1.36(openai@6.33.0(ws@8.20.0)(zod@3.25.76))(ws@8.20.0))(ws@8.20.0)':
+  '@langchain/openai@1.3.1(@langchain/core@1.1.36(ws@8.20.0))(ws@8.20.0)':
     dependencies:
-      '@langchain/core': 1.1.36(openai@6.33.0(ws@8.20.0)(zod@3.25.76))(ws@8.20.0)
+      '@langchain/core': 1.1.36(ws@8.20.0)
       js-tiktoken: 1.0.21
       openai: 6.33.0(ws@8.20.0)(zod@3.25.76)
       zod: 3.25.76
@@ -8431,12 +8434,10 @@ snapshots:
 
   chalk@5.6.2: {}
 
-  chromadb@1.7.3(openai@6.33.0(ws@8.20.0)(zod@3.25.76)):
+  chromadb@1.7.3:
     dependencies:
       cliui: 8.0.1
       isomorphic-fetch: 3.0.0
-    optionalDependencies:
-      openai: 6.33.0(ws@8.20.0)(zod@3.25.76)
     transitivePeerDependencies:
       - encoding
 
@@ -8524,10 +8525,10 @@ snapshots:
     optionalDependencies:
       typescript: 5.9.3
 
-  coze-coding-dev-sdk@0.7.17(openai@6.33.0(ws@8.20.0)(zod@3.25.76))(ws@8.20.0):
+  coze-coding-dev-sdk@0.7.17(ws@8.20.0):
     dependencies:
-      '@langchain/core': 1.1.36(openai@6.33.0(ws@8.20.0)(zod@3.25.76))(ws@8.20.0)
-      '@langchain/openai': 1.3.1(@langchain/core@1.1.36(openai@6.33.0(ws@8.20.0)(zod@3.25.76))(ws@8.20.0))(ws@8.20.0)
+      '@langchain/core': 1.1.36(ws@8.20.0)
+      '@langchain/openai': 1.3.1(@langchain/core@1.1.36(ws@8.20.0))(ws@8.20.0)
       '@supabase/supabase-js': 2.95.3
       axios: 1.14.0
       pg: 8.20.0
@@ -8936,7 +8937,7 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  eslint-module-utils@2.12.1(@typescript-eslint/parser@8.57.2(eslint@9.39.4(jiti@2.6.1))(typescript@5.9.3))(eslint-import-resolver-node@0.3.9)(eslint-import-resolver-typescript@3.10.1(eslint-plugin-import@2.32.0)(eslint@9.39.4(jiti@2.6.1)))(eslint@9.39.4(jiti@2.6.1)):
+  eslint-module-utils@2.12.1(@typescript-eslint/parser@8.57.2(eslint@9.39.4(jiti@2.6.1))(typescript@5.9.3))(eslint-import-resolver-node@0.3.9)(eslint-import-resolver-typescript@3.10.1)(eslint@9.39.4(jiti@2.6.1)):
     dependencies:
       debug: 3.2.7
     optionalDependencies:
@@ -8958,7 +8959,7 @@ snapshots:
       doctrine: 2.1.0
       eslint: 9.39.4(jiti@2.6.1)
       eslint-import-resolver-node: 0.3.9
-      eslint-module-utils: 2.12.1(@typescript-eslint/parser@8.57.2(eslint@9.39.4(jiti@2.6.1))(typescript@5.9.3))(eslint-import-resolver-node@0.3.9)(eslint-import-resolver-typescript@3.10.1(eslint-plugin-import@2.32.0)(eslint@9.39.4(jiti@2.6.1)))(eslint@9.39.4(jiti@2.6.1))
+      eslint-module-utils: 2.12.1(@typescript-eslint/parser@8.57.2(eslint@9.39.4(jiti@2.6.1))(typescript@5.9.3))(eslint-import-resolver-node@0.3.9)(eslint-import-resolver-typescript@3.10.1)(eslint@9.39.4(jiti@2.6.1))
       hasown: 2.0.2
       is-core-module: 2.16.1
       is-glob: 4.0.3
@@ -9729,7 +9730,7 @@ snapshots:
 
   kleur@4.1.5: {}
 
-  langsmith@0.5.15(openai@6.33.0(ws@8.20.0)(zod@3.25.76))(ws@8.20.0):
+  langsmith@0.5.15(ws@8.20.0):
     dependencies:
       '@types/uuid': 10.0.0
       chalk: 5.6.2
@@ -9738,7 +9739,6 @@ snapshots:
       semver: 7.7.4
       uuid: 10.0.0
     optionalDependencies:
-      openai: 6.33.0(ws@8.20.0)(zod@3.25.76)
       ws: 8.20.0
 
   language-subtag-registry@0.3.23: {}

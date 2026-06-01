@@ -143,13 +143,16 @@ export class SubtaskStateMachine {
       console.log('[State Machine] 已更新 daily_task');
     }
 
-    // 3. 🔥🔥🔥 新增：自动上传公众号草稿箱（仅对 insurance-d 的文章任务）
-    try {
-      await this.tryAutoUploadToWechat(subTask);
-    } catch (uploadError) {
-      console.error('[State Machine] 自动上传公众号草稿箱失败（不影响任务完成）:', uploadError);
-      // 静默失败，不影响任务完成状态
-    }
+    // 3. 🔴 [已移除] 自动上传公众号草稿箱
+    // 原因：流程模板中已有专用的"上传公众号草稿箱"步骤（executor='T'，通过MCP上传）
+    // 保留此逻辑会导致同一篇文章被上传2次（此处1次 + 流程步骤1次）
+    // 详见 git commit: fix: 移除state-machine冗余上传，解决双文章问题
+    //
+    // try {
+    //   await this.tryAutoUploadToWechat(subTask);
+    // } catch (uploadError) {
+    //   console.error('[State Machine] 自动上传公众号草稿箱失败（不影响任务完成）:', uploadError);
+    // }
 
     // 4. 记录执行成功的交互（可选）
     // 这里可以记录到 agent_sub_tasks_step_history 表

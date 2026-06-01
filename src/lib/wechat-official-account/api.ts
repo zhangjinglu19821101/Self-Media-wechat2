@@ -10,6 +10,10 @@ import {
   WECHAT_API_CONFIG,
   getDraftDefaults,  // 🔥 新增
 } from '@/config/wechat-official-account.config';
+import { sanitizeWechatHtml } from '@/lib/utils/wechat-html-utils';
+
+// 🔥 re-export getDraftDefaults 供其他模块使用
+export { getDraftDefaults };
 
 /**
  * Access Token 缓存
@@ -167,15 +171,50 @@ export async function addDraft(
   const url = `${WECHAT_API_CONFIG.baseUrl}/draft/add?access_token=${token}`;
 
   try {
+    // 🔥🔥🔥 最终防线：强制截断 digest 到 120 字（微信 API 硬限制）
+    // ⚠️ substring(0, 120) + '...' 会产生 123 字超限！必须 substring(0, 120) 不加省略号
+    const MAX_DIGEST_LENGTH = 120;
+    const safeArticles = articles.map((article, index) => {
+      if (article.digest) {
+        const originalLength = article.digest.length;
+        if (originalLength > MAX_DIGEST_LENGTH) {
+          const truncated = article.digest.substring(0, MAX_DIGEST_LENGTH);
+          console.log(`[微信公众号] 文章 ${index + 1} digest 超长 (原${originalLength}字)，截断到 ${MAX_DIGEST_LENGTH} 字`);
+          return {
+            ...article,
+            digest: truncated,
+          };
+        } else {
+          console.log(`[微信公众号] 文章 ${index + 1} digest 正常 (${originalLength}字，限制${MAX_DIGEST_LENGTH}字)`);
+        }
+      } else {
+        console.log(`[微信公众号] 文章 ${index + 1} 无 digest 字段，微信将自动从 content 生成`);
+      }
+      return article;
+    });
+
     // 🔴 上传草稿单独设置更长的超时时间：2 分钟
     // 因为上传大文章需要更长时间
     const uploadTimeout = 120000;
     
     // 🔴 计算文章内容大小，用于调试
-    const requestBody = JSON.stringify({ articles });
+    const requestBody = JSON.stringify({ articles: safeArticles });
     const requestSizeKB = (requestBody.length / 1024).toFixed(2);
     console.log(`[微信公众号] 开始上传草稿，文章数量: ${articles.length}, 请求大小: ${requestSizeKB} KB`);
-    console.log(`[微信公众号] 请求体预览:`, requestBody.substring(0, 500));
+    
+    // 🔥 最终验证：确认截断后所有 digest 都不超过 120 字
+    for (let i = 0; i < safeArticles.length; i++) {
+      const digestLen = safeArticles[i].digest?.length || 0;
+      if (digestLen > 120) {
+        console.error(`[微信公众号] ❌ 严重：文章 ${i + 1} digest 截断后仍为 ${digestLen} 字（限制 120 字）！强制再次截断`);
+        safeArticles[i].digest = safeArticles[i].digest!.substring(0, 120);
+      } else {
+        console.log(`[微信公众号] ✅ 文章 ${i + 1} digest 最终长度: ${digestLen} 字（限制 120 字）`);
+      }
+    }
+    // 重新计算请求体（因为可能再次截断）
+    const finalRequestBody = JSON.stringify({ articles: safeArticles });
+    console.log(`[微信公众号] 请求体预览:`, finalRequestBody.substring(0, 500));
     
     // 记录开始时间
     const startTime = Date.now();
@@ -185,7 +224,7 @@ export async function addDraft(
       headers: {
         'Content-Type': 'application/json',
       },
-      body: requestBody,
+      body: finalRequestBody,
       signal: AbortSignal.timeout(uploadTimeout),
     });
 
@@ -346,21 +385,28 @@ function formatContentForWechat(content: string): string {
     return '';
   }
 
-  // 如果已经是 HTML，直接返回
+  // 如果已经是 HTML，先清理不合规标签再返回
   if (content.includes('<')) {
-    return content;
+    return sanitizeWechatHtml(content);
   }
 
-  // 将纯文本转换为简单的 HTML
+  // 将纯文本转换为公众号API上传专用HTML格式（只使用<p>标签）
   return content
     .split('\n\n')
+    .filter(p => p.trim())
     .map(paragraph => {
-      if (paragraph.startsWith('# ')) {
-        return `<h2 style="font-size: 18px; font-weight: bold; margin: 20px 0 10px;">${paragraph.slice(2)}</h2>`;
-      } else if (paragraph.startsWith('## ')) {
-        return `<h3 style="font-size: 16px; font-weight: bold; margin: 15px 0 8px;">${paragraph.slice(3)}</h3>`;
+      const trimmed = paragraph.trim();
+      if (trimmed.startsWith('# ')) {
+        // 一级标题：黑色、居中加粗
+        const title = trimmed.slice(2);
+        return `<p style="margin:30px 0 10px 0; padding:0 12px; color:#000000; font-weight:bold; text-align:center; font-size:16px; line-height:1.7;">${title}</p><p style="text-align:center; margin:0 0 16px 0; padding:0;"><span style="display:inline-block; width:60px; height:2px; background-color:#eee;"></span></p>`;
+      } else if (trimmed.startsWith('## ')) {
+        // 二级标题：青绿色、加粗
+        const title = trimmed.slice(3);
+        return `<p style="margin:25px 0 15px 0; padding:0 12px; color:#1A8A6F; font-weight:bold; font-size:14px; line-height:1.75;">${title}</p>`;
       } else {
-        return `<section style="font-size: 14px; line-height: 1.8; margin-bottom: 15px; text-align: justify;">${paragraph}</section>`;
+        // 正文
+        return `<p style="margin:0 0 16px 0; padding:0 12px; color:#3E3E3E; font-size:14px; line-height:1.6;">${trimmed}</p>`;
       }
     })
     .join('');

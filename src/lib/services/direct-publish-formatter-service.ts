@@ -112,64 +112,70 @@ async function formatWithLLM(
 
 /**
  * 微信公众号 HTML 样式模板
- * 与 insurance-d-v3.md v3.2 第四部分 HTML 输出格式完全对齐
- * 公众号API零间距叠加终极模板 - 2026年5月更新
+ * 与 insurance-d-v3.md v3.3 第四部分 HTML 输出格式完全对齐
+ * 公众号API上传专用最终版 - 2026年5月更新
+ *
+ * 【强制规则 - 必须100%遵守，否则API上传样式会丢失】
+ * 1. 所有单位必须使用px，禁止使用em/rem
+ * 2. 所有样式必须写在style属性内，禁止使用<style>标签
+ * 3. 禁止使用任何不在白名单内的CSS属性
+ * 4. 所有内容必须使用<p>标签，包括标题、正文、提示、引用等
+ * 5. 绝对禁止使用<h1>-<h6>、<div>、<section>、<hr>标签
+ * 6. 绝对禁止使用!important
+ * 7. 所有元素必须有自己的font-size、line-height和color，不依赖任何继承
  */
 const WECHAT_HTML_TEMPLATE_SPEC = `
-<!-- 公众号API零间距叠加终极模板 - 核心原理：所有间距用padding控制，避免与公众号默认margin叠加 -->
-<section style="margin:0; padding:0; border:0; outline:0; font-size:14px; line-height:1.6; color:#3E3E3E; background:#ffffff;">
-  <div style="padding:0 12px;">
+<!-- 公众号API上传专用最终版 - 核心原则：只用<p>标签，所有样式内联，不依赖继承 -->
 
-    <!-- 开篇引导语（橙色、加粗）段间距16px由padding-bottom控制 -->
-    <p style="margin:0; padding:0 0 16px; color:#E67E22; font-weight:bold; line-height:1.6;">开头引导语</p>
+<!-- 开篇引导语（橙色、加粗） -->
+<p style="margin:0 0 12px 0; padding:0 12px; color:#E67E22; font-weight:bold; font-size:14px; line-height:1.6;">{引导语内容}</p>
 
-    <!-- 一级标题（黑色、居中加粗）上下间距16px由padding控制 -->
-    <p style="margin:0; padding:16px 0; color:#000000; font-weight:bold; text-align:center; font-size:16px; line-height:1.7;">一级标题</p>
-    
-    <!-- 分割线（下边距16px） -->
-    <div style="width:90%; height:1px; background:#eee; margin:0 auto 16px auto;"></div>
+<!-- 一级标题（黑色、居中加粗）+ 分割线 -->
+<p style="margin:20px 0 8px 0; padding:0 12px; color:#000000; font-weight:bold; text-align:center; font-size:16px; line-height:1.7;">{一级标题内容}</p>
+<p style="text-align:center; margin:0 0 12px 0; padding:0;">
+<span style="display:inline-block; width:60px; height:2px; background-color:#eee;"></span>
+</p>
 
-    <!-- 二级标题（青绿色、加粗）上边距16px，下边距8px -->
-    <p style="margin:0; padding:16px 0 8px; color:#1A8A6F; font-weight:bold; line-height:1.75;">二级标题</p>
+<!-- 二级标题（青绿色、加粗） -->
+<p style="margin:18px 0 10px 0; padding:0 12px; color:#1A8A6F; font-weight:bold; font-size:14px; line-height:1.75;">{二级标题内容}</p>
 
-    <!-- 正文段落 段间距16px统一标准 -->
-    <p style="margin:0; padding:0 0 16px; line-height:1.6;">正文内容</p>
+<!-- 正文 -->
+<p style="margin:0 0 12px 0; padding:0 12px; color:#3E3E3E; font-size:14px; line-height:1.6;">{正文内容}</p>
 
-    <!-- 黄色背景强调框 -->
-    <div style="background:#FFF9E6; padding:12px; margin:0 0 16px 0;">
-      <p style="margin:0; padding:0; line-height:1.6;">强调内容</p>
-    </div>
+<!-- 黄色背景强调框 -->
+<p style="margin:0 0 12px 0; padding:12px; background-color:#FFF9E6; border-left:4px solid #FFE082; color:#3E3E3E; font-size:14px; line-height:1.6;">{强调内容}</p>
 
-    <!-- 红色高危提醒 -->
-    <p style="margin:0; padding:0 0 16px; color:#FF0000; font-weight:bold; line-height:1.6;">⚠️ 重要提醒</p>
+<!-- 红色高危提醒 -->
+<p style="margin:0 0 12px 0; padding:0 12px; color:#FF0000; font-weight:bold; font-size:14px; line-height:1.6;">⚠️ {提醒内容}</p>
 
-    <!-- 蓝色辅助提示 -->
-    <p style="margin:0; padding:0 0 16px; color:#3498db; line-height:1.6;">💡 辅助提示</p>
+<!-- 蓝色辅助提示 -->
+<p style="margin:0 0 12px 0; padding:0 12px; color:#3498db; font-size:14px; line-height:1.6;">💡 {提示内容}</p>
 
-    <!-- 引用区块（左侧灰色边框） -->
-    <div style="padding-left:10px; border-left:2px solid #eee; margin:0 0 16px 0;">
-      <p style="margin:0; padding:0; line-height:1.6;">"引用内容"<br>—— 来源出处</p>
-    </div>
+<!-- 引用区块（左侧灰色边框） -->
+<p style="margin:0 0 12px 0; padding:0 12px 0 22px; border-left:2px solid #eee; color:#3E3E3E; font-size:14px; line-height:1.6;">{引用内容}</p>
 
-    <!-- 小字备注 -->
-    <p style="margin:0; padding:0 0 16px; font-size:12px; color:#666666; line-height:1.5;">备注内容</p>
+<!-- 小字备注 -->
+<p style="margin:0 0 12px 0; padding:0 12px; color:#666666; font-size:12px; line-height:1.5;">备注：{备注内容}</p>
 
-    <!-- 互动提问 上下间距16px -->
-    <p style="margin:0; padding:16px 0; line-height:1.6;">【互动提问】...</p>
+<!-- 互动提问 -->
+<p style="margin:20px 0 12px 0; padding:0 12px; color:#3E3E3E; font-size:14px; line-height:1.6;">【互动提问】{提问内容}</p>
 
-    <!-- 免责声明 上边距16px，下边距0 -->
-    <p style="margin:0; padding:16px 0 0; font-size:12px; color:#666666; line-height:1.5;">【免责声明】本文仅为金融保险科普分享，不构成任何投保、投资建议。所有保险产品请仔细阅读保险合同条款，结合自身风险承受能力理性选择。</p>
-
-  </div>
-</section>
+<!-- 免责声明 -->
+<p style="margin:20px 0 0 0; padding:15px 12px; border-top:1px solid #eee; color:#666666; font-size:12px; line-height:1.5;">【免责声明】本文仅为金融保险科普分享，不构成任何投保、投资建议。所有保险产品请仔细阅读保险合同条款，结合自身风险承受能力理性选择。</p>
 `;
 
 const WECHAT_FORMAT_SYSTEM_PROMPT = `你是一个微信公众号文章排版专家。你的任务是将用户提供的纯文本文章转换为公众号标准HTML排版格式。
 
-核心规则：
-1. **保持原文内容完全不变** — 不改写、不删减、不增加任何段落
-2. **仅做排版格式化** — 添加HTML标签和内联样式，调整排版结构
-3. **使用以下样式模板**（每个元素的内联样式必须严格一致）：
+【强制规则 - 必须100%遵守，否则API上传样式会丢失】
+1. 所有单位必须使用px，禁止使用em/rem
+2. 所有样式必须写在style属性内，禁止使用<style>标签
+3. 禁止使用任何不在白名单内的CSS属性
+4. 所有内容必须使用<p>标签，包括标题、正文、提示、引用等
+5. 绝对禁止使用<h1>-<h6>、<div>、<section>、<hr>标签
+6. 绝对禁止使用!important
+7. 所有元素必须有自己的font-size、line-height和color，不依赖任何继承
+
+【各元素标准格式 - 必须严格按照以下代码生成】
 
 ${WECHAT_HTML_TEMPLATE_SPEC}
 
@@ -182,20 +188,18 @@ ${WECHAT_HTML_TEMPLATE_SPEC}
 - 含有"建议""提示""可以选择"等 → 蓝色辅助提示（color:#3498db）
 - 含有"综上""总结""概括"等 + 需要突出的内容 → 黄色背景强调框（background:#FFF9E6）
 - 引用内容/数据来源 → 引用区块（左侧灰色边框）
-- 正文段落 → 深灰正文（color:#3E3E3E，默认继承）
+- 正文段落 → 深灰正文（color:#3E3E3E）
 - 结尾提问或互动 → 互动提问
 - 如果原文没有免责声明，末尾自动添加标准免责声明（小号浅灰）
 
 输出要求：
-- 仅输出HTML代码，不要输出任何解释文字
-- 使用完整的 <section> 包裹，外层 style 必须包含 margin:0; padding:0; border:0; outline:0;
-- 内层使用 <div style="padding:0 12px;"> 包裹所有内容
-- **🔴 一级标题用 <p> 标签，禁止使用 <h2>！**（公众号编辑器会重置h标签样式）
-- **🔴 二级标题用 <p> 标签，禁止使用 <h3>！**（同上）
-- **🔴 分割线用 <div>，禁止使用 <hr>！**（公众号编辑器会修改hr样式）
-- **🔴 所有间距使用padding控制，禁止使用margin控制段间距！**（公众号会叠加默认margin导致间距翻倍）
-- 所有样式必须使用内联style，不要使用class
-- 文章末尾必须有免责声明`;
+1. 严格按照上面的HTML模板生成文章，不要做任何修改
+2. 所有内容必须包裹在对应的<p>标签中
+3. 每个<p>标签的style属性必须与模板完全一致，包括所有数值
+4. 文章末尾必须包含互动提问和免责声明
+5. 正文强调使用<strong>标签，不要使用其他方式
+6. 🔴 绝对禁止使用<section>、<div>、<h1>-<h6>、<hr>标签！只用<p>标签！
+7. 🔴 所有元素必须有自己的font-size、line-height和color，不依赖任何继承！`;
 
 async function formatWechatWithLLM(
   llmClient: LLMClient,
@@ -304,8 +308,8 @@ async function formatWechatChunked(
     console.log(`[DirectPublishFormatter] 格式化第 ${i + 1}/${sections.length} 段（${section.length}字）`);
 
     const partPrompt = `请将以下纯文本${sections.length > 1 ? '片段' : '文章'}格式化为公众号标准HTML排版。
-${i > 0 ? '注意：这是文章的第' + (i + 1) + '部分，不需要添加开头引导语和<section>外层标签，只输出本段的HTML内容。' : ''}
-${i < sections.length - 1 ? '注意：这是文章的中间部分，不需要添加免责声明和</section></div>结尾标签。' : ''}
+${i > 0 ? '注意：这是文章的第' + (i + 1) + '部分，不需要添加开头引导语，只输出本段的HTML内容。' : ''}
+${i < sections.length - 1 ? '注意：这是文章的中间部分，不需要添加免责声明。' : ''}
 
 ${section}`;
 
@@ -323,16 +327,15 @@ ${section}`;
         formattedParts.push(partHtml);
       } else {
         console.warn(`[DirectPublishFormatter] 第 ${i + 1} 段格式化失败，使用原文兜底`);
-        formattedParts.push(`<p style="margin:0; padding:0 0 16px; font-size:14px; line-height:1.6;">${escapeHtml(section)}</p>`);
+        formattedParts.push(`<p style="margin:0 0 16px 0; padding:0 12px; color:#3E3E3E; font-size:14px; line-height:1.6;">${escapeHtml(section)}</p>`);
       }
     } catch (error: unknown) {
       console.error(`[DirectPublishFormatter] 第 ${i + 1} 段格式化失败:`, error instanceof Error ? error.message : String(error));
-      formattedParts.push(`<p style="margin:0; padding:0 0 16px; font-size:14px; line-height:1.6;">${escapeHtml(section)}</p>`);
+      formattedParts.push(`<p style="margin:0 0 16px 0; padding:0 12px; color:#3E3E3E; font-size:14px; line-height:1.6;">${escapeHtml(section)}</p>`);
     }
   }
 
-  // 拼接各段 HTML
-  // 策略：提取第一段的 <section><div> 开头 + 所有段的内容 + 最后一段的 </div></section> 结尾
+  // 拼接各段 HTML（新版：所有内容均使用 <p> 标签，无需 <section>/<div> 包裹）
   if (formattedParts.length === 0) return null;
 
   const mergedHtml = mergeChunkedHtml(formattedParts);
@@ -378,33 +381,27 @@ function splitArticleByHeadings(text: string): string[] {
 
 /**
  * 合并分段 HTML
- * 提取第一段的 <section><div> 包裹结构 + 所有段的内容 + 结尾标签
+ * 新版只使用 <p> 标签，无需 <section>/<div> 包裹，直接拼接各段内容
  */
 function mergeChunkedHtml(parts: string[]): string {
   if (parts.length === 0) return '';
   if (parts.length === 1) return parts[0];
 
-  // 提取每段的核心 HTML 内容（去掉 <section> 和 <div> 包裹标签）
+  // 新版格式不使用 <section>/<div> 包裹，各段直接拼接
   const innerParts: string[] = [];
 
   for (const part of parts) {
-    // 移除 <section> 和 <div> 包裹，只保留内部内容
-    let inner = part;
-    // 移除开头的 <section...> 和 <div...>
+    let inner = part.trim();
+    // 兼容旧版：移除可能残留的 <section> 和 <div> 包裹标签
     inner = inner.replace(/^\s*<section[^>]*>\s*/i, '');
     inner = inner.replace(/^\s*<div[^>]*>\s*/i, '');
-    // 移除结尾的 </div> 和 </section>
     inner = inner.replace(/\s*<\/div>\s*$/i, '');
     inner = inner.replace(/\s*<\/section>\s*$/i, '');
     innerParts.push(inner.trim());
   }
 
-  // 使用标准包裹结构重新组合
-  return `<section style="margin:0; padding:0; border:0; outline:0; font-size:14px; line-height:1.6; color:#3E3E3E; background:#ffffff;">
-  <div style="padding:0 12px;">
-    ${innerParts.join('\n    ')}
-  </div>
-</section>`;
+  // 新版：直接拼接所有 <p> 标签，无需包裹
+  return innerParts.join('\n');
 }
 
 /**

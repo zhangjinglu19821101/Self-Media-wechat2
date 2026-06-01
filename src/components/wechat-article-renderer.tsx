@@ -11,49 +11,35 @@
 'use client';
 
 import React, { useState, useMemo, useEffect, useRef } from 'react';
+import { sanitizeWechatHtml, estimateWechatArticleHeight } from '@/lib/utils/wechat-html-utils';
 
 // ============ 微信公众号样式常量 ============
 
-/** 公众号标准配色 */
+/** 公众号标准配色（与 insurance-d HTML 模板一致） */
 const WECHAT_COLORS = {
   openingOrange: '#E67E22',
-  primaryGreen: '#2AB692',
+  primaryGreen: '#1A8A6F',     // 二级标题青绿色
   warningRed: '#FF0000',
   textDark: '#3E3E3E',
   textBlack: '#000000',
   textLight: '#666666',
   divider: '#eeeeee',
+  bgHighlight: '#FFF9E6',      // 黄色背景强调框
+  borderHighlight: '#FFE082',  // 强调框左边框
+  blueTip: '#3498db',          // 蓝色辅助提示
 };
-
-// ============ HTML 清理和标准化 ============
-
-/**
- * 清理公众号文章 HTML，移除危险标签，保持内联样式
- */
-function sanitizeWechatHtml(html: string): string {
-  if (!html) return '';
-  
-  // 如果没有外层 section 包装，自动添加一个
-  let processed = html.trim();
-  if (!processed.startsWith('<section')) {
-    processed = `<section style="background:#ffffff; padding:0 12px; font-size:14px; line-height:1.6;">${processed}</section>`;
-  }
-  
-  return processed;
-}
 
 /**
  * 计算预览时的高度来判断是否需要折叠
+ * 新版规则：所有内容使用 <p> 标签，不再有 <h2>/<h3>/<hr>
  */
 function estimateContentHeight(html: string): number {
   if (!html) return 0;
   // 粗略估算：每个标签约等于一定高度
   const pCount = (html.match(/<p[^>]*>/g) || []).length;
-  const h2Count = (html.match(/<h2[^>]*>/g) || []).length;
-  const h3Count = (html.match(/<h3[^>]*>/g) || []).length;
-  const hrCount = (html.match(/<hr[^>]*>/g) || []).length;
+  const strongCount = (html.match(/<strong[^>]*>/g) || []).length;
   
-  return pCount * 40 + h2Count * 60 + h3Count * 45 + hrCount * 15;
+  return pCount * 40 + strongCount * 5;
 }
 
 // ============ 主组件 ============

@@ -1885,3 +1885,18 @@
      - 适配组：使用 getDirectPublishAdaptationSteps()，3步精简流程（适配改写→预览确认→合规校验）
      - 适配组无去AI化步骤（用户文章已是真人写作）
    - **上传格式一致性**: 与AI创作方式完全一致（信封格式 ArticleOutputEnvelope）
+
+87. **写作 Agent LLM 调用修复（Coze API 兼容性）**: 修复公众号直接发文流程遇到"余额不足"错误的根因
+   - **根因1（P0）**: `createDirectChatOpenAI` 使用 `openAIApiKey` 参数名，但 `@langchain/openai` v1.2+ 已废弃此参数名（改为 `apiKey`），导致 API Key 被静默忽略，报 `Missing credentials`
+   - **根因2（P0）**: `createDirectChatOpenAI` 使用 `invoke()` 非流式调用，但 Coze API 无论是否请求流式都返回 SSE 格式。`invoke()` 尝试解析 JSON 响应，遇到 SSE 格式报 `TypeError: Cannot read properties of undefined`，掩盖了真实的 `ErrBalanceOverdue` 错误
+   - **根因3（P1）**: `isRetryable` 未识别 `ErrBalanceOverdue` 等业务错误，导致对余额不足等不可恢复的错误进行无效重试
+   - **修复文件**: `src/lib/agent-llm.ts`
+     - `openAIApiKey: apiKey` → `apiKey: apiKey`（修复参数名）
+     - 新增 `streaming: true` + 使用 `llm.stream()` 替代 `llm.invoke()`（修复 SSE 响应解析）
+     - 新增 `defaultHeaders`（Authorization + X-Client-Sdk，与 SDK 保持一致）
+     - 新增 `enhanceCozeApiError()` 错误增强函数（将 TypeError 转换为有意义的错误消息）
+     - `isRetryable` 新增业务错误不可重试规则（ErrBalanceOverdue/ErrNotFound/资源点不足等）
+   - **设计原则**:
+     - Coze API 本质上是 SSE 接口，必须使用流式模式才能正确解析响应
+     - 写作 Agent（insurance-d/insurance-xiaohongshu/deai-optimizer）与 SDK 路径（Agent B/T）行为统一
+     - 业务错误（余额不足、模型不存在）不应重试，只有技术性错误（超时、网络、5xx、429）才重试

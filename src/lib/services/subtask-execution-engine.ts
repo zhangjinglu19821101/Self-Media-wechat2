@@ -6665,12 +6665,20 @@ export class SubtaskExecutionEngine {
             if (articleTitle) {
               article.title = articleTitle;
             }
+            // 🔥 强制截断 digest 到 120 字（微信公众号 API 限制，不加省略号避免超限）
+            if (article.digest && article.digest.length > 120) {
+              article.digest = article.digest.substring(0, 120);
+            }
           }
           console.log('[supplementArticleContentParams] ✅ 已覆盖上传 MCP 的 articles.content，长度:', articleContent.length);
         }
         // 覆盖 content 参数
         supplementedParams.content = articleContent;
-        if (articleTitle && !supplementedParams.title) {
+        // 🔴 修复：始终用提取到的文章标题覆盖，与 articles 数组处理保持一致
+        // 原逻辑 `if (articleTitle && !supplementedParams.title)` 会导致：
+        // 当 Agent T 的 LLM 输出已包含 title 字段（即使为空/错误值）时，articleTitle 无法覆盖
+        // 导致上传到草稿箱的文章没有标题（"未命名文章"）
+        if (articleTitle) {
           supplementedParams.title = articleTitle;
         }
         // 补充 accountId
@@ -7706,47 +7714,134 @@ export class SubtaskExecutionEngine {
       }
     }
 
-    // 🔴 临时修复：wechat add_draft 参数转换
+    // 🔴 修复：wechat add_draft 参数转换
     // 如果只有 content 没有 articles，自动转换为 articles 格式
+    // 使用公众号标准 HTML 格式化（formatDirectPublishArticle）
     let finalParams = mcpParams.params;
     if (mcpParams.toolName === 'wechat' && mcpParams.actionName === 'add_draft') {
       console.log('[SubtaskEngine] [command_result_id=' + task.commandResultId + '] 🔴 检测到 wechat add_draft，检查参数格式...');
       if (finalParams.articles) {
-        console.log('[SubtaskEngine] [command_result_id=' + task.commandResultId + '] ✅ 已有 articles 参数，无需转换');
+        // 🔥 强制截断 articles[].digest 到 120 字（微信公众号 API 限制，不加省略号避免超限）
+        // 即使 articles 已存在，也要截断（防止从前序任务传递过来的超长摘要）
+        for (const article of finalParams.articles) {
+          if (article.digest && article.digest.length > 120) {
+            console.log('[SubtaskEngine] [command_result_id=' + task.commandResultId + '] ⚠️ articles[].digest 超长 (' + article.digest.length + '字)，截断到 120 字');
+            article.digest = article.digest.substring(0, 120);
+          }
+        }
+        console.log('[SubtaskEngine] [command_result_id=' + task.commandResultId + '] ✅ 已有 articles 参数，已校验 digest 长度');
       } else if (finalParams.content) {
-        console.log('[SubtaskEngine] [command_result_id=' + task.commandResultId + '] ⚠️ 只有 content，转换为 articles 格式');
+        console.log('[SubtaskEngine] [command_result_id=' + task.commandResultId + '] ⚠️ 只有 content，转换为 articles 格式（使用公众号标准格式化）');
+        
         // 从 content 中提取标题（第一行或 # 开头的内容）
-        let title = '未命名文章';
+        let title = finalParams.title || '未命名文章';
         let contentText = finalParams.content;
         
-        // 尝试提取标题
-        const titleMatch = finalParams.content.match(/^#\s*(.+)$/m);
-        if (titleMatch) {
-          title = titleMatch[1].trim();
+        // 尝试提取标题（如果没有显式提供）
+        if (!finalParams.title) {
+          const titleMatch = finalParams.content.match(/^#\s*(.+)$/m);
+          if (titleMatch) {
+            title = titleMatch[1].trim();
+          } else {
+            // 从第一行提取标题（如果是纯文本）
+            const firstLine = finalParams.content.split('\n')[0];
+            if (firstLine && firstLine.length < 30 && !firstLine.includes('<')) {
+              title = firstLine.trim();
+            }
+          }
         }
         
-        // 转换 content 为 HTML 格式（简单处理）
-        const htmlContent = finalParams.content
-          .split('\n')
-          .map(line => {
-            if (line.startsWith('#### ')) return `<h4>${line.substring(5)}</h4>`;
-            if (line.startsWith('### ')) return `<h3>${line.substring(4)}</h3>`;
-            if (line.startsWith('## ')) return `<h2>${line.substring(3)}</h2>`;
-            if (line.startsWith('# ')) return `<h1>${line.substring(2)}</h1>`;
-            if (line.trim() === '') return '<br>';
-            return `<p>${line}</p>`;
-          })
-          .join('\n');
+        // 检查 content 是否已经是格式化后的 HTML（包含 <section> 标签）
+        const isAlreadyFormatted = contentText.includes('<section') && contentText.includes('style=');
+        
+        let htmlContent = contentText;
+        if (!isAlreadyFormatted) {
+          // 🔥 使用公众号标准 HTML 格式化（异步导入）
+          try {
+            const { formatDirectPublishArticle } = await import('@/lib/services/direct-publish-formatter-service');
+            const { plainTextToHtml } = await import('@/lib/platform-render/text-to-render');
+            console.log('[SubtaskEngine] [command_result_id=' + task.commandResultId + '] 🔴 调用 formatDirectPublishArticle 进行格式化...');
+            
+            // 尝试使用 LLM 格式化（180秒超时）
+            const formattedResult = await formatDirectPublishArticle({
+              articleContent: contentText,
+              articleTitle: title,
+              platform: 'wechat_official',
+              workspaceId: task.workspaceId,
+            });
+            
+            if (formattedResult.platformRenderData?.htmlContent) {
+              htmlContent = formattedResult.platformRenderData.htmlContent;
+              console.log('[SubtaskEngine] [command_result_id=' + task.commandResultId + '] ✅ LLM 格式化成功，HTML 长度:', htmlContent.length);
+            } else {
+              // 降级到纯文本转 HTML
+              htmlContent = plainTextToHtml(contentText);
+              console.log('[SubtaskEngine] [command_result_id=' + task.commandResultId + '] ⚠️ 使用降级格式化，HTML 长度:', htmlContent.length);
+            }
+          } catch (formatError) {
+            console.error('[SubtaskEngine] [command_result_id=' + task.commandResultId + '] ❌ 格式化失败:', formatError);
+            // 降级：使用简单的 Markdown 转 HTML
+            htmlContent = contentText
+              .split('\n')
+              .map(line => {
+                if (line.startsWith('#### ')) return `<h4 style="color:#1A8A6F;font-weight:bold;text-align:left;margin:1em 0;font-size:14px;">${line.substring(5)}</h4>`;
+                if (line.startsWith('### ')) return `<h3 style="color:#1A8A6F;font-weight:bold;text-align:left;margin:1em 0;font-size:14px;line-height:1.75;">${line.substring(4)}</h3>`;
+                if (line.startsWith('## ')) return `<h2 style="color:#000000;font-weight:bold;text-align:center;margin:1em 0;font-size:14px;">${line.substring(3)}<hr style="border:none;border-top:1px solid #eee;width:90%;margin:0.5em auto;"></h2>`;
+                if (line.startsWith('# ')) return `<h2 style="color:#000000;font-weight:bold;text-align:center;margin:1em 0;font-size:14px;">${line.substring(2)}<hr style="border:none;border-top:1px solid #eee;width:90%;margin:0.5em auto;"></h2>`;
+                if (line.trim() === '') return '<br>';
+                return `<p style="color:#3E3E3E;text-align:left;margin:0 0 1em;font-size:14px;line-height:1.6;">${line}</p>`;
+              })
+              .join('\n');
+            // 添加 section 包裹
+            htmlContent = `<section style="background:#ffffff;padding:0 12px;font-size:14px;line-height:1.6;">${htmlContent}</section>`;
+          }
+        } else {
+          console.log('[SubtaskEngine] [command_result_id=' + task.commandResultId + '] ✅ content 已是格式化 HTML，直接使用');
+        }
+        
+        // 🔥 获取账号默认设置
+        const accountId = finalParams.accountId || task.metadata?.accountId || 'insurance-account';
+        let author = finalParams.author || '原创';
+        let digest = finalParams.digest || '';
+        
+        // 尝试获取账号默认设置
+        try {
+          const { getDraftDefaults } = await import('@/lib/wechat-official-account/api');
+          const draftDefaults = await getDraftDefaults(accountId);
+          if (draftDefaults) {
+            author = finalParams.author || draftDefaults.author || '原创';
+            console.log('[SubtaskEngine] [command_result_id=' + task.commandResultId + '] ✅ 获取账号默认设置，author:', author);
+          }
+        } catch (draftError) {
+          console.warn('[SubtaskEngine] [command_result_id=' + task.commandResultId + '] ⚠️ 获取账号默认设置失败:', draftError);
+        }
+        
+        // 🔥 强制截断 digest 到 120 字（微信公众号 API 限制，不加省略号避免超限）
+        // 即使 digest 已存在，也要截断（防止从前序任务传递过来的超长摘要）
+        if (digest && digest.length > 120) {
+          console.log('[SubtaskEngine] [command_result_id=' + task.commandResultId + '] ⚠️ digest 超长 (' + digest.length + '字)，截断到 120 字');
+          digest = digest.substring(0, 120);
+        }
+        
+        // 如果没有 digest，从 HTML 内容生成
+        if (!digest) {
+          // 从 HTML 中提取纯文本摘要
+          const plainText = htmlContent.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim();
+          digest = plainText.substring(0, 120);
+        }
         
         finalParams = {
-          accountId: finalParams.accountId || 'insurance-account',
+          accountId: accountId,
           articles: [{
             title: title,
-            author: finalParams.author || '保险助手',
-            digest: finalParams.digest || finalParams.content.substring(0, 100) + '...',
-            content: `<div style="font-family: 'PingFang SC', 'Microsoft YaHei', sans-serif; line-height: 1.8;">${htmlContent}</div>`,
+            author: author,
+            digest: digest,
+            content: htmlContent,
             show_cover_pic: 0,  // 不显示封面（这样不需要 thumb_media_id）
             // thumb_media_id: 如果需要封面，需要先上传图片获取 media_id
+            // 🔥 新增：公众号草稿箱其他设置
+            need_open_comment: 1,  // 开启评论
+            only_fans_can_comment: 0,  // 所有人可评论
           }]
         };
         console.log('[SubtaskEngine] [command_result_id=' + task.commandResultId + '] 🔴 转换后的参数:', JSON.stringify(finalParams, null, 2));
@@ -8992,6 +9087,25 @@ export class SubtaskExecutionEngine {
           console.log('[SubtaskEngine] 🔥 格式化模式前缀已注入，平台:', fmtPlatformLabel, 'executor:', task.fromParentsExecutor);
         }
 
+        // 🔥🔥🔥 合规整改：格式保持前缀（按平台区分）
+        // 根因：去AI化优化(deai-optimizer)已将公众号文章统一为纯 <p> 标签行内样式格式
+        // sanitizeWechatHtml 能无损处理 <p> 格式，但会破坏 <h>/<hr>/<section> 等标签
+        // 小红书/知乎/头条输出 JSON/纯文本，不需要 HTML 格式约束
+        let complianceRevisionPrefix = '';
+        const _isComplianceRevisionTask = isWritingAgent(task.fromParentsExecutor)
+          && (task.taskTitle?.includes('合规整改') || task.taskDescription?.includes('合规整改'));
+        if (_isComplianceRevisionTask) {
+          const _executorPlatform = getPlatformForExecutor(task.fromParentsExecutor);
+          if (_executorPlatform === 'wechat_official') {
+            // 公众号：严格保持纯 <p> 标签 HTML 格式
+            complianceRevisionPrefix = `\n【合规整改格式保持 - 最高优先级指令】\n你正在执行"合规整改"任务。前序文章已完成去AI化优化，使用纯 <p> 标签 + 行内样式格式。你修改文章内容时必须严格遵守以下格式规则：\n1. 必须保持前序文章的 <p> 标签格式，严禁使用 <h1>-<h6>、<div>、<section>、<hr> 等标签\n2. 所有样式必须写在 <p> 标签的 style 属性中（如 font-weight:bold; font-size:18px 实现标题效果）\n3. 修改文字内容时，只修改需要整改的文本，未涉及的段落保持原样\n4. 不得改变文章的整体排版和格式结构\n5. 如果需要添加新段落，必须使用 <p> 标签并配以行内样式\n\n`;
+          } else {
+            // 小红书/知乎/头条：保持原输出格式，仅修改内容
+            complianceRevisionPrefix = `\n【合规整改格式保持 - 最高优先级指令】\n你正在执行"合规整改"任务。修改内容时必须严格遵守以下规则：\n1. 保持前序文章的输出格式不变（JSON/纯文本等），仅修改需要整改的文本内容\n2. 未涉及的段落/字段保持原样，不得改变整体结构\n3. 不得增删字段或改变数据格式\n\n`;
+          }
+          console.log('[SubtaskEngine] 🔥 合规整改格式保持前缀已注入，executor:', task.fromParentsExecutor, 'platform:', _executorPlatform);
+        }
+
         // 🔥🔥🔥 【P0修复】提前读取内容模板，获取 cardCountMode 和 promptInstruction
         // cardCountMode 优先级：1. 内容模板的 cardCountMode  2. metadata 中的 imageCountMode（兼容旧数据）3. 小红书默认 5-card
         const VALID_CARD_COUNT_MODES = ['3-card', '5-card', '7-card'] as const;
@@ -9200,8 +9314,8 @@ export class SubtaskExecutionEngine {
           executorType, // 🔥 传递 executorType 决定加载哪个提示词文件
           subTaskRole: taskSubTaskRole, // 🔥 Phase 3.5: 传递子任务角色（outline_generation / full_article）
           taskInstruction: isFullArticleTask && _confirmedOutline
-            ? `${formatModePrefix}${adaptationModePrefix}${platformPrefix}【已确认的创作大纲（以大纲为骨架展开，核心结构和论点不得改变，细节允许自然调整）】\n\n${_confirmedOutline}\n\n原始创作指令：${task.taskDescription}`
-            : `${formatModePrefix}${adaptationModePrefix}${platformPrefix}${task.taskDescription || ''}`,
+            ? `${complianceRevisionPrefix}${formatModePrefix}${adaptationModePrefix}${platformPrefix}【已确认的创作大纲（以大纲为骨架展开，核心结构和论点不得改变，细节允许自然调整）】\n\n${_confirmedOutline}\n\n原始创作指令：${task.taskDescription}`
+            : `${complianceRevisionPrefix}${formatModePrefix}${adaptationModePrefix}${platformPrefix}${task.taskDescription || ''}`,
           userOpinion: _userOpinionAndMaterials?.userOpinion ?? task.userOpinion,
           materials: _materialsContent ? [_materialsContent] : undefined,
           targetWordCount: taskExtension.targetWordCount,
@@ -10128,10 +10242,33 @@ ${userFeedbackText}
         params: agentBOutput.params,
       });
 
+      // 🔥🔥🔥 【紧急修复】公众号 add_draft 的 digest 截断逻辑
+      // executeCapability 是另一条 MCP 执行路径，也需要截断 digest
+      let finalParams = agentBOutput.params || {};
+      if (agentBOutput.toolName === 'wechat' && agentBOutput.actionName === 'add_draft') {
+        console.log('[executeCapability] 检测到 wechat add_draft，检查参数格式');
+        
+        // 处理 articles 数组格式
+        if (finalParams.articles && Array.isArray(finalParams.articles)) {
+          for (const article of finalParams.articles) {
+            if (article.digest && article.digest.length > 120) {
+              console.log('[executeCapability] digest 超长 (' + article.digest.length + '字)，截断到 120 字');
+              article.digest = article.digest.substring(0, 120);
+            }
+          }
+        }
+        
+        // 处理单个 digest 字段
+        if (finalParams.digest && finalParams.digest.length > 120) {
+          console.log('[executeCapability] digest 超长 (' + finalParams.digest.length + '字)，截断到 120 字');
+          finalParams.digest = finalParams.digest.substring(0, 120);
+        }
+      }
+
       const mcpResult = await genericMCPCall(
         agentBOutput.toolName,
         agentBOutput.actionName,
-        agentBOutput.params || {}
+        finalParams
       );
 
       console.log('📤 MCP 执行结果:', mcpResult);
@@ -10226,8 +10363,18 @@ ${userFeedbackText}
       selectedPrecedentInfo = '';
     }
 
+    // 🔴 合规整改格式保持约束（按平台区分）：确保合规整改时维持去AI化后的格式
+    const _reExecIsComplianceRevision = task.taskTitle?.includes('合规整改') || task.taskDescription?.includes('合规整改');
+    const _reExecPlatform = getPlatformForExecutor(task.fromParentsExecutor);
+    const reExecComplianceRevisionPrefix = _reExecIsComplianceRevision
+      ? _reExecPlatform === 'wechat_official'
+        ? `\n【🔴 格式保持硬约束（合规整改）】\n你正在执行合规整改任务。前序文章已完成去AI化优化，使用纯 <p> 标签格式。整改时必须严格遵守以下格式规则：\n1. 只使用 <p> 标签包裹所有内容（标题效果用 <p style="font-weight:bold; font-size:18px;"> 实现）\n2. 严禁使用 <h1>-<h6>、<hr>、<div>、<section> 标签\n3. 所有样式必须写在 <p> 标签的行内 style 属性中\n4. 保持原文的段落结构、装饰线、背景色等视觉效果（用 <p style="..."> 实现）\n5. 整改仅修改合规问题内容，不改变HTML格式结构\n`
+        : `\n【🔴 格式保持硬约束（合规整改）】\n你正在执行合规整改任务。整改时必须严格遵守以下规则：\n1. 保持前序文章的输出格式不变（JSON/纯文本等），仅修改需要整改的内容\n2. 不得增删字段或改变数据格式\n3. 未涉及的段落/字段保持原样\n`
+      : '';
+
     // ========== 🔴 构建精简的 prompt ==========
     const prompt = `
+${reExecComplianceRevisionPrefix}
 【当前任务】
 任务标题：${task.taskTitle}
 任务描述：${task.taskDescription || '无'}

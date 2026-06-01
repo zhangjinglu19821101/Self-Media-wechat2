@@ -18,6 +18,7 @@ import { requireAuth } from '@/lib/auth/context';
 import { db } from '@/lib/db';
 import { agentSubTasks, agentSubTasksStepHistory } from '@/lib/db/schema';
 import { eq, and, desc, sql, or, ne } from 'drizzle-orm';
+import { WechatPlatformRenderData } from '@/lib/platform-render/types';
 import { manuallyExecuteInProgressSubtasks } from '@/lib/cron';
 
 // ═══════════════════════════════════════════════════════════════
@@ -682,13 +683,41 @@ export async function POST(request: NextRequest) {
       // 🔴 新增：构建更新后的 platformRenderData
       // 原则：从哪个字段展示就保存回哪个字段
       let updatedPlatformRenderData = originalPlatformRenderData;
+      
+      // 🔥🔥🔥 【关键修复】用户修改内容后需要重新进行 HTML 格式化
+      // 问题根因：用户修改的是纯文本，直接存入 htmlContent 会丢失 HTML 格式
+      // 解决方案：调用 formatDirectPublishArticle 重新生成 HTML
       if (previewAction === 'save' && modifiedContent) {
         if (previewPlatform === 'wechat_official') {
-          // 公众号：更新 platformRenderData.htmlContent
-          updatedPlatformRenderData = {
-            ...(originalPlatformRenderData || {}),
-            htmlContent: finalContent,  // 🔴 关键：保存回 htmlContent 字段
-          };
+          // 公众号：重新调用 LLM 格式化生成 HTML
+          console.log('[User Decision] 🔄 用户修改了内容，重新进行公众号 HTML 格式化...');
+          try {
+            const { formatDirectPublishArticle } = await import('@/lib/services/direct-publish-formatter-service');
+            const newPlatformRenderData = await formatDirectPublishArticle({
+              textContent: finalContent,
+              platform: 'wechat_official',
+              articleTitle: finalTitle || '用户提供的文章',
+              workspaceId: subTask.workspaceId,
+            });
+            // 类型断言：formatDirectPublishArticle 返回公众号渲染数据
+            const wechatRenderData = newPlatformRenderData as WechatPlatformRenderData | null;
+            // 类型断言：明确告诉 TypeScript 这是公众号渲染数据
+            updatedPlatformRenderData = {
+              ...(originalPlatformRenderData || {}),
+              htmlContent: wechatRenderData?.htmlContent || finalContent,
+            } as WechatPlatformRenderData;
+            console.log('[User Decision] ✅ 公众号 HTML 格式化完成:', {
+              htmlLength: (updatedPlatformRenderData as WechatPlatformRenderData).htmlContent?.length || 0,
+              isHtml: (updatedPlatformRenderData as WechatPlatformRenderData).htmlContent?.includes('<section') || (updatedPlatformRenderData as WechatPlatformRenderData).htmlContent?.includes('<p'),
+            });
+          } catch (formatError) {
+            console.error('[User Decision] ❌ HTML 格式化失败，降级为纯文本:', formatError);
+            // 降级：使用纯文本（至少保证内容正确，只是没有样式）
+            updatedPlatformRenderData = {
+              ...(originalPlatformRenderData || {}),
+              htmlContent: finalContent,
+            } as WechatPlatformRenderData;
+          }
         } else if (previewPlatform === 'xiaohongshu') {
           // 小红书：尝试解析 JSON 更新 platformRenderData
           try {
@@ -710,6 +739,14 @@ export async function POST(request: NextRequest) {
             // 解析失败，保持原样
           }
         }
+      } else if (previewAction === 'skip') {
+        // 用户跳过修改：保持原始 platformRenderData（HTML 格式已存在）
+        console.log('[User Decision] 👁️ 用户跳过修改，保持原始 platformRenderData:', {
+          hasOriginalPlatformRenderData: !!originalPlatformRenderData,
+          originalHtmlLength: originalPlatformRenderData?.htmlContent?.length || 0,
+          isHtml: originalPlatformRenderData?.htmlContent?.includes('<section') || originalPlatformRenderData?.htmlContent?.includes('<p'),
+        });
+        // 不需要更新，updatedPlatformRenderData = originalPlatformRenderData（已在上方赋值）
       }
 
       // 3. 标记预览任务为完成
