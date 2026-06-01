@@ -3068,9 +3068,11 @@ export class SubtaskExecutionEngine {
           taskTitle: task.taskTitle,
           description: task.taskDescription,
           executorResult: {
-            result: executorResult.result,  // 🔴 新增：执行结论声明
+            result: executorResult.result,
             suggestion: executorResult.suggestion,
             isCompleted: executorResult.isCompleted,
+            briefResponse: executorResult.briefResponse,
+            selfEvaluation: executorResult.selfEvaluation,
             structuredResult: (executorResult as any).structuredResult
           }
         },
@@ -3124,7 +3126,9 @@ export class SubtaskExecutionEngine {
       // ✅ P0修复：即使失败也要保存错误信息到 execution_result
       const errorResult: ExecutorDirectResult = {
         isCompleted: false,
-        suggestion: `执行过程中发生错误 (阶段: ${executionPhase}): ${error instanceof Error ? error.message : String(error)}`
+        suggestion: `执行过程中发生错误 (阶段: ${executionPhase}): ${error instanceof Error ? error.message : String(error)}`,
+        briefResponse: `[执行失败] ${executionPhase}阶段异常: ${error instanceof Error ? error.message : String(error)}`,
+        selfEvaluation: `任务未能完成：${executionPhase}阶段发生错误 - ${error instanceof Error ? error.message : String(error)}`,
       };
       
       console.error('[执行Agent追踪] 保存错误结果到 execution_result:', errorResult);
@@ -3161,7 +3165,13 @@ export class SubtaskExecutionEngine {
           taskTitle: task.taskTitle,
           taskDescription: task.taskDescription,
           errorPhase: executionPhase,
-          errorMessage: error instanceof Error ? error.message : String(error)
+          errorMessage: error instanceof Error ? error.message : String(error),
+          // ✅ 标准返回格式字段：确保 step_history 中包含关键信息
+          briefResponse: errorResultToSave?.briefResponse || `[执行失败] ${executionPhase}阶段异常: ${error instanceof Error ? error.message : String(error)}`,
+          selfEvaluation: errorResultToSave?.selfEvaluation || `任务未能完成：${executionPhase}阶段发生错误 - ${error instanceof Error ? error.message : String(error)}`,
+          isCompleted: false,
+          isTaskDown: false,
+          suggestion: errorResultToSave?.suggestion,
         },
         'pre_need_support',  // responseStatus
         errorResultToSave,    // responseContent: 错误结果
@@ -7751,8 +7761,21 @@ export class SubtaskExecutionEngine {
           }
         }
         
-        // 检查 content 是否已经是格式化后的 HTML（包含 <section> 标签）
-        const isAlreadyFormatted = contentText.includes('<section') && contentText.includes('style=');
+        // 检查 content 是否已经是格式化后的 HTML
+        // 路径A（tryAutoUploadToWechat）直接使用 insurance-d 原始输出经 sanitizeWechatHtml 处理后上传，
+        // 格式效果最好。路径B（MCP）之前因为此检查只识别 <section> 标签，导致 insurance-d v3.3 的
+        // <p style=...> 输出被误判为"未格式化"，触发 formatDirectPublishArticle（LLM重新格式化），
+        // 产生与路径A不同的HTML结构/样式，导致格式退化。
+        // 修复：扩展识别条件，覆盖所有写作 Agent 已格式化的 HTML 输出：
+        //   - <section style=...> ：旧版 insurance-d 输出
+        //   - <p style=...> ：insurance-d v3.3+ 输出
+        //   - <h1>-<h6 style=...> ：极早期 insurance-d 输出
+        const isAlreadyFormatted = contentText.includes('style=') && (
+          contentText.includes('<section') ||
+          contentText.includes('<p style') ||
+          contentText.includes('<p\nstyle') ||
+          /<h[1-6][>\s]/i.test(contentText)
+        );
         
         let htmlContent = contentText;
         if (!isAlreadyFormatted) {
@@ -9960,13 +9983,19 @@ ${userFeedbackText}
         ? `LLM未调用（阶段: ${callPhase}）`
         : `LLM已调用但异常（阶段: ${callPhase}）`;
 
+      const _errorMsg = error instanceof Error ? error.message : String(error);
+      // 🔴 P0 修复：selfEvaluation 必须是字符串（extractSelfEvaluation 期望 string 类型）
+      // 旧版 selfEvaluation 是对象 {isTaskDown, reason}，导致 extractSelfEvaluation 的
+      // multiLevelExtract 跳过该来源（typeof !== 'string'），最终回退到"原因未知"
+      const _selfEvalStr = `任务未能完成：${_errorPhaseLabel} - ${_errorMsg.substring(0, 200)}`;
+      
       return {
         isCompleted: false,
         result: null,
-        suggestion: `执行Agent处理时发生错误 (${_errorPhaseLabel}): ${error instanceof Error ? error.message : String(error)}`,
+        suggestion: `执行Agent处理时发生错误 (${_errorPhaseLabel}): ${_errorMsg}`,
         rawLlmResponse: rawLlmResponse ?? undefined,  // undefined 表示LLM未调用
-        briefResponse: `[执行失败] ${_errorPhaseLabel}: ${error instanceof Error ? error.message.substring(0, 100) : String(error).substring(0, 100)}`,
-        selfEvaluation: { isTaskDown: false, reason: _errorPhaseLabel }
+        briefResponse: `[执行失败] ${_errorPhaseLabel}: ${_errorMsg.substring(0, 200)}`,
+        selfEvaluation: _selfEvalStr
       };
     }
   }
@@ -12522,23 +12551,30 @@ ${resultData.executionSummary}
         ?? structuredResult?.originalInstruction?.description?.substring(0, 200);
       
       // 🔴🔴🔴 【关键修复】selfEvaluation 兜底逻辑
-      // 🔴 修复：无论 isTaskDown 是 true 还是 false，都应该有默认值
+      // 🔴 P0 修复：当 LLM 调用失败时，executorResponse.briefResponse 和 executorResponse.selfEvaluation
+      // 包含具体的错误信息（如"账户余额已欠费"），但旧代码没有检查这两个来源，
+      // 导致回退到"原因未知"的通用消息
       const selfEvaluation = structuredResult?.selfEvaluation
         ?? structuredResult?.briefResponse  // 尝试从 briefResponse 兜底
+        ?? executorResponse?.selfEvaluation  // 🔴 P0 新增：从 executorResponse 顶层提取（callExecutorAgentDirectly 错误路径设置）
+        ?? executorResponse?.briefResponse   // 🔴 P0 新增：从 executorResponse.briefResponse 提取（包含 "[执行失败] LLM已调用但异常..." 等错误信息）
+        ?? executorResponse?.executorOutput?.suggestion  // 🔴 P0 新增：从 suggestion 提取
         ?? (executorResponse.isTaskDown === false 
             ? `任务未能完成：${extractedResult || '原因未知'}。需要检查任务要求或提供更多信息。` 
-            : `任务已完成：${extractedResult?.substring(0, 100) || '执行成功'}。`);  // 🔴 修复：isTaskDown=true 时也要有默认值
+            : `任务已完成：${extractedResult?.substring(0, 100) || '执行成功'}。`);
       
       // 🔴🔴🔴 【关键修复】briefResponse 兜底逻辑
-      // 🔴 修复：无论 isTaskDown 是 true 还是 false，都应该有默认值
+      // 🔴 P0 修复：同 selfEvaluation，增加 executorResponse 顶层字段检查
       const briefResponse = structuredResult?.briefResponse
         ?? structuredResult?.selfEvaluation
+        ?? executorResponse?.briefResponse  // 🔴 P0 新增：从 executorResponse 顶层提取
+        ?? executorResponse?.selfEvaluation  // 🔴 P0 新增：从 executorResponse.selfEvaluation 提取
         ?? executorResponse?.executorOutput?.result?.substring(0, 200)
         ?? executorResponse?.executorOutput?.suggestion
         ?? extractedResult?.substring(0, 200)
         ?? (executorResponse.isTaskDown === false 
             ? '任务未能完成，请查看详情' 
-            : '任务已完成，请查看结果');  // 🔴 修复：isTaskDown=true 时也要有默认值
+            : '任务已完成，请查看结果');
       
       storedResponseContent = executorResponse
         ? {

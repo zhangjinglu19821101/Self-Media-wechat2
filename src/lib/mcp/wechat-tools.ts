@@ -15,6 +15,7 @@ import {
   uploadMedia,
   uploadPermanentThumb,
 } from '@/lib/wechat-official-account/api';
+import { sanitizeWechatHtml } from '@/lib/utils/wechat-html-utils';
 import fs from 'fs';
 import path from 'path';
 
@@ -172,11 +173,18 @@ export async function wechatAddDraft(params: WechatAddDraftParams): Promise<Wech
       articles.map(async (article, index) => {
         let formattedContent = article.content;
         
-        // 检测是否为 markdown 内容
-        const isMarkdown = /(\*\*|#{1,6}|- |\d+\. |> |`{1,3})/.test(article.content);
+        // 🔴🔴🔴 对齐路径A格式化管道：HTML内容必须经过sanitizeWechatHtml处理
+        // 路径A(tryAutoUploadToWechat)调用formatArticleForWechat→sanitizeWechatHtml，
+        // 路径B(MCP)也必须走相同的sanitizeWechatHtml，否则格式会不一致
+        const isHtmlContent = article.content && article.content.includes('<');
         
-        if (isMarkdown && article.content.trim()) {
-          console.log(`[MCP Tool] 文章 ${index + 1} 检测到 markdown 内容，自动转换`);
+        if (isHtmlContent) {
+          // HTML内容：使用与路径A完全一致的sanitizeWechatHtml处理
+          formattedContent = sanitizeWechatHtml(article.content);
+          console.log(`[MCP Tool] 文章 ${index + 1} HTML内容经sanitizeWechatHtml处理，原始长度: ${article.content.length}, 处理后长度: ${formattedContent.length}`);
+        } else if (article.content && article.content.trim()) {
+          // 非HTML内容：使用formatContentForWechat自动转换（纯文本/Markdown → HTML）
+          console.log(`[MCP Tool] 文章 ${index + 1} 非HTML内容，自动转换为HTML`);
           formattedContent = formatContentForWechat(article.content);
           console.log(`[MCP Tool] 文章 ${index + 1} 转换完成，原始长度: ${article.content.length}, 转换后长度: ${formattedContent.length}`);
         }
