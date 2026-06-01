@@ -2418,6 +2418,67 @@ export function AgentTaskListNormal({ agentId, showPanel, onTogglePanel, refresh
                               />
                             ) : (
                           <>
+                          {/* 🔴 新增：失败/等待原因展示 */}
+                          {(() => {
+                            const errorInfo = (() => {
+                              // 优先从 stepHistory 中找到最近一条该 Agent 自身的执行记录
+                              const ownHistory = taskDetail?.stepHistory
+                                ?.filter(h => {
+                                  const user = h.interactUser || '';
+                                  return user === displayTask.fromParentsExecutor
+                                    || user === displayTask.executor
+                                    || (displayTask.fromParentsExecutor && user.includes(displayTask.fromParentsExecutor));
+                                });
+                              const latestRecord = ownHistory?.[ownHistory.length - 1];
+                              if (!latestRecord) return null;
+                              const content = latestRecord.interactContent;
+                              const resp = content?.responseContent || content;
+                              if (resp?.selfEvaluation || resp?.briefResponse || resp?.errorMessage) {
+                                return {
+                                  selfEvaluation: resp.selfEvaluation || '',
+                                  briefResponse: resp.briefResponse || '',
+                                  errorMessage: resp.errorMessage || resp.error || '',
+                                };
+                              }
+                              // 从 requestContent 提取
+                              const req = content?.requestContent || content;
+                              if (req?.selfEvaluation || req?.briefResponse || req?.errorMessage) {
+                                return {
+                                  selfEvaluation: req.selfEvaluation || '',
+                                  briefResponse: req.briefResponse || '',
+                                  errorMessage: req.errorMessage || req.error || '',
+                                };
+                              }
+                              return null;
+                            })();
+                            return errorInfo && (errorInfo.selfEvaluation || errorInfo.briefResponse || errorInfo.errorMessage) ? (
+                              <div className={`mb-4 rounded-lg border p-3 ${
+                                displayTask.status === 'waiting_user' 
+                                  ? 'bg-amber-50 border-amber-200' 
+                                  : 'bg-red-50 border-red-200'
+                              }`}>
+                                <div className="flex items-center gap-2 mb-1">
+                                  <AlertTriangle className={`w-4 h-4 ${
+                                    displayTask.status === 'waiting_user' ? 'text-amber-600' : 'text-red-600'
+                                  }`} />
+                                  <span className={`text-sm font-semibold ${
+                                    displayTask.status === 'waiting_user' ? 'text-amber-800' : 'text-red-800'
+                                  }`}>
+                                    {displayTask.status === 'waiting_user' ? '任务等待处理原因' : '任务失败原因'}
+                                  </span>
+                                </div>
+                                {errorInfo.errorMessage && (
+                                  <p className="text-sm text-red-700 mt-1">{errorInfo.errorMessage}</p>
+                                )}
+                                {errorInfo.briefResponse && !errorInfo.errorMessage && (
+                                  <p className="text-sm text-amber-700 mt-1">{errorInfo.briefResponse}</p>
+                                )}
+                                {errorInfo.selfEvaluation && (
+                                  <p className="text-xs text-gray-600 mt-1">{errorInfo.selfEvaluation}</p>
+                                )}
+                              </div>
+                            ) : null;
+                          })()}
                           <h4 className={`font-semibold mb-4 flex items-center gap-2 ${
                             displayTask.status === 'waiting_user' ? 'text-purple-900' : 'text-red-900'
                           }`}>
