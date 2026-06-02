@@ -350,8 +350,9 @@ export async function POST(request: NextRequest) {
             : (materialIds || []);
 
           const resolvedExecutor = resolveExecutorForPlatform(baseAccountInfo.platform, subTask.executor);
+          // 基础文章组：所有任务都加平台前缀（不仅限于写作Agent）
           let taskTitleForDb = subTask.title;
-          if (isWritingAgent(subTask.executor)) {
+          {
             let cleanedTitle = subTask.title
               .replace(/\[微信公众号\]\s*/g, '')
               .replace(/\[小红书\]\s*/g, '')
@@ -540,11 +541,23 @@ export async function POST(request: NextRequest) {
         const resolvedExecutor = resolveExecutorForPlatform(singlePlatform, subTask.executor);
         console.log(`[simple-split] executor 路由: platform=${singlePlatform}, original=${subTask.executor}, resolved=${resolvedExecutor}`);
 
+        // 🔥 单平台模式：所有任务都加平台前缀（与多平台基础组逻辑一致）
+        let singleTaskTitle = subTask.title;
+        if (platformLabel) {
+          let cleanedTitle = subTask.title
+            .replace(/\[微信公众号\]\s*/g, '')
+            .replace(/\[小红书\]\s*/g, '')
+            .replace(/\[知乎\]\s*/g, '')
+            .replace(/\[抖音\]\s*/g, '')
+            .replace(/\[微博\]\s*/g, '');
+          singleTaskTitle = `[${platformLabel}] ${cleanedTitle}`;
+        }
+
         const inserted = await db.insert(agentSubTasks).values({
           id: newSubTaskId,
           commandResultId: newTempSessionId,
           fromParentsExecutor: resolvedExecutor,
-          taskTitle: subTask.title,
+          taskTitle: singleTaskTitle,
           taskDescription: subTask.description || '',
           status: 'pending',
           orderIndex: subTask.orderIndex || i + 1,

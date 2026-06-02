@@ -18,16 +18,18 @@ import { useState, useMemo, useCallback, useEffect, useRef, memo } from 'react';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import {
   Heading1, Heading2, Type, AlertTriangle, MessageCircle,
   Shield, Minus, List, Quote, ChevronDown, ChevronUp,
-  RotateCcw, FileText
+  RotateCcw, FileText, Sparkles
 } from 'lucide-react';
 import {
   parseHtmlToBlocks,
   rebuildHtmlFromBlocks,
   type HtmlBlock,
 } from '@/lib/html-block-parser';
+import { AiRevisePopover } from '@/components/ai-revise-popover';
 
 // ============ 类型定义 ============
 
@@ -174,10 +176,12 @@ interface BlockEditorProps {
   originalText: string;
   readOnly: boolean;
   onTextChange: (index: number, newText: string) => void;
+  articleContext?: string;
+  allBlocks?: HtmlBlock[];
 }
 
 /** 单个段落编辑器 — memo 防止无关段落重渲染 */
-const BlockEditorItem = memo(function BlockEditorItem({ block, originalText, readOnly, onTextChange }: BlockEditorProps) {
+const BlockEditorItem = memo(function BlockEditorItem({ block, originalText, readOnly, onTextChange, articleContext, allBlocks }: BlockEditorProps) {
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [hasChanged, setHasChanged] = useState(false);
 
@@ -239,6 +243,32 @@ const BlockEditorItem = memo(function BlockEditorItem({ block, originalText, rea
           </Badge>
         )}
         <div className="flex-1" />
+        {!readOnly && block.text && block.text.trim().length >= 10 && (
+          <Popover>
+            <PopoverTrigger asChild>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-5 px-1.5 text-[10px] text-indigo-400 hover:text-indigo-600 hover:bg-indigo-50"
+                title="AI 辅助修改"
+              >
+                <Sparkles className="h-3 w-3" />
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-80 p-0" side="left" align="start">
+              <AiRevisePopover
+                inline
+                originalText={block.text}
+                articleContext={articleContext || ''}
+                onClose={() => {/* Popover controls open state */}}
+                onApplyRevision={(revisedText: string) => {
+                  onTextChange(block.index, revisedText);
+                  setHasChanged(true);
+                }}
+              />
+            </PopoverContent>
+          </Popover>
+        )}
         {hasChanged && !readOnly && (
           <Button
             variant="ghost"
@@ -323,6 +353,14 @@ export function WechatBlockEditor({ html, onChange, readOnly = false }: WechatBl
     }
   }, [currentBlocks, onChange, parseResult]);
 
+  // 构建文章上下文，用于 AI 辅助修改
+  const articleContext = useMemo(() => {
+    return currentBlocks
+      .filter(b => b.text?.trim())
+      .map(b => `[${b.type}] ${b.text}`)
+      .join('\n\n');
+  }, [currentBlocks]);
+
   // 编辑中的文本与原始不同的块数
   const changedCount = useMemo(() => {
     return currentBlocks.filter(b => {
@@ -372,6 +410,8 @@ export function WechatBlockEditor({ html, onChange, readOnly = false }: WechatBl
             originalText={parseResult.blocks.find(b => b.index === block.index)?.text || ''}
             readOnly={readOnly}
             onTextChange={handleTextChange}
+            articleContext={articleContext}
+            allBlocks={parseResult.blocks}
           />
         ))}
       </div>
