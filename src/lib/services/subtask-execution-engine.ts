@@ -805,7 +805,7 @@ export class SubtaskExecutionEngine {
   // 设为 10 分钟（远大于单次 LLM 调用时间，远小于总超时时间）
   private static readonly HEARTBEAT_TIMEOUT_MS = 10 * 60 * 1000;
   // 🔴 P0 修复：改为 public，供 health API 等外部读取
-  public static readonly MAX_PARALLEL_GROUPS = 10; // 🔴 P0 修复：最大并行组数从 5 提升到 10（解决直接发文等多平台场景被跳过的问题）
+  public static readonly MAX_PARALLEL_GROUPS = 20; // 🔴 最大并行组数提升到 20（支持更多并发任务执行）
 
   /**
    * 🔒 查询引擎是否有任何组正在执行（供外部调用方使用）
