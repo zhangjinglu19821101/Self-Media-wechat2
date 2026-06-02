@@ -13508,13 +13508,26 @@ ${resultData.executionSummary}
 
       for (const sibling of siblingTasks) {
         const currentTitle = sibling.taskTitle || '';
-        // 检查是否已经有《》前缀（避免重复添加）
-        if (currentTitle.startsWith('《')) continue;
         
-        // 构建新标题：在原始功能性标题前添加《文章标题》- 平台名称
-        const newTitle = currentTitle 
-          ? `${articleTitleWithPlatform} | ${currentTitle}` 
-          : articleTitleWithPlatform;
+        // 🔴🔴🔴 统一命名格式更新策略：
+        // 新格式创建时： 《指令摘要》- 平台名称 | 功能性标题
+        // 写作完成后应更新为：《实际文章标题》- 平台名称 | 功能性标题
+        // 关键：替换 《...》- 平台名称 前缀，保留 | 后面的功能性标题
+        
+        let newTitle: string;
+        if (currentTitle.startsWith('《')) {
+          // 已有《》前缀：替换前缀部分，保留功能性标题
+          const pipeIdx = currentTitle.indexOf(' | ');
+          const functionalSuffix = pipeIdx >= 0 ? currentTitle.substring(pipeIdx) : '';
+          newTitle = functionalSuffix 
+            ? `${articleTitleWithPlatform}${functionalSuffix}` 
+            : articleTitleWithPlatform;
+        } else {
+          // 旧格式（无《》前缀）：在前面添加新前缀
+          newTitle = currentTitle 
+            ? `${articleTitleWithPlatform} | ${currentTitle}` 
+            : articleTitleWithPlatform;
+        }
 
         await db
           .update(agentSubTasks)
