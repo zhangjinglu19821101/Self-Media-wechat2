@@ -23,7 +23,7 @@ import {
   agentReports
 } from '@/lib/db/schema';
 import { coreAnchorAssets } from '@/lib/db/schema/digital-assets';
-import { eq, and, or, lte, desc, inArray, notInArray, lt, gte, sql, isNull, asc } from 'drizzle-orm';
+import { eq, and, or, lte, desc, inArray, notInArray, lt, gte, sql, isNull, asc, ne } from 'drizzle-orm';
 import { Branch1IntelligentExecutor } from '@/lib/mcp/branch1-intelligent-executor';
 import { genericMCPCall } from '@/lib/mcp/generic-mcp-call';
 import { callLLM } from '@/lib/agent-llm';
