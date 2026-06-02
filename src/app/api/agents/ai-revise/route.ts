@@ -61,10 +61,57 @@ const AI_REVISE_USER_PROMPT = `## 文章标题
 
 请提供3个修改方案。`;
 
+/** LLM 调用超时（30秒） */
+const LLM_TIMEOUT_MS = 30_000;
+
+/**
+ * 使用栈匹配精确提取 JSON 对象
+ * 避免贪婪正则匹配到非 JSON 内容（如 [微信公众号] 等）
+ */
+function extractJsonObjectWithStack(text: string): string | null {
+  // 先尝试代码块格式
+  const codeBlockMatch = text.match(/```(?:json)?\s*\n([\s\S]*?)\n```/);
+  if (codeBlockMatch) {
+    return codeBlockMatch[1].trim();
+  }
+
+  // 栈匹配提取最外层 {...}
+  const firstBrace = text.indexOf('{');
+  if (firstBrace === -1) return null;
+
+  let depth = 0;
+  let inString = false;
+  let escape = false;
+
+  for (let i = firstBrace; i < text.length; i++) {
+    const ch = text[i];
+    if (escape) { escape = false; continue; }
+    if (ch === '\\' && inString) { escape = true; continue; }
+    if (ch === '"') { inString = !inString; continue; }
+    if (inString) continue;
+    if (ch === '{') depth++;
+    if (ch === '}') {
+      depth--;
+      if (depth === 0) {
+        return text.substring(firstBrace, i + 1);
+      }
+    }
+  }
+
+  return null;
+}
+
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { paragraph, articleTitle, contextBefore, contextAfter, requirement, workspaceId: bodyWorkspaceId } = body;
+    const {
+      paragraph,
+      articleTitle,
+      contextBefore,
+      contextAfter,
+      requirement,
+      workspaceId: bodyWorkspaceId,
+    } = body;
 
     if (!paragraph || typeof paragraph !== 'string' || paragraph.trim().length < 5) {
       return NextResponse.json({ error: '段落内容不能为空且至少5个字' }, { status: 400 });
@@ -96,23 +143,29 @@ export async function POST(request: NextRequest) {
       // 降级到平台 Key
       llmClient = getPlatformLLM();
     }
-    const response = await llmClient.invoke(
-      [
-        { role: 'system', content: AI_REVISE_SYSTEM_PROMPT },
-        { role: 'user', content: userPrompt },
-      ],
-      { model: 'doubao-seed-1-6-lite' }
-    );
 
-    // 解析响应
+    // 带超时的 LLM 调用
+    const response = await Promise.race([
+      llmClient.invoke(
+        [
+          { role: 'system', content: AI_REVISE_SYSTEM_PROMPT },
+          { role: 'user', content: userPrompt },
+        ],
+        { model: 'doubao-seed-1-6-lite' }
+      ),
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error('AI 响应超时，请稍后重试')), LLM_TIMEOUT_MS)
+      ),
+    ]);
+
+    // 解析响应（使用栈匹配代替贪婪正则）
     const responseText = response?.content || '';
     let schemes: Array<{ label: string; description: string; content: string }> = [];
 
     try {
-      // 尝试提取 JSON
-      const jsonMatch = responseText.match(/\{[\s\S]*\}/);
-      if (jsonMatch) {
-        const parsed = JSON.parse(jsonMatch[0]);
+      const jsonStr = extractJsonObjectWithStack(responseText);
+      if (jsonStr) {
+        const parsed = JSON.parse(jsonStr);
         if (parsed.schemes && Array.isArray(parsed.schemes)) {
           schemes = parsed.schemes.slice(0, 3).map((s: Record<string, unknown>) => ({
             label: String(s.label || '方案'),
@@ -122,29 +175,16 @@ export async function POST(request: NextRequest) {
         }
       }
     } catch {
-      // JSON 解析失败，尝试从文本中提取
-      console.warn('[ai-revise] JSON parse failed, returning raw response');
+      console.warn('[ai-revise] JSON parse failed, returning error to user');
     }
 
-    // 如果解析失败，返回兜底方案
+    // 解析失败时返回明确错误（而非伪装成功）
     if (schemes.length === 0) {
-      schemes = [
-        {
-          label: '微调优化',
-          description: '保持原意，优化措辞',
-          content: paragraph,
-        },
-        {
-          label: '深化扩展',
-          description: '增加细节支撑',
-          content: paragraph,
-        },
-        {
-          label: '创意重构',
-          description: '换角度表达',
-          content: paragraph,
-        },
-      ];
+      return NextResponse.json({
+        success: false,
+        error: 'AI 生成失败，请重试或换个修改要求',
+        schemes: [],
+      }, { status: 422 });
     }
 
     return NextResponse.json({

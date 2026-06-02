@@ -13,6 +13,14 @@ export interface ReviseOption {
   description: string;
 }
 
+/** 后端返回的方案结构 */
+interface ApiScheme {
+  label: string;
+  description: string;
+  content: string;
+}
+
+/** 前端展示的方案结构 */
 export interface ReviseResult {
   label: string;
   revisedText: string;
@@ -22,8 +30,12 @@ export interface ReviseResult {
 interface AiRevisePopoverProps {
   /** 原始段落文本 */
   originalText: string;
-  /** 文章全文上下文（供 LLM 参考，可选） */
-  articleContext?: string;
+  /** 文章标题（供 LLM 参考，可选） */
+  articleTitle?: string;
+  /** 前文段落（当前段落的前一段，可选） */
+  contextBefore?: string;
+  /** 后文段落（当前段落的后一段，可选） */
+  contextAfter?: string;
   /** 回调：选择某个修订方案后 */
   onApplyRevision: (revisedText: string) => void;
   /** 回调：关闭浮窗（独立模式必传，Popover 内嵌模式可不传） */
@@ -44,11 +56,49 @@ const PRESET_REVISIONS: ReviseOption[] = [
   { label: '更严谨', description: '修正表述漏洞，增强逻辑严密性' },
 ];
 
+// ============ API 调用封装 ============
+
+async function callAiReviseAPI(params: {
+  paragraph: string;
+  articleTitle?: string;
+  contextBefore?: string;
+  contextAfter?: string;
+  requirement: string;
+  signal?: AbortSignal;
+}): Promise<ReviseResult[]> {
+  const resp = await fetch('/api/agents/ai-revise', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(params),
+    signal: params.signal,
+  });
+
+  if (!resp.ok) {
+    const data = await resp.json().catch(() => ({}));
+    throw new Error(data.error || `请求失败 (${resp.status})`);
+  }
+
+  const data = await resp.json();
+
+  // 后端返回 { success, schemes: [{ label, description, content }] }
+  if (data.schemes && Array.isArray(data.schemes) && data.schemes.length > 0) {
+    return data.schemes.map((s: ApiScheme) => ({
+      label: s.label || '方案',
+      revisedText: s.content || '',
+      explanation: s.description || '',
+    }));
+  }
+
+  throw new Error('AI 未返回有效的修改方案，请重试');
+}
+
 // ============ 主组件 ============
 
 export function AiRevisePopover({
   originalText,
-  articleContext,
+  articleTitle,
+  contextBefore,
+  contextAfter,
   onApplyRevision,
   onClose,
   anchorRect,
@@ -62,6 +112,14 @@ export function AiRevisePopover({
   const [appliedIndex, setAppliedIndex] = useState<number | null>(null);
   const popoverRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
+
+  // 组件卸载时取消进行中的请求
+  useEffect(() => {
+    return () => {
+      abortControllerRef.current?.abort();
+    };
+  }, []);
 
   // 自动聚焦输入框
   useEffect(() => {
@@ -91,48 +149,52 @@ export function AiRevisePopover({
   // 计算浮窗位置
   const popoverStyle = getPopoverPosition(anchorRect);
 
-  // 提交修订请求
-  const handleSubmit = useCallback(async () => {
-    const requirement = selectedPreset
-      ? PRESET_REVISIONS.find(p => p.label === selectedPreset)?.description || selectedPreset
-      : userRequirement.trim();
-
+  // 统一的请求提交逻辑（消除 handlePresetClick 和 handleSubmit 的代码重复）
+  const submitReviseRequest = useCallback(async (requirement: string) => {
     if (!requirement) return;
+
+    // 取消前一个未完成的请求
+    abortControllerRef.current?.abort();
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
 
     setStep('loading');
     setError(null);
 
     try {
-      const resp = await fetch('/api/agents/ai-revise', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          selectedText: originalText,
-          articleContext: articleContext || '',
-          requirement,
-          optionCount: 3,
-        }),
+      const reviseResults = await callAiReviseAPI({
+        paragraph: originalText,
+        articleTitle,
+        contextBefore,
+        contextAfter,
+        requirement,
+        signal: controller.signal,
       });
-
-      if (!resp.ok) {
-        const data = await resp.json().catch(() => ({}));
-        throw new Error(data.error || `请求失败 (${resp.status})`);
-      }
-
-      const data = await resp.json();
-      if (data.options && Array.isArray(data.options) && data.options.length > 0) {
-        setResults(data.options);
-        setStep('results');
-      } else {
-        setError('AI 未返回有效的修改方案，请重试');
-        setStep('input');
-      }
+      setResults(reviseResults);
+      setStep('results');
     } catch (err: unknown) {
+      // 请求被取消时不更新状态（组件可能已卸载）
+      if (err instanceof DOMException && err.name === 'AbortError') return;
       const message = err instanceof Error ? err.message : '未知错误';
       setError(message);
       setStep('input');
     }
-  }, [originalText, articleContext, selectedPreset, userRequirement]);
+  }, [originalText, articleTitle, contextBefore, contextAfter]);
+
+  // 手动输入提交
+  const handleSubmit = useCallback(() => {
+    const requirement = selectedPreset
+      ? PRESET_REVISIONS.find(p => p.label === selectedPreset)?.description || selectedPreset
+      : userRequirement.trim();
+    submitReviseRequest(requirement);
+  }, [selectedPreset, userRequirement, submitReviseRequest]);
+
+  // 预设标签点击（自动提交）
+  const handlePresetClick = useCallback((preset: ReviseOption) => {
+    setSelectedPreset(preset.label);
+    setUserRequirement('');
+    submitReviseRequest(preset.description);
+  }, [submitReviseRequest]);
 
   // 采纳方案
   const handleApply = useCallback(
@@ -141,52 +203,10 @@ export function AiRevisePopover({
       // 短暂动画后回调
       setTimeout(() => {
         onApplyRevision(results[index].revisedText);
-        onClose();
+        if (onClose) onClose();
       }, 400);
     },
     [results, onApplyRevision, onClose]
-  );
-
-  // 选中预设 + 自动提交
-  const handlePresetClick = useCallback(
-    (preset: ReviseOption) => {
-      setSelectedPreset(preset.label);
-      setUserRequirement('');
-      // 自动触发
-      setTimeout(async () => {
-        setStep('loading');
-        setError(null);
-        try {
-          const resp = await fetch('/api/agents/ai-revise', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              selectedText: originalText,
-              articleContext: articleContext || '',
-              requirement: preset.description,
-              optionCount: 3,
-            }),
-          });
-          if (!resp.ok) {
-            const data = await resp.json().catch(() => ({}));
-            throw new Error(data.error || `请求失败 (${resp.status})`);
-          }
-          const data = await resp.json();
-          if (data.options && Array.isArray(data.options) && data.options.length > 0) {
-            setResults(data.options);
-            setStep('results');
-          } else {
-            setError('AI 未返回有效的修改方案，请重试');
-            setStep('input');
-          }
-        } catch (err: unknown) {
-          const message = err instanceof Error ? err.message : '未知错误';
-          setError(message);
-          setStep('input');
-        }
-      }, 50);
-    },
-    [originalText, articleContext]
   );
 
   return (
@@ -206,7 +226,7 @@ export function AiRevisePopover({
           </div>
           <span className="text-sm font-medium text-gray-800">AI 辅助修改</span>
         </div>
-        {!isInline && (
+        {!isInline && onClose && (
           <Button
             variant="ghost"
             size="sm"
@@ -365,7 +385,7 @@ export function AiRevisePopover({
                 {result.explanation && (
                   <div className="px-3 pb-2">
                     <p className="text-xs text-gray-400 italic">
-                      💡 {result.explanation}
+                      {result.explanation}
                     </p>
                   </div>
                 )}
@@ -386,14 +406,16 @@ export function AiRevisePopover({
               >
                 重新生成
               </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="text-xs text-gray-500"
-                onClick={onClose}
-              >
-                取消
-              </Button>
+              {onClose && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="text-xs text-gray-500"
+                  onClick={onClose}
+                >
+                  取消
+                </Button>
+              )}
             </div>
           </div>
         )}

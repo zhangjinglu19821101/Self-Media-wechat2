@@ -40,6 +40,8 @@ export interface WechatBlockEditorProps {
   onChange: (newHtml: string) => void;
   /** 是否只读模式 */
   readOnly?: boolean;
+  /** 文章标题（供 AI 辅助修改参考） */
+  articleTitle?: string;
 }
 
 interface BlockStyleConfig {
@@ -176,12 +178,16 @@ interface BlockEditorProps {
   originalText: string;
   readOnly: boolean;
   onTextChange: (index: number, newText: string) => void;
-  articleContext?: string;
+  /** 前文段落（当前段落的前一段，供 AI 参考） */
+  contextBefore?: string;
+  /** 后文段落（当前段落的后一段，供 AI 参考） */
+  contextAfter?: string;
+  articleTitle?: string;
   allBlocks?: HtmlBlock[];
 }
 
 /** 单个段落编辑器 — memo 防止无关段落重渲染 */
-const BlockEditorItem = memo(function BlockEditorItem({ block, originalText, readOnly, onTextChange, articleContext, allBlocks }: BlockEditorProps) {
+const BlockEditorItem = memo(function BlockEditorItem({ block, originalText, readOnly, onTextChange, contextBefore, contextAfter, articleTitle, allBlocks }: BlockEditorProps) {
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [hasChanged, setHasChanged] = useState(false);
 
@@ -259,7 +265,9 @@ const BlockEditorItem = memo(function BlockEditorItem({ block, originalText, rea
               <AiRevisePopover
                 inline
                 originalText={block.text}
-                articleContext={articleContext || ''}
+                articleTitle={articleTitle}
+                contextBefore={contextBefore}
+                contextAfter={contextAfter}
                 onClose={() => {/* Popover controls open state */}}
                 onApplyRevision={(revisedText: string) => {
                   onTextChange(block.index, revisedText);
@@ -314,7 +322,7 @@ const BlockEditorItem = memo(function BlockEditorItem({ block, originalText, rea
 
 // ============ 主组件 ============
 
-export function WechatBlockEditor({ html, onChange, readOnly = false }: WechatBlockEditorProps) {
+export function WechatBlockEditor({ html, onChange, readOnly = false, articleTitle }: WechatBlockEditorProps) {
   // 解析 HTML
   const parseResult = useMemo(() => parseHtmlToBlocks(html), [html]);
 
@@ -353,12 +361,18 @@ export function WechatBlockEditor({ html, onChange, readOnly = false }: WechatBl
     }
   }, [currentBlocks, onChange, parseResult]);
 
-  // 构建文章上下文，用于 AI 辅助修改
-  const articleContext = useMemo(() => {
-    return currentBlocks
-      .filter(b => b.text?.trim())
-      .map(b => `[${b.type}] ${b.text}`)
-      .join('\n\n');
+  // 计算每个段落的前后上下文（仅传前后各1段，而非整篇文章，减少 Token 消耗）
+  const blockContexts = useMemo(() => {
+    const textBlocks = currentBlocks.filter(b => b.text?.trim());
+    const contextMap = new Map<number, { before?: string; after?: string }>();
+    for (let i = 0; i < textBlocks.length; i++) {
+      const block = textBlocks[i];
+      contextMap.set(block.index, {
+        before: i > 0 ? textBlocks[i - 1].text : undefined,
+        after: i < textBlocks.length - 1 ? textBlocks[i + 1].text : undefined,
+      });
+    }
+    return contextMap;
   }, [currentBlocks]);
 
   // 编辑中的文本与原始不同的块数
@@ -410,7 +424,9 @@ export function WechatBlockEditor({ html, onChange, readOnly = false }: WechatBl
             originalText={parseResult.blocks.find(b => b.index === block.index)?.text || ''}
             readOnly={readOnly}
             onTextChange={handleTextChange}
-            articleContext={articleContext}
+            contextBefore={blockContexts.get(block.index)?.before}
+            contextAfter={blockContexts.get(block.index)?.after}
+            articleTitle={articleTitle}
             allBlocks={parseResult.blocks}
           />
         ))}

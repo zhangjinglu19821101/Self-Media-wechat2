@@ -377,6 +377,7 @@ export function ArticlePreviewEditor({
                     : content
                 }
                 onChange={handleWechatBlockEditorChange}
+                articleTitle={articleTitle}
               />
             ) : platform === 'xiaohongshu' ? (
               <XiaohongshuContentEditor 
