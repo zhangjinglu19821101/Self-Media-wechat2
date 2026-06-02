@@ -93,6 +93,12 @@
   "summary": "15-30字核心内容摘要",
   "keywords": "关键词1,关键词2,关键词3",
   "applicableScenes": "适用场景1,适用场景2",
+  "sourceReliability": {
+    "level": "authoritative|questionable|unreliable",
+    "sourceName": "来源名称",
+    "verifiableUrl": "可查证URL",
+    "warning": "非权威来源警示"
+  },
   "complianceLevel": "A",
   "complianceWarnings": {
     "source": { "status": "pass", "detail": "来源校验说明" },
@@ -199,6 +205,50 @@
 - 格式：逗号分隔的场景标签
 - 常见场景：保险科普、产品测评、理赔案例、避坑指南、投保攻略
 
+## 【权威来源校验（authoritativeSourceCheck）】
+
+### 校验原则
+AI 辅助素材的来源必须可查证、可溯源，禁止使用无法验证的信息作为素材依据。
+
+### 权威来源白名单（status: pass）
+| 类别 | 来源示例 |
+|------|----------|
+| 政府监管 | 银保监会/金融监管总局、央行、国家医保局、卫健委、人社部 |
+| 行业协会 | 中国保险行业协会、中国精算师协会 |
+| 官方机构 | 官方保险公司官网、证券交易所公告 |
+| 权威媒体 | 人民日报、新华社、央视、财新、经济观察报、21世纪经济报道 |
+| 学术期刊 | 知网、万方收录的学术论文 |
+
+### 非权威来源（status: warning）
+| 类别 | 示例 |
+|------|------|
+| 自媒体 | 微信公众号文章（非官方号）、抖音/快手视频、小红书笔记 |
+| 社区论坛 | 知乎回答、百度贴吧、豆瓣小组 |
+| 营销内容 | 朋友圈宣传、代理人话术、销售培训资料 |
+| 不明来源 | 无来源标注、无法溯源的内容 |
+
+### 不可用来源（status: unreliable）
+| 类别 | 示例 |
+|------|------|
+| AI 生成 | ChatGPT/GPT/文心一言等 AI 生成的未验证内容 |
+| 谣传 | "据说""听说""网上说"等无法查证的信息 |
+| 过期来源 | 已被辟谣的信息、已废止的政策 |
+
+### 输出字段 `sourceReliability`
+```json
+{
+  "level": "authoritative" | "questionable" | "unreliable",
+  "sourceName": "来源名称（如：银保监会官网）",
+  "verifiableUrl": "可查证的URL（如有）",
+  "warning": "非权威来源时的警示说明"
+}
+```
+
+### 推荐素材时的过滤规则
+1. **authoritative** → 优先推荐，可信度最高
+2. **questionable** → 可推荐但标注"来源待验证"，提示用户核实
+3. **unreliable** → 不推荐，不可作为创作依据
+
 ## 【保险类合规校验】
 
 ### 合规三维校验
@@ -273,6 +323,12 @@
   "summary": "明确产品条款通俗化表述要求，提升消费者理解度",
   "keywords": "人身险,产品条款,银保监会,监管政策",
   "applicableScenes": "保险科普,产品测评",
+  "sourceReliability": {
+    "level": "authoritative",
+    "sourceName": "银保监会官网",
+    "verifiableUrl": "",
+    "warning": ""
+  },
   "complianceLevel": "A",
   "complianceWarnings": {
     "source": { "status": "pass", "detail": "银保监会为官方监管机构，来源可信" },
@@ -300,6 +356,12 @@
   "summary": "包含多处违规话术，需谨慎使用",
   "keywords": "年金险,违规话术,合规预警",
   "applicableScenes": "合规培训,避坑指南",
+  "sourceReliability": {
+    "level": "unreliable",
+    "sourceName": "个人朋友圈",
+    "verifiableUrl": "",
+    "warning": "来源为个人朋友圈营销话术，包含违规宣传，不可作为创作依据"
+  },
   "complianceLevel": "C",
   "complianceWarnings": {
     "source": { "status": "warning", "detail": "来源为个人朋友圈，非官方渠道" },
@@ -329,6 +391,12 @@
   "publishDate": "",
   "url": "",
   "summary": "客户因未如实告知遭拒赔，建议申请复议",
+  "sourceReliability": {
+    "level": "questionable",
+    "sourceName": "一线从业者口述",
+    "verifiableUrl": "",
+    "warning": "来源为个人经历口述，建议核实具体保险公司和案件细节"
+  },
   "keywords": "重疾险,理赔纠纷,如实告知,拒赔",
   "applicableScenes": "理赔案例,避坑指南,投保攻略",
   "complianceLevel": null,
@@ -354,6 +422,12 @@
   "summary": "解析百万医疗险免赔额规则，对比0免赔产品",
   "keywords": "百万医疗险,免赔额,医保报销,产品选择",
   "applicableScenes": "保险科普,产品测评,投保攻略",
+  "sourceReliability": {
+    "level": "questionable",
+    "sourceName": "未标注来源",
+    "verifiableUrl": "",
+    "warning": "内容未标注来源，建议补充权威出处后使用"
+  },
   "complianceLevel": "A",
   "complianceWarnings": {
     "source": { "status": "warning", "detail": "内容未标注来源，建议补充" },
@@ -381,6 +455,12 @@
   "summary": "张雪峰跑步后突发心源性猝死，抢救无效离世",
   "keywords": "张雪峰,心源性猝死,讣告,升学规划",
   "applicableScenes": "保险科普,寿险,猝死,中年保障",
+  "sourceReliability": {
+    "level": "authoritative",
+    "sourceName": "苏州峰学蔚来教育科技有限公司官方讣告",
+    "verifiableUrl": "",
+    "warning": ""
+  },
   "complianceLevel": null,
   "complianceWarnings": null
 }
@@ -404,6 +484,12 @@
   "summary": "心脏病住院8万，医保报销后医疗险顺利理赔",
   "keywords": "百万医疗险,住院理赔,心脏病,理赔案例",
   "applicableScenes": "理赔案例,保险科普,投保攻略",
+  "sourceReliability": {
+    "level": "questionable",
+    "sourceName": "粉丝私信口述",
+    "verifiableUrl": "",
+    "warning": "来源为粉丝私信，理赔细节建议核实保单和理赔记录"
+  },
   "complianceLevel": null,
   "complianceWarnings": null
 }
@@ -427,6 +513,12 @@ RAG（检索增强生成）是一种结合检索和生成的AI技术。通过向
   "summary": "结合检索和生成的AI技术，提升问答准确性",
   "keywords": "RAG,检索增强,向量数据库,大模型",
   "applicableScenes": "AI科普,技术开发",
+  "sourceReliability": {
+    "level": "questionable",
+    "sourceName": "未标注来源",
+    "verifiableUrl": "",
+    "warning": "技术描述性内容，建议补充学术论文或权威技术文档引用"
+  },
   "complianceLevel": null,
   "complianceWarnings": null
 }
@@ -450,6 +542,12 @@ RAG（检索增强生成）是一种结合检索和生成的AI技术。通过向
   "summary": "高血压日常管理四要点：服药、饮食、运动、监测",
   "keywords": "高血压,日常护理,健康管理,用药指导",
   "applicableScenes": "健康科普,疾病管理,保险科普",
+  "sourceReliability": {
+    "level": "questionable",
+    "sourceName": "未标注来源",
+    "verifiableUrl": "",
+    "warning": "医疗建议建议核实权威指南如《中国高血压防治指南》"
+  },
   "complianceLevel": null,
   "complianceWarnings": null
 }
@@ -473,6 +571,12 @@ RAG（检索增强生成）是一种结合检索和生成的AI技术。通过向
   "summary": "下午3点开会，需携带季度报告",
   "keywords": "会议,季度报告,提醒",
   "applicableScenes": "工作备忘",
+  "sourceReliability": {
+    "level": "questionable",
+    "sourceName": "个人备忘",
+    "verifiableUrl": "",
+    "warning": ""
+  },
   "complianceLevel": null,
   "complianceWarnings": null
 }

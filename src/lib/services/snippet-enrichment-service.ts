@@ -33,6 +33,17 @@ export interface SnippetEnrichmentResult {
   complianceLevel: 'A' | 'B' | 'C' | null;
   materialId: string;
   materialStatus: MaterialStatus;
+  sourceReliability: SourceReliability;
+}
+
+/**
+ * 来源可靠性评估
+ */
+export interface SourceReliability {
+  level: 'authoritative' | 'verifiable' | 'questionable';
+  sourceName: string;
+  verifiableUrl: string;
+  warning: string;
 }
 
 /**
@@ -158,6 +169,7 @@ function parseLLMResponse(content: string): SnippetEnrichmentResult {
       complianceLevel,
       materialId,
       materialStatus: determineMaterialStatus(categories, complianceLevel),
+      sourceReliability: parseSourceReliability(parsed.sourceReliability),
     };
   } catch (e) {
     console.error('[parseLLMResponse] JSON 解析失败:', e);
@@ -190,6 +202,26 @@ function validateCategories(val: unknown): string[] {
  */
 function isValidComplianceLevel(val: unknown): val is 'A' | 'B' | 'C' {
   return val === 'A' || val === 'B' || val === 'C';
+}
+
+/**
+ * 解析来源可靠性信息
+ */
+function parseSourceReliability(val: unknown): SourceReliability {
+  if (!val || typeof val !== 'object') {
+    return { level: 'questionable', sourceName: '未知', verifiableUrl: '', warning: '来源未标注，建议补充权威出处' };
+  }
+  const obj = val as Record<string, unknown>;
+  const validLevels = ['authoritative', 'verifiable', 'questionable'] as const;
+  const level = validLevels.includes(obj.level as typeof validLevels[number]) 
+    ? (obj.level as typeof validLevels[number]) 
+    : 'questionable';
+  return {
+    level,
+    sourceName: String(obj.sourceName || '未知'),
+    verifiableUrl: String(obj.verifiableUrl || ''),
+    warning: String(obj.warning || ''),
+  };
 }
 
 /**
@@ -227,5 +259,6 @@ function buildFallbackResult(rawContent: string): SnippetEnrichmentResult {
     complianceLevel: null,
     materialId: `QN-${dateStr}-${seq}`,
     materialStatus: 'draft',
+    sourceReliability: { level: 'questionable', sourceName: '未知', verifiableUrl: '', warning: '来源未标注，建议补充权威出处' },
   };
 }

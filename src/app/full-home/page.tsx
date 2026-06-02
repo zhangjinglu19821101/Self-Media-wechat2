@@ -726,6 +726,12 @@ export default function HomePage() {
     complianceLevelLabel: string | null;
     materialId: string;
     materialStatus: string;
+    sourceReliability: {
+      level: 'authoritative' | 'verifiable' | 'questionable';
+      sourceName: string;
+      verifiableUrl: string;
+      warning: string;
+    };
   } | null>(null);
   const [snippetForm, setSnippetForm] = useState({
     rawContent: '',
@@ -6953,6 +6959,40 @@ export default function HomePage() {
                       placeholder="https://..."
                     />
                   </div>
+
+                  {/* 来源可靠性 */}
+                  {snippetAnalyzeResult.sourceReliability && (
+                    <div className={`rounded-md p-3 ${
+                      snippetAnalyzeResult.sourceReliability.level === 'authoritative' ? 'bg-green-50 border border-green-200' :
+                      snippetAnalyzeResult.sourceReliability.level === 'verifiable' ? 'bg-blue-50 border border-blue-200' :
+                      'bg-amber-50 border border-amber-200'
+                    }`}>
+                      <div className="flex items-center gap-2 mb-1">
+                        <Badge className={`${
+                          snippetAnalyzeResult.sourceReliability.level === 'authoritative' ? 'bg-green-100 text-green-700' :
+                          snippetAnalyzeResult.sourceReliability.level === 'verifiable' ? 'bg-blue-100 text-blue-700' :
+                          'bg-amber-100 text-amber-700'
+                        }`}>
+                          {snippetAnalyzeResult.sourceReliability.level === 'authoritative' ? '权威来源' :
+                           snippetAnalyzeResult.sourceReliability.level === 'verifiable' ? '可验证来源' : '来源待验证'}
+                        </Badge>
+                        <span className="text-xs text-slate-600">{snippetAnalyzeResult.sourceReliability.sourceName}</span>
+                      </div>
+                      {snippetAnalyzeResult.sourceReliability.verifiableUrl && (
+                        <a 
+                          href={snippetAnalyzeResult.sourceReliability.verifiableUrl} 
+                          target="_blank" 
+                          rel="noopener noreferrer"
+                          className="text-xs text-blue-500 hover:underline truncate block"
+                        >
+                          {snippetAnalyzeResult.sourceReliability.verifiableUrl}
+                        </a>
+                      )}
+                      {snippetAnalyzeResult.sourceReliability.warning && (
+                        <p className="text-xs text-amber-600 mt-1">{snippetAnalyzeResult.sourceReliability.warning}</p>
+                      )}
+                    </div>
+                  )}
 
                   {/* 摘要 */}
                   <div>

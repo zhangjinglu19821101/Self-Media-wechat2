@@ -117,6 +117,9 @@ export async function POST(request: NextRequest) {
       // 素材信息
       materialId: result.materialId,
       materialStatus: result.materialStatus,
+      
+      // 来源可靠性
+      sourceReliability: result.sourceReliability,
     };
 
     // 🔥 保存哈希记录（带分析结果缓存）

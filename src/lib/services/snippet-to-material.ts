@@ -115,13 +115,64 @@ export function inferMaterialType(categories: SnippetCategory[]): MaterialType {
 }
 
 /**
+ * 行业关键词映射表（与 materials/route.ts 保持一致）
+ */
+const INDUSTRY_KEYWORD_MAP: Record<string, { label: string; keywords: string[] }> = {
+  auto_insurance: { label: '车险', keywords: ['车险', '交强险', '商业车险', '车损险', '三者险', '盗抢险', '车上人员', '涉水险', '自燃险', '玻璃险', '不计免赔', '新车险', '车险理赔', '车险报价', '车保', '机动车', '新能源车险', '电动车险'] },
+  health_insurance: { label: '健康险', keywords: ['百万医疗', '医疗险', '重疾', '重疾险', '健康险', '住院医疗', '门诊险', '防癌险', '抗癌', '特药险', '惠民保', '免赔额', '续保', '保证续保', '等待期', '既往症', '健康告知', '核保'] },
+  life_insurance: { label: '人寿险', keywords: ['寿险', '定期寿险', '终身寿险', '增额终身寿', '分红险', '万能险', '投连险', '年金', '养老年金', '教育金', '身故', '受益人', '保额', '现金价值', '退保'] },
+  accident_insurance: { label: '意外险', keywords: ['意外险', '意外伤害', '意外医疗', '交通意外', '综合意外', '猝死', '意外身故', '意外伤残'] },
+  property_insurance: { label: '财产险', keywords: ['家财险', '财产险', '责任险', '雇主责任', '工程险'] },
+  social_insurance: { label: '社保', keywords: ['社保', '医保', '养老保险', '公积金', '五险一金', '新农合', '城镇职工', '灵活就业', '社保断缴', '退休金', '养老金'] },
+};
+
+/**
+ * 从内容中检测行业分类
+ */
+function detectIndustriesFromContent(title: string | null, content: string | null): string[] {
+  const text = `${title || ''} ${content || ''}`.toLowerCase();
+  const scores: { industry: string; score: number }[] = [];
+  for (const [industry, config] of Object.entries(INDUSTRY_KEYWORD_MAP)) {
+    let score = 0;
+    for (const kw of config.keywords) { if (text.includes(kw.toLowerCase())) score++; }
+    if (score > 0) scores.push({ industry, score });
+  }
+  scores.sort((a, b) => b.score - a.score);
+  return scores.map(s => s.industry);
+}
+
+/**
+ * 从内容中提取细粒度主题标签（基于行业关键词匹配）
+ */
+function detectTopicTagsFromContent(title: string | null, content: string | null, industries: string[]): string[] {
+  const text = `${title || ''} ${content || ''}`.toLowerCase();
+  const tags: string[] = [];
+  for (const industry of industries) {
+    const config = INDUSTRY_KEYWORD_MAP[industry];
+    if (!config) continue;
+    for (const kw of config.keywords) { if (text.includes(kw.toLowerCase()) && !tags.includes(kw)) tags.push(kw); }
+  }
+  return tags.slice(0, 10);
+}
+
+/**
  * 速记分类 → 素材标签 映射
+ * 
+ * 改进：结合速记分类 + 内容关键词匹配，生成细粒度主题标签
  */
 export function mapCategoriesToTags(
   categories: SnippetCategory[],
   complianceLevel: string | null,
   applicableScenes: string | null,
-): { topicTags: string[]; sceneTags: string[]; emotionTags: string[] } {
+  rawContent?: string | null,
+  title?: string | null,
+): { topicTags: string[]; sceneTags: string[]; emotionTags: string[]; industry: string | null } {
+  // 1. 基于内容关键词检测行业和细粒度标签
+  const detectedIndustries = detectIndustriesFromContent(title || null, rawContent || null);
+  const contentTopicTags = detectTopicTagsFromContent(title || null, rawContent || null, detectedIndustries);
+  const industry = detectedIndustries.length > 0 ? detectedIndustries[0] : null;
+
+  // 2. 基于分类的粗粒度标签（作为兜底）
   const topicMap: Record<string, string> = {
     insurance: '保险',
     medical: '医疗健康',
@@ -130,23 +181,25 @@ export function mapCategoriesToTags(
     quick_note: '速记',
   };
 
-  // 主题标签 = 分类 → 领域名（排除 quick_note）
-  const topicTags = categories
+  const categoryTopicTags = categories
     .filter(c => c !== 'quick_note')
     .map(c => topicMap[c] || c);
 
-  // 场景标签 = applicableScenes 拆分
+  // 合并：内容标签优先，分类标签兜底，去重
+  const allTopicTags = [...new Set([...contentTopicTags, ...categoryTopicTags])];
+
+  // 3. 场景标签 = applicableScenes 拆分
   const sceneTags = applicableScenes
     ? applicableScenes.split(',').map(s => s.trim()).filter(Boolean)
     : [];
 
-  // 情绪标签 = 基于合规等级 + 分类推断
+  // 4. 情绪标签 = 基于合规等级 + 分类推断
   const emotionTags: string[] = [];
   if (complianceLevel === 'C') emotionTags.push('违规风险');
   if (complianceLevel === 'B') emotionTags.push('需注意');
   if (categories.includes('real_case')) emotionTags.push('真实');
 
-  return { topicTags, sceneTags, emotionTags };
+  return { topicTags: allTopicTags, sceneTags, emotionTags, industry };
 }
 
 /**
@@ -196,11 +249,13 @@ export async function convertSnippetToMaterial(
   // 推断素材类型
   const materialType = overrideType || inferMaterialType(categories);
   
-  // 映射标签
-  const { topicTags, sceneTags, emotionTags } = mapCategoriesToTags(
+  // 映射标签（传入内容和标题以支持细粒度标签检测）
+  const { topicTags, sceneTags, emotionTags, industry } = mapCategoriesToTags(
     categories,
     snippet.complianceLevel,
     snippet.applicableScenes,
+    snippet.rawContent,
+    snippet.title,
   );
   
   // 构建 content
@@ -209,7 +264,7 @@ export async function convertSnippetToMaterial(
   // 使用事务客户端或普通客户端
   const client = tx || db;
   
-  // 插入素材库
+  // 插入素材库（包含行业和细粒度标签）
   const [material] = await client.insert(materialLibrary).values({
     title: snippet.title || '无标题速记',
     type: materialType,
@@ -220,6 +275,7 @@ export async function convertSnippetToMaterial(
     topicTags,
     sceneTags,
     emotionTags,
+    industry,
     status: 'active',
     workspaceId,
   }).returning();

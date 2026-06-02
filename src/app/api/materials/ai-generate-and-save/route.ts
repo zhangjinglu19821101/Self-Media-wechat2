@@ -10,6 +10,41 @@ import { callLLM } from '@/lib/agent-llm';
 import { db } from '@/lib/db';
 import { materialLibrary } from '@/lib/db/schema/material-library';
 
+/**
+ * 行业关键词映射表（与 materials/route.ts 保持一致）
+ */
+const INDUSTRY_KEYWORD_MAP: Record<string, { label: string; keywords: string[] }> = {
+  auto_insurance: { label: '车险', keywords: ['车险', '交强险', '商业车险', '车损险', '三者险', '盗抢险', '车上人员', '涉水险', '自燃险', '玻璃险', '不计免赔', '新车险', '车险理赔', '车险报价', '车保', '机动车', '新能源车险', '电动车险'] },
+  health_insurance: { label: '健康险', keywords: ['百万医疗', '医疗险', '重疾', '重疾险', '健康险', '住院医疗', '门诊险', '防癌险', '抗癌', '特药险', '惠民保', '免赔额', '续保', '保证续保', '等待期', '既往症', '健康告知', '核保'] },
+  life_insurance: { label: '人寿险', keywords: ['寿险', '定期寿险', '终身寿险', '增额终身寿', '分红险', '万能险', '投连险', '年金', '养老年金', '教育金', '身故', '受益人', '保额', '现金价值', '退保'] },
+  accident_insurance: { label: '意外险', keywords: ['意外险', '意外伤害', '意外医疗', '交通意外', '综合意外', '猝死', '意外身故', '意外伤残'] },
+  property_insurance: { label: '财产险', keywords: ['家财险', '财产险', '责任险', '雇主责任', '工程险'] },
+  social_insurance: { label: '社保', keywords: ['社保', '医保', '养老保险', '公积金', '五险一金', '新农合', '城镇职工', '灵活就业', '社保断缴', '退休金', '养老金'] },
+};
+
+function detectIndustriesFromContent(title: string, content: string): string[] {
+  const text = `${title} ${content}`.toLowerCase();
+  const scores: { industry: string; score: number }[] = [];
+  for (const [industry, config] of Object.entries(INDUSTRY_KEYWORD_MAP)) {
+    let score = 0;
+    for (const kw of config.keywords) { if (text.includes(kw.toLowerCase())) score++; }
+    if (score > 0) scores.push({ industry, score });
+  }
+  scores.sort((a, b) => b.score - a.score);
+  return scores.map(s => s.industry);
+}
+
+function detectTopicTagsFromContent(title: string, content: string, industries: string[]): string[] {
+  const text = `${title} ${content}`.toLowerCase();
+  const tags: string[] = [];
+  for (const industry of industries) {
+    const config = INDUSTRY_KEYWORD_MAP[industry];
+    if (!config) continue;
+    for (const kw of config.keywords) { if (text.includes(kw.toLowerCase()) && !tags.includes(kw)) tags.push(kw); }
+  }
+  return tags.slice(0, 10);
+}
+
 export const runtime = 'nodejs';
 export const maxDuration = 60;
 
@@ -154,10 +189,18 @@ export async function POST(request: NextRequest) {
           ownerType: 'user',
           workspaceId,
           useCount: 0,
-          topicTags: [],
+          topicTags: (() => {
+            const detected = detectIndustriesFromContent(title, content);
+            if (detected.length > 0) return detectTopicTagsFromContent(title, content, detected);
+            return [];
+          })(),
           sceneTags: [generateType],
           emotionTags: [],
-          industry: industry || null,
+          industry: (() => {
+            if (industry) return industry;
+            const detected = detectIndustriesFromContent(title, content);
+            return detected.length > 0 ? detected[0] : null;
+          })(),
           sourceArticleId: sourceArticleId || null,
           sceneType: generateType || null,
           analysisText: content,
