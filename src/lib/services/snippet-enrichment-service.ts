@@ -212,15 +212,22 @@ function parseSourceReliability(val: unknown): SourceReliability {
     return { level: 'questionable', sourceName: '未知', verifiableUrl: '', warning: '来源未标注，建议补充权威出处' };
   }
   const obj = val as Record<string, unknown>;
+  // 与提示词 snippet-enrichment.md 保持一致：authoritative / questionable / unreliable
+  // unreliable 映射为 questionable（接口不暴露 unreliable 级别，仅通过 warning 提示）
   const validLevels = ['authoritative', 'verifiable', 'questionable'] as const;
-  const level = validLevels.includes(obj.level as typeof validLevels[number]) 
-    ? (obj.level as typeof validLevels[number]) 
-    : 'questionable';
+  let level: SourceReliability['level'];
+  if (validLevels.includes(obj.level as typeof validLevels[number])) {
+    level = obj.level as typeof validLevels[number];
+  } else if (obj.level === 'unreliable') {
+    level = 'questionable';
+  } else {
+    level = 'questionable';
+  }
   return {
     level,
     sourceName: String(obj.sourceName || '未知'),
     verifiableUrl: String(obj.verifiableUrl || ''),
-    warning: String(obj.warning || ''),
+    warning: String(obj.warning || (level === 'questionable' ? '来源可靠性待验证，建议核实后再使用' : '')),
   };
 }
 

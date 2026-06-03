@@ -448,6 +448,7 @@ function PreviewEditSection({
   taskId,
   platform,
   commandResultId,
+  articleTitle,
   onComplete,
 }: {
   taskId: string;
