@@ -596,7 +596,57 @@ export default function HomePage() {
   const [selectedMaterialsV2List, setSelectedMaterialsV2List] = useState<MaterialItem[]>([]);
   const [hasSearchedMaterials, setHasSearchedMaterials] = useState(false); // 是否已搜索过素材
   const [viewingMaterial, setViewingMaterial] = useState<MaterialItem | null>(null); // 查看素材详情
-  
+  const [editingMaterial, setEditingMaterial] = useState<MaterialItem | null>(null); // 编辑素材
+  const [editMaterialTitle, setEditMaterialTitle] = useState('');
+  const [editMaterialContent, setEditMaterialContent] = useState('');
+  const [editMaterialSaving, setEditMaterialSaving] = useState(false);
+
+  // 开始编辑素材
+  const startEditMaterial = (material: MaterialItem) => {
+    setEditingMaterial(material);
+    setEditMaterialTitle(material.title || '');
+    setEditMaterialContent(material.content || '');
+  };
+
+  // 保存素材编辑
+  const saveEditMaterial = async () => {
+    if (!editingMaterial) return;
+    setEditMaterialSaving(true);
+    try {
+      const res = await fetch(`/api/materials/${editingMaterial.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', 'x-workspace-id': currentWorkspaceId || '' },
+        body: JSON.stringify({
+          title: editMaterialTitle.trim(),
+          content: editMaterialContent.trim(),
+        }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || '保存失败');
+      }
+      // 更新本地列表和查看中的素材
+      const updated = { ...editingMaterial, title: editMaterialTitle.trim(), content: editMaterialContent.trim() };
+      setViewingMaterial(updated);
+      setEditingMaterial(null);
+      // 同步更新 selectedMaterials 中的素材
+      setSelectedMaterials(prev => prev.map(m => m.id === updated.id ? { ...m, title: updated.title, content: updated.content } : m));
+      // 刷新素材列表
+      fetchMaterials(caseSearchKeyword);
+    } catch (err: any) {
+      console.error('保存素材失败:', err.message);
+    } finally {
+      setEditMaterialSaving(false);
+    }
+  };
+
+  // 取消编辑素材
+  const cancelEditMaterial = () => {
+    setEditingMaterial(null);
+    setEditMaterialTitle('');
+    setEditMaterialContent('');
+  };
+
   // 🔥 素材搜索相关状态（完全替换模式）
   const [caseSearchMode, setCaseSearchMode] = useState<'recommend' | 'search'>('recommend'); // 当前模式
   const [caseSearchKeyword, setCaseSearchKeyword] = useState(''); // 搜索关键词
@@ -2738,7 +2788,7 @@ export default function HomePage() {
       const res = await fetch('/api/materials/ai-generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'x-workspace-id': getCurrentWorkspaceId() || 'default-workspace' },
-        body: JSON.stringify({ type: 'myth_busting', input: aiMisconceptionInput.trim() }),
+        body: JSON.stringify({ generateType: 'myth_busting', input: aiMisconceptionInput.trim() }),
       });
       const data = await res.json();
       if (data.success && data.result) {
@@ -2762,7 +2812,7 @@ export default function HomePage() {
       const res = await fetch('/api/materials/ai-generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'x-workspace-id': getCurrentWorkspaceId() || 'default-workspace' },
-        body: JSON.stringify({ type: 'regulation', input: aiRegulationInput.trim() }),
+        body: JSON.stringify({ generateType: 'regulation', input: aiRegulationInput.trim() }),
       });
       const data = await res.json();
       if (data.success && data.result) {
@@ -3669,7 +3719,7 @@ export default function HomePage() {
                       )}
                       {/* 快捷标签选择 */}
                       <div className="flex flex-wrap gap-1">
-                        {['意外险', '重疾险', '医疗险', '寿险', '年金险', '增额终身寿', '教育金', '养老金', '信托', '财产险', '雇主责任险'].map((preset) => {
+                        {['意外险', '重疾险', '医疗险', '分红险', '年金险', '寿险'].map((preset) => {
                           const isSelected = splitProductTags.includes(preset);
                           return (
                             <button
@@ -4040,15 +4090,8 @@ export default function HomePage() {
                             <ContentTemplateSelector
                               onSelect={(template) => {
                                 setSelectedContentTemplate(template);
-                                if (template?.promptInstruction) {
-                                  if (!coreOpinion.trim() || coreOpinion.startsWith('【图文分工】')) {
-                                    setCoreOpinion(`【图文分工】${template.promptInstruction}`);
-                                  }
-                                } else {
-                                  if (coreOpinion.startsWith('【图文分工】')) {
-                                    setCoreOpinion('');
-                                  }
-                                }
+                                // promptInstruction 通过 selectedContentTemplate 单独传递给后端
+                                // 核心观点（coreOpinion）只能由用户亲自录入，内容模版不得干预
                               }}
                               selectedId={selectedContentTemplate?.id || urlTemplateId || null}
                             />
@@ -5644,18 +5687,42 @@ export default function HomePage() {
                 {/* 标题 */}
                 <div>
                   <Label className="text-xs text-slate-500 mb-1 block">素材标题</Label>
-                  <p className="text-sm font-medium text-slate-900 bg-slate-50 rounded-md px-3 py-2 min-h-[36px] flex items-center">
-                    {viewingMaterial.title}
-                  </p>
+                  {editingMaterial ? (
+                    <Input
+                      value={editingMaterial.title || ''}
+                      onChange={(e) => setEditingMaterial({ ...editingMaterial, title: e.target.value })}
+                      className="text-sm"
+                      placeholder="素材标题"
+                    />
+                  ) : (
+                    <p className="text-sm font-medium text-slate-900 bg-slate-50 rounded-md px-3 py-2 min-h-[36px] flex items-center">
+                      {viewingMaterial.title}
+                    </p>
+                  )}
                 </div>
 
                 {/* 主内容区域：7维素材用统一字段，旧格式用结构化字段 */}
                 {mainContent && (
                   <div>
                     <Label className="text-xs text-slate-500 mb-1 block">{mainContentLabel}</Label>
-                    <p className="text-sm text-slate-700 bg-amber-50/50 rounded-md px-3 py-2.5 leading-relaxed whitespace-pre-wrap">
-                      {mainContent}
-                    </p>
+                    {editingMaterial ? (
+                      <Textarea
+                        value={editingMaterial.content || editingMaterial.misconception || editingMaterial.description || ''}
+                        onChange={(e) => {
+                          const updated = { ...editingMaterial };
+                          if (updated.content !== undefined) updated.content = e.target.value;
+                          else if (updated.misconception !== undefined) updated.misconception = e.target.value;
+                          else updated.description = e.target.value;
+                          setEditingMaterial(updated);
+                        }}
+                        className="text-sm min-h-[120px]"
+                        placeholder="素材内容"
+                      />
+                    ) : (
+                      <p className="text-sm text-slate-700 bg-amber-50/50 rounded-md px-3 py-2.5 leading-relaxed whitespace-pre-wrap">
+                        {mainContent}
+                      </p>
+                    )}
                   </div>
                 )}
 
@@ -5775,22 +5842,52 @@ export default function HomePage() {
           <DialogFooter className="flex gap-2 sm:gap-2">
             <Button
               variant="outline"
-              onClick={() => setViewingMaterial(null)}
+              onClick={() => { setViewingMaterial(null); setEditingMaterial(null); }}
               className="flex-1"
             >
               关闭
             </Button>
-            <Button
-              onClick={() => {
-                if (viewingMaterial) {
-                  toggleIndustryMaterialSelection(viewingMaterial);
-                  setViewingMaterial(null);
-                }
-              }}
-              className={`flex-1 ${selectedMaterialIdsV2.includes(viewingMaterial?.id || '') ? 'bg-slate-500 hover:bg-slate-600' : 'bg-emerald-500 hover:bg-emerald-600'}`}
-            >
-              {viewingMaterial && selectedMaterialIdsV2.includes(viewingMaterial.id) ? '取消选择' : '选择此素材'}
-            </Button>
+            {editingMaterial ? (
+              <>
+                <Button
+                  variant="outline"
+                  onClick={() => setEditingMaterial(null)}
+                  className="flex-1"
+                >
+                  取消编辑
+                </Button>
+                <Button
+                  onClick={saveEditMaterial}
+                  className="flex-1 bg-blue-500 hover:bg-blue-600"
+                >
+                  保存修改
+                </Button>
+              </>
+            ) : (
+              <>
+                {viewingMaterial && viewingMaterial.ownerType !== 'system' && (
+                  <Button
+                    variant="outline"
+                    onClick={() => setEditingMaterial({ ...viewingMaterial })}
+                    className="flex-1 text-blue-600 border-blue-200 hover:bg-blue-50"
+                  >
+                    <Pencil className="h-3.5 w-3.5 mr-1" />
+                    编辑
+                  </Button>
+                )}
+                <Button
+                  onClick={() => {
+                    if (viewingMaterial) {
+                      toggleIndustryMaterialSelection(viewingMaterial);
+                      setViewingMaterial(null);
+                    }
+                  }}
+                  className={`flex-1 ${selectedMaterialIdsV2.includes(viewingMaterial?.id || '') ? 'bg-slate-500 hover:bg-slate-600' : 'bg-emerald-500 hover:bg-emerald-600'}`}
+                >
+                  {viewingMaterial && selectedMaterialIdsV2.includes(viewingMaterial.id) ? '取消选择' : '选择此素材'}
+                </Button>
+              </>
+            )}
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -6180,7 +6277,7 @@ export default function HomePage() {
                 </div>
                 {/* 快捷标签选择 */}
                 <div className="flex flex-wrap gap-1 mt-2">
-                  {['意外险', '重疾险', '医疗险', '寿险', '年金险', '增额终身寿', '教育金', '养老金', '信托'].map((preset) => {
+                  {['意外险', '重疾险', '医疗险', '分红险', '年金险', '寿险'].map((preset) => {
                     const currentTags = caseEditForm.productTags.split(/[、,，\s]+/).filter(Boolean);
                     const isSelected = currentTags.includes(preset);
                     return (
