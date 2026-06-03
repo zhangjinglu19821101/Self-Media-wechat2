@@ -71,6 +71,7 @@ export async function POST(request: NextRequest) {
       tempSessionId, // 临时会话 ID，用于替换逻辑
       userOpinion, // 🔥 用户观点（仅创作引导结构化内容：核心观点+情感基调+文章结构）
       originalInstruction, // 🔥 用户原始指令（独立存储，不传给 insurance-d）
+      articleOutline, // 🔥 文章框架（用户给定的文章结构，注入insurance-d提示词）
       materialIds, // 🔥 素材ID列表（统一入口，包含案例/数据/故事等所有类型）
       relatedMaterials = '', // 🔥 关联素材补充区内容
       structureName, // 🔥 结构名称
@@ -396,6 +397,7 @@ export async function POST(request: NextRequest) {
               articleLength: articleLength || null, // 🔥 Phase 2: 篇幅类型
               primaryMaterialId: primaryMaterialId || null, // 🔥 Phase 2: 主素材ID
               auxiliaryMaterialIds: auxiliaryMaterialIds || null, // 🔥 Phase 2: 辅素材ID列表
+              articleOutline: articleOutline || null, // 🔥 文章框架
               guideSource: (subTask.userOpinion !== undefined || subTask.materialIds !== undefined)
                 ? 'task-level' : 'global',
               accountId: baseAccountId,
@@ -488,6 +490,7 @@ export async function POST(request: NextRequest) {
               articleLength: articleLength || null, // 🔥 Phase 2: 篇幅类型
               primaryMaterialId: primaryMaterialId || null, // 🔥 Phase 2: 主素材ID
               auxiliaryMaterialIds: auxiliaryMaterialIds || null, // 🔥 Phase 2: 辅素材ID列表
+              articleOutline: articleOutline || null, // 🔥 文章框架
                 guideSource: 'global',
                 accountId: adaptAcc.accountId,
                 accountIds: effectiveAccountIds,

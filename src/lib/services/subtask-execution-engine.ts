@@ -9210,6 +9210,9 @@ export class SubtaskExecutionEngine {
         // 优先级：metadata.confirmedOutline > task.userOpinion > 前序大纲任务 result_text
         const _confirmedOutline = _extractedOutline;
         
+        // 🆕 文章框架：用户在创作引导中提供的文章结构框架
+        const _articleOutline = (taskMetadata as Record<string, any>)?.articleOutline as string | undefined;
+        
         // Phase 3 安全检查：全文子任务必须携带 confirmedOutline
         if (isFullArticleTask && !_confirmedOutline) {
           console.warn(
@@ -9510,6 +9513,8 @@ export class SubtaskExecutionEngine {
           subTaskRole: taskSubTaskRole, // 🔥 Phase 3.5: 传递子任务角色（outline_generation / full_article）
           taskInstruction: isFullArticleTask && _confirmedOutline
             ? `${complianceRevisionPrefix}${formatModePrefix}${adaptationModePrefix}${platformPrefix}【已确认的创作大纲（以大纲为骨架展开，核心结构和论点不得改变，细节允许自然调整）】\n\n${_confirmedOutline}\n\n原始创作指令：${task.taskDescription}`
+            : _articleOutline
+            ? `${complianceRevisionPrefix}${formatModePrefix}${adaptationModePrefix}${platformPrefix}【用户提供的文章框架（严格按照此框架结构创作，每个段落的主题和要点必须覆盖）】\n\n${_articleOutline}\n\n原始创作指令：${task.taskDescription || ''}`
             : `${complianceRevisionPrefix}${formatModePrefix}${adaptationModePrefix}${platformPrefix}${task.taskDescription || ''}`,
           userOpinion: _userOpinionAndMaterials?.userOpinion ?? task.userOpinion,
           materials: _materialsContent ? [_materialsContent] : undefined,

@@ -190,6 +190,7 @@ function getBlockStyleKey(block: HtmlBlock): string {
 
 async function callAiReviseAPI(params: {
   paragraph: string;
+  selectedText?: string;
   articleTitle?: string;
   contextBefore?: string;
   contextAfter?: string;
@@ -224,6 +225,10 @@ async function callAiReviseAPI(params: {
 interface InlineAiPanelProps {
   /** 要改写的原文（可能是选中片段或整段） */
   originalText: string;
+  /** 整段原文（当 originalText 是选中片段时，提供完整段落作为上下文） */
+  blockText: string;
+  /** 选中的片段文本（如果用户选中了段落中的部分文字） */
+  selectedSnippet?: string;
   /** 文章标题 */
   articleTitle?: string;
   /** 前文段落 */
@@ -238,6 +243,8 @@ interface InlineAiPanelProps {
 
 function InlineAiPanel({
   originalText,
+  blockText,
+  selectedSnippet,
   articleTitle,
   contextBefore,
   contextAfter,
@@ -272,7 +279,8 @@ function InlineAiPanel({
     setError(null);
     try {
       const schemes = await callAiReviseAPI({
-        paragraph: originalText,
+        paragraph: blockText,
+        selectedText: selectedSnippet || undefined,
         articleTitle,
         contextBefore,
         contextAfter,
@@ -694,6 +702,8 @@ const BlockEditorItem = memo(function BlockEditorItem({ block, originalText, rea
         <div className="px-3 pb-2">
           <InlineAiPanel
             originalText={aiReviseText}
+            blockText={block.text}
+            selectedSnippet={selectedSnippet}
             articleTitle={articleTitle}
             contextBefore={contextBefore}
             contextAfter={contextAfter}

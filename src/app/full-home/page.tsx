@@ -230,6 +230,7 @@ interface FormSnapshot {
   version: number; // 版本号，用于向后兼容和迁移
   mainInstruction: string;
   coreOpinion: string;
+  articleOutline: string; // 文章框架/大纲
   emotionTone: string;
   articleType: string;
   selectedAccountIds: string[];
@@ -293,6 +294,7 @@ function loadFormSnapshot(): FormSnapshot | null {
         mainInstruction: snapshot.mainInstruction || '',
         coreOpinion: snapshot.coreOpinion || '',
         emotionTone: snapshot.emotionTone || '',
+        articleOutline: (snapshot as any).articleOutline || '',
         articleType: snapshot.articleType || '',
         selectedAccountIds: (snapshot as any).selectedAccountIds || [],
         selectedContentTemplate: snapshot.selectedContentTemplate || null,
@@ -539,6 +541,7 @@ export default function HomePage() {
   const [selectedGroupAccountId, setSelectedGroupAccountId] = useState<string | null>(null);
   
   const [coreOpinion, setCoreOpinion] = useState('');
+  const [articleOutline, setArticleOutline] = useState(''); // 文章框架/大纲
   const [emotionTone, setEmotionTone] = useState('理性客观'); // 默认值：理性客观
   const [articleType, setArticleType] = useState<string>(''); // 创作类型（类比揭秘/误区辟谣/法规解读/事件驱动/产品测评/投保指南/通用写作）
   // 🔥 Phase 2: 篇幅选择
@@ -914,6 +917,7 @@ export default function HomePage() {
     }
     if (typeof snapshot.coreOpinion === 'string') setCoreOpinion(snapshot.coreOpinion);
     if (typeof snapshot.emotionTone === 'string') setEmotionTone(snapshot.emotionTone);
+    if (typeof snapshot.articleOutline === 'string') setArticleOutline(snapshot.articleOutline);
     if (snapshot.selectedAccountIds?.length) {
       setSelectedAccountIds(snapshot.selectedAccountIds);
       setSelectedAccountId(snapshot.selectedAccountIds[0]);
@@ -1039,6 +1043,7 @@ export default function HomePage() {
       // 提交表单字段
       taskTitle,
       executionDate,
+      articleOutline,
       platformSubTaskGroups,
       savedAt: Date.now(),
     });
@@ -2965,6 +2970,7 @@ export default function HomePage() {
         // 以下字段用于 daily_task 表存储（向后兼容）
         userOpinion: coreOpinion.trim() || null,
         originalInstruction: mainInstruction.trim() || null, // 🔥 独立字段：用户原始指令
+        articleOutline: articleOutline.trim() || null, // 🔥 文章框架：用户给定的文章结构
         materialIds: selectedMaterialIdsV2, // 🔥 修复：行业素材
         // 范式选择数据（隐性继承，始终传递）
         paradigmCode: selectedParadigm?.paradigmCode || null,
@@ -4578,6 +4584,36 @@ export default function HomePage() {
                               ))}
                             </div>
                           )}
+                          {/* 文章框架输入 */}
+                          <div className="space-y-2 pt-3 border-t border-slate-100">
+                            <div className="flex items-center justify-between">
+                              <Label className="text-sm font-medium text-slate-700 flex items-center gap-1.5">
+                                <FileText className="w-3.5 h-3.5 text-violet-500" />
+                                文章框架
+                                {articleOutline && (
+                                  <span className="text-[10px] bg-violet-100 text-violet-700 px-1.5 py-0.5 rounded-full">已设定</span>
+                                )}
+                              </Label>
+                              {articleOutline && (
+                                <button
+                                  type="button"
+                                  onClick={() => setArticleOutline('')}
+                                  className="text-[10px] text-slate-400 hover:text-red-500 transition-colors"
+                                >
+                                  清除
+                                </button>
+                              )}
+                            </div>
+                            <Textarea
+                              value={articleOutline}
+                              onChange={(e) => setArticleOutline(e.target.value)}
+                              placeholder="输入文章框架/大纲，AI将按照你的框架创作&#10;比如：&#10;1. 开头：存款到期的纠结场景&#10;2. 核心对比：增额寿 vs 国债 vs 大额存单&#10;3. 真实案例：30万配置方案&#10;4. 结尾：三步决策法"
+                              className="min-h-[120px] text-sm resize-y leading-relaxed"
+                            />
+                            <p className="text-[10px] text-slate-400">
+                              提供文章框架后，AI将严格按照你设定的结构创作，确保文章符合你的预期
+                            </p>
+                          </div>
                         </div>
                       )}
 
