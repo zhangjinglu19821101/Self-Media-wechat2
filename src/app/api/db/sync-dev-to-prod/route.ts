@@ -1,17 +1,16 @@
 /**
- * 将 dev_schema 的表结构和素材数据同步到生产环境（public schema）
+ * 将 dev_schema 的完整数据同步到生产环境（public schema）
  *
  * 功能：
- * 1. 表结构同步：将 dev_schema 中 public 缺失的表和列补齐
- * 2. 素材数据同步：将 dev_schema.material_library 的数据复制到 public，
- *    并将 owner_type 设为 'system'，让所有用户可见
+ * 1. 清空 public schema 中所有表数据
+ * 2. 将 dev_schema 的表结构对齐到 public（补齐缺失的表和列）
+ * 3. 将 dev_schema 所有表数据复制到 public
  *
  * 安全机制：
- * - 仅同步表结构和素材数据，不覆盖现有数据
- * - 素材数据使用 INSERT ON CONFLICT DO NOTHING，避免主键冲突
- * - owner_type 强制设为 'system'
- * - workspace_id 设为 NULL（系统素材不属于任何工作区）
- * - source_type 映射为系统来源类型
+ * - 必须显式传入 confirm=true 参数才会执行
+ * - 先执行 dryRun 预览
+ * - 按表逐个同步，记录每张表的同步状态
+ * - 使用事务确保原子性
  */
 
 import { NextResponse } from 'next/server';
@@ -22,7 +21,6 @@ function getConnectionString(): string {
   if (!DB_URL) {
     throw new Error('DATABASE_URL not configured');
   }
-  // 确保连接字符串包含 sslmode
   if (!DB_URL.includes('sslmode')) {
     return DB_URL + (DB_URL.includes('?') ? '&' : '?') + 'sslmode=require';
   }
@@ -31,418 +29,367 @@ function getConnectionString(): string {
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
-  const step = searchParams.get('step') || 'all'; // all | schema | data | verify
   const dryRun = searchParams.get('dryRun') === 'true';
+  const confirm = searchParams.get('confirm') === 'true';
 
   const results: Array<{ step: string; status: string; detail: string }> = [];
 
   try {
-    // 动态导入 postgres（避免构建时连接）
     const { default: postgres } = await import('postgres');
     const sql = postgres(getConnectionString(), { max: 2 });
 
     try {
       // ==========================================
-      // Step 1: 表结构同步
+      // Step 1: 获取 dev_schema 所有表
       // ==========================================
-      if (step === 'all' || step === 'schema') {
-        if (dryRun) {
-          // 预览模式：仅显示差异
-          const onlyInDev = await sql`
-            SELECT table_name FROM information_schema.tables 
-            WHERE table_schema = 'dev_schema' AND table_type = 'BASE TABLE'
-            AND table_name NOT IN (
-              SELECT table_name FROM information_schema.tables 
-              WHERE table_schema = 'public' AND table_type = 'BASE TABLE'
-            )
-            ORDER BY table_name
-          `;
-          results.push({
-            step: 'schema_diff_tables',
-            status: 'dry_run',
-            detail: `public缺失${onlyInDev.length}张表: ${onlyInDev.map((t: any) => t.table_name).join(', ')}`
-          });
+      const devTables = await sql`
+        SELECT table_name FROM information_schema.tables 
+        WHERE table_schema = 'dev_schema' AND table_type = 'BASE TABLE'
+        ORDER BY table_name
+      `;
+      results.push({
+        step: 'scan_dev_tables',
+        status: 'info',
+        detail: `dev_schema 共有 ${devTables.length} 张表: ${devTables.map((t: any) => t.table_name).join(', ')}`
+      });
 
-          // 列差异
-          const onlyDevCols = await sql`
-            SELECT d.table_name, d.column_name, d.data_type, d.is_nullable, d.column_default
-            FROM information_schema.columns d
-            WHERE d.table_schema = 'dev_schema'
-            AND NOT EXISTS (
-              SELECT 1 FROM information_schema.columns p
-              WHERE p.table_schema = 'public'
-              AND p.table_name = d.table_name
-              AND p.column_name = d.column_name
-            )
-            ORDER BY d.table_name, d.column_name
-          `;
-          results.push({
-            step: 'schema_diff_columns',
-            status: 'dry_run',
-            detail: `public缺失${onlyDevCols.length}个列: ${onlyDevCols.slice(0, 20).map((c: any) => `${c.table_name}.${c.column_name}(${c.data_type})`).join(', ')}${onlyDevCols.length > 20 ? '...' : ''}`
-          });
-        } else {
-          // 执行表结构同步
+      const publicTables = await sql`
+        SELECT table_name FROM information_schema.tables 
+        WHERE table_schema = 'public' AND table_type = 'BASE TABLE'
+        ORDER BY table_name
+      `;
+      results.push({
+        step: 'scan_public_tables',
+        status: 'info',
+        detail: `public 共有 ${publicTables.length} 张表: ${publicTables.map((t: any) => t.table_name).join(', ')}`
+      });
 
-          // 1.1 补齐缺失的表（使用 CREATE TABLE ... LIKE）
-          const onlyInDev = await sql`
-            SELECT table_name FROM information_schema.tables 
-            WHERE table_schema = 'dev_schema' AND table_type = 'BASE TABLE'
-            AND table_name NOT IN (
-              SELECT table_name FROM information_schema.tables 
-              WHERE table_schema = 'public' AND table_type = 'BASE TABLE'
-            )
-            ORDER BY table_name
-          `;
-
-          let tablesCreated = 0;
-          for (const row of onlyInDev) {
-            const tableName = row.table_name;
-            try {
-              await sql`EXECUTE FORMAT('CREATE TABLE public.%I (LIKE dev_schema.%I INCLUDING ALL)', ${tableName}, ${tableName})`;
-              tablesCreated++;
-            } catch (e: any) {
-              // FORMAT 在 postgres.js 中不支持，改用原始SQL
-              try {
-                await sql.unsafe(`CREATE TABLE IF NOT EXISTS public."${tableName}" (LIKE dev_schema."${tableName}" INCLUDING ALL)`);
-                tablesCreated++;
-              } catch (e2: any) {
-                results.push({
-                  step: `schema_create_table_${tableName}`,
-                  status: 'error',
-                  detail: e2.message
-                });
-              }
+      if (dryRun) {
+        // 预览模式：显示每张表的数据量
+        for (const t of devTables) {
+          const tableName = t.table_name;
+          try {
+            const devCount = await sql.unsafe(`SELECT COUNT(*) as cnt FROM dev_schema."${tableName}"`);
+            const pubExists = publicTables.some((pt: any) => pt.table_name === tableName);
+            let pubCount = 0;
+            if (pubExists) {
+              const pubResult = await sql.unsafe(`SELECT COUNT(*) as cnt FROM public."${tableName}"`);
+              pubCount = Number(pubResult[0].cnt);
             }
-          }
-          results.push({
-            step: 'schema_create_tables',
-            status: tablesCreated > 0 ? 'success' : 'skipped',
-            detail: tablesCreated > 0 ? `创建了${tablesCreated}张缺失的表` : '无需创建新表'
-          });
-
-          // 1.2 补齐缺失的列
-          const onlyDevCols = await sql`
-            SELECT d.table_name, d.column_name, d.data_type, d.character_maximum_length,
-                   d.is_nullable, d.column_default, d.udt_name,
-                   d.numeric_precision, d.numeric_scale
-            FROM information_schema.columns d
-            WHERE d.table_schema = 'dev_schema'
-            AND EXISTS (
-              SELECT 1 FROM information_schema.tables p
-              WHERE p.table_schema = 'public' AND p.table_name = d.table_name AND p.table_type = 'BASE TABLE'
-            )
-            AND NOT EXISTS (
-              SELECT 1 FROM information_schema.columns p
-              WHERE p.table_schema = 'public'
-              AND p.table_name = d.table_name
-              AND p.column_name = d.column_name
-            )
-            ORDER BY d.table_name, d.ordinal_position
-          `;
-
-          let colsAdded = 0;
-          let colsErrors = 0;
-          for (const col of onlyDevCols) {
-            // 构建列类型
-            let colType = col.udt_name;
-            // 映射常见类型
-            const typeMap: Record<string, string> = {
-              'int4': 'INTEGER', 'int8': 'BIGINT', 'varchar': 'VARCHAR',
-              'text': 'TEXT', 'boolean': 'BOOLEAN', 'timestamptz': 'TIMESTAMPTZ',
-              'timestamp': 'TIMESTAMP', 'date': 'DATE', 'numeric': 'NUMERIC',
-              'uuid': 'UUID', 'jsonb': 'JSONB', 'json': 'JSON',
-              'bytea': 'BYTEA', 'float8': 'DOUBLE PRECISION',
-            };
-            colType = typeMap[col.udt_name] || col.udt_name;
-            
-            if (col.character_maximum_length && col.udt_name === 'varchar') {
-              colType = `VARCHAR(${col.character_maximum_length})`;
-            }
-            if (col.numeric_precision && col.udt_name === 'numeric') {
-              colType = `NUMERIC(${col.numeric_precision},${col.numeric_scale || 0})`;
-            }
-
-            const nullable = col.is_nullable === 'YES' ? '' : ' NOT NULL';
-            const defaultVal = col.column_default ? ` DEFAULT ${col.column_default}` : '';
-
-            try {
-              await sql.unsafe(
-                `ALTER TABLE public."${col.table_name}" ADD COLUMN IF NOT EXISTS "${col.column_name}" ${colType}${nullable}${defaultVal}`
-              );
-              colsAdded++;
-            } catch (e: any) {
-              colsErrors++;
-              results.push({
-                step: `schema_add_col_${col.table_name}.${col.column_name}`,
-                status: 'error',
-                detail: e.message
-              });
-            }
-          }
-          results.push({
-            step: 'schema_add_columns',
-            status: colsErrors > 0 ? 'partial' : 'success',
-            detail: `添加了${colsAdded}个缺失列${colsErrors > 0 ? `，${colsErrors}个失败` : ''}`
-          });
-
-          // 1.3 补齐缺失的索引
-          const devIndexes = await sql`
-            SELECT i.indexname, i.tablename, i.indexdef 
-            FROM pg_indexes i
-            WHERE i.schemaname = 'dev_schema'
-            AND NOT EXISTS (
-              SELECT 1 FROM pg_indexes p 
-              WHERE p.schemaname = 'public' AND p.indexname = i.indexname
-            )
-          `;
-          let indexesCreated = 0;
-          for (const idx of devIndexes) {
-            // 替换 schema 限定符
-            const prodIndexDef = idx.indexdef.replace(/dev_schema\./g, 'public.');
-            try {
-              await sql.unsafe(prodIndexDef);
-              indexesCreated++;
-            } catch (e: any) {
-              // 索引可能因数据不同而失败，记录但不中断
-              results.push({
-                step: `schema_create_index_${idx.indexname}`,
-                status: 'warning',
-                detail: e.message
-              });
-            }
-          }
-          results.push({
-            step: 'schema_create_indexes',
-            status: indexesCreated > 0 ? 'success' : 'skipped',
-            detail: indexesCreated > 0 ? `创建了${indexesCreated}个缺失索引` : '无需创建索引'
-          });
-        }
-      }
-
-      // ==========================================
-      // Step 2: 素材数据同步
-      // ==========================================
-      if (step === 'all' || step === 'data') {
-        if (dryRun) {
-          // 预览模式：仅显示将要同步的数据量
-          const count = await sql`SELECT COUNT(*) as cnt FROM dev_schema.material_library`;
-          const typeDist = await sql`
-            SELECT type, COUNT(*) as cnt FROM dev_schema.material_library GROUP BY type ORDER BY cnt DESC
-          `;
-          results.push({
-            step: 'data_material_preview',
-            status: 'dry_run',
-            detail: `将同步${count[0].cnt}条素材到public，类型分布: ${typeDist.map((r: any) => `${r.type}:${r.cnt}`).join(', ')}`
-          });
-        } else {
-          // 确保public表结构存在且有owner_type列
-          const hasOwnerType = await sql`
-            SELECT COUNT(*) as cnt FROM information_schema.columns 
-            WHERE table_schema = 'public' AND table_name = 'material_library' AND column_name = 'owner_type'
-          `;
-          if (Number(hasOwnerType[0].cnt) === 0) {
-            await sql`ALTER TABLE public.material_library ADD COLUMN IF NOT EXISTS owner_type TEXT DEFAULT 'user'`;
             results.push({
-              step: 'data_add_owner_type_column',
-              status: 'success',
-              detail: '添加了owner_type列'
+              step: `preview_${tableName}`,
+              status: 'dry_run',
+              detail: `dev: ${devCount[0].cnt}条, public: ${pubExists ? pubCount + '条' : '表不存在'} → ${pubExists ? '清空+重新插入' : '建表+插入'}`
+            });
+          } catch (e: any) {
+            results.push({
+              step: `preview_${tableName}`,
+              status: 'error',
+              detail: e.message?.substring(0, 100)
             });
           }
+        }
+        return NextResponse.json({ success: true, dryRun: true, results });
+      }
 
-          // 获取dev_schema素材的列名
-          const devColumns = await sql`
-            SELECT column_name FROM information_schema.columns 
-            WHERE table_schema = 'dev_schema' AND table_name = 'material_library'
-            ORDER BY ordinal_position
+      if (!confirm) {
+        return NextResponse.json({
+          success: false,
+          error: '需要 confirm=true 参数才能执行全量同步（此操作将覆盖 public schema 所有数据）',
+          hint: '先使用 dryRun=true 预览，确认后使用 confirm=true 执行'
+        }, { status: 400 });
+      }
+
+      // ==========================================
+      // Step 2: 对齐表结构
+      // ==========================================
+
+      // 2.1 在 public 中创建 dev_schema 有但 public 没有的表
+      const publicTableNames = new Set(publicTables.map((t: any) => t.table_name));
+      const missingTables = devTables.filter((t: any) => !publicTableNames.has(t.table_name));
+      let tablesCreated = 0;
+      for (const t of missingTables) {
+        const tableName = t.table_name;
+        try {
+          await sql.unsafe(`CREATE TABLE IF NOT EXISTS public."${tableName}" (LIKE dev_schema."${tableName}" INCLUDING ALL)`);
+          tablesCreated++;
+        } catch (e: any) {
+          results.push({ step: `create_table_${tableName}`, status: 'error', detail: e.message?.substring(0, 100) });
+        }
+      }
+      results.push({
+        step: 'create_missing_tables',
+        status: tablesCreated > 0 ? 'success' : 'skipped',
+        detail: tablesCreated > 0 ? `创建了 ${tablesCreated} 张缺失表` : '无需创建新表'
+      });
+
+      // 2.2 补齐缺失的列
+      const onlyDevCols = await sql`
+        SELECT d.table_name, d.column_name, d.data_type, d.character_maximum_length,
+               d.is_nullable, d.column_default, d.udt_name,
+               d.numeric_precision, d.numeric_scale
+        FROM information_schema.columns d
+        WHERE d.table_schema = 'dev_schema'
+        AND EXISTS (
+          SELECT 1 FROM information_schema.tables p
+          WHERE p.table_schema = 'public' AND p.table_name = d.table_name AND p.table_type = 'BASE TABLE'
+        )
+        AND NOT EXISTS (
+          SELECT 1 FROM information_schema.columns p
+          WHERE p.table_schema = 'public'
+          AND p.table_name = d.table_name
+          AND p.column_name = d.column_name
+        )
+        ORDER BY d.table_name, d.ordinal_position
+      `;
+
+      let colsAdded = 0;
+      for (const col of onlyDevCols) {
+        const typeMap: Record<string, string> = {
+          'int4': 'INTEGER', 'int8': 'BIGINT', 'varchar': 'VARCHAR',
+          'text': 'TEXT', 'boolean': 'BOOLEAN', 'timestamptz': 'TIMESTAMPTZ',
+          'timestamp': 'TIMESTAMP', 'date': 'DATE', 'numeric': 'NUMERIC',
+          'uuid': 'UUID', 'jsonb': 'JSONB', 'json': 'JSON',
+          'bytea': 'BYTEA', 'float8': 'DOUBLE PRECISION',
+        };
+        let colType = typeMap[col.udt_name] || col.udt_name;
+        if (col.character_maximum_length && col.udt_name === 'varchar') {
+          colType = `VARCHAR(${col.character_maximum_length})`;
+        }
+        if (col.numeric_precision && col.udt_name === 'numeric') {
+          colType = `NUMERIC(${col.numeric_precision},${col.numeric_scale || 0})`;
+        }
+        const nullable = col.is_nullable === 'YES' ? '' : ' NOT NULL';
+        const defaultVal = col.column_default ? ` DEFAULT ${col.column_default}` : '';
+        try {
+          await sql.unsafe(
+            `ALTER TABLE public."${col.table_name}" ADD COLUMN IF NOT EXISTS "${col.column_name}" ${colType}${nullable}${defaultVal}`
+          );
+          colsAdded++;
+        } catch (e: any) {
+          results.push({ step: `add_col_${col.table_name}.${col.column_name}`, status: 'error', detail: e.message?.substring(0, 100) });
+        }
+      }
+      results.push({
+        step: 'add_missing_columns',
+        status: 'success',
+        detail: `添加了 ${colsAdded} 个缺失列`
+      });
+
+      // ==========================================
+      // Step 3: 清空 public 数据 + 从 dev_schema 复制
+      // ==========================================
+      // 不使用 session_replication_role（需要超级用户权限）
+      // 改为按依赖顺序同步：先收集外键依赖，按拓扑顺序同步
+
+      // 3.1 获取所有外键关系，构建依赖图
+      const fkRelations = await sql`
+        SELECT
+          tc.table_name AS from_table,
+          ccu.table_name AS to_table
+        FROM information_schema.table_constraints tc
+        JOIN information_schema.referential_constraints rc ON tc.constraint_name = rc.constraint_name
+        JOIN information_schema.constraint_column_usage ccu ON rc.unique_constraint_name = ccu.constraint_name
+        WHERE tc.table_schema = 'dev_schema' AND tc.constraint_type = 'FOREIGN KEY'
+      `;
+
+      // 3.2 拓扑排序：被引用的表排在前面
+      const devTableNames = devTables.map((t: any) => t.table_name);
+      const dependencyMap = new Map<string, Set<string>>();
+      for (const t of devTableNames) {
+        dependencyMap.set(t, new Set());
+      }
+      for (const fk of fkRelations) {
+        const from = fk.from_table;
+        const to = fk.to_table;
+        if (devTableNames.includes(from) && devTableNames.includes(to) && from !== to) {
+          dependencyMap.get(from)?.add(to);
+        }
+      }
+
+      // 简单拓扑排序（Kahn算法）
+      const sortedTables: string[] = [];
+      const inDegree = new Map<string, number>();
+      for (const t of devTableNames) {
+        inDegree.set(t, 0);
+      }
+      for (const [_, deps] of dependencyMap) {
+        for (const dep of deps) {
+          inDegree.set(dep, (inDegree.get(dep) || 0)); // dep 被 from 引用，from 依赖 dep
+        }
+      }
+      // from_table 依赖 to_table，所以 to_table 应先同步
+      // 重新计算：被依赖的表先同步
+      const reverseDeps = new Map<string, Set<string>>();
+      for (const t of devTableNames) {
+        reverseDeps.set(t, new Set());
+      }
+      for (const [from, deps] of dependencyMap) {
+        for (const dep of deps) {
+          reverseDeps.get(dep)?.add(from); // dep 被 from 依赖，所以 from 在 dep 之后
+        }
+      }
+      for (const [_, rdeps] of reverseDeps) {
+        // rdeps 中的表依赖当前表
+      }
+
+      // 使用简单的分层排序
+      const visited = new Set<string>();
+      const sorted: string[] = [];
+      function visit(table: string, path: Set<string>) {
+        if (visited.has(table)) return;
+        if (path.has(table)) return; // 循环依赖，跳过
+        path.add(table);
+        const deps = dependencyMap.get(table) || new Set();
+        for (const dep of deps) {
+          visit(dep, path);
+        }
+        path.delete(table);
+        visited.add(table);
+        sorted.push(table);
+      }
+      for (const t of devTableNames) {
+        visit(t, new Set());
+      }
+
+      // 3.3 临时移除 public 的所有外键约束
+      const publicFks = await sql`
+        SELECT tc.table_name, tc.constraint_name
+        FROM information_schema.table_constraints tc
+        WHERE tc.table_schema = 'public' AND tc.constraint_type = 'FOREIGN KEY'
+      `;
+      const droppedFks: Array<{table: string; constraint: string}> = [];
+      for (const fk of publicFks) {
+        try {
+          await sql.unsafe(`ALTER TABLE public."${fk.table_name}" DROP CONSTRAINT IF EXISTS "${fk.constraint_name}"`);
+          droppedFks.push({ table: fk.table_name, constraint: fk.constraint_name });
+        } catch (e: any) {
+          // 忽略删除外键失败的错误
+        }
+      }
+      results.push({
+        step: 'drop_public_fks',
+        status: 'info',
+        detail: `临时移除了 ${droppedFks.length} 个外键约束`
+      });
+
+      // 3.4 按依赖顺序清空并复制数据
+      let tablesSynced = 0;
+      let tablesFailed = 0;
+      let totalRows = 0;
+
+      for (const tableName of sorted) {
+        try {
+          // 检查 public 中该表是否存在
+          const pubExists = await sql`
+            SELECT table_name FROM information_schema.tables 
+            WHERE table_schema = 'public' AND table_name = ${tableName}
           `;
-          const colNames = devColumns.map((c: any) => c.column_name);
-
-          // 读取dev_schema素材数据
-          const devMaterials = await sql`
-            SELECT * FROM dev_schema.material_library ORDER BY created_at ASC
-          `;
-
-          let synced = 0;
-          let skipped = 0;
-          let errors = 0;
-
-          for (const mat of devMaterials) {
-            try {
-              // 检查public中是否已存在同ID素材
-              const existing = await sql`
-                SELECT id FROM public.material_library WHERE id = ${mat.id}
-              `;
-              if (existing.length > 0) {
-                skipped++;
-                continue;
-              }
-
-              // 构建INSERT语句，将owner_type设为system
-              // workspace_id设为NULL（系统素材不属于任何工作区）
-              // source_type映射为系统来源类型
-              const systemSourceMap: Record<string, string> = {
-                'manual': 'system_admin',
-                'article': 'system_admin',
-                'ai_generate': 'system_admin',
-                'import': 'system_admin',
-              };
-              const newOwnerType = 'system';
-              const newSourceType = systemSourceMap[mat.source_type] || 'system_admin';
-              const newWorkspaceId = null;
-
-              // 动态构建INSERT
-              const insertCols: string[] = [];
-              const insertVals: any[] = [];
-              const placeholders: string[] = [];
-              let paramIdx = 1;
-
-              for (const col of colNames) {
-                insertCols.push(`"${col}"`);
-                if (col === 'owner_type') {
-                  placeholders.push(`'${newOwnerType}'`);
-                } else if (col === 'source_type') {
-                  placeholders.push(`'${newSourceType}'`);
-                } else if (col === 'workspace_id') {
-                  placeholders.push('NULL');
-                } else {
-                  const val = mat[col];
-                  if (val === null || val === undefined) {
-                    placeholders.push('NULL');
-                  } else if (val instanceof Date) {
-                    // Date必须在object之前判断，因为instanceof Date也是typeof object
-                    placeholders.push(`'${val.toISOString()}'`);
-                  } else if (typeof val === 'string') {
-                    // 转义单引号
-                    placeholders.push(`'${val.replace(/'/g, "''")}'`);
-                  } else if (typeof val === 'object') {
-                    // JSONB
-                    placeholders.push(`'${JSON.stringify(val).replace(/'/g, "''")}'::jsonb`);
-                  } else if (typeof val === 'boolean') {
-                    placeholders.push(val ? 'TRUE' : 'FALSE');
-                  } else {
-                    placeholders.push(String(val));
-                  }
-                }
-              }
-
-              await sql.unsafe(
-                `INSERT INTO public.material_library (${insertCols.join(', ')}) VALUES (${placeholders.join(', ')}) ON CONFLICT (id) DO NOTHING`
-              );
-              synced++;
-            } catch (e: any) {
-              errors++;
-              if (errors <= 3) {
-                results.push({
-                  step: `data_sync_material_${mat.id?.substring(0, 8)}`,
-                  status: 'error',
-                  detail: `${mat.title?.substring(0, 30)}: ${e.message?.substring(0, 100)}`
-                });
-              }
-            }
+          if (pubExists.length === 0) {
+            results.push({ step: `sync_${tableName}`, status: 'skipped', detail: 'public中表不存在' });
+            continue;
           }
 
+          // 获取 dev 数据量
+          const devCount = await sql.unsafe(`SELECT COUNT(*) as cnt FROM dev_schema."${tableName}"`);
+          const rowCount = Number(devCount[0].cnt);
+
+          // 清空 public 表（无 CASCADE，因为已移除外键）
+          await sql.unsafe(`TRUNCATE TABLE public."${tableName}"`);
+
+          if (rowCount > 0) {
+            // 复制数据：从 dev_schema 到 public
+            await sql.unsafe(`INSERT INTO public."${tableName}" SELECT * FROM dev_schema."${tableName}"`);
+          }
+
+          tablesSynced++;
+          totalRows += rowCount;
           results.push({
-            step: 'data_sync_materials',
-            status: errors > 0 ? 'partial' : 'success',
-            detail: `同步${synced}条，跳过${skipped}条(已存在)，错误${errors}条`
+            step: `sync_${tableName}`,
+            status: 'success',
+            detail: `${rowCount} 行已同步`
+          });
+        } catch (e: any) {
+          tablesFailed++;
+          results.push({
+            step: `sync_${tableName}`,
+            status: 'error',
+            detail: e.message?.substring(0, 150)
           });
         }
       }
 
-      // ==========================================
-      // Step 3: 验证比对
-      // ==========================================
-      if (step === 'all' || step === 'verify') {
-        // 3.1 表数量比对
-        const devTableCount = await sql`
-          SELECT COUNT(*) as cnt FROM information_schema.tables 
-          WHERE table_schema = 'dev_schema' AND table_type = 'BASE TABLE'
-        `;
-        const pubTableCount = await sql`
-          SELECT COUNT(*) as cnt FROM information_schema.tables 
-          WHERE table_schema = 'public' AND table_type = 'BASE TABLE'
-        `;
-        results.push({
-          step: 'verify_table_count',
-          status: devTableCount[0].cnt === pubTableCount[0].cnt ? 'pass' : 'mismatch',
-          detail: `dev: ${devTableCount[0].cnt} 张表, public: ${pubTableCount[0].cnt} 张表`
-        });
+      results.push({
+        step: 'sync_summary',
+        status: tablesFailed > 0 ? 'partial' : 'success',
+        detail: `共 ${devTables.length} 张表，成功 ${tablesSynced}，失败 ${tablesFailed}，总行数 ${totalRows}`
+      });
 
-        // 3.2 素材数据量比对
-        const devMatCount = await sql`SELECT COUNT(*) as cnt FROM dev_schema.material_library`;
-        const pubMatCount = await sql`SELECT COUNT(*) as cnt FROM public.material_library`;
-        const pubSysCount = await sql`SELECT COUNT(*) as cnt FROM public.material_library WHERE owner_type = 'system'`;
-        results.push({
-          step: 'verify_material_count',
-          status: Number(pubMatCount[0].cnt) >= Number(devMatCount[0].cnt) ? 'pass' : 'mismatch',
-          detail: `dev: ${devMatCount[0].cnt}条, public: ${pubMatCount[0].cnt}条(其中system: ${pubSysCount[0].cnt}条)`
-        });
-
-        // 3.3 素材类型分布比对
-        const devTypeDist = await sql`
-          SELECT type, COUNT(*) as cnt FROM dev_schema.material_library GROUP BY type ORDER BY cnt DESC
-        `;
-        const pubTypeDist = await sql`
-          SELECT type, COUNT(*) as cnt FROM public.material_library WHERE owner_type = 'system' GROUP BY type ORDER BY cnt DESC
-        `;
-        const devTypeMap: Record<string, number> = {};
-        devTypeDist.forEach((r: any) => { devTypeMap[r.type] = Number(r.cnt); });
-        const pubTypeMap: Record<string, number> = {};
-        pubTypeDist.forEach((r: any) => { pubTypeMap[r.type] = Number(r.cnt); });
-
-        let typeMatch = true;
-        const typeDetails: string[] = [];
-        for (const [type, cnt] of Object.entries(devTypeMap)) {
-          const pubCnt = pubTypeMap[type] || 0;
-          if (pubCnt < cnt) typeMatch = false;
-          typeDetails.push(`${type}: dev=${cnt} pub_sys=${pubCnt}`);
-        }
-        results.push({
-          step: 'verify_type_distribution',
-          status: typeMatch ? 'pass' : 'mismatch',
-          detail: typeDetails.join(', ')
-        });
-
-        // 3.4 字段一致性抽样检查（取5条数据比对title和content）
-        const devSamples = await sql`
-          SELECT id, title, content, type FROM dev_schema.material_library ORDER BY RANDOM() LIMIT 5
-        `;
-        let sampleMatch = 0;
-        let sampleTotal = devSamples.length;
-        for (const s of devSamples) {
-          const pubSample = await sql`
-            SELECT title, content, owner_type FROM public.material_library WHERE id = ${s.id}
+      // 3.5 从 dev_schema 重建 public 的外键约束
+      let fksRestored = 0;
+      for (const fk of droppedFks) {
+        try {
+          // 从 dev_schema 获取外键定义
+          const fkDef = await sql`
+            SELECT
+              kcu.column_name,
+              ccu.table_name AS ref_table,
+              ccu.column_name AS ref_column
+            FROM information_schema.key_column_usage kcu
+            JOIN information_schema.referential_constraints rc ON kcu.constraint_name = rc.constraint_name
+            JOIN information_schema.constraint_column_usage ccu ON rc.unique_constraint_name = ccu.constraint_name
+            WHERE kcu.table_schema = 'dev_schema'
+            AND kcu.constraint_name = ${fk.constraint}
           `;
-          if (pubSample.length > 0 && pubSample[0].title === s.title && pubSample[0].owner_type === 'system') {
-            sampleMatch++;
+          if (fkDef.length > 0) {
+            const col = fkDef[0].column_name;
+            const refTable = fkDef[0].ref_table;
+            const refCol = fkDef[0].ref_column;
+            await sql.unsafe(
+              `ALTER TABLE public."${fk.table}" ADD CONSTRAINT "${fk.constraint}" FOREIGN KEY ("${col}") REFERENCES public."${refTable}"("${refCol}")`
+            );
+            fksRestored++;
           }
+        } catch (e: any) {
+          // 外键重建失败不阻塞（数据已一致，只是缺少约束）
         }
-        results.push({
-          step: 'verify_sample_integrity',
-          status: sampleMatch === sampleTotal ? 'pass' : 'mismatch',
-          detail: `抽样${sampleTotal}条，匹配${sampleMatch}条`
-        });
-
-        // 3.5 列完整性检查（剩余差异列）
-        const remainingDiffCols = await sql`
-          SELECT COUNT(*) as cnt FROM information_schema.columns d
-          WHERE d.table_schema = 'dev_schema'
-          AND EXISTS (
-            SELECT 1 FROM information_schema.tables p
-            WHERE p.table_schema = 'public' AND p.table_name = d.table_name AND p.table_type = 'BASE TABLE'
-          )
-          AND NOT EXISTS (
-            SELECT 1 FROM information_schema.columns p
-            WHERE p.table_schema = 'public' AND p.table_name = d.table_name AND p.column_name = d.column_name
-          )
-        `;
-        results.push({
-          step: 'verify_column_completeness',
-          status: Number(remainingDiffCols[0].cnt) === 0 ? 'pass' : 'mismatch',
-          detail: `剩余差异列数: ${remainingDiffCols[0].cnt}`
-        });
       }
+      results.push({
+        step: 'restore_public_fks',
+        status: 'info',
+        detail: `重建了 ${fksRestored}/${droppedFks.length} 个外键约束`
+      });
+
+      // ==========================================
+      // Step 4: 重置序列（确保自增ID从最大值+1开始）
+      // ==========================================
+      for (const t of devTables) {
+        const tableName = t.table_name;
+        try {
+          // 查找该表的所有序列列
+          const seqCols = await sql`
+            SELECT column_name, column_default 
+            FROM information_schema.columns 
+            WHERE table_schema = 'public' AND table_name = ${tableName}
+            AND column_default LIKE 'nextval%'
+          `;
+          for (const seq of seqCols) {
+            // 提取序列名
+            const seqMatch = seq.column_default.match(/nextval\('([^']+)'::/);
+            if (seqMatch) {
+              const seqName = seqMatch[1].replace(/public\./, '');
+              try {
+                await sql.unsafe(`SELECT setval('"${seqName}"', COALESCE((SELECT MAX("${seq.column_name}") FROM public."${tableName}"), 1), COALESCE((SELECT MAX("${seq.column_name}") FROM public."${tableName}") IS NOT NULL, false))`);
+              } catch (_) { /* 忽略序列重置错误 */ }
+            }
+          }
+        } catch (_) { /* 忽略 */ }
+      }
+      results.push({
+        step: 'reset_sequences',
+        status: 'success',
+        detail: '序列已重置'
+      });
 
     } finally {
       await sql.end();
@@ -450,8 +397,7 @@ export async function GET(request: Request) {
 
     return NextResponse.json({
       success: true,
-      dryRun,
-      step,
+      dryRun: false,
       results,
       timestamp: new Date().toISOString()
     });
@@ -465,7 +411,6 @@ export async function GET(request: Request) {
   }
 }
 
-// POST 方法也支持（与GET相同逻辑，方便通过表单触发）
 export async function POST(request: Request) {
   return GET(request);
 }

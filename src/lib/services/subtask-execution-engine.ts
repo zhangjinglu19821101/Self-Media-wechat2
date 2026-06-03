@@ -9211,8 +9211,22 @@ export class SubtaskExecutionEngine {
           const articleSourceDesc = taskMetadata?.manualSourceArticle?.content
             ? '用户提供的文章'
             : (taskMetadata?.creationMode === 'direct_publish' && taskMetadata?.providedArticle ? '用户提供的文章' : '基础文章');
-          adaptationModePrefix = `\n【平台适配模式 - 最高优先级指令】\n你正在执行"平台适配"任务。${articleSourceDesc}已完成，你需要基于${articleSourceDesc}的内容进行平台适配改写。\n核心规则：\n1. 必须基于${articleSourceDesc}内容改写，不得自行创作新的核心论点、数据或案例\n2. 保留${articleSourceDesc}的核心观点和逻辑结构\n3. 按照${platformLabel}平台风格和格式进行改写\n4. 可以调整表达方式、段落结构、用词风格以适应平台特点\n5. ${articleSourceDesc}内容已在"前序任务执行结果"中提供（order_index=0 的"${articleSourceDesc}"条目）\n\n`;
-          console.log('[SubtaskEngine] 🔥 适配模式前缀已注入，平台:', platformLabel, '文章来源:', articleSourceDesc);
+          // 🔥🔥🔥 小红书种草适配规则：不照搬公众号长文结构，而是提炼核心观点做种草笔记
+          const xhsAdaptationRule = (platformLabel === '小红书')
+            ? `\n【小红书种草适配 - 特殊规则（覆盖通用规则第2条）】
+小红书 ≠ 公众号缩写版！你是小红书种草博主，不是公众号搬运工。
+- ❌ 禁止照搬原文结构（公众号的"1.背景 2.分析 3.总结"框架→完全抛弃）
+- ❌ 禁止复制原文段落（公众号的每一段→提炼为1-2句种草话术）
+- ✅ 只提取3-5个最"值得种草"的干货点（读者看完就想收藏的那种）
+- ✅ 用"闺蜜安利"口吻重写（"姐妹们听我说！""这个真的绝了！""踩过的坑告诉你们"）
+- ✅ 每个要点先抛结论→再简单解释→最后给行动建议
+- ✅ 全文控制在600-800字（含emoji），比公众号短50%以上
+- ✅ fullText用短段落（每段1-3句）、emoji点缀、口语化表达
+\n`
+            : '';
+
+          adaptationModePrefix = `\n【平台适配模式 - 最高优先级指令】\n你正在执行"平台适配"任务。${articleSourceDesc}已完成，你需要基于${articleSourceDesc}的内容进行平台适配改写。\n核心规则：\n1. 必须基于${articleSourceDesc}内容改写，不得自行创作新的核心论点、数据或案例\n2. 保留${articleSourceDesc}的核心观点和逻辑结构\n3. 按照${platformLabel}平台风格和格式进行改写\n4. 可以调整表达方式、段落结构、用词风格以适应平台特点\n5. ${articleSourceDesc}内容已在"前序任务执行结果"中提供（order_index=0 的"${articleSourceDesc}"条目）\n${xhsAdaptationRule}\n`;
+          console.log('[SubtaskEngine] 🔥 适配模式前缀已注入，平台:', platformLabel, '文章来源:', articleSourceDesc, platformLabel === '小红书' ? '(含种草适配规则)' : '');
         }
 
         // 🔥🔥🔥 直接发文：格式化模式前缀

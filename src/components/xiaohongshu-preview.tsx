@@ -31,6 +31,51 @@ import {
   type XiaohongshuContent
 } from '@/lib/xhs-parser';
 
+// ============ 卡片模板系统 ============
+import {
+  XHS_CARD_TEMPLATES,
+  type XhsCardTemplate,
+  getXhsCardTemplate,
+  DEFAULT_CARD_TEMPLATE_ID,
+} from '@/lib/xhs-card-templates';
+
+/** 用户偏好 localStorage key */
+const TEMPLATE_PREF_KEY = 'xhs_card_template_id';
+
+/** 将 ColorScheme 数组转为 CSS 渐变色字符串 */
+function colorsToGradient(colors: {from: string; to: string}[], deg: number = 135): string | null {
+  if (!colors || colors.length === 0) return null;
+  const stops = colors.map(c => `${c.from}, ${c.to}`).join(', ');
+  return `linear-gradient(${deg}deg, ${stops})`;
+}
+
+/** 根据模板卡片定义生成 CSS 样式对象 */
+function getCardStyle(cardDef: {bgType: string; colors: {from: string; to: string}[]; textColor: string; borderColor?: string}): React.CSSProperties {
+  const base: React.CSSProperties = { color: cardDef.textColor };
+  if (cardDef.bgType === 'gradient' && cardDef.colors.length >= 1) {
+    const gradient = colorsToGradient(cardDef.colors);
+    if (gradient) base.background = gradient;
+  } else if (cardDef.bgType === 'solid' && cardDef.colors.length >= 1) {
+    base.background = cardDef.colors[0].from;
+  }
+  if ((cardDef as any).borderColor) {
+    base.border = `1px solid ${(cardDef as any).borderColor}`;
+  }
+  return base;
+}
+
+/** 根据要点卡片定义和索引生成样式 */
+function getPointCardStyle(pointDef: XhsCardTemplate['point'], idx: number): React.CSSProperties {
+  const style = getCardStyle(pointDef);
+  // 渐变类模板按索引轮换颜色方向
+  if (pointDef.bgType === 'gradient' && pointDef.colors.length >= 1) {
+    const deg = 120 + idx * 30;
+    const gradient = colorsToGradient(pointDef.colors, deg);
+    if (gradient) style.background = gradient;
+  }
+  return style;
+}
+
 // 🔥 小红书正文格式渲染器
 import { XhsTextRenderer } from '@/components/xhs-text-renderer';
 
@@ -71,6 +116,57 @@ function parseXhsContent(raw: string | object | null | undefined): XiaohongshuCo
   };
 }
 
+/** 🎨 卡片模板选择器组件 */
+function CardTemplateSelector({
+  selectedTemplateId,
+  onTemplateChange,
+}: {
+  selectedTemplateId: string;
+  onTemplateChange: (id: string) => void;
+}) {
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center gap-2 text-sm font-medium text-gray-700">
+        <span>🎨 卡片风格</span>
+        <span className="text-xs text-gray-400">选择你喜欢的卡片样式</span>
+      </div>
+      <div className="flex gap-2 overflow-x-auto pb-2">
+        {XHS_CARD_TEMPLATES.map((tpl) => {
+          const isSelected = tpl.id === selectedTemplateId;
+          const colorScheme = tpl.cover.colors[0];
+          const bgStyle = tpl.cover.bgType === 'gradient'
+            ? { background: `linear-gradient(135deg, ${colorScheme.from}, ${colorScheme.to})` }
+            : { backgroundColor: colorScheme.from };
+          return (
+            <button
+              key={tpl.id}
+              onClick={() => onTemplateChange(tpl.id)}
+              className={`flex-shrink-0 rounded-lg border-2 p-2 transition-all ${
+                isSelected
+                  ? 'border-indigo-500 shadow-md scale-105'
+                  : 'border-gray-200 hover:border-gray-300 hover:shadow-sm'
+              }`}
+              title={tpl.description}
+            >
+              <div
+                className="w-16 h-10 rounded flex items-center justify-center"
+                style={bgStyle}
+              >
+                <span className="text-white text-[8px] font-bold drop-shadow-sm">
+                  {tpl.name}
+                </span>
+              </div>
+              <div className="mt-1 text-[10px] text-gray-500 truncate w-16 text-center">
+                {tpl.name}
+              </div>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 export function XiaohongshuPreview({
   taskId,
   commandResultId,
@@ -104,6 +200,24 @@ export function XiaohongshuPreview({
   // 🔥 点赞/收藏状态（仅UI展示）
   const [isLiked, setIsLiked] = useState(false);
   const [isCollected, setIsCollected] = useState(false);
+
+  // 🎨 卡片模板选择状态（用户偏好持久化到 localStorage）
+  const [selectedTemplateId, setSelectedTemplateId] = useState<string>(() => {
+    if (typeof window === 'undefined') return DEFAULT_CARD_TEMPLATE_ID;
+    try {
+      const saved = localStorage.getItem(TEMPLATE_PREF_KEY);
+      if (saved && getXhsCardTemplate(saved)) {
+        return saved;
+      }
+    } catch {}
+    return DEFAULT_CARD_TEMPLATE_ID;
+  });
+  const selectedTemplate = getXhsCardTemplate(selectedTemplateId);
+
+  const handleTemplateChange = useCallback((templateId: string) => {
+    setSelectedTemplateId(templateId);
+    try { localStorage.setItem(TEMPLATE_PREF_KEY, templateId); } catch {}
+  }, []);
 
   // 当外部内容变化时同步
   useEffect(() => {
@@ -433,6 +547,11 @@ export function XiaohongshuPreview({
           </div>
         ) : content ? (
           <div className="space-y-6">
+            {/* 🎨 卡片模板选择器 */}
+            <CardTemplateSelector
+              selectedTemplateId={selectedTemplateId}
+              onTemplateChange={handleTemplateChange}
+            />
             {/* 🔥 小红书风格模拟器 */}
             <div className="flex justify-center">
               <div className="w-[375px] bg-white rounded-3xl shadow-2xl border border-gray-200 overflow-hidden">
@@ -477,12 +596,12 @@ export function XiaohongshuPreview({
                         {/* 封面卡 */}
                         <div className="flex-shrink-0 h-full flex items-center justify-center p-4" style={{ width: `${100 / totalCards}%` }}>
                           <div
-                            className="w-full h-full rounded-2xl flex flex-col justify-center px-5 py-5 text-white shadow-lg overflow-y-auto"
-                            style={{
-                              background: `linear-gradient(135deg, ${GRADIENT_SCHEMES[0].from}, ${GRADIENT_SCHEMES[0].to})`,
-                            }}
+                            className="w-full h-full rounded-2xl flex flex-col justify-center px-5 py-5 shadow-lg overflow-y-auto"
+                            style={getCardStyle(selectedTemplate.cover)}
                           >
-                            <div className="text-xs opacity-70 mb-2 font-medium">📕 封面</div>
+                            {selectedTemplate.cover.emoji && (
+                              <div className="text-xs opacity-70 mb-2 font-medium">{selectedTemplate.cover.emoji}</div>
+                            )}
                             <div className="text-lg font-bold leading-tight mb-2">{content.title}</div>
                             {content.intro && (
                               <div className="text-sm opacity-90 leading-relaxed">{content.intro}</div>
@@ -492,16 +611,14 @@ export function XiaohongshuPreview({
                         
                         {/* 要点卡片 */}
                         {content.points?.map((point, idx) => {
-                          const scheme = GRADIENT_SCHEMES[(idx + 1) % GRADIENT_SCHEMES.length];
+                          const pointStyle = getPointCardStyle(selectedTemplate.point, idx);
                           return (
                             <div key={idx} className="flex-shrink-0 h-full flex items-center justify-center p-4" style={{ width: `${100 / totalCards}%` }}>
                               <div
-                                className="w-full h-full rounded-2xl flex flex-col px-5 py-5 text-white shadow-lg overflow-y-auto"
-                                style={{
-                                  background: `linear-gradient(135deg, ${scheme.from}, ${scheme.to})`,
-                                }}
+                                className="w-full h-full rounded-2xl flex flex-col px-5 py-5 shadow-lg overflow-y-auto"
+                                style={pointStyle}
                               >
-                                <div className="text-xs opacity-70 mb-2 font-medium">📌 要点 {idx + 1}</div>
+                                <div className="text-xs opacity-70 mb-2 font-medium">{selectedTemplate.point.emoji} 要点 {idx + 1}</div>
                                 <div className="text-lg font-bold leading-tight mb-2">{point.title}</div>
                                 {point.content && (
                                   <div className="text-sm opacity-90 leading-relaxed flex-1">{point.content}</div>
@@ -515,12 +632,10 @@ export function XiaohongshuPreview({
                         {content.conclusion && (
                           <div className="flex-shrink-0 h-full flex items-center justify-center p-4" style={{ width: `${100 / totalCards}%` }}>
                             <div
-                              className="w-full h-full rounded-2xl flex flex-col px-5 py-5 text-white shadow-lg overflow-y-auto"
-                              style={{
-                                background: 'linear-gradient(135deg, #374151, #111827)',
-                              }}
+                              className="w-full h-full rounded-2xl flex flex-col px-5 py-5 shadow-lg overflow-y-auto"
+                              style={getCardStyle(selectedTemplate.conclusion)}
                             >
-                              <div className="text-xs opacity-70 mb-2 font-medium">✨ 结语</div>
+                              <div className="text-xs opacity-70 mb-2 font-medium">{selectedTemplate.conclusion.emoji}</div>
                               <div className="text-lg font-bold leading-tight mb-2">{content.conclusion}</div>
                               {content.tags && content.tags.length > 0 && (
                                 <div className="flex flex-wrap gap-2 mt-3">
