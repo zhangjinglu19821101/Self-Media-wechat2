@@ -17,7 +17,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Eye, Copy, Download, CheckCircle2, ChevronLeft, ChevronRight, ImageIcon } from 'lucide-react';
+import { Eye, Copy, Download, CheckCircle2, ChevronLeft, ChevronRight, ImageIcon, Plus, Pencil, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import Link from 'next/link';
 import { getCurrentWorkspaceId } from '@/lib/api/client';
@@ -26,7 +26,6 @@ import * as VisuallyHidden from '@radix-ui/react-visually-hidden';
 
 // ============ 共享解析模块 ============
 import { 
-  GRADIENT_SCHEMES, 
   parseXhsContent as parseXhsContentFromLib,
   type XiaohongshuContent
 } from '@/lib/xhs-parser';
@@ -116,7 +115,29 @@ function parseXhsContent(raw: string | object | null | undefined): XiaohongshuCo
   };
 }
 
-/** 🎨 卡片模板选择器组件 */
+/** 🎨 数据库模板类型 */
+interface DbCardStyleTemplate {
+  id: string;
+  name: string;
+  description: string | null;
+  templateType: string;
+  presetTemplateId: string | null;
+  templateConfig: XhsCardTemplate;
+  sourceType: string;
+  useCount: number;
+}
+
+/** 🎨 合并后的模板项（硬编码 + 数据库） */
+interface MergedTemplateItem {
+  id: string;
+  name: string;
+  description: string;
+  template: XhsCardTemplate;
+  source: 'preset' | 'db_system' | 'db_user';
+  dbId?: string; // 数据库记录ID，用于编辑/删除
+}
+
+/** 🎨 卡片模板选择器组件（支持预设+数据库自定义模板） */
 function CardTemplateSelector({
   selectedTemplateId,
   onTemplateChange,
@@ -124,29 +145,150 @@ function CardTemplateSelector({
   selectedTemplateId: string;
   onTemplateChange: (id: string) => void;
 }) {
+  const [dbTemplates, setDbTemplates] = useState<DbCardStyleTemplate[]>([]);
+  const [loadingDb, setLoadingDb] = useState(false);
+  const [showCreateDialog, setShowCreateDialog] = useState(false);
+  const [editTemplate, setEditTemplate] = useState<DbCardStyleTemplate | null>(null);
+
+  // 加载数据库模板
+  useEffect(() => {
+    let cancelled = false;
+    const loadDbTemplates = async () => {
+      setLoadingDb(true);
+      try {
+        const workspaceId = getCurrentWorkspaceId();
+        const res = await fetch('/api/xhs-card-style-templates', {
+          headers: { 'x-workspace-id': workspaceId },
+        });
+        if (cancelled) return;
+        if (res.ok) {
+          const data = await res.json();
+          if (data.success) {
+            setDbTemplates(data.data || []);
+          }
+        }
+      } catch (err) {
+        console.error('加载数据库卡片模板失败:', err);
+      } finally {
+        if (!cancelled) setLoadingDb(false);
+      }
+    };
+    loadDbTemplates();
+    return () => { cancelled = true; };
+  }, []);
+
+  // 合并模板列表：数据库系统模板 + 硬编码模板（去重）+ 数据库用户模板
+  const mergedTemplates: MergedTemplateItem[] = (() => {
+    const items: MergedTemplateItem[] = [];
+    const seenIds = new Set<string>();
+
+    // 1. 数据库系统模板（优先，如果有则替代硬编码）
+    for (const db of dbTemplates) {
+      if (db.templateType === 'system' && db.templateConfig) {
+        seenIds.add(db.presetTemplateId || db.id);
+        items.push({
+          id: db.presetTemplateId || db.id,
+          name: db.name,
+          description: db.description || '',
+          template: db.templateConfig as XhsCardTemplate,
+          source: 'db_system',
+          dbId: db.id,
+        });
+      }
+    }
+
+    // 2. 硬编码预设模板（去重：如果数据库已有同ID则跳过）
+    for (const tpl of XHS_CARD_TEMPLATES) {
+      if (!seenIds.has(tpl.id)) {
+        items.push({
+          id: tpl.id,
+          name: tpl.name,
+          description: tpl.description,
+          template: tpl,
+          source: 'preset',
+        });
+      }
+    }
+
+    // 3. 数据库用户自定义模板
+    for (const db of dbTemplates) {
+      if (db.templateType === 'user' && db.templateConfig) {
+        items.push({
+          id: db.id, // 用户模板使用数据库ID
+          name: db.name,
+          description: db.description || '',
+          template: db.templateConfig as XhsCardTemplate,
+          source: 'db_user',
+          dbId: db.id,
+        });
+      }
+    }
+
+    return items;
+  })();
+
+  // 删除用户自定义模板
+  const handleDeleteTemplate = async (dbId: string) => {
+    try {
+      const workspaceId = getCurrentWorkspaceId();
+      const res = await fetch(`/api/xhs-card-style-templates/${dbId}`, {
+        method: 'DELETE',
+        headers: { 'x-workspace-id': workspaceId },
+      });
+      if (res.ok) {
+        setDbTemplates(prev => prev.filter(t => t.id !== dbId));
+        toast.success('模板已删除');
+        // 如果删除的是当前选中的模板，切回默认
+        if (selectedTemplateId === dbId) {
+          onTemplateChange(DEFAULT_CARD_TEMPLATE_ID);
+        }
+      }
+    } catch (err) {
+      console.error('删除模板失败:', err);
+      toast.error('删除失败');
+    }
+  };
+
   return (
     <div className="space-y-2">
-      <div className="flex items-center gap-2 text-sm font-medium text-gray-700">
-        <span>🎨 卡片风格</span>
-        <span className="text-xs text-gray-400">选择你喜欢的卡片样式</span>
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2 text-sm font-medium text-gray-700">
+          <span>🎨 卡片风格</span>
+          <span className="text-xs text-gray-400">选择你喜欢的卡片样式</span>
+        </div>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-7 text-xs text-indigo-600 hover:text-indigo-700"
+          onClick={() => setShowCreateDialog(true)}
+        >
+          <Plus className="w-3 h-3 mr-1" />
+          自定义
+        </Button>
       </div>
       <div className="flex gap-2 overflow-x-auto pb-2">
-        {XHS_CARD_TEMPLATES.map((tpl) => {
-          const isSelected = tpl.id === selectedTemplateId;
+        {loadingDb && (
+          <div className="flex-shrink-0 flex items-center gap-1 text-xs text-gray-400 px-2">
+            <span className="animate-spin">⏳</span> 加载中...
+          </div>
+        )}
+        {mergedTemplates.map((item) => {
+          const isSelected = item.id === selectedTemplateId;
+          const tpl = item.template;
           const colorScheme = tpl.cover.colors[0];
           const bgStyle = tpl.cover.bgType === 'gradient'
             ? { background: `linear-gradient(135deg, ${colorScheme.from}, ${colorScheme.to})` }
             : { backgroundColor: colorScheme.from };
           return (
-            <button
-              key={tpl.id}
-              onClick={() => onTemplateChange(tpl.id)}
-              className={`flex-shrink-0 rounded-lg border-2 p-2 transition-all ${
-                isSelected
-                  ? 'border-indigo-500 shadow-md scale-105'
-                  : 'border-gray-200 hover:border-gray-300 hover:shadow-sm'
-              }`}
-              title={tpl.description}
+            <div key={item.id} className="relative group flex-shrink-0">
+              <button
+                onClick={() => onTemplateChange(item.id)}
+                className={`rounded-lg border-2 p-2 transition-all ${
+                  isSelected
+                    ? 'border-indigo-500 shadow-md scale-105'
+                    : 'border-gray-200 hover:border-gray-300 hover:shadow-sm'
+                } ${item.source === 'db_user' ? 'border-dashed' : ''}`}
+                title={item.description}
             >
               <div
                 className="w-16 h-10 rounded flex items-center justify-center"
@@ -157,11 +299,359 @@ function CardTemplateSelector({
                 </span>
               </div>
               <div className="mt-1 text-[10px] text-gray-500 truncate w-16 text-center">
-                {tpl.name}
+                {item.source === 'db_user' ? `${tpl.name} ✨` : tpl.name}
               </div>
-            </button>
+              </button>
+              {/* 用户自定义模板的操作按钮 */}
+              {item.source === 'db_user' && (
+                <div className="absolute -top-1 -right-1 hidden group-hover:flex gap-0.5">
+                  <button
+                    onClick={(e) => { e.stopPropagation(); setEditTemplate(dbTemplates.find(t => t.id === item.dbId) || null); }}
+                    className="w-4 h-4 rounded-full bg-white border border-gray-200 flex items-center justify-center hover:bg-indigo-50"
+                    title="编辑模板"
+                  >
+                    <Pencil className="w-2 h-2 text-gray-500" />
+                  </button>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); handleDeleteTemplate(item.dbId!); }}
+                    className="w-4 h-4 rounded-full bg-white border border-gray-200 flex items-center justify-center hover:bg-red-50"
+                    title="删除模板"
+                  >
+                    <Trash2 className="w-2 h-2 text-red-400" />
+                  </button>
+                </div>
+              )}
+            </div>
           );
         })}
+        {/* 创建自定义模板入口 */}
+        <button
+          onClick={() => setShowCreateDialog(true)}
+          className="flex-shrink-0 rounded-lg border-2 border-dashed border-gray-300 p-2 transition-all hover:border-indigo-400 hover:bg-indigo-50/30"
+          title="创建自定义样式"
+        >
+          <div className="w-16 h-10 rounded flex items-center justify-center bg-gray-50">
+            <Plus className="w-4 h-4 text-gray-400" />
+          </div>
+          <div className="mt-1 text-[10px] text-gray-400 truncate w-16 text-center">
+            自定义
+          </div>
+        </button>
+      </div>
+
+      {/* 创建/编辑自定义模板对话框 */}
+      {(showCreateDialog || editTemplate) && (
+        <CardStyleTemplateEditor
+          mode={editTemplate ? 'edit' : 'create'}
+          template={editTemplate || undefined}
+          onClose={() => { setShowCreateDialog(false); setEditTemplate(null); }}
+          onSaved={(saved) => {
+            // 刷新列表
+            setDbTemplates(prev => {
+              const idx = prev.findIndex(t => t.id === saved.id);
+              if (idx >= 0) {
+                const next = [...prev];
+                next[idx] = saved;
+                return next;
+              }
+              return [...prev, saved];
+            });
+            setShowCreateDialog(false);
+            setEditTemplate(null);
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+/** 🎨 卡片样式模板编辑器（创建/编辑自定义模板） */
+function CardStyleTemplateEditor({
+  mode,
+  template,
+  onClose,
+  onSaved,
+}: {
+  mode: 'create' | 'edit';
+  template?: DbCardStyleTemplate | null;
+  onClose: () => void;
+  onSaved: (saved: DbCardStyleTemplate) => void;
+}) {
+  const [name, setName] = useState(template?.name || '');
+  const [description, setDescription] = useState(template?.description || '');
+  const [saving, setSaving] = useState(false);
+
+  // 模板配置编辑（简化版：基于现有预设模板修改颜色）
+  const [baseTemplateId, setBaseTemplateId] = useState(
+    template?.presetTemplateId || DEFAULT_CARD_TEMPLATE_ID
+  );
+  const [coverFrom, setCoverFrom] = useState(
+    template?.templateConfig?.cover?.colors?.[0]?.from || '#FF6B6B'
+  );
+  const [coverTo, setCoverTo] = useState(
+    template?.templateConfig?.cover?.colors?.[0]?.to || '#FFA07A'
+  );
+  const [pointFrom, setPointFrom] = useState(
+    template?.templateConfig?.point?.colors?.[0]?.from || '#667eea'
+  );
+  const [pointTo, setPointTo] = useState(
+    template?.templateConfig?.point?.colors?.[0]?.to || '#764ba2'
+  );
+  const [conclusionFrom, setConclusionFrom] = useState(
+    template?.templateConfig?.conclusion?.colors?.[0]?.from || '#667eea'
+  );
+  const [conclusionTo, setConclusionTo] = useState(
+    template?.templateConfig?.conclusion?.colors?.[0]?.to || '#764ba2'
+  );
+  const [coverTextColor, setCoverTextColor] = useState(
+    template?.templateConfig?.cover?.textColor || '#ffffff'
+  );
+  const [pointTextColor, setPointTextColor] = useState(
+    template?.templateConfig?.point?.textColor || '#ffffff'
+  );
+
+  const handleSave = async () => {
+    if (!name.trim()) {
+      toast.error('请输入模板名称');
+      return;
+    }
+    setSaving(true);
+    try {
+      const workspaceId = getCurrentWorkspaceId();
+
+      // 基于选择的预设模板构建完整配置
+      const baseTemplate = getXhsCardTemplate(baseTemplateId) || XHS_CARD_TEMPLATES[0];
+      const templateConfig: XhsCardTemplate = {
+        ...baseTemplate,
+        id: mode === 'edit' ? template!.templateConfig.id : `custom_${Date.now()}`,
+        name: name.trim(),
+        description: description.trim(),
+        cover: {
+          ...baseTemplate.cover,
+          colors: [{ from: coverFrom, to: coverTo }, ...baseTemplate.cover.colors.slice(1)],
+          textColor: coverTextColor,
+        },
+        point: {
+          ...baseTemplate.point,
+          colors: [{ from: pointFrom, to: pointTo }, ...baseTemplate.point.colors.slice(1)],
+          textColor: pointTextColor,
+        },
+        conclusion: {
+          ...baseTemplate.conclusion,
+          colors: [{ from: conclusionFrom, to: conclusionTo }],
+        },
+      };
+
+      const url = mode === 'edit' && template
+        ? `/api/xhs-card-style-templates/${template.id}`
+        : '/api/xhs-card-style-templates';
+      const method = mode === 'edit' ? 'PUT' : 'POST';
+
+      const res = await fetch(url, {
+        method,
+        headers: {
+          'Content-Type': 'application/json',
+          'x-workspace-id': workspaceId,
+        },
+        body: JSON.stringify({
+          name: name.trim(),
+          description: description.trim(),
+          templateConfig,
+          ...(mode === 'create' ? { sourceType: 'manual' } : {}),
+        }),
+      });
+
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({}));
+        toast.error(errorData.error || `保存失败 (HTTP ${res.status})`);
+        return;
+      }
+
+      const data = await res.json();
+      if (data.success) {
+        toast.success(mode === 'edit' ? '模板已更新' : '模板已创建');
+        onSaved(data.data);
+      } else {
+        toast.error(data.error || '保存失败');
+      }
+    } catch (err) {
+      console.error('保存模板失败:', err);
+      toast.error('保存失败');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={onClose}>
+      <div
+        className="bg-white rounded-xl shadow-2xl w-[480px] max-h-[85vh] overflow-y-auto p-6"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-lg font-semibold text-gray-800">
+            {mode === 'edit' ? '编辑自定义模板' : '创建自定义模板'}
+          </h3>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
+            ✕
+          </button>
+        </div>
+
+        {/* 基本信息 */}
+        <div className="space-y-3 mb-4">
+          <div>
+            <label className="text-sm font-medium text-gray-700">模板名称 *</label>
+            <input
+              type="text"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              className="mt-1 w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300"
+              placeholder="如：我的品牌色"
+            />
+          </div>
+          <div>
+            <label className="text-sm font-medium text-gray-700">描述</label>
+            <input
+              type="text"
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              className="mt-1 w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300"
+              placeholder="如：品牌主色调的渐变卡片"
+            />
+          </div>
+        </div>
+
+        {/* 基于预设模板 */}
+        <div className="mb-4">
+          <label className="text-sm font-medium text-gray-700 mb-1 block">基于预设模板</label>
+          <div className="flex gap-2 flex-wrap">
+            {XHS_CARD_TEMPLATES.map((tpl) => (
+              <button
+                key={tpl.id}
+                onClick={() => setBaseTemplateId(tpl.id)}
+                className={`px-3 py-1.5 rounded-lg text-xs border transition-all ${
+                  baseTemplateId === tpl.id
+                    ? 'border-indigo-500 bg-indigo-50 text-indigo-700'
+                    : 'border-gray-200 hover:border-gray-300'
+                }`}
+              >
+                {tpl.name}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* 颜色自定义 */}
+        <div className="space-y-4 mb-6">
+          <h4 className="text-sm font-semibold text-gray-700">配色自定义</h4>
+
+          {/* 封面颜色 */}
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-xs text-gray-500 mb-1 block">封面渐变起始色</label>
+              <div className="flex items-center gap-2">
+                <input type="color" value={coverFrom} onChange={(e) => setCoverFrom(e.target.value)} className="w-8 h-8 rounded cursor-pointer" />
+                <input type="text" value={coverFrom} onChange={(e) => setCoverFrom(e.target.value)} className="flex-1 px-2 py-1 border border-gray-200 rounded text-xs font-mono" />
+              </div>
+            </div>
+            <div>
+              <label className="text-xs text-gray-500 mb-1 block">封面渐变结束色</label>
+              <div className="flex items-center gap-2">
+                <input type="color" value={coverTo} onChange={(e) => setCoverTo(e.target.value)} className="w-8 h-8 rounded cursor-pointer" />
+                <input type="text" value={coverTo} onChange={(e) => setCoverTo(e.target.value)} className="flex-1 px-2 py-1 border border-gray-200 rounded text-xs font-mono" />
+              </div>
+            </div>
+          </div>
+
+          {/* 要点颜色 */}
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-xs text-gray-500 mb-1 block">要点渐变起始色</label>
+              <div className="flex items-center gap-2">
+                <input type="color" value={pointFrom} onChange={(e) => setPointFrom(e.target.value)} className="w-8 h-8 rounded cursor-pointer" />
+                <input type="text" value={pointFrom} onChange={(e) => setPointFrom(e.target.value)} className="flex-1 px-2 py-1 border border-gray-200 rounded text-xs font-mono" />
+              </div>
+            </div>
+            <div>
+              <label className="text-xs text-gray-500 mb-1 block">要点渐变结束色</label>
+              <div className="flex items-center gap-2">
+                <input type="color" value={pointTo} onChange={(e) => setPointTo(e.target.value)} className="w-8 h-8 rounded cursor-pointer" />
+                <input type="text" value={pointTo} onChange={(e) => setPointTo(e.target.value)} className="flex-1 px-2 py-1 border border-gray-200 rounded text-xs font-mono" />
+              </div>
+            </div>
+          </div>
+
+          {/* 结尾颜色 */}
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-xs text-gray-500 mb-1 block">结尾渐变起始色</label>
+              <div className="flex items-center gap-2">
+                <input type="color" value={conclusionFrom} onChange={(e) => setConclusionFrom(e.target.value)} className="w-8 h-8 rounded cursor-pointer" />
+                <input type="text" value={conclusionFrom} onChange={(e) => setConclusionFrom(e.target.value)} className="flex-1 px-2 py-1 border border-gray-200 rounded text-xs font-mono" />
+              </div>
+            </div>
+            <div>
+              <label className="text-xs text-gray-500 mb-1 block">结尾渐变结束色</label>
+              <div className="flex items-center gap-2">
+                <input type="color" value={conclusionTo} onChange={(e) => setConclusionTo(e.target.value)} className="w-8 h-8 rounded cursor-pointer" />
+                <input type="text" value={conclusionTo} onChange={(e) => setConclusionTo(e.target.value)} className="flex-1 px-2 py-1 border border-gray-200 rounded text-xs font-mono" />
+              </div>
+            </div>
+          </div>
+
+          {/* 文字颜色 */}
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-xs text-gray-500 mb-1 block">封面文字色</label>
+              <div className="flex items-center gap-2">
+                <input type="color" value={coverTextColor} onChange={(e) => setCoverTextColor(e.target.value)} className="w-8 h-8 rounded cursor-pointer" />
+                <input type="text" value={coverTextColor} onChange={(e) => setCoverTextColor(e.target.value)} className="flex-1 px-2 py-1 border border-gray-200 rounded text-xs font-mono" />
+              </div>
+            </div>
+            <div>
+              <label className="text-xs text-gray-500 mb-1 block">要点文字色</label>
+              <div className="flex items-center gap-2">
+                <input type="color" value={pointTextColor} onChange={(e) => setPointTextColor(e.target.value)} className="w-8 h-8 rounded cursor-pointer" />
+                <input type="text" value={pointTextColor} onChange={(e) => setPointTextColor(e.target.value)} className="flex-1 px-2 py-1 border border-gray-200 rounded text-xs font-mono" />
+              </div>
+            </div>
+          </div>
+
+          {/* 预览 */}
+          <div>
+            <label className="text-xs text-gray-500 mb-1 block">预览效果</label>
+            <div className="flex gap-2">
+              <div
+                className="w-24 h-14 rounded-lg flex items-center justify-center"
+                style={{ background: `linear-gradient(135deg, ${coverFrom}, ${coverTo})` }}
+              >
+                <span style={{ color: coverTextColor }} className="text-xs font-bold">封面</span>
+              </div>
+              <div
+                className="w-24 h-14 rounded-lg flex items-center justify-center"
+                style={{ background: `linear-gradient(135deg, ${pointFrom}, ${pointTo})` }}
+              >
+                <span style={{ color: pointTextColor }} className="text-xs font-bold">要点</span>
+              </div>
+              <div
+                className="w-24 h-14 rounded-lg flex items-center justify-center"
+                style={{ background: `linear-gradient(135deg, ${conclusionFrom}, ${conclusionTo})` }}
+              >
+                <span style={{ color: '#ffffff' }} className="text-xs font-bold">结尾</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* 操作按钮 */}
+        <div className="flex gap-3 justify-end">
+          <Button variant="outline" onClick={onClose} disabled={saving}>
+            取消
+          </Button>
+          <Button onClick={handleSave} disabled={saving || !name.trim()}>
+            {saving ? '保存中...' : mode === 'edit' ? '更新模板' : '创建模板'}
+          </Button>
+        </div>
       </div>
     </div>
   );
@@ -206,13 +696,45 @@ export function XiaohongshuPreview({
     if (typeof window === 'undefined') return DEFAULT_CARD_TEMPLATE_ID;
     try {
       const saved = localStorage.getItem(TEMPLATE_PREF_KEY);
-      if (saved && getXhsCardTemplate(saved)) {
-        return saved;
-      }
+      if (saved) return saved; // 不再验证，数据库模板ID也可能被保存
     } catch {}
     return DEFAULT_CARD_TEMPLATE_ID;
   });
-  const selectedTemplate = getXhsCardTemplate(selectedTemplateId);
+
+  // 数据库自定义模板（用于 selectedTemplate 查找）
+  const [dbTemplatesCache, setDbTemplatesCache] = useState<DbCardStyleTemplate[]>([]);
+
+  // 加载数据库模板（用于 selectedTemplate 查找）
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      try {
+        const workspaceId = getCurrentWorkspaceId();
+        const res = await fetch('/api/xhs-card-style-templates', {
+          headers: { 'x-workspace-id': workspaceId },
+        });
+        if (cancelled) return;
+        if (res.ok) {
+          const data = await res.json();
+          if (data.success) setDbTemplatesCache(data.data || []);
+        }
+      } catch {}
+    };
+    load();
+    return () => { cancelled = true; };
+  }, []);
+
+  // 解析选中的模板（优先硬编码，其次数据库）
+  const selectedTemplate = (() => {
+    // 1. 先查硬编码
+    const hardcoded = getXhsCardTemplate(selectedTemplateId);
+    if (hardcoded) return hardcoded;
+    // 2. 再查数据库
+    const dbTpl = dbTemplatesCache.find(t => t.id === selectedTemplateId && t.templateConfig);
+    if (dbTpl) return dbTpl.templateConfig as XhsCardTemplate;
+    // 3. 兜底
+    return getXhsCardTemplate(DEFAULT_CARD_TEMPLATE_ID) || XHS_CARD_TEMPLATES[0];
+  })();
 
   const handleTemplateChange = useCallback((templateId: string) => {
     setSelectedTemplateId(templateId);

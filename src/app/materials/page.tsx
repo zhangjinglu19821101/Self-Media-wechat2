@@ -11,7 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Textarea } from '@/components/ui/textarea';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { 
-  Search, Plus, Edit, Trash2, Eye, Tag, Filter, 
+  Search, Plus, Edit, Trash2, Eye, Tag, 
   FileText, BarChart2, BookOpen, Quote, Play, CheckCircle,
   ChevronLeft, ChevronRight, X, Layers, List,
   Bookmark, BookmarkCheck, Shield, Star, Sparkles,
@@ -183,6 +183,12 @@ export default function MaterialsPage() {
   const [tagInput, setTagInput] = useState('');
   const [formLoading, setFormLoading] = useState(false);
 
+  // 内联编辑状态
+  const [inlineEditId, setInlineEditId] = useState<string | null>(null);
+  const [inlineEditContent, setInlineEditContent] = useState('');
+  const [inlineEditTitle, setInlineEditTitle] = useState('');
+  const [inlineSaving, setInlineSaving] = useState(false);
+
   // 检查管理员状态
   useEffect(() => {
     const checkAdmin = async () => {
@@ -347,6 +353,50 @@ export default function MaterialsPage() {
   const openDetailDialog = (material: Material) => {
     setSelectedMaterial(material);
     setDetailDialogOpen(true);
+  };
+
+  // 内联编辑：进入编辑模式
+  const startInlineEdit = (material: Material) => {
+    if (!canEdit(material)) return;
+    setInlineEditId(material.id);
+    setInlineEditTitle(material.title);
+    setInlineEditContent(material.content);
+  };
+
+  // 内联编辑：取消
+  const cancelInlineEdit = () => {
+    setInlineEditId(null);
+    setInlineEditContent('');
+    setInlineEditTitle('');
+  };
+
+  // 内联编辑：保存
+  const saveInlineEdit = async () => {
+    if (!inlineEditId) return;
+    if (!inlineEditTitle.trim() || !inlineEditContent.trim()) {
+      toast.error('标题和内容不能为空');
+      return;
+    }
+    setInlineSaving(true);
+    try {
+      const result = await apiPut(`/api/materials/${inlineEditId}`, {
+        title: inlineEditTitle.trim(),
+        content: inlineEditContent.trim(),
+      }) as Record<string, any>;
+      if (result.success) {
+        toast.success('素材已更新');
+        setInlineEditId(null);
+        setInlineEditContent('');
+        setInlineEditTitle('');
+        fetchMaterials();
+      } else {
+        toast.error(result.error || '更新失败');
+      }
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : '更新失败');
+    } finally {
+      setInlineSaving(false);
+    }
   };
 
   // 打开删除确认弹窗
@@ -625,52 +675,93 @@ export default function MaterialsPage() {
                   >
                     <div className="flex items-start justify-between">
                       <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 mb-2">
-                          {/* 归属Badge */}
-                          {isSystem ? (
-                            <Badge className="flex items-center gap-1 bg-blue-100 text-blue-700 border-blue-200 hover:bg-blue-200">
-                              <Shield className="w-3 h-3" />
-                              系统素材
-                            </Badge>
-                          ) : (
-                            <Badge variant="secondary" className="flex items-center gap-1">
-                              <Star className="w-3 h-3" />
-                              我的素材
-                            </Badge>
-                          )}
-                          <Badge variant="outline" className="flex items-center gap-1">
-                            {typeInfo.icon}
-                            {typeInfo.label}
-                          </Badge>
-                          {material.industry && (
-                            <Badge variant="secondary" className="bg-purple-50 text-purple-700 border-purple-200 text-xs">
-                              {INDUSTRY_MAP[material.industry] || material.industry}
-                            </Badge>
-                          )}
-                          {material.sceneType && (
-                            <Badge variant="secondary" className="bg-teal-50 text-teal-700 border-teal-200 text-xs">
-                              {SCENE_TYPE_MAP[material.sceneType] || material.sceneType}
-                            </Badge>
-                          )}
-                          <span className="font-medium truncate">{material.title}</span>
-                          {material.useCount > 0 && (
-                            <Badge variant="outline" className="text-xs">
-                              使用 {material.useCount} 次
-                            </Badge>
-                          )}
-                        </div>
-                        <p className="text-sm text-muted-foreground line-clamp-2 mb-2">
-                          {material.content}
-                        </p>
-                        <div className="flex flex-wrap gap-1">
-                          {material.topicTags?.slice(0, 3).map(tag => (
-                            <Badge key={tag} variant="outline" className="text-xs">{tag}</Badge>
-                          ))}
-                          {material.topicTags?.length > 3 && (
-                            <Badge variant="outline" className="text-xs">+{material.topicTags.length - 3}</Badge>
-                          )}
-                        </div>
+                        {inlineEditId === material.id ? (
+                          /* 内联编辑模式 */
+                          <div className="space-y-2" onClick={e => e.stopPropagation()}>
+                            <Input
+                              value={inlineEditTitle}
+                              onChange={e => setInlineEditTitle(e.target.value)}
+                              placeholder="素材标题"
+                              className="font-medium"
+                            />
+                            <Textarea
+                              value={inlineEditContent}
+                              onChange={e => setInlineEditContent(e.target.value)}
+                              placeholder="素材内容"
+                              rows={4}
+                              className="text-sm resize-none"
+                            />
+                            <div className="flex items-center gap-2">
+                              <Button size="sm" onClick={saveInlineEdit} disabled={inlineSaving}>
+                                {inlineSaving ? '保存中...' : '保存'}
+                              </Button>
+                              <Button size="sm" variant="ghost" onClick={cancelInlineEdit} disabled={inlineSaving}>
+                                取消
+                              </Button>
+                            </div>
+                          </div>
+                        ) : (
+                          /* 正常显示模式 */
+                          <>
+                            <div className="flex items-center gap-2 mb-2">
+                              {/* 归属Badge */}
+                              {isSystem ? (
+                                <Badge className="flex items-center gap-1 bg-blue-100 text-blue-700 border-blue-200 hover:bg-blue-200">
+                                  <Shield className="w-3 h-3" />
+                                  系统素材
+                                </Badge>
+                              ) : (
+                                <Badge variant="secondary" className="flex items-center gap-1">
+                                  <Star className="w-3 h-3" />
+                                  我的素材
+                                </Badge>
+                              )}
+                              <Badge variant="outline" className="flex items-center gap-1">
+                                {typeInfo.icon}
+                                {typeInfo.label}
+                              </Badge>
+                              {material.industry && (
+                                <Badge variant="secondary" className="bg-purple-50 text-purple-700 border-purple-200 text-xs">
+                                  {INDUSTRY_MAP[material.industry] || material.industry}
+                                </Badge>
+                              )}
+                              {material.sceneType && (
+                                <Badge variant="secondary" className="bg-teal-50 text-teal-700 border-teal-200 text-xs">
+                                  {SCENE_TYPE_MAP[material.sceneType] || material.sceneType}
+                                </Badge>
+                              )}
+                              <span 
+                                className={`font-medium truncate ${canEdit(material) ? 'cursor-pointer hover:text-blue-600 hover:underline underline-offset-2' : ''}`}
+                                onClick={() => canEdit(material) && startInlineEdit(material)}
+                                title={canEdit(material) ? '点击编辑标题' : undefined}
+                              >
+                                {material.title}
+                              </span>
+                              {material.useCount > 0 && (
+                                <Badge variant="outline" className="text-xs">
+                                  使用 {material.useCount} 次
+                                </Badge>
+                              )}
+                            </div>
+                            <p 
+                              className={`text-sm text-muted-foreground line-clamp-2 mb-2 ${canEdit(material) ? 'cursor-pointer hover:bg-blue-50/50 rounded px-1 -mx-1 transition-colors' : ''}`}
+                              onClick={() => canEdit(material) && startInlineEdit(material)}
+                              title={canEdit(material) ? '点击编辑内容' : undefined}
+                            >
+                              {material.content}
+                            </p>
+                            <div className="flex flex-wrap gap-1">
+                              {material.topicTags?.slice(0, 3).map(tag => (
+                                <Badge key={tag} variant="outline" className="text-xs">{tag}</Badge>
+                              ))}
+                              {material.topicTags?.length > 3 && (
+                                <Badge variant="outline" className="text-xs">+{material.topicTags.length - 3}</Badge>
+                              )}
+                            </div>
+                          </>
+                        )}
                       </div>
+                      {inlineEditId !== material.id && (
                       <div className="flex items-center gap-1 ml-4">
                         {/* 收藏按钮 */}
                         <Button 
@@ -699,6 +790,7 @@ export default function MaterialsPage() {
                           </Button>
                         )}
                       </div>
+                      )}
                     </div>
                   </div>
                 );
