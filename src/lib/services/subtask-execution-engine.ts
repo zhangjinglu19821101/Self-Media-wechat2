@@ -23,7 +23,7 @@ import {
   agentReports
 } from '@/lib/db/schema';
 import { coreAnchorAssets } from '@/lib/db/schema/digital-assets';
-import { eq, and, or, lte, desc, inArray, notInArray, lt, gte, sql, isNull, asc } from 'drizzle-orm';
+import { eq, and, or, lte, desc, inArray, notInArray, lt, gte, sql, isNull, asc, ne } from 'drizzle-orm';
 import { Branch1IntelligentExecutor } from '@/lib/mcp/branch1-intelligent-executor';
 import { genericMCPCall } from '@/lib/mcp/generic-mcp-call';
 import { callLLM } from '@/lib/agent-llm';
@@ -14333,31 +14333,67 @@ ${JSON.stringify(resultData, null, 2)}
    * 5. 🔴 简化：直接转为 pre_need_support 状态，复用现有的 Agent B 审核功能
    */
   private async checkAndHandleTimeout(tasks: typeof agentSubTasks.$inferSelect[]) {
-    const now = getCurrentBeijingTime();
+    // 🔴 修复：使用 UTC 时间进行比较，避免时区问题
+    // nowUTC 是当前 UTC 时间的毫秒数（不受本地时区影响）
+    const nowUTC = Date.now();
+    const IN_PROGRESS_TIMEOUT_MS_SAFE = 10 * 60 * 1000; // 10分钟
 
     console.log('[SubtaskEngine] ========== 开始检查超时任务 ==========');
-    console.log('[SubtaskEngine] 超时阈值:', IN_PROGRESS_TIMEOUT_MS / 1000 / 60, '分钟');
+    console.log('[SubtaskEngine] 超时阈值:', IN_PROGRESS_TIMEOUT_MS_SAFE / 1000 / 60, '分钟');
     console.log('[SubtaskEngine] 待检查任务数:', tasks.length);
+    console.log('[SubtaskEngine] 当前UTC时间戳(ms):', nowUTC, '对应北京时间:', new Date(nowUTC).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' }));
 
     for (const task of tasks) {
       if (task.status === 'in_progress' && task.startedAt) {
         
+        // 🔴 修复：正确处理时区问题
+        // 数据库存储的是北京时间（timestamp with time zone +08）
+        // Drizzle ORM 读取时可能会将其解析为本地 Date 对象
+        // 使用 getTime() 获取 UTC 毫秒数，这是跨时区比较的正确方式
+        
+        // 但是！如果 Drizzle 将 '+08' 时间错误地解释为 'Z' (UTC) 时间
+        // 那么 getTime() 会返回错误值（偏移8小时）
+        // 检测方法：如果 startedAt.getTime() > nowUTC，说明时区解析错误
+        
+        const startedAtRaw = task.startedAt.getTime();
+        let startedAtUTC = startedAtRaw;
+        
+        // 时区错误检测：如果开始时间比当前时间还晚（elapsed_time为负）
+        // 说明 Drizzle 将北京时间错误解释为 UTC 时间（需要加8小时修正）
+        if (startedAtRaw > nowUTC) {
+          console.log('[SubtaskEngine] ⚠️ 检测到时区解析错误:', {
+            task_id: task.id,
+            started_at_raw: task.startedAt.toISOString(),
+            started_at_ms: startedAtRaw,
+            now_ms: nowUTC,
+            diff_minutes: (startedAtRaw - nowUTC) / 1000 / 60
+          });
+          // 修正：数据库存储的是北京时间，但被错误解释为 UTC
+          // 北京时间 = UTC + 8小时，所以需要减去8小时得到真正的 UTC
+          // 例如：数据库存储 "20:48+08"（北京时间）
+          //       Drizzle 读取为 "20:48Z"（错误地当作 UTC）
+          //       实际 UTC 应该是 "12:48Z"（20:48 - 8小时）
+          startedAtUTC = startedAtRaw - 8 * 60 * 60 * 1000;
+          console.log('[SubtaskEngine] ✅ 时区修正后 UTC 时间戳:', startedAtUTC, '对应北京时间:', new Date(startedAtUTC).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' }));
+        }
+        
         // 1. 计算已用时间
-        const elapsedTime = now.getTime() - task.startedAt.getTime();
+        const elapsedTime = nowUTC - startedAtUTC;
         const elapsedMinutes = elapsedTime / 1000 / 60;
         
         console.log('[SubtaskEngine] 检查任务超时:', {
           task_id: task.id,
           command_result_id: task.commandResultId,
           order_index: task.orderIndex,
-          started_at: task.startedAt,
+          started_at_original: task.startedAt.toISOString(),
+          started_at_utc_ms: startedAtUTC,
           elapsed_time_ms: elapsedTime,
           elapsed_time_minutes: elapsedMinutes.toFixed(2),
-          timeout_threshold_minutes: IN_PROGRESS_TIMEOUT_MS / 1000 / 60
+          timeout_threshold_minutes: IN_PROGRESS_TIMEOUT_MS_SAFE / 1000 / 60
         });
 
         // 2. 判断是否超时
-        if (elapsedTime >= IN_PROGRESS_TIMEOUT_MS) {
+        if (elapsedTime >= IN_PROGRESS_TIMEOUT_MS_SAFE) {
           console.log('[SubtaskEngine] ========== 检测到超时任务 ==========');
           console.log('[SubtaskEngine] 任务', task.id, '已超时', elapsedMinutes.toFixed(2), '分钟');
           console.log('[SubtaskEngine] 🔴 简化方案：直接转为 pre_need_support 状态，复用 Agent B 审核功能');

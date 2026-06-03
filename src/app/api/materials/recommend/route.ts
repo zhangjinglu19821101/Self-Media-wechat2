@@ -525,10 +525,15 @@ function extractKeywordsAndTags(instruction: string, domain?: string): { keyword
 
 // ─── 🔥 行业感知：从指令中识别目标行业 ───
 // 解决"写车险文章却推荐分红险素材"的问题
+// 行业枚举必须与 backfill-material-tags 保持一致：
+// insurance_life(人身/寿险/年金/分红/理赔/投保/养老/少儿/传承/港险)
+// insurance_health(医疗/意外/健康)
+// insurance_property(车险/财产)
+// finance(理财/金融)
 function detectIndustries(instruction: string, keywords: string[]): string[] {
   const industries = new Set<string>();
 
-  // 财产险相关关键词
+  // 财产险相关关键词 → insurance_property
   const PROPERTY_KEYWORDS = [
     '车险', '交强险', '商业车险', '车损险', '三者险', '盗抢险',
     '座位险', '涉水险', '自燃险', '玻璃险', '不计免赔',
@@ -536,18 +541,25 @@ function detectIndustries(instruction: string, keywords: string[]): string[] {
     '船舶险', '农业险', '种植险', '养殖险',
   ];
 
-  // 人身险相关关键词
-  const LIFE_KEYWORDS = [
-    '重疾险', '医疗险', '百万医疗', '意外险', '寿险', '定期寿险',
-    '终身寿险', '年金险', '养老年金', '教育金', '分红险', '万能险',
-    '增额终身', '增额寿', '投连险', '两全险', '少儿重疾',
-    '防癌险', '长期护理', '失能险', '惠民保', '穗岁康',
+  // 健康险相关关键词 → insurance_health（与回填一致）
+  const HEALTH_KEYWORDS = [
+    '医疗险', '百万医疗', '意外险', '意外伤害', '防癌险',
+    '长期护理', '失能险', '惠民保', '穗岁康', 'DRG',
   ];
 
-  // 保险服务相关关键词
-  const SERVICE_KEYWORDS = [
+  // 人身险相关关键词 → insurance_life（与回填一致）
+  const LIFE_KEYWORDS = [
+    '重疾险', '寿险', '定期寿险', '终身寿险', '年金险', '养老年金',
+    '教育金', '分红险', '万能险', '增额终身', '增额寿', '投连险',
+    '两全险', '少儿重疾', '港险', '香港保险', '传承', '信托', '遗嘱',
     '理赔', '投保', '核保', '退保', '续保', '豁免', '等待期',
-    '宽限期', '犹豫期', '受益人', '保单', '条款',
+    '宽限期', '犹豫期', '受益人', '保单', '条款', '养老', '少儿',
+  ];
+
+  // 金融理财相关关键词 → finance（与回填一致）
+  const FINANCE_KEYWORDS = [
+    '理财', '利率', '收益', '存款', '降息', '加息', '银行', '储蓄',
+    '投资', '基金', '股票',
   ];
 
   const allText = instruction + ' ' + keywords.join(' ');
@@ -559,6 +571,13 @@ function detectIndustries(instruction: string, keywords: string[]): string[] {
     }
   }
 
+  for (const kw of HEALTH_KEYWORDS) {
+    if (allText.includes(kw)) {
+      industries.add('insurance_health');
+      break;
+    }
+  }
+
   for (const kw of LIFE_KEYWORDS) {
     if (allText.includes(kw)) {
       industries.add('insurance_life');
@@ -566,9 +585,9 @@ function detectIndustries(instruction: string, keywords: string[]): string[] {
     }
   }
 
-  for (const kw of SERVICE_KEYWORDS) {
+  for (const kw of FINANCE_KEYWORDS) {
     if (allText.includes(kw)) {
-      industries.add('insurance_service');
+      industries.add('finance');
       break;
     }
   }

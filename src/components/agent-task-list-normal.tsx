@@ -448,11 +448,13 @@ function PreviewEditSection({
   taskId,
   platform,
   commandResultId,
+  articleTitle,
   onComplete,
 }: {
   taskId: string;
   platform: PreviewPlatform;
   commandResultId: string;  // 🔴 P0-1 修复：显式传入，不再依赖外层状态
+  articleTitle?: string;  // 文章标题，传给预览编辑器
   onComplete: (result: import('@/components/article-preview-editor').PreviewCompleteResult) => void;
 }) {
   return (
@@ -470,6 +472,7 @@ function PreviewEditSection({
       <ArticlePreviewEditor
         taskId={taskId}
         platform={platform}
+        articleTitle={articleTitle}
         onComplete={onComplete}
       />
     </div>
@@ -2411,6 +2414,7 @@ export function AgentTaskListNormal({ agentId, showPanel, onTogglePanel, refresh
                                 taskId={displayTask.id}
                                 platform={getPreviewPlatform(displayTask, tasks)}
                                 commandResultId={displayTask.commandResultId}
+                                articleTitle={displayTask.metadata?.articleTitle || displayTask.taskTitle?.replace(/^《|》.*$/g, '')}
                                 onComplete={async (result) => {
                                   // 🔴 P0-1 修复：显式传入 commandResultId
                                   await submitPreviewEditDecision(

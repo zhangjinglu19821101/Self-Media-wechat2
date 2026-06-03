@@ -208,7 +208,7 @@ export async function POST(request: NextRequest) {
         sceneTags: caseData.applicableScenarios || caseData.sceneTags || [],
         emotionTags: caseData.emotionTags || [],
         sceneType: caseData.sceneType || 'event',
-        industry: caseData.industry || 'insurance',
+        industry: caseData.industry || null,
         sourceType: 'manual',
         ownerType: 'user',
         workspaceId: workspaceId,
@@ -287,17 +287,15 @@ export async function POST(request: NextRequest) {
     );
 
     // 🔥 行业检测：从指令中识别保险细分行业，用于精确过滤
+    // 键必须与数据库 industry 枚举值一致（insurance_life/insurance_health/insurance_property/finance）
     const industryKeywordMap: Record<string, string[]> = {
-      '车险': ['车险', '交强险', '商业车险', '车保'],
-      '重疾险': ['重疾', '重大疾病', '重疾险'],
-      '医疗险': ['医疗', '百万医疗', '医疗险', '医保', '惠民保'],
-      '意外险': ['意外', '意外险'],
-      '寿险': ['寿险', '定期寿险', '终身寿险', '增额寿'],
-      '分红险': ['分红', '分红险'],
-      '年金险': ['年金', '年金险', '养老'],
-      '少儿险': ['少儿', '儿童', '宝宝', '孩子'],
-      '养老险': ['养老', '退休', '养老金'],
-      '增额终身寿': ['增额', '增额寿', '增额终身寿'],
+      'insurance_property': ['车险', '交强险', '商业车险', '车保', '车损', '三者险', '车辆', '家财险'],
+      'insurance_health': ['医疗', '百万医疗', '医疗险', '医保', '惠民保', '意外', '意外险', '意外伤害', 'DRG', '防癌'],
+      'insurance_life': ['重疾', '重大疾病', '重疾险', '寿险', '定期寿险', '终身寿险', '增额寿',
+        '分红', '分红险', '年金', '年金险', '养老', '退休', '养老金',
+        '少儿', '儿童', '宝宝', '孩子', '港险', '传承', '信托',
+        '理赔', '投保', '核保', '退保', '续保', '豁免'],
+      'finance': ['理财', '利率', '收益', '存款', '降息', '加息', '银行', '储蓄'],
     };
     
     // 检测指令中涉及的行业
