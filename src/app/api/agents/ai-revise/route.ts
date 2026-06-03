@@ -9,43 +9,38 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getPlatformLLM, createUserLLMClient } from '@/lib/llm/factory';
 import { getWorkspaceId } from '@/lib/auth/context';
 
-const AI_REVISE_SYSTEM_PROMPT = `你是一位资深的内容编辑专家，擅长保险领域的文章润色和改写。
+const AI_REVISE_SYSTEM_PROMPT = `你是一位资深的内容编辑专家，擅长保险领域的文章润色和改写。你将与作者协作，帮助作者提升文章质量。
 
-用户会给你一段文章段落、文章上下文和修改要求。你需要提供3个不同风格的修改方案。
+用户会给你一段文章段落、文章上下文和修改方向。你需要提供2个不同风格的改写方案。
 
 ## 输出格式（严格JSON）
 {
   "schemes": [
     {
       "label": "方案名称（4字以内）",
-      "description": "一句话说明修改思路",
-      "content": "修改后的完整段落内容"
+      "description": "一句话说明改写思路",
+      "content": "改写后的完整段落内容"
     },
     {
       "label": "方案名称",
-      "description": "一句话说明修改思路",
-      "content": "修改后的完整段落内容"
-    },
-    {
-      "label": "方案名称",
-      "description": "一句话说明修改思路",
-      "content": "修改后的完整段落内容"
+      "description": "一句话说明改写思路",
+      "content": "改写后的完整段落内容"
     }
   ]
 }
 
-## 3个方案的设计原则
-- 方案1「微调优化」：最小改动，仅修正语病、优化措辞，保持原意和结构不变
-- 方案2「深化扩展」：适度改写，增加细节或数据支撑，让论述更有说服力
-- 方案3「创意重构」：较大幅度改写，换角度或换表达方式，但保留核心论点
+## 2个方案的设计原则
+- 方案1「保守优化」：贴近原意，仅优化措辞和表达节奏，保持原有结构和信息不变
+- 方案2「创新表达」：在原意基础上换角度/换表达方式，增加画面感或感染力
 
 ## 修改规则
-1. 严格遵守用户的修改要求
+1. 严格遵守用户的修改方向/要求
 2. 保险相关内容必须合规，不得包含承诺收益、夸大保障等违规表述
 3. HTML标签保持与原文一致（如果原文有HTML标签）
-4. 修改后的段落长度与原文相近（不超过原文2倍，不低于原文50%）
+4. 改写后的段落长度与原文相近（不超过原文2倍，不低于原文50%）
 5. 每个方案必须是完整的段落内容，可以直接替换原文
-6. 只输出JSON，不要输出其他内容`;
+6. 只输出JSON，不要输出其他内容
+7. 如果原文中有具体的保险产品名称、法规条文、数据数字，保持不变`;
 
 const AI_REVISE_USER_PROMPT = `## 文章标题
 {articleTitle}
@@ -59,7 +54,7 @@ const AI_REVISE_USER_PROMPT = `## 文章标题
 ## 用户的修改要求
 {requirement}
 
-请提供3个修改方案。`;
+请提供2个改写方案。`;
 
 /** LLM 调用超时（30秒） */
 const LLM_TIMEOUT_MS = 30_000;
@@ -167,7 +162,7 @@ export async function POST(request: NextRequest) {
       if (jsonStr) {
         const parsed = JSON.parse(jsonStr);
         if (parsed.schemes && Array.isArray(parsed.schemes)) {
-          schemes = parsed.schemes.slice(0, 3).map((s: Record<string, unknown>) => ({
+          schemes = parsed.schemes.slice(0, 2).map((s: Record<string, unknown>) => ({
             label: String(s.label || '方案'),
             description: String(s.description || ''),
             content: String(s.content || ''),

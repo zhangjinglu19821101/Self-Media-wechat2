@@ -370,7 +370,6 @@ export function ArticlePreviewEditor({
           <TabsContent value="edit" className="mt-0">
             {platform === 'wechat_official' ? (
               <WechatBlockEditor
-                key={content}
                 html={
                   (platformRenderData && typeof platformRenderData === 'object' && 'htmlContent' in platformRenderData)
                     ? (platformRenderData as { htmlContent?: string }).htmlContent || content
