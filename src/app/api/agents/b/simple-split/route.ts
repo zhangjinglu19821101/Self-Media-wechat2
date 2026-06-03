@@ -350,15 +350,23 @@ export async function POST(request: NextRequest) {
             : (materialIds || []);
 
           const resolvedExecutor = resolveExecutorForPlatform(baseAccountInfo.platform, subTask.executor);
+          // 🔴🔴🔴 统一命名格式：《用户指令摘要》- 平台名称 | 功能性标题
+          // 创建时即使用标准格式，写作完成后再更新为《实际文章标题》- 平台名称
           let taskTitleForDb = subTask.title;
-          if (isWritingAgent(subTask.executor)) {
+          {
+            // 从用户原始指令中提取摘要（最长20字）作为初始标题
+            const instructionSummary = (taskTitle || '').trim().substring(0, 20);
+            const prefix = instructionSummary ? `《${instructionSummary}》- ${baseAccountInfo.platformLabel}` : baseAccountInfo.platformLabel;
             let cleanedTitle = subTask.title
               .replace(/\[微信公众号\]\s*/g, '')
               .replace(/\[小红书\]\s*/g, '')
               .replace(/\[知乎\]\s*/g, '')
               .replace(/\[抖音\]\s*/g, '')
               .replace(/\[微博\]\s*/g, '');
-            taskTitleForDb = `[${baseAccountInfo.platformLabel}] ${cleanedTitle}`;
+            // 格式：《指令摘要》- 平台名称 | 功能性标题（功能性标题仅在有实际意义时追加）
+            taskTitleForDb = cleanedTitle && cleanedTitle !== instructionSummary
+              ? `${prefix} | ${cleanedTitle}`
+              : prefix;
           }
 
           const inserted = await tx.insert(agentSubTasks).values({
@@ -443,7 +451,12 @@ export async function POST(request: NextRequest) {
             const newSubTaskId = uuidv4();
 
             const resolvedExecutor = resolveExecutorForPlatform(adaptAcc.platform, step.executor);
-            const taskTitleForDb = `[${adaptAcc.platformLabel}] ${step.title}`;
+            // 🔴🔴🔴 统一命名格式：《用户指令摘要》- 平台名称 | 功能性标题
+            const instructionSummary = (taskTitle || '').trim().substring(0, 20);
+            const adaptPrefix = instructionSummary ? `《${instructionSummary}》- ${adaptAcc.platformLabel}` : adaptAcc.platformLabel;
+            const taskTitleForDb = step.title && step.title !== instructionSummary
+              ? `${adaptPrefix} | ${step.title}`
+              : adaptPrefix;
 
             // 🔥 只有第一个适配任务为 blocked，后续任务为 pending
             // 引擎按 orderIndex 顺序执行，后续任务不会在第一个之前运行
@@ -540,11 +553,27 @@ export async function POST(request: NextRequest) {
         const resolvedExecutor = resolveExecutorForPlatform(singlePlatform, subTask.executor);
         console.log(`[simple-split] executor 路由: platform=${singlePlatform}, original=${subTask.executor}, resolved=${resolvedExecutor}`);
 
+        // 🔴🔴🔴 统一命名格式：《用户指令摘要》- 平台名称 | 功能性标题
+        let singleTaskTitle = subTask.title;
+        if (platformLabel) {
+          const instructionSummary = (taskTitle || '').trim().substring(0, 20);
+          const singlePrefix = instructionSummary ? `《${instructionSummary}》- ${platformLabel}` : platformLabel;
+          let cleanedTitle = subTask.title
+            .replace(/\[微信公众号\]\s*/g, '')
+            .replace(/\[小红书\]\s*/g, '')
+            .replace(/\[知乎\]\s*/g, '')
+            .replace(/\[抖音\]\s*/g, '')
+            .replace(/\[微博\]\s*/g, '');
+          singleTaskTitle = cleanedTitle && cleanedTitle !== instructionSummary
+            ? `${singlePrefix} | ${cleanedTitle}`
+            : singlePrefix;
+        }
+
         const inserted = await db.insert(agentSubTasks).values({
           id: newSubTaskId,
           commandResultId: newTempSessionId,
           fromParentsExecutor: resolvedExecutor,
-          taskTitle: subTask.title,
+          taskTitle: singleTaskTitle,
           taskDescription: subTask.description || '',
           status: 'pending',
           orderIndex: subTask.orderIndex || i + 1,

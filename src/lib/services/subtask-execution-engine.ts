@@ -805,7 +805,7 @@ export class SubtaskExecutionEngine {
   // 设为 10 分钟（远大于单次 LLM 调用时间，远小于总超时时间）
   private static readonly HEARTBEAT_TIMEOUT_MS = 10 * 60 * 1000;
   // 🔴 P0 修复：改为 public，供 health API 等外部读取
-  public static readonly MAX_PARALLEL_GROUPS = 10; // 🔴 P0 修复：最大并行组数从 5 提升到 10（解决直接发文等多平台场景被跳过的问题）
+  public static readonly MAX_PARALLEL_GROUPS = 20; // 🔴 最大并行组数提升到 20（支持更多并发任务执行）
 
   /**
    * 🔒 查询引擎是否有任何组正在执行（供外部调用方使用）
@@ -6647,6 +6647,28 @@ export class SubtaskExecutionEngine {
       let articleContent = '';
       let articleTitle = '';
 
+      // 🔴🔴🔴 标题提取策略优化：标题和内容可能来自不同的前序任务
+      // - 内容：从最近的写作/预览任务获取（降序第一个匹配）— 确保获取最新修改版本
+      // - 标题：优先从【原始写作任务】获取（升序第一个写作 Agent）— 避免合规整改等中间任务覆盖标题
+      // 例如：合规整改任务 resultData.articleTitle 可能被 LLM 错误设为"合规校验"，
+      // 而原始写作任务的 articleTitle 才是文章的真实标题
+
+      // 非文章标题的黑名单：这些明显是任务描述而非文章标题
+      const NON_ARTICLE_TITLE_PATTERNS = [
+        /^(合规校验|合规整改|预览修改|上传草稿|添加草稿|确认文章|去AI化|生成大纲|根据.*大纲)/,
+        /^(完成|执行|进行|处理|操作|检查|校验|审核|整改)/,
+        /^\[?(微信公众号|小红书|知乎|抖音|微博)\]?[-—\s]*(合规|校验|整改|上传|预览|修改)/,
+        /^.{1,4}$/,  // 过短的标题（4字以内大概率是任务描述）
+      ];
+
+      const isLikelyArticleTitle = (title: string): boolean => {
+        if (!title || title.trim().length === 0) return false;
+        const trimmed = title.trim();
+        // 移除可能的平台前缀后再判断（如 "[微信公众号] 合规校验" → "合规校验"）
+        const coreTitle = trimmed.replace(/^\[?[^\]]*\]?\s*[-—]?\s*/, '');
+        return !NON_ARTICLE_TITLE_PATTERNS.some(pattern => pattern.test(coreTitle));
+      };
+
       // 优先从前序任务获取最新版本（与 injectArticleContentIntoMcpParams 一致）
       const previousTasks = await db
         .select({
@@ -6668,63 +6690,65 @@ export class SubtaskExecutionEngine {
         )
         .orderBy(desc(agentSubTasks.orderIndex));
 
-      // 🔴🔴🔴 标题兜底值：从 user_preview_edit 节点或 metadata 获取
-      // 当合规整改等中间任务的 resultData 中不含 articleTitle 时，需要从前序预览节点获取
-      let fallbackArticleTitle = '';
-      
+      // 🔴🔴🔴 第一轮：收集文章内容（降序，最近的任务优先）
+      // 🔴🔴🔴 同时按升序收集所有可能的标题候选（原始写作任务的标题优先级最高）
+      const titleCandidates: Array<{ title: string; orderIndex: number; executor: string }> = [];
+
       for (const prevTask of previousTasks) {
         const isWritingOrPreview = isWritingAgent(prevTask.fromParentsExecutor) ||
           prevTask.fromParentsExecutor === 'user_preview_edit';
-        
+
         if (!isWritingOrPreview) continue;
 
         // 先从 resultData 提取完整文章
         let extractedContent = this.extractArticleFromResultData(prevTask.resultData);
-        
+
         // 兜底使用 resultText
         if (!extractedContent && prevTask.resultText && this.isFullArticleContent(prevTask.resultText)) {
           extractedContent = prevTask.resultText;
         }
-        
-        if (extractedContent) {
+
+        // 🔴🔴🔴 收集标题候选（不管当前任务是否有完整文章内容）
+        const extractedTitle = this.extractArticleTitleFromResultData(prevTask.resultData);
+        if (extractedTitle && isLikelyArticleTitle(extractedTitle)) {
+          titleCandidates.push({
+            title: extractedTitle,
+            orderIndex: prevTask.orderIndex,
+            executor: prevTask.fromParentsExecutor,
+          });
+        }
+
+        if (extractedContent && !articleContent) {
           articleContent = extractedContent;
-          // 🔴🔴🔴 修复：传入 fallback 标题，确保合规整改等中间任务没有 articleTitle 时也能获取到标题
-          articleTitle = this.extractArticleTitleFromResultData(prevTask.resultData, fallbackArticleTitle || undefined);
           console.log('[supplementArticleContentParams] ✅ 从前序任务获取到文章内容', {
             orderIndex: prevTask.orderIndex,
             executor: prevTask.fromParentsExecutor,
             contentLength: articleContent.length,
-            articleTitle: articleTitle || '(无标题)',
           });
-          break;
-        }
-        
-        // 🔴🔴🔴 即使当前任务没有完整文章内容，也尝试提取标题作为后续任务的 fallback
-        if (!fallbackArticleTitle) {
-          const extractedTitle = this.extractArticleTitleFromResultData(prevTask.resultData);
-          if (extractedTitle) {
-            fallbackArticleTitle = extractedTitle;
-            console.log('[supplementArticleContentParams] 📝 记录前序任务的标题作为 fallback:', fallbackArticleTitle, {
-              orderIndex: prevTask.orderIndex,
-              executor: prevTask.fromParentsExecutor,
-            });
-          }
+          // 注意：不再从内容来源任务获取标题，标题由独立逻辑选择
         }
       }
-      
+
+      // 🔴🔴🔴 标题选择策略：从候选中选择最合适的标题
+      // 优先级：升序 orderIndex（原始写作任务 > 中间任务）
+      // 即 orderIndex 最小的写作 Agent 产出的标题优先
+      if (titleCandidates.length > 0) {
+        // 按 orderIndex 升序排序，取第一个（原始写作任务的标题）
+        titleCandidates.sort((a, b) => a.orderIndex - b.orderIndex);
+        articleTitle = titleCandidates[0].title;
+        console.log('[supplementArticleContentParams] 📝 选择文章标题:', articleTitle, {
+          source: `orderIndex=${titleCandidates[0].orderIndex}, executor=${titleCandidates[0].executor}`,
+          candidates: titleCandidates.map(c => `${c.title}(idx:${c.orderIndex})`),
+        });
+      }
+
       // 🔴🔴🔴 如果遍历完所有前序任务仍未获取到标题，从 task metadata 获取（直接发文模式）
-      if (!articleTitle && !fallbackArticleTitle) {
+      if (!articleTitle) {
         const taskMetadata = typeof task.metadata === 'string' ? JSON.parse(task.metadata) : task.metadata;
         if (taskMetadata?.providedArticleTitle) {
-          fallbackArticleTitle = taskMetadata.providedArticleTitle as string;
-          console.log('[supplementArticleContentParams] 📝 从 metadata.providedArticleTitle 获取标题:', fallbackArticleTitle);
+          articleTitle = taskMetadata.providedArticleTitle as string;
+          console.log('[supplementArticleContentParams] 📝 从 metadata.providedArticleTitle 获取标题:', articleTitle);
         }
-      }
-      
-      // 使用 fallback 标题
-      if (!articleTitle && fallbackArticleTitle) {
-        articleTitle = fallbackArticleTitle;
-        console.log('[supplementArticleContentParams] 📝 使用 fallback 标题:', articleTitle);
       }
 
       // 兜底：从 priorStepOutput 获取
@@ -7104,8 +7128,23 @@ export class SubtaskExecutionEngine {
       
       let articleContent = '';
       let articleTitle = '';
-      // 🔴🔴🔴 标题 fallback：遍历前序任务时，即使当前任务没有完整文章，也收集标题作为后续 fallback
-      let fallbackArticleTitle = '';
+      // 🔴🔴🔴 标题候选列表：从所有写作任务收集，最终选择原始写作任务的标题
+      const titleCandidates: Array<{ title: string; orderIndex: number; executor: string }> = [];
+
+      // 非文章标题的黑名单：这些明显是任务描述而非文章标题
+      const NON_ARTICLE_TITLE_PATTERNS_INJECT = [
+        /^(合规校验|合规整改|预览修改|上传草稿|添加草稿|确认文章|去AI化|生成大纲|根据.*大纲)/,
+        /^(完成|执行|进行|处理|操作|检查|校验|审核|整改)/,
+        /^\[?(微信公众号|小红书|知乎|抖音|微博)\]?[-—\s]*(合规|校验|整改|上传|预览|修改)/,
+        /^.{1,4}$/,  // 过短的标题（4字以内大概率是任务描述）
+      ];
+
+      const isLikelyArticleTitleForInject = (title: string): boolean => {
+        if (!title || title.trim().length === 0) return false;
+        const trimmed = title.trim();
+        const coreTitle = trimmed.replace(/^\[?[^\]]*\]?\s*[-—]?\s*/, '');
+        return !NON_ARTICLE_TITLE_PATTERNS_INJECT.some(pattern => pattern.test(coreTitle));
+      };
       
       for (const prevTask of previousTasks) {
         // 只从写作任务和预览编辑任务获取文章内容
@@ -7123,57 +7162,56 @@ export class SubtaskExecutionEngine {
           extractedContent = prevTask.resultText;
         }
         
-        if (extractedContent) {
+        // 🔴🔴🔴 收集标题候选（不管当前任务是否有完整文章内容）
+        const extractedTitle = this.extractArticleTitleFromResultData(prevTask.resultData);
+        if (extractedTitle && isLikelyArticleTitleForInject(extractedTitle)) {
+          titleCandidates.push({
+            title: extractedTitle,
+            orderIndex: prevTask.orderIndex,
+            executor: prevTask.fromParentsExecutor,
+          });
+        }
+
+        if (extractedContent && !articleContent) {
           articleContent = extractedContent;
-          // 🔴🔴🔴 修复：传入 fallback 标题，确保合规整改等中间任务没有 articleTitle 时也能获取到标题
-          articleTitle = this.extractArticleTitleFromResultData(prevTask.resultData, fallbackArticleTitle || undefined);
-          if (!articleTitle && prevTask.resultText) {
-            // 兜底：从 resultText 的第一行提取
-            const firstLine = prevTask.resultText.split('\n')[0]?.replace(/<[^>]+>/g, '').trim();
-            if (firstLine && firstLine.length > 2 && firstLine.length < 50) {
-              articleTitle = firstLine;
-            }
-          }
+          // 不再从内容来源任务获取标题，标题由独立逻辑选择
           console.log('[injectArticleContentIntoMcpParams] ✅ 从前序任务获取到文章内容', {
             orderIndex: prevTask.orderIndex,
             executor: prevTask.fromParentsExecutor,
             contentLength: articleContent.length,
             source: extractedContent === prevTask.resultText ? 'resultText' : 'resultData',
-            title: articleTitle || '(无标题)'
           });
-          break;
+          // 不 break，继续遍历收集更多标题候选
         }
-        
-        // resultText 太短或不是完整文章 → 跳过此任务，继续找前序任务
-        // 🔴🔴🔴 即使跳过，也收集标题作为 fallback
-        if (!fallbackArticleTitle) {
-          const extractedTitle = this.extractArticleTitleFromResultData(prevTask.resultData);
-          if (extractedTitle) {
-            fallbackArticleTitle = extractedTitle;
-            console.log('[injectArticleContentIntoMcpParams] 📝 记录前序任务的标题作为 fallback:', fallbackArticleTitle, {
-              orderIndex: prevTask.orderIndex,
-              executor: prevTask.fromParentsExecutor,
-            });
-          }
+
+        // resultText 太短或不是完整文章 → 跳过此任务
+        if (!extractedContent) {
+          console.log('[injectArticleContentIntoMcpParams] ⏭️ 跳过前序任务', {
+            orderIndex: prevTask.orderIndex,
+            executor: prevTask.fromParentsExecutor,
+            reason: prevTask.resultText ? `resultText长度=${prevTask.resultText.length}，非完整文章` : 'resultText为空'
+          });
         }
-        console.log('[injectArticleContentIntoMcpParams] ⏭️ 跳过前序任务', {
-          orderIndex: prevTask.orderIndex,
-          executor: prevTask.fromParentsExecutor,
-          reason: prevTask.resultText ? `resultText长度=${prevTask.resultText.length}，非完整文章` : 'resultText为空'
+      }
+
+      // 🔴🔴🔴 标题选择策略：从候选中选择最合适的标题
+      // 优先级：升序 orderIndex（原始写作任务 > 中间任务）
+      if (titleCandidates.length > 0 && !articleTitle) {
+        titleCandidates.sort((a, b) => a.orderIndex - b.orderIndex);
+        articleTitle = titleCandidates[0].title;
+        console.log('[injectArticleContentIntoMcpParams] 📝 选择文章标题:', articleTitle, {
+          source: `orderIndex=${titleCandidates[0].orderIndex}, executor=${titleCandidates[0].executor}`,
+          candidates: titleCandidates.map(c => `${c.title}(idx:${c.orderIndex})`),
         });
       }
       
       // 🔴🔴🔴 标题 fallback：如果遍历完仍无标题，从 metadata 获取（直接发文模式）
-      if (!articleTitle && !fallbackArticleTitle) {
+      if (!articleTitle) {
         const taskMetadata = typeof task.metadata === 'string' ? JSON.parse(task.metadata) : task.metadata;
         if (taskMetadata?.providedArticleTitle) {
-          fallbackArticleTitle = taskMetadata.providedArticleTitle as string;
-          console.log('[injectArticleContentIntoMcpParams] 📝 从 metadata.providedArticleTitle 获取标题:', fallbackArticleTitle);
+          articleTitle = taskMetadata.providedArticleTitle as string;
+          console.log('[injectArticleContentIntoMcpParams] 📝 从 metadata.providedArticleTitle 获取标题:', articleTitle);
         }
-      }
-      if (!articleTitle && fallbackArticleTitle) {
-        articleTitle = fallbackArticleTitle;
-        console.log('[injectArticleContentIntoMcpParams] 📝 使用 fallback 标题:', articleTitle);
       }
       
       if (!articleContent) {
@@ -7208,7 +7246,11 @@ export class SubtaskExecutionEngine {
             
             if (extractedContent) {
               articleContent = extractedContent;
-              articleTitle = this.extractArticleTitleFromResultData(baseTask.resultData, fallbackArticleTitle || undefined);
+              // 🔴🔴🔴 修复：基础文章组也使用原始写作任务的标题（而非最近任务的标题）
+              const baseTitle = this.extractArticleTitleFromResultData(baseTask.resultData);
+              if (baseTitle && isLikelyArticleTitleForInject(baseTitle) && !articleTitle) {
+                articleTitle = baseTitle;
+              }
               console.log('[injectArticleContentIntoMcpParams] ✅ 从基础文章组获取到文章内容，长度:', articleContent.length, '标题:', articleTitle || '(无)');
               break;
             }
@@ -13480,13 +13522,26 @@ ${resultData.executionSummary}
 
       for (const sibling of siblingTasks) {
         const currentTitle = sibling.taskTitle || '';
-        // 检查是否已经有《》前缀（避免重复添加）
-        if (currentTitle.startsWith('《')) continue;
         
-        // 构建新标题：在原始功能性标题前添加《文章标题》- 平台名称
-        const newTitle = currentTitle 
-          ? `${articleTitleWithPlatform} | ${currentTitle}` 
-          : articleTitleWithPlatform;
+        // 🔴🔴🔴 统一命名格式更新策略：
+        // 新格式创建时： 《指令摘要》- 平台名称 | 功能性标题
+        // 写作完成后应更新为：《实际文章标题》- 平台名称 | 功能性标题
+        // 关键：替换 《...》- 平台名称 前缀，保留 | 后面的功能性标题
+        
+        let newTitle: string;
+        if (currentTitle.startsWith('《')) {
+          // 已有《》前缀：替换前缀部分，保留功能性标题
+          const pipeIdx = currentTitle.indexOf(' | ');
+          const functionalSuffix = pipeIdx >= 0 ? currentTitle.substring(pipeIdx) : '';
+          newTitle = functionalSuffix 
+            ? `${articleTitleWithPlatform}${functionalSuffix}` 
+            : articleTitleWithPlatform;
+        } else {
+          // 旧格式（无《》前缀）：在前面添加新前缀
+          newTitle = currentTitle 
+            ? `${articleTitleWithPlatform} | ${currentTitle}` 
+            : articleTitleWithPlatform;
+        }
 
         await db
           .update(agentSubTasks)

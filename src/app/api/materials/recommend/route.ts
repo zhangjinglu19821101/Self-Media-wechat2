@@ -54,6 +54,9 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ success: true, data: [], snippets: [] });
     }
 
+    // ─── 🔥 行业感知：从指令中识别目标行业 ───
+    const targetIndustries = detectIndustries(instruction, keywords);
+
     // ─── 🔥 范式优先召回 ───
     // 如果指定了范式代码，额外召回匹配该范式素材需求的素材
     let paradigmResults: any[] = [];
@@ -67,12 +70,12 @@ export async function GET(request: NextRequest) {
 
     // ─── 多路召回（并行） ───
     const [keywordResults, tagResults, hotResults, snippetResults] = await Promise.all([
-      // 路径1：关键词匹配 title/content
-      recallByKeywords(workspaceId, keywords),
-      // 路径2：标签匹配 topicTags/sceneTags
-      recallByTags(workspaceId, tagCandidates),
-      // 路径3：近期热门素材
-      recallByHotness(workspaceId),
+      // 路径1：关键词匹配 title/content（带行业感知加权）
+      recallByKeywords(workspaceId, keywords, targetIndustries),
+      // 路径2：标签匹配 topicTags/sceneTags（带行业过滤）
+      recallByTags(workspaceId, tagCandidates, targetIndustries),
+      // 路径3：行业感知的热门素材
+      recallByHotness(workspaceId, targetIndustries),
       // 路径4：信息速记关键词匹配
       recallSnippets(workspaceId, keywords),
     ]);
@@ -115,6 +118,7 @@ export async function GET(request: NextRequest) {
         paradigmId: item.paradigmId || null,
         sceneType: (item as any).sceneType || null,
         paradigmPosition: (item as any).paradigmPosition || null,
+        industry: (item as any).industry || null,
       });
     };
 
@@ -130,7 +134,7 @@ export async function GET(request: NextRequest) {
         const llmKeywords = await expandWithLLM(instruction, keywords);
         if (llmKeywords.length > 0) {
           const expandedWithLLM = expandKeywordsWithSynonyms(llmKeywords);
-          const llmResults = await recallByKeywords(workspaceId, expandedWithLLM);
+          const llmResults = await recallByKeywords(workspaceId, expandedWithLLM, targetIndustries);
           llmResults.forEach(addCandidate);
         }
       } catch (e) {
@@ -153,6 +157,15 @@ export async function GET(request: NextRequest) {
       // 🔥 范式匹配加分：素材关联了当前范式时额外+5分（确保优先推荐）
       if (paradigmCode && (c as any).paradigmId === paradigmCode) {
         c.score += 5;
+      }
+      // 🔥 行业匹配加分：素材行业与指令目标行业一致时+4分（确保相关素材优先）
+      const materialIndustry = c.industry || 'general';
+      if (targetIndustries.length > 0 && targetIndustries.includes(materialIndustry)) {
+        c.score += 4;
+      }
+      // 🔥 行业不匹配惩罚：素材行业与指令完全无关时-3分
+      if (targetIndustries.length > 0 && materialIndustry !== 'general' && !targetIndustries.includes(materialIndustry)) {
+        c.score -= 3;
       }
     });
 
@@ -220,8 +233,9 @@ interface CandidateItem {
   tagHitCount: number;
   score: number;
   paradigmId?: string | null;
-  sceneType?: string | null; // 🔥 场景类型（范式映射用）
-  paradigmPosition?: string | null; // 🔥 范式段落位置
+  sceneType?: string | null;
+  paradigmPosition?: string | null;
+  industry?: string | null; // 🔥 行业维度
 }
 
 // ─── P1-2: LIKE 通配符转义 ───
@@ -229,12 +243,24 @@ function escapeLikePattern(str: string): string {
   return str.replace(/[%_\\]/g, '\\$&');
 }
 
-// ─── 路径1：关键词匹配 ───
-async function recallByKeywords(workspaceId: string, keywords: string[]) {
+// ─── 路径1：关键词匹配（带行业感知加权） ───
+async function recallByKeywords(workspaceId: string, keywords: string[], targetIndustries: string[] = []) {
   if (keywords.length === 0) return [];
 
+  // 🔥 关键词长度过滤：2字短关键词只保留领域专用词，避免误匹配
+  // 短关键词（如"分红"、"意外"）容易在无关文章中被偶然提及导致误召回
+  const SHORT_KEYWORD_WHITELIST = new Set([
+    '车险', '港险', '寿险', '重疾', '年金', '分红', '万能', '增额',
+    '医保', '养老', '少儿', '意外', '投保', '理赔', '退保', '续保',
+    '信托', '传承', '遗产', '继承', '遗嘱', '降息', '加息', '存款',
+    '趸交', '期交', '免赔', '豁免',
+  ]);
+  const filteredKeywords = keywords.filter(kw => kw.length >= 3 || SHORT_KEYWORD_WHITELIST.has(kw));
+
+  if (filteredKeywords.length === 0) return [];
+
   // P1-2: 使用 escapeLikePattern 防止 % 和 _ 被解析为通配符
-  const conditions = keywords.flatMap((kw) => [
+  const conditions = filteredKeywords.flatMap((kw) => [
     like(materialLibrary.title, `%${escapeLikePattern(kw)}%`),
     like(materialLibrary.content, `%${escapeLikePattern(kw)}%`),
   ]);
@@ -245,12 +271,15 @@ async function recallByKeywords(workspaceId: string, keywords: string[]) {
     eq(materialLibrary.workspaceId, workspaceId),
   );
 
+  // 🔥 行业感知：优先匹配同行业素材（扩大limit，后续由评分过滤）
+  const limitSize = targetIndustries.length > 0 ? 25 : 15;
+
   const whereClause =
     conditions.length === 1
       ? and(eq(materialLibrary.status, 'active'), visibilityCondition, conditions[0])
       : and(eq(materialLibrary.status, 'active'), visibilityCondition, or(...conditions));
 
-  return db
+  const results = await db
     .select({
       id: materialLibrary.id,
       title: materialLibrary.title,
@@ -261,19 +290,29 @@ async function recallByKeywords(workspaceId: string, keywords: string[]) {
       sceneTags: materialLibrary.sceneTags,
       emotionTags: materialLibrary.emotionTags,
       useCount: materialLibrary.useCount,
+      industry: materialLibrary.industry,
     })
     .from(materialLibrary)
     .where(whereClause!)
-    .limit(15);
+    .limit(limitSize);
+
+  // 🔥 行业感知后过滤：同行业素材优先通过，不同行业的素材需关键词命中数≥2才保留
+  return results.filter(item => {
+    if (targetIndustries.length === 0) return true;
+    const matIndustry = item.industry || 'general';
+    // 同行业直接通过
+    if (targetIndustries.includes(matIndustry) || matIndustry === 'general') return true;
+    // 不同行业：要求至少2个关键词命中标题（更严格的匹配）
+    const titleHits = filteredKeywords.filter(kw => item.title.includes(kw)).length;
+    return titleHits >= 2;
+  });
 }
 
-// ─── 路径2：标签匹配（topicTags / sceneTags 交集） ───
-async function recallByTags(workspaceId: string, tagCandidates: string[]) {
+// ─── 路径2：标签匹配（带行业过滤） ───
+async function recallByTags(workspaceId: string, tagCandidates: string[], targetIndustries: string[] = []) {
   if (tagCandidates.length === 0) return [];
 
   // P0-1: 使用 sql`${col} @> ${value}::jsonb` 格式
-  // Drizzle 的 sql 模板会将 ${value} 参数化，::jsonb 作为 SQL 字面值保留
-  // 这与项目中 info-snippets/route.ts 的写法一致，经过生产验证
   const conditions = tagCandidates.map((tag) => {
     const jsonTag = JSON.stringify([tag]);
     return or(
@@ -288,6 +327,17 @@ async function recallByTags(workspaceId: string, tagCandidates: string[]) {
     eq(materialLibrary.workspaceId, workspaceId),
   );
 
+  // 🔥 行业感知：优先同行业素材
+  const baseWhere = [eq(materialLibrary.status, 'active'), visibilityCondition, or(...conditions)];
+  if (targetIndustries.length > 0) {
+    baseWhere.push(
+      or(
+        eq(materialLibrary.industry, 'general'),
+        ...targetIndustries.map(ind => eq(materialLibrary.industry, ind)),
+      )!
+    );
+  }
+
   return db
     .select({
       id: materialLibrary.id,
@@ -299,20 +349,32 @@ async function recallByTags(workspaceId: string, tagCandidates: string[]) {
       sceneTags: materialLibrary.sceneTags,
       emotionTags: materialLibrary.emotionTags,
       useCount: materialLibrary.useCount,
+      industry: materialLibrary.industry,
     })
     .from(materialLibrary)
-    .where(and(eq(materialLibrary.status, 'active'), visibilityCondition, or(...conditions)))
+    .where(and(...baseWhere))
     .limit(10);
 }
 
-// ─── 路径3：近期热门 ───
-async function recallByHotness(workspaceId: string) {
+// ─── 路径3：行业感知的热门素材 ───
+async function recallByHotness(workspaceId: string, targetIndustries: string[] = []) {
   // ─── 可见性条件：系统素材 + 当前工作区的用户素材 ───
   const visibilityCondition = or(
     eq(materialLibrary.ownerType, 'system'),
     eq(materialLibrary.workspaceId, workspaceId),
   );
 
+  // 🔥 行业感知：热门素材限定为同行业或通用
+  const baseWhere: any[] = [eq(materialLibrary.status, 'active'), visibilityCondition];
+  if (targetIndustries.length > 0) {
+    baseWhere.push(
+      or(
+        eq(materialLibrary.industry, 'general'),
+        ...targetIndustries.map(ind => eq(materialLibrary.industry, ind)),
+      )!
+    );
+  }
+
   return db
     .select({
       id: materialLibrary.id,
@@ -324,9 +386,10 @@ async function recallByHotness(workspaceId: string) {
       sceneTags: materialLibrary.sceneTags,
       emotionTags: materialLibrary.emotionTags,
       useCount: materialLibrary.useCount,
+      industry: materialLibrary.industry,
     })
     .from(materialLibrary)
-    .where(and(eq(materialLibrary.status, 'active'), visibilityCondition))
+    .where(and(...baseWhere))
     .orderBy(desc(materialLibrary.useCount))
     .limit(3);
 }
@@ -458,6 +521,59 @@ function extractKeywordsAndTags(instruction: string, domain?: string): { keyword
   }
 
   return { keywords: keywords.slice(0, 15), tagCandidates };
+}
+
+// ─── 🔥 行业感知：从指令中识别目标行业 ───
+// 解决"写车险文章却推荐分红险素材"的问题
+function detectIndustries(instruction: string, keywords: string[]): string[] {
+  const industries = new Set<string>();
+
+  // 财产险相关关键词
+  const PROPERTY_KEYWORDS = [
+    '车险', '交强险', '商业车险', '车损险', '三者险', '盗抢险',
+    '座位险', '涉水险', '自燃险', '玻璃险', '不计免赔',
+    '家财险', '企业财产', '工程险', '责任险', '货运险',
+    '船舶险', '农业险', '种植险', '养殖险',
+  ];
+
+  // 人身险相关关键词
+  const LIFE_KEYWORDS = [
+    '重疾险', '医疗险', '百万医疗', '意外险', '寿险', '定期寿险',
+    '终身寿险', '年金险', '养老年金', '教育金', '分红险', '万能险',
+    '增额终身', '增额寿', '投连险', '两全险', '少儿重疾',
+    '防癌险', '长期护理', '失能险', '惠民保', '穗岁康',
+  ];
+
+  // 保险服务相关关键词
+  const SERVICE_KEYWORDS = [
+    '理赔', '投保', '核保', '退保', '续保', '豁免', '等待期',
+    '宽限期', '犹豫期', '受益人', '保单', '条款',
+  ];
+
+  const allText = instruction + ' ' + keywords.join(' ');
+
+  for (const kw of PROPERTY_KEYWORDS) {
+    if (allText.includes(kw)) {
+      industries.add('insurance_property');
+      break;
+    }
+  }
+
+  for (const kw of LIFE_KEYWORDS) {
+    if (allText.includes(kw)) {
+      industries.add('insurance_life');
+      break;
+    }
+  }
+
+  for (const kw of SERVICE_KEYWORDS) {
+    if (allText.includes(kw)) {
+      industries.add('insurance_service');
+      break;
+    }
+  }
+
+  return Array.from(industries);
 }
 
 // ─── 命中计数 ───

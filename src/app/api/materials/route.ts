@@ -16,6 +16,83 @@ import { getWorkspaceId, isSuperAdmin, getAuthContext } from '@/lib/auth/context
 import { expandKeywordsWithSynonyms } from '@/lib/utils/synonym-dictionary';
 
 /**
+ * 行业关键词映射表（用于自动检测素材所属行业）
+ * key = 行业标识, value = 该行业相关的关键词列表
+ */
+const INDUSTRY_KEYWORD_MAP: Record<string, { label: string; keywords: string[] }> = {
+  auto_insurance: {
+    label: '车险',
+    keywords: ['车险', '交强险', '商业车险', '车损险', '三者险', '盗抢险', '车上人员', '涉水险', '自燃险', '玻璃险', '不计免赔', '新车险', '车险理赔', '车险报价', '车保', '机动车', '驾驶证', '行驶证', '过户车', '营运车', '新能源车险', '电动车险', '保费改革', '综改'],
+  },
+  health_insurance: {
+    label: '健康险',
+    keywords: ['百万医疗', '医疗险', '重疾', '重疾险', '健康险', '住院医疗', '门诊险', '防癌险', '抗癌', '特药险', '惠民保', '普惠保', '大病医保', '医保目录', '免赔额', '续保', '保证续保', '等待期', '既往症', '健康告知', '核保'],
+  },
+  life_insurance: {
+    label: '人寿险',
+    keywords: ['寿险', '定期寿险', '终身寿险', '增额终身寿', '定额寿险', '减额寿险', '分红险', '万能险', '投连险', '年金', '养老年金', '教育金', '生存金', '身故', '受益人', '保额', '现金价值', '退保', '减保'],
+  },
+  accident_insurance: {
+    label: '意外险',
+    keywords: ['意外险', '意外伤害', '意外医疗', '交通意外', '航空意外', '综合意外', '猝死', '意外身故', '意外伤残', '意外住院', '意外津贴'],
+  },
+  property_insurance: {
+    label: '财产险',
+    keywords: ['家财险', '财产险', '火灾险', '盗抢险', '责任险', '雇主责任', '公众责任', '工程险', '企业财产'],
+  },
+  social_insurance: {
+    label: '社保',
+    keywords: ['社保', '医保', '养老保险', '公积金', '五险一金', '新农合', '城镇职工', '居民医保', '灵活就业', '社保断缴', '退休金', '养老金', '生育险', '工伤险', '失业险'],
+  },
+};
+
+/**
+ * 从内容中自动检测行业标签
+ * 返回匹配度最高的行业列表（按匹配关键词数量降序）
+ */
+function detectIndustriesFromContent(title: string, content: string): string[] {
+  const text = `${title} ${content}`.toLowerCase();
+  const scores: { industry: string; score: number }[] = [];
+
+  for (const [industry, config] of Object.entries(INDUSTRY_KEYWORD_MAP)) {
+    let score = 0;
+    for (const kw of config.keywords) {
+      if (text.includes(kw.toLowerCase())) {
+        score++;
+      }
+    }
+    if (score > 0) {
+      scores.push({ industry, score });
+    }
+  }
+
+  // 按匹配数降序，返回所有有匹配的行业
+  scores.sort((a, b) => b.score - a.score);
+  return scores.map(s => s.industry);
+}
+
+/**
+ * 从内容中自动检测主题标签
+ * 基于行业关键词映射，提取匹配的关键词作为主题标签
+ */
+function detectTopicTagsFromContent(title: string, content: string, industries: string[]): string[] {
+  const text = `${title} ${content}`.toLowerCase();
+  const tags: string[] = [];
+
+  for (const industry of industries) {
+    const config = INDUSTRY_KEYWORD_MAP[industry];
+    if (!config) continue;
+    for (const kw of config.keywords) {
+      if (text.includes(kw.toLowerCase()) && !tags.includes(kw)) {
+        tags.push(kw);
+      }
+    }
+  }
+
+  return tags.slice(0, 10); // 最多10个主题标签
+}
+
+/**
  * 归属筛选参数
  * - all:             系统素材 + 当前用户素材（默认）
  * - user:            仅当前用户素材
@@ -405,6 +482,19 @@ export async function POST(request: NextRequest) {
     const finalOwnerType = ownerType === 'system' ? 'system' : 'user';
     const finalWorkspaceId = finalOwnerType === 'system' ? null : workspaceId;
 
+    // ─── 自动检测行业和主题标签（当用户未提供时） ───
+    let finalIndustry = industry || null;
+    let finalTopicTags = topicTags || [];
+    if (!finalIndustry || !finalTopicTags.length) {
+      const detectedIndustries = detectIndustriesFromContent(title, content);
+      if (!finalIndustry && detectedIndustries.length > 0) {
+        finalIndustry = detectedIndustries[0]; // 取匹配度最高的行业
+      }
+      if ((!finalTopicTags || finalTopicTags.length === 0) && detectedIndustries.length > 0) {
+        finalTopicTags = detectTopicTagsFromContent(title, content, detectedIndustries);
+      }
+    }
+
     // 插入数据
     const [newMaterial] = await db
       .insert(materialLibrary)
@@ -417,11 +507,11 @@ export async function POST(request: NextRequest) {
         sourceType,
         sourceDesc,
         sourceUrl,
-        topicTags,
+        topicTags: finalTopicTags,
         sceneTags,
         emotionTags,
         applicablePositions,
-        industry: industry || null,
+        industry: finalIndustry,
         sourceArticleId: sourceArticleId || null,
         sceneType: sceneType || null,
         analysisText: analysisText || null,

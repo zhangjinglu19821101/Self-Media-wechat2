@@ -30,6 +30,7 @@ export async function GET(request: NextRequest) {
     const sceneTags = searchParams.get('sceneTags')?.split(',').filter(Boolean);
     const keywords = searchParams.get('keywords') || undefined;
     const caseType = searchParams.get('caseType') || undefined;
+    const industry = searchParams.get('industry') || undefined; // 🔥 行业过滤参数
     const limit = parseInt(searchParams.get('limit') || '10');
     const offset = parseInt(searchParams.get('offset') || '0');
 
@@ -105,6 +106,16 @@ export async function GET(request: NextRequest) {
       if (dbTypes) {
         conditions.push(inArray(materialLibrary.type, dbTypes));
       }
+    }
+
+    // 🔥 行业过滤：按 industry 字段或 topicTags 匹配
+    if (industry) {
+      conditions.push(
+        or(
+          eq(materialLibrary.industry, industry),
+          sql`${materialLibrary.topicTags}::text ILIKE ${'%' + industry + '%'}`
+        )!
+      );
     }
 
     const items = await db
@@ -275,31 +286,98 @@ export async function POST(request: NextRequest) {
       eq(materialLibrary.workspaceId, workspaceId)
     );
 
-    // 4. 先尝试关键词匹配搜索
-    let items;
-    if (keywordConditions.length > 0) {
-      items = await db
-        .select()
-        .from(materialLibrary)
-        .where(
-          and(
-            visibilityCondition,
-            or(...keywordConditions)
-          )
-        )
-        .orderBy(desc(materialLibrary.createdAt))
-        .limit(limit || 10);
+    // 🔥 行业检测：从指令中识别保险细分行业，用于精确过滤
+    const industryKeywordMap: Record<string, string[]> = {
+      '车险': ['车险', '交强险', '商业车险', '车保'],
+      '重疾险': ['重疾', '重大疾病', '重疾险'],
+      '医疗险': ['医疗', '百万医疗', '医疗险', '医保', '惠民保'],
+      '意外险': ['意外', '意外险'],
+      '寿险': ['寿险', '定期寿险', '终身寿险', '增额寿'],
+      '分红险': ['分红', '分红险'],
+      '年金险': ['年金', '年金险', '养老'],
+      '少儿险': ['少儿', '儿童', '宝宝', '孩子'],
+      '养老险': ['养老', '退休', '养老金'],
+      '增额终身寿': ['增额', '增额寿', '增额终身寿'],
+    };
+    
+    // 检测指令中涉及的行业
+    const detectedIndustries: string[] = [];
+    for (const [industry, keywords] of Object.entries(industryKeywordMap)) {
+      if (keywords.some(kw => trimmedInstruction.includes(kw))) {
+        detectedIndustries.push(industry);
+      }
     }
     
-    // 5. Fallback：关键词搜索无结果时，返回所有可见素材（按创建时间倒序）
+    console.log(`[API] 素材推荐 - 指令: "${trimmedInstruction.slice(0, 30)}", 检测行业: ${detectedIndustries.join(',') || '未明确'}`);
+
+    // 4. 先尝试关键词匹配搜索 + 行业过滤
+    let items;
+    if (keywordConditions.length > 0) {
+      // 4a. 优先搜索：关键词 + 行业匹配（最精准）
+      if (detectedIndustries.length > 0) {
+        const industryConditions = detectedIndustries.map(ind =>
+          sql`(${materialLibrary.industry} = ${ind} OR ${materialLibrary.topicTags}::text ILIKE ${'%' + ind + '%'} OR ${materialLibrary.title} ILIKE ${'%' + ind + '%'})`
+        );
+        items = await db
+          .select()
+          .from(materialLibrary)
+          .where(
+            and(
+              visibilityCondition,
+              or(...keywordConditions),
+              or(...industryConditions)
+            )
+          )
+          .orderBy(desc(materialLibrary.createdAt))
+          .limit(limit || 10);
+      }
+      
+      // 4b. 如果行业精确匹配无结果，降级为关键词匹配（无行业过滤）
+      if (!items || items.length === 0) {
+        items = await db
+          .select()
+          .from(materialLibrary)
+          .where(
+            and(
+              visibilityCondition,
+              or(...keywordConditions)
+            )
+          )
+          .orderBy(desc(materialLibrary.createdAt))
+          .limit(limit || 10);
+      }
+    }
+    
+    // 5. Fallback：关键词搜索无结果时，按行业返回（仍保持相关性）
     if (!items || items.length === 0) {
-      console.log('[API] 素材推荐关键词无匹配，fallback 返回全部可见素材');
-      items = await db
-        .select()
-        .from(materialLibrary)
-        .where(visibilityCondition)
-        .orderBy(desc(materialLibrary.createdAt))
-        .limit(limit || 10);
+      if (detectedIndustries.length > 0) {
+        console.log('[API] 素材推荐关键词无匹配，按行业 fallback');
+        const industryConditions = detectedIndustries.map(ind =>
+          sql`(${materialLibrary.industry} = ${ind} OR ${materialLibrary.topicTags}::text ILIKE ${'%' + ind + '%'} OR ${materialLibrary.title} ILIKE ${'%' + ind + '%'})`
+        );
+        items = await db
+          .select()
+          .from(materialLibrary)
+          .where(
+            and(
+              visibilityCondition,
+              or(...industryConditions)
+            )
+          )
+          .orderBy(desc(materialLibrary.createdAt))
+          .limit(limit || 10);
+      }
+      
+      // 最终 fallback：返回所有可见素材
+      if (!items || items.length === 0) {
+        console.log('[API] 素材推荐行业也无匹配，返回全部可见素材');
+        items = await db
+          .select()
+          .from(materialLibrary)
+          .where(visibilityCondition)
+          .orderBy(desc(materialLibrary.createdAt))
+          .limit(limit || 10);
+      }
     }
 
     const formatted = items.map(formatMaterialAsItem);
