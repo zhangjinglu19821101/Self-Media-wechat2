@@ -620,7 +620,7 @@ export default function HomePage() {
     try {
       const res = await fetch(`/api/materials/${editingMaterial.id}`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json', 'x-workspace-id': currentWorkspaceId || '' },
+        headers: { 'Content-Type': 'application/json', 'x-workspace-id': getCurrentWorkspaceId() || '' },
         body: JSON.stringify({
           title: editMaterialTitle.trim(),
           content: editMaterialContent.trim(),
@@ -634,10 +634,10 @@ export default function HomePage() {
       const updated = { ...editingMaterial, title: editMaterialTitle.trim(), content: editMaterialContent.trim() };
       setViewingMaterial(updated);
       setEditingMaterial(null);
-      // 同步更新 selectedMaterials 中的素材
-      setSelectedMaterials(prev => prev.map(m => m.id === updated.id ? { ...m, title: updated.title, content: updated.content } : m));
-      // 刷新素材列表
-      fetchMaterials(caseSearchKeyword);
+      // 同步更新 recommendedMaterials 中的素材
+      setRecommendedMaterials(prev => prev.map(m => m.id === updated.id ? { ...m, title: updated.title, content: updated.content } : m));
+      // 刷新素材列表（重新搜索）
+      handleSearchMaterials(caseSearchKeyword);
     } catch (err: any) {
       console.error('保存素材失败:', err.message);
     } finally {
