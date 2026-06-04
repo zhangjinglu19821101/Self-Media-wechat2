@@ -3154,7 +3154,7 @@ export default function HomePage() {
         tempSessionId,
         // 大纲创作模式核心参数
         mode: 'outline_creation',
-        outline: providedOutline.trim(),
+        outlineContent: providedOutline.trim(),
         // originalInstruction 记录用户大纲（供 Agent B 参考）
         originalInstruction: `【大纲创作】\n${providedOutline.trim()}`,
         userOpinion: null,
