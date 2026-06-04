@@ -19,6 +19,7 @@ const AGENT_DRAFT_DIRS = {
   'insurance-zhihu': path.join(INSURANCE_DRAFT_ROOT_DIR, 'insurance-zhihu'),
   'insurance-toutiao': path.join(INSURANCE_DRAFT_ROOT_DIR, 'insurance-toutiao'),
   'deai-optimizer': path.join(INSURANCE_DRAFT_ROOT_DIR, 'deai-optimizer'),
+  'outline-writer': path.join(INSURANCE_DRAFT_ROOT_DIR, 'outline-writer'),
 };
 
 /**
@@ -60,7 +61,7 @@ async function ensureDraftDir(agentId: string): Promise<string> {
  * 生成文件名
  * 命名规范：【任务ID】_【文章标题简名（2-4字）】_【创作日期XXXXXX】.md
  */
-function generateFileName(agentId: string, taskId?: string, title: string): string {
+function generateFileName(agentId: string, title: string, taskId?: string): string {
   const taskPart = taskId || 'unknown';
   // 提取文章标题简名（2-4字），移除特殊字符
   const shortTitle = title.replace(/[<>:"/\\|?*，。！？、；：""''（）\s]/g, '').slice(0, 4);
@@ -76,7 +77,7 @@ function generateFileName(agentId: string, taskId?: string, title: string): stri
  */
 export async function saveDraft(draft: DraftFile): Promise<string> {
   const draftDir = await ensureDraftDir(draft.agentId);
-  const fileName = generateFileName(draft.agentId, draft.taskId, draft.title);
+  const fileName = generateFileName(draft.agentId, draft.title, draft.taskId);
   const filePath = path.join(draftDir, fileName);
 
   // 构建文件内容（Markdown 格式）

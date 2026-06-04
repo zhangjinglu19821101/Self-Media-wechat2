@@ -37,6 +37,7 @@ export function generateComplianceCheckPrompt(params: ComplianceCheckParams): st
     'insurance-xiaohongshu': 'insurance-xiaohongshu（小红书图文）',
     'insurance-zhihu': 'insurance-zhihu（知乎回答/文章）',
     'insurance-toutiao': 'insurance-toutiao（头条/信息流文章）',
+    'outline-writer': 'outline-writer（大纲创作文章）',
   };
   const executorLabel = executorLabelMap[executorType || ''] || executorType || 'insurance-d（公众号文章）';
 

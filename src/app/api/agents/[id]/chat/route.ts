@@ -232,6 +232,7 @@ ${ragResult.context}
         'insurance-zhihu': '知乎创作专家',
         'insurance-toutiao': '头条创作专家',
         'deai-optimizer': '去AI化优化专家',
+        'outline-writer': '大纲创作专家',
       };
 
       systemPrompt += `

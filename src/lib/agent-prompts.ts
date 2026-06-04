@@ -25,6 +25,7 @@ const AGENT_PROMPT_FILE_MAP: Record<string, string> = {
   'insurance-zhihu': 'insurance-zhihu.md',
   'insurance-toutiao': 'insurance-toutiao.md',
   'deai-optimizer': 'deai-optimizer.md',
+  'outline-writer': 'outline-writer.md',
 };
 
 /**
@@ -113,6 +114,7 @@ const AGENT_NAMES: Record<AgentId, string> = {
   'insurance-zhihu': '知乎创作专家',
   'insurance-toutiao': '头条创作专家',
   'deai-optimizer': '去AI化优化专家',
+  'outline-writer': '大纲创作专家',
 };
 
 /**
@@ -178,6 +180,11 @@ export const AGENT_PROMPTS: Record<
     id: 'deai-optimizer',
     name: AGENT_NAMES['deai-optimizer'],
     ...readAgentPrompt('deai-optimizer'),
+  },
+  'outline-writer': {
+    id: 'outline-writer',
+    name: AGENT_NAMES['outline-writer'],
+    ...readAgentPrompt('outline-writer'),
   },
 };
 

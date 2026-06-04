@@ -128,6 +128,7 @@ const PROMPT_FILE_MAP: Record<string, string> = {
   'insurance-xiaohongshu': 'src/lib/agents/prompts/insurance-xiaohongshu.md',
   'insurance-zhihu': 'src/lib/agents/prompts/insurance-zhihu.md',
   'insurance-toutiao': 'src/lib/agents/prompts/insurance-toutiao.md',
+  'outline-writer': 'src/lib/agents/prompts/outline-writer.md',
 };
 
 const DEFAULT_EXECUTOR_TYPE = 'insurance-d';
@@ -144,6 +145,7 @@ const COMPLIANCE_REQUIRED_AGENTS = new Set([
   'insurance-xiaohongshu',
   'insurance-zhihu',
   'insurance-toutiao',
+  'outline-writer',
 ]);
 
 // ========== 提示词拼接服务 ==========

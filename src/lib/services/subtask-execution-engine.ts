@@ -41,7 +41,7 @@ import { digitalAssetService } from '@/lib/services/digital-asset-service';
 import { loadAgentPrompt, loadFeaturePrompt } from '@/lib/agents/prompt-loader';
 import { isWritingAgent, getPlatformForExecutor, WRITING_AGENT_INFO, WRITING_AGENTS } from '@/lib/agents/agent-registry';
 import { PLATFORM_LABELS } from '@/lib/db/schema/style-template';
-import { isVirtualExecutor, USER_PREVIEW_EDIT_EXECUTOR } from '@/lib/agents/flow-templates';
+import { isVirtualExecutor, USER_PREVIEW_EDIT_EXECUTOR, AI_REVIEW_EXECUTOR } from '@/lib/agents/flow-templates';
 import { 
   extractResultTextFromResultData as extractResultTextCore,
   serializeOutlineToText,
@@ -1586,6 +1586,8 @@ export class SubtaskExecutionEngine {
 
     if (task.fromParentsExecutor === USER_PREVIEW_EDIT_EXECUTOR) {
       await this.executeUserPreviewEditTask(task);
+    } else if (task.fromParentsExecutor === AI_REVIEW_EXECUTOR) {
+      await this.executeAiReviewTask(task);
     } else {
       // 未来其他虚拟执行器可在此扩展
       console.warn('[SubtaskEngine] ⚠️ 未知的虚拟执行器:', task.fromParentsExecutor);
@@ -1654,6 +1656,7 @@ export class SubtaskExecutionEngine {
     let deaiOptimizerTask: typeof agentSubTasks.$inferSelect | undefined;
     let fallbackWritingTask: typeof agentSubTasks.$inferSelect | undefined;
     let fallbackDeaiTask: typeof agentSubTasks.$inferSelect | undefined;
+    let aiReviewTask: typeof agentSubTasks.$inferSelect | undefined; // 大纲创作模式的AI评审任务
 
     for (const t of previousTasks) {
       // 写作 Agent 查找（取第一个已完成的，由于 previousTasks 按 orderIndex 降序，即最近完成的）
@@ -1673,6 +1676,10 @@ export class SubtaskExecutionEngine {
         if (!fallbackDeaiTask) {
           fallbackDeaiTask = t;
         }
+      }
+      // AI评审任务查找（大纲创作模式）
+      if (t.fromParentsExecutor === AI_REVIEW_EXECUTOR && t.status === 'completed' && !aiReviewTask) {
+        aiReviewTask = t;
       }
     }
 
@@ -1734,6 +1741,27 @@ export class SubtaskExecutionEngine {
     } else if (isDirectPublish && !hasProvidedArticle) {
       // 直接发文但没有 providedArticle（不应该发生，但做兜底）
       console.warn('[SubtaskEngine] ⚠️ 直接发文模式但未找到 providedArticle，尝试从前序任务获取');
+    } else if (aiReviewTask) {
+      // 🔥🔥🔥 【大纲创作模式】AI评审后的预览修改节点
+      // 优先使用AI评审的修改版本（revisedContent），兜底使用原文
+      const reviewData = aiReviewTask.resultData as Record<string, unknown> | null;
+      if (reviewData?.revisedContent) {
+        articleContent = reviewData.revisedContent as string;
+        console.log('[SubtaskEngine] 👁️ 大纲创作模式：使用AI评审修改后的文章', {
+          reviewPassed: reviewData.reviewPassed,
+          revisedContentLength: articleContent.length,
+        });
+      } else if (effectiveWritingTask) {
+        // 评审通过（无需修改），使用原始写作内容
+        articleContent = effectiveWritingTask.resultText || '';
+        if (!articleContent && effectiveWritingTask.resultData) {
+          articleContent = this.extractResultTextFromResultData(effectiveWritingTask.resultData, effectiveWritingTask.fromParentsExecutor) || '';
+        }
+        articleTitle = this.extractArticleTitleFromResultData(effectiveWritingTask.resultData, effectiveWritingTask.taskTitle);
+        console.log('[SubtaskEngine] 👁️ 大纲创作模式：AI评审通过，使用原始写作内容', {
+          contentLength: articleContent.length,
+        });
+      }
     } else if (effectiveWritingTask) {
       // 非直接发文模式：从写作任务提取文章内容
       articleContent = effectiveWritingTask.resultText || '';
@@ -1865,6 +1893,16 @@ export class SubtaskExecutionEngine {
       writingTaskId: effectiveWritingTask?.id || null,
       canEdit: true,
       canSkip: true,
+      // 🔥🔥🔥 【大纲创作模式】AI评审结果注入
+      aiReviewResult: aiReviewTask ? (() => {
+        const rd = aiReviewTask.resultData as Record<string, unknown> | null;
+        return {
+          reviewPassed: rd?.reviewPassed ?? true,
+          reviewSuggestions: rd?.reviewSuggestions ?? '',
+          reviewResult: rd?.reviewResult ?? '',
+          hasRevisedContent: !!rd?.revisedContent,
+        };
+      })() : undefined,
     };
 
     const waitingMessage = isFinalPreview
@@ -1878,6 +1916,279 @@ export class SubtaskExecutionEngine {
       platform,
       contentLength: articleContent.length,
     });
+  }
+
+  // ========== 🔴🔴🔴 【AI评审节点】大纲创作模式的核心环节 ==========
+  /**
+   * 执行AI评审任务
+   * 
+   * 设计原则：
+   * 1. 获取当前文章内容（从前序写作任务或用户预览修改节点）
+   * 2. 调用 outline-writer（通用大模型）以读者视角评审文章
+   * 3. 评审结果（修改建议/确认通过）存入 resultData 和 result_text
+   * 4. 设置任务为 completed（AI评审不需要用户确认，直接流转到下一节点）
+   * 5. 下一节点是 user_preview_edit，用户可以查看评审结果并决定是否修改
+   */
+  private async executeAiReviewTask(task: typeof agentSubTasks.$inferSelect) {
+    console.log('[SubtaskEngine] 🔍 executeAiReviewTask 开始', {
+      taskId: task.id,
+      executor: task.fromParentsExecutor,
+      orderIndex: task.orderIndex,
+    });
+
+    // 1. 原子性更新：pending → in_progress
+    const lockedTask = await this.checkExecutorAgentTaskBeforeExecution(task);
+    if (!lockedTask) {
+      console.log('[SubtaskEngine] 🔍 AI评审节点防重检查失败，跳过:', task.id);
+      return;
+    }
+
+    // 2. 获取前序任务的文章内容
+    const previousTasks = await db
+      .select()
+      .from(agentSubTasks)
+      .where(
+        and(
+          eq(agentSubTasks.commandResultId, task.commandResultId),
+          lt(agentSubTasks.orderIndex, task.orderIndex),
+          eq(agentSubTasks.workspaceId, task.workspaceId)
+        )
+      )
+      .orderBy(desc(agentSubTasks.orderIndex));
+
+    // 查找最近的文章内容来源（写作Agent或用户预览修改节点）
+    let articleContent = '';
+    let articleTitle = '';
+    for (const t of previousTasks) {
+      if (t.status !== 'completed') continue;
+      
+      // 优先从写作Agent获取
+      if (isWritingAgent(t.fromParentsExecutor) && !articleContent) {
+        articleContent = t.resultText || '';
+        if (!articleContent && t.resultData) {
+          articleContent = this.extractResultTextFromResultData(t.resultData, t.fromParentsExecutor) || '';
+        }
+        articleTitle = this.extractArticleTitleFromResultData(t.resultData, t.taskTitle);
+        break;
+      }
+      // 兜底从预览修改节点获取
+      if (t.fromParentsExecutor === USER_PREVIEW_EDIT_EXECUTOR && !articleContent) {
+        articleContent = t.resultText || '';
+        const tResultData = t.resultData as Record<string, unknown> | null;
+        if (tResultData?.articleTitle) {
+          articleTitle = tResultData.articleTitle as string;
+        }
+        break;
+      }
+    }
+
+    if (!articleContent) {
+      console.error('[SubtaskEngine] 🔍 AI评审节点：未找到前序文章内容，直接完成');
+      await db.update(agentSubTasks)
+        .set({
+          status: 'completed',
+          resultText: '未找到前序文章内容，跳过AI评审',
+          resultData: { isCompleted: true, reviewResult: 'skipped', reason: 'no_content' },
+          updatedAt: new Date(),
+        })
+        .where(eq(agentSubTasks.id, task.id));
+      return;
+    }
+
+    console.log('[SubtaskEngine] 🔍 AI评审节点获取到文章内容:', {
+      contentLength: articleContent.length,
+      articleTitle,
+    });
+
+    // 3. 调用 LLM 进行评审
+    let reviewResult = '';
+    let reviewPassed = false;
+    let reviewSuggestions = '';
+    try {
+      const prompt = this.buildAiReviewPrompt(articleContent, articleTitle);
+      
+      // 使用 callLLM 调用 outline-writer 进行评审
+      const { callLLM } = await import('@/lib/agent-llm');
+      const reviewSystemPrompt = `你是一位专业的文章评审专家。请对以下文章进行全面评审，指出优缺点，并给出具体的修改建议。`;
+      const llmResponse = await callLLM(
+        'outline-writer',
+        articleContent,
+        reviewSystemPrompt,
+        `请对以下文章进行全面评审，从内容质量、逻辑结构、表达方式、说服力等维度给出详细的评审意见和修改建议。`,
+        { timeout: 90000, workspaceId: task.workspaceId || undefined } // 90秒超时，评审任务可能较长
+      );
+
+      reviewResult = typeof llmResponse === 'string' ? llmResponse : JSON.stringify(llmResponse);
+      
+      // 解析评审结果
+      const parsed = this.parseAiReviewResult(reviewResult);
+      reviewPassed = parsed.passed;
+      reviewSuggestions = parsed.suggestions;
+      
+      console.log('[SubtaskEngine] 🔍 AI评审完成:', {
+        passed: reviewPassed,
+        suggestionsLength: reviewSuggestions.length,
+      });
+    } catch (err) {
+      console.error('[SubtaskEngine] 🔍 AI评审LLM调用失败:', err);
+      // 降级：评审失败不阻塞流程，标记为通过
+      reviewResult = 'AI评审服务暂时不可用，自动通过';
+      reviewPassed = true;
+      reviewSuggestions = '';
+    }
+
+    // 4. 评审结果如果是"需修改"，还需要调用 outline-writer 进行修改
+    let revisedContent = '';
+    if (!reviewPassed && reviewSuggestions) {
+      console.log('[SubtaskEngine] 🔍 AI评审发现需修改，调用 outline-writer 进行修改...');
+      try {
+        const revisePrompt = this.buildAiRevisePrompt(articleContent, articleTitle, reviewSuggestions);
+        const { callLLM } = await import('@/lib/agent-llm');
+        const reviseSystemPrompt = `你是一位专业的文章修改专家。请根据评审意见对文章进行修改，保持原文的整体结构和核心观点，只针对评审中指出的问题进行优化。`;
+        const reviseResponse = await callLLM(
+          'outline-writer',
+          articleContent,
+          reviseSystemPrompt,
+          revisePrompt,
+          { timeout: 180000, workspaceId: task.workspaceId || undefined } // 写作任务需要更长超时
+        );
+        revisedContent = typeof reviseResponse === 'string' ? reviseResponse : JSON.stringify(reviseResponse);
+        console.log('[SubtaskEngine] 🔍 AI修改完成，修改后内容长度:', revisedContent.length);
+      } catch (err) {
+        console.error('[SubtaskEngine] 🔍 AI修改LLM调用失败:', err);
+        revisedContent = ''; // 修改失败，保留原文
+      }
+    }
+
+    // 5. 存储评审结果
+    const resultData = {
+      isCompleted: true,
+      reviewPassed,
+      reviewResult,
+      reviewSuggestions,
+      revisedContent, // 修改后的文章（如果有）
+      originalContentLength: articleContent.length,
+    };
+
+    // result_text 存储评审结论，供下游任务获取
+    const resultText = reviewPassed
+      ? `AI评审通过。文章整体质量良好，可以继续后续流程。`
+      : `AI评审发现需改进：${reviewSuggestions.substring(0, 500)}${revisedContent ? `\n\n已自动修改文章（修改后${revisedContent.length}字）` : ''}`;
+
+    await db.update(agentSubTasks)
+      .set({
+        status: 'completed',
+        resultText,
+        resultData,
+        updatedAt: new Date(),
+      })
+      .where(eq(agentSubTasks.id, task.id));
+
+    console.log('[SubtaskEngine] 🔍 AI评审节点已完成:', {
+      taskId: task.id,
+      reviewPassed,
+      hasRevisedContent: !!revisedContent,
+    });
+  }
+
+  /**
+   * 构建AI评审提示词
+   */
+  private buildAiReviewPrompt(articleContent: string, articleTitle: string): string {
+    // 截取前3000字进行评审，避免超长
+    const contentForReview = articleContent.length > 3000
+      ? articleContent.substring(0, 3000) + '\n...(内容过长，仅评审前3000字)'
+      : articleContent;
+
+    return `你是一位专业的内容评审专家。请从以下维度对文章进行评审：
+
+1. **逻辑连贯性**：段落之间逻辑是否顺畅，论点是否有充分支撑
+2. **表达自然度**：是否像真人写作，有没有AI生成的痕迹（如套话、模板化表达）
+3. **内容充实度**：案例、数据是否具体可信，论证是否充分
+4. **读者体验**：开头是否吸引人，结尾是否自然，整体阅读体验如何
+5. **专业准确性**：保险相关内容是否专业准确
+
+文章标题：${articleTitle || '(无标题)'}
+
+文章内容：
+${contentForReview}
+
+请严格按以下JSON格式返回评审结果：
+
+\`\`\`json
+{
+  "passed": true或false,
+  "score": 1-10的评分,
+  "dimensions": {
+    "logic": {"score": 1-10, "comment": "简评"},
+    "naturalness": {"score": 1-10, "comment": "简评"},
+    "richness": {"score": 1-10, "comment": "简评"},
+    "readability": {"score": 1-10, "comment": "简评"},
+    "accuracy": {"score": 1-10, "comment": "简评"}
+  },
+  "suggestions": "具体修改建议（passed为false时必须给出，passed为true时可为空）",
+  "summary": "一句话总结评审结论"
+}
+\`\`\`
+
+评审标准：
+- 评分≥7分：passed=true（文章质量可接受）
+- 评分<7分：passed=false（需要修改）
+- suggestions 必须具体可操作，不要泛泛而谈`;
+  }
+
+  /**
+   * 解析AI评审结果
+   */
+  private parseAiReviewResult(llmResponse: string): { passed: boolean; suggestions: string } {
+    try {
+      // 尝试从响应中提取JSON
+      const jsonMatch = llmResponse.match(/```json\s*([\s\S]*?)\s*```/) ||
+                        llmResponse.match(/\{[\s\S]*"passed"[\s\S]*\}/);
+      
+      if (jsonMatch) {
+        const jsonStr = jsonMatch[1] || jsonMatch[0];
+        const cleaned = jsonStr.replace(/,\s*([}\]])/g, '$1').replace(/\/\/.*$/gm, '');
+        const parsed = JSON.parse(cleaned);
+        return {
+          passed: !!parsed.passed,
+          suggestions: parsed.suggestions || parsed.summary || '',
+        };
+      }
+    } catch (e) {
+      console.warn('[SubtaskEngine] 🔍 AI评审结果JSON解析失败，降级处理:', e);
+    }
+
+    // 降级：如果包含"通过"/"可接受"/"良好"等关键词，视为通过
+    const lowerResponse = llmResponse.toLowerCase();
+    if (lowerResponse.includes('通过') || lowerResponse.includes('良好') || lowerResponse.includes('可接受')) {
+      return { passed: true, suggestions: '' };
+    }
+    
+    return { passed: true, suggestions: llmResponse.substring(0, 500) };
+  }
+
+  /**
+   * 构建AI修改提示词
+   */
+  private buildAiRevisePrompt(articleContent: string, articleTitle: string, suggestions: string): string {
+    return `你是一位专业的保险内容写作专家。请根据以下评审建议，对文章进行修改。
+
+修改原则：
+1. 严格遵循评审建议，但不改变文章的核心观点和大纲结构
+2. 保持文章的原有风格和语气
+3. 修改后文章长度应与原文相当
+4. 输出完整的修改后文章（不要只输出修改的部分）
+
+文章标题：${articleTitle || '(无标题)'}
+
+评审建议：
+${suggestions}
+
+原文：
+${articleContent}
+
+请直接输出修改后的完整文章，不要输出任何解释性文字。`;
   }
 
   /**
@@ -9212,6 +9523,8 @@ export class SubtaskExecutionEngine {
         
         // 🆕 文章框架：用户在创作引导中提供的文章结构框架
         const _articleOutline = (taskMetadata as Record<string, any>)?.articleOutline as string | undefined;
+        // 🔥🔥🔥 【大纲创作模式】用户提供的大纲
+        const _providedOutline = (taskMetadata as Record<string, any>)?.providedOutline as string | undefined;
         
         // Phase 3 安全检查：全文子任务必须携带 confirmedOutline
         if (isFullArticleTask && !_confirmedOutline) {
@@ -9513,6 +9826,8 @@ export class SubtaskExecutionEngine {
           subTaskRole: taskSubTaskRole, // 🔥 Phase 3.5: 传递子任务角色（outline_generation / full_article）
           taskInstruction: isFullArticleTask && _confirmedOutline
             ? `${complianceRevisionPrefix}${formatModePrefix}${adaptationModePrefix}${platformPrefix}【已确认的创作大纲（以大纲为骨架展开，核心结构和论点不得改变，细节允许自然调整）】\n\n${_confirmedOutline}\n\n原始创作指令：${task.taskDescription}`
+            : _providedOutline
+            ? `${complianceRevisionPrefix}${formatModePrefix}${adaptationModePrefix}${platformPrefix}【用户提供的文章大纲（严格按照此大纲创作，每个段落的主题和要点必须覆盖，在大纲基础上扩展细节和论证）】\n\n${_providedOutline}\n\n原始创作指令：${task.taskDescription || ''}`
             : _articleOutline
             ? `${complianceRevisionPrefix}${formatModePrefix}${adaptationModePrefix}${platformPrefix}【用户提供的文章框架（严格按照此框架结构创作，每个段落的主题和要点必须覆盖）】\n\n${_articleOutline}\n\n原始创作指令：${task.taskDescription || ''}`
             : `${complianceRevisionPrefix}${formatModePrefix}${adaptationModePrefix}${platformPrefix}${task.taskDescription || ''}`,

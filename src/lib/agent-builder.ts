@@ -250,6 +250,22 @@ export class AgentBuilder {
       canSendTo: ['B'],
       canReceiveFrom: ['B'],
     });
+
+    this.agentConfigs.set('outline-writer', {
+      id: 'outline-writer',
+      name: '大纲创作专家',
+      role: 'Outline-Based Writing Executor',
+      description: '依据用户提供的文章大纲，创作高质量文章。类似通用大模型的写作能力——用户给大纲，出文章',
+      baseCapabilities: [
+        'writing',
+        'outline-understanding',
+        'content-expansion',
+        'review-revision',
+      ],
+      maxConcurrentTasks: 4,
+      canSendTo: ['B'],
+      canReceiveFrom: ['B'],
+    });
   }
 
   /**

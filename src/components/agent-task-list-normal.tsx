@@ -12,7 +12,7 @@ import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Textarea } from '@/components/ui/textarea';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { CheckCircle2, Clock, AlertTriangle, ChevronRight, ChevronDown, ChevronUp, Calendar, ListTodo, UserCheck, MessageSquare, Terminal, Send, Loader2, RefreshCw, Filter, XCircle, Users, Eye, Rocket, Folder, FileText, PenTool, ShieldCheck, Cpu, Sparkles, ChevronDownIcon, Bot, BookOpen, Lock, Layers, AlertCircle } from 'lucide-react';
+import { CheckCircle2, Clock, AlertTriangle, ChevronRight, ChevronDown, ChevronUp, Calendar, ListTodo, UserCheck, MessageSquare, Terminal, Send, Loader2, RefreshCw, Filter, XCircle, Users, Eye, Rocket, Folder, FileText, PenTool, ShieldCheck, Cpu, Sparkles, ChevronDownIcon, Bot, BookOpen, Lock, Layers, AlertCircle, PenLine, MessageSquareText } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toast } from 'sonner';
 import Link from 'next/link';
@@ -124,7 +124,7 @@ const AGENT_CONFIG_MAP: Record<string, {
   statusText: string;
   statusEmoji: string;
   role: 'executor' | 'reviewer' | 'technical';
-  color: 'emerald' | 'sky' | 'slate' | 'violet' | 'amber' | 'rose';
+  color: 'emerald' | 'sky' | 'slate' | 'violet' | 'amber' | 'rose' | 'orange' | 'cyan';
   sectionLabel: string;    // briefResponse 的标题
   evalLabel: string;       // selfEvaluation 的标题
   processLabel: string;    // actionsTaken 的标题
@@ -215,6 +215,30 @@ const AGENT_CONFIG_MAP: Record<string, {
     sectionLabel: '优化总结',
     evalLabel: '优化评估',
     processLabel: '优化过程',
+  },
+  'outline-writer': {
+    icon: PenLine,
+    label: 'outline-writer',
+    friendlyLabel: '大纲创作专家',
+    statusText: '创作完成',
+    statusEmoji: '📝',
+    role: 'executor',
+    color: 'emerald',
+    sectionLabel: '创作总结',
+    evalLabel: '创作评估',
+    processLabel: '创作过程',
+  },
+  'ai_review': {
+    icon: MessageSquareText,
+    label: 'ai_review',
+    friendlyLabel: 'AI评审',
+    statusText: '评审完成',
+    statusEmoji: '🔍',
+    role: 'executor',
+    color: 'orange',
+    sectionLabel: '评审总结',
+    evalLabel: '评审评估',
+    processLabel: '评审过程',
   },
   'agent c': {
     icon: ShieldCheck,
@@ -634,6 +658,8 @@ function AgentSelfStatementCard({ history }: { history: StepHistory }) {
     violet: { bg: 'bg-violet-50', border: 'border-violet-200', text: 'text-violet-800', iconBg: 'bg-violet-100', iconText: 'text-violet-600', tagBg: 'bg-violet-50', tagText: 'text-violet-600', cardBorder: 'border-violet-200', cardBg: 'bg-violet-50/40' },
     amber: { bg: 'bg-amber-50', border: 'border-amber-200', text: 'text-amber-800', iconBg: 'bg-amber-100', iconText: 'text-amber-600', tagBg: 'bg-amber-50', tagText: 'text-amber-600', cardBorder: 'border-amber-200', cardBg: 'bg-amber-50/40' },
     rose: { bg: 'bg-rose-50', border: 'border-rose-200', text: 'text-rose-800', iconBg: 'bg-rose-100', iconText: 'text-rose-600', tagBg: 'bg-rose-50', tagText: 'text-rose-600', cardBorder: 'border-rose-200', cardBg: 'bg-rose-50/40' },
+    orange: { bg: 'bg-orange-50', border: 'border-orange-200', text: 'text-orange-800', iconBg: 'bg-orange-100', iconText: 'text-orange-600', tagBg: 'bg-orange-50', tagText: 'text-orange-600', cardBorder: 'border-orange-200', cardBg: 'bg-orange-50/40' },
+    cyan: { bg: 'bg-cyan-50', border: 'border-cyan-200', text: 'text-cyan-800', iconBg: 'bg-cyan-100', iconText: 'text-cyan-600', tagBg: 'bg-cyan-50', tagText: 'text-cyan-600', cardBorder: 'border-cyan-200', cardBg: 'bg-cyan-50/40' },
   };
   
   // 🔥 Agent B 动态状态计算（根据 decisionType）

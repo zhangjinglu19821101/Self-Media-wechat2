@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { MultiSelectDropdown } from '@/components/multi-select-dropdown';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
@@ -25,7 +26,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { Loader2, Plus, Trash2, Send, Sparkles, ListTodo, CheckCircle2, XCircle, GripVertical, MoveUp, MoveDown, Maximize2, Minimize2, AlertTriangle, GitCompare, RefreshCw, FileText, Save, Eye, Home, BookmarkPlus, ExternalLink, BookOpen, Clock, Building2, X, HelpCircle, Settings, Rocket, Layers, ChevronDown, ChevronUp, Cpu, Brain, Bell, Workflow, Palette, PenTool, ArrowRight, ArrowLeft, Briefcase, Shield, Users, Download, Copy, ImageIcon, Check, AlertCircle, Calendar, Lock, Search, Globe, Edit3, Lightbulb, MessageSquare, FileUp, ClipboardPaste } from 'lucide-react';
+import { Loader2, Plus, Trash2, Send, Sparkles, ListTodo, ListChecks, CheckCircle2, XCircle, GripVertical, MoveUp, MoveDown, Maximize2, Minimize2, AlertTriangle, GitCompare, RefreshCw, FileText, Save, Eye, Home, BookmarkPlus, ExternalLink, BookOpen, Clock, Building2, X, HelpCircle, Settings, Rocket, Layers, ChevronDown, ChevronUp, Cpu, Brain, Bell, Workflow, Palette, PenTool, ArrowRight, ArrowLeft, Briefcase, Shield, Users, Download, Copy, ImageIcon, Check, AlertCircle, Calendar, Lock, Search, Globe, Edit3, Lightbulb, MessageSquare, FileUp, ClipboardPaste } from 'lucide-react';
 import { toast } from 'sonner';
 import { AgentTaskListNormal } from '@/components/agent-task-list-normal';
 import { XiaohongshuPreview } from '@/components/xiaohongshu-preview';
@@ -530,9 +531,10 @@ export default function HomePage() {
   // 🔥 创作引导相关状态
   const [showCreationGuide, setShowCreationGuide] = useState(true);
   // 🔥🔥🔥 直接发文模式状态
-  const [creationMode, setCreationMode] = useState<'ai_create' | 'direct_publish'>('ai_create');
+  const [creationMode, setCreationMode] = useState<'ai_create' | 'direct_publish' | 'outline_creation'>('ai_create');
   const [providedArticle, setProvidedArticle] = useState('');
   const [providedArticleTitle, setProvidedArticleTitle] = useState('');
+  const [providedOutline, setProvidedOutline] = useState(''); // 大纲创作模式：用户提供的大纲
   const [activeGuideCard, setActiveGuideCard] = useState<'content' | 'paradigm' | 'platform' | 'guide' | null>(null);
   const [activeGuideTab, setActiveGuideTab] = useState<'opinion' | 'material' | 'aiGenerate'>('opinion');
   
@@ -654,9 +656,9 @@ export default function HomePage() {
   const [caseSearchMode, setCaseSearchMode] = useState<'recommend' | 'search'>('recommend'); // 当前模式
   const [caseSearchKeyword, setCaseSearchKeyword] = useState(''); // 搜索关键词
   const [caseSearchLoading, setCaseSearchLoading] = useState(false); // 搜索加载中
-  const [caseFilterProduct, setCaseFilterProduct] = useState<string>('all'); // 险种筛选
-  const [caseFilterCrowd, setCaseFilterCrowd] = useState<string>('all'); // 人群筛选
-  const [caseFilterType, setCaseFilterType] = useState<string>('all'); // 素材类型筛选
+  const [caseFilterProduct, setCaseFilterProduct] = useState<string>('all'); // 险种筛选（多选值，逗号分隔）
+  const [caseFilterCrowd, setCaseFilterCrowd] = useState<string>('all'); // 人群筛选（多选值，逗号分隔）
+  const [caseFilterType, setCaseFilterType] = useState<string>('all'); // 素材类型筛选（多选值，逗号分隔）
 
   // 🔥 范式选择相关状态（替代结构选择）
   const [paradigms, setParadigms] = useState<Array<{
@@ -3106,6 +3108,79 @@ export default function HomePage() {
     }
   };
 
+  // 🔥🔥🔥 大纲创作模式提交
+  const handleOutlineCreationSubmit = async () => {
+    // 1. 立即加锁，防止重复点击
+    if (submitLockRef.current) {
+      toast.warning('正在创建中，请勿重复点击');
+      return;
+    }
+
+    // 2. 校验必填字段
+    if (!providedOutline.trim()) {
+      toast.error('请填写文章大纲');
+      return;
+    }
+    if (providedOutline.trim().length < 20) {
+      toast.error('文章大纲至少20字');
+      return;
+    }
+    if (!taskTitle.trim()) {
+      toast.error('请填写任务标题');
+      return;
+    }
+    if (!executionDate) {
+      toast.error('请选择执行日期');
+      return;
+    }
+    if (selectedAccountIds.length === 0) {
+      toast.error('请选择至少一个发布账号');
+      return;
+    }
+
+    // 3. 加锁并设置状态
+    submitLockRef.current = true;
+    setIsSubmitting(true);
+
+    try {
+      const result: any = await apiPost('/api/agents/b/simple-split', {
+        taskTitle,
+        taskDescription: `大纲创作：${providedOutline.trim().substring(0, 100)}`,
+        executionDate,
+        subTasks: [],
+        tempSessionId,
+        // 大纲创作模式核心参数
+        mode: 'outline_creation',
+        outline: providedOutline.trim(),
+        // originalInstruction 记录用户大纲（供 Agent B 参考）
+        originalInstruction: `【大纲创作】\n${providedOutline.trim()}`,
+        userOpinion: null,
+        materialIds: [],
+        // 发布账号
+        accountId: selectedAccountIds[0] || null,
+        accountIds: selectedAccountIds.length > 0 ? selectedAccountIds : null,
+        // 内容模板ID
+        contentTemplateId: selectedContentTemplate?.id || null,
+      });
+
+      toast.success(`✅ 成功创建大纲创作任务（${result.data.insertedCount} 个子步骤），请切换到"任务列表"查看执行进度`);
+
+      // 提交成功后清除
+      setProvidedOutline('');
+      setTempSessionId(null);
+
+      // 触发任务列表刷新
+      setTaskListRefreshKey(prev => prev + 1);
+
+    } catch (error: any) {
+      if (checkApiKeyMissing(error)) return;
+      toast.error(`❌ 创建失败: ${error.message}`);
+    } finally {
+      submitLockRef.current = false;
+      setIsSubmitting(false);
+    }
+  };
+
   // 🔥 主提交函数
   const handleSubmit = async () => {
     // 1. 立即加锁，防止重复点击
@@ -3429,7 +3504,7 @@ export default function HomePage() {
               </div>
             </CardHeader>
         <CardContent className="space-y-6">
-          {/* 🔥🔥🔥 模式切换器：AI创作 / 直接发文 */}
+          {/* 🔥🔥🔥 模式切换器：AI创作 / 大纲创作 / 直接发文 */}
           <div className="flex items-center gap-2 p-1 bg-slate-100 rounded-xl w-fit">
             <button
               onClick={() => { setCreationMode('ai_create'); setActiveGuideCard(null); }}
@@ -3441,6 +3516,17 @@ export default function HomePage() {
             >
               <Sparkles className="w-4 h-4" />
               AI 创作
+            </button>
+            <button
+              onClick={() => { setCreationMode('outline_creation'); setActiveGuideCard(null); }}
+              className={`flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 ${
+                creationMode === 'outline_creation'
+                  ? 'bg-gradient-to-r from-violet-500 to-purple-500 text-white shadow-md shadow-violet-200/50'
+                  : 'text-slate-600 hover:bg-white/60'
+              }`}
+            >
+              <ListChecks className="w-4 h-4" />
+              大纲创作
             </button>
             <button
               onClick={() => { setCreationMode('direct_publish'); setActiveGuideCard(null); }}
@@ -3611,6 +3697,126 @@ export default function HomePage() {
                   <span className="bg-purple-100 text-purple-700 px-2 py-1 rounded">多平台上传</span>
                 </div>
                 <p className="text-xs text-slate-400 mt-2">文章经写作Agent格式化为平台标准排版（公众号HTML/小红书图文等），预览确认后合规校验并上传各平台</p>
+              </div>
+            </div>
+          )}
+
+          {/* ========== 大纲创作模式 ========== */}
+          {creationMode === 'outline_creation' && (
+            <div className="space-y-5 p-6 bg-gradient-to-br from-violet-50 via-purple-50 to-fuchsia-50 rounded-xl border border-violet-100 shadow-sm">
+              <div className="flex items-center gap-3 mb-1">
+                <div className="p-2 bg-gradient-to-r from-violet-500 to-purple-500 rounded-lg">
+                  <ListChecks className="w-5 h-5 text-white" />
+                </div>
+                <h3 className="font-semibold text-xl text-slate-800">
+                  大纲创作
+                </h3>
+                <span className="text-xs text-violet-600 bg-violet-100 px-2 py-0.5 rounded-full">提供大纲，AI按思路成文</span>
+              </div>
+
+              {/* 任务标题 */}
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-slate-700 flex items-center gap-2">
+                  <FileText className="w-4 h-4 text-violet-500" />
+                  任务标题
+                  <span className="text-xs text-slate-400 font-normal">（必填）</span>
+                </label>
+                <Input
+                  value={taskTitle}
+                  onChange={(e) => setTaskTitle(e.target.value)}
+                  placeholder="例如：重疾险避坑指南"
+                  className="border-violet-200 focus:ring-violet-500 focus:border-violet-500 bg-white/70"
+                />
+              </div>
+
+              {/* 文章大纲 */}
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-slate-700 flex items-center gap-2">
+                  <ListChecks className="w-4 h-4 text-violet-500" />
+                  文章大纲
+                  <span className="text-xs text-slate-400 font-normal">（必填，至少20字）</span>
+                </label>
+                <Textarea
+                  value={providedOutline}
+                  onChange={(e) => setProvidedOutline(e.target.value)}
+                  placeholder={`请输入文章大纲，例如：\n\n一、开篇引入\n- 用一个身边真实案例引入（如朋友买重疾险被拒赔）\n\n二、常见误区\n- 误区1：有社保就够了\n- 误区2：等年纪大了再买\n\n三、避坑建议\n- 建议1：关注等待期和免责条款\n- 建议2：健康告知要如实\n\n四、总结\n- 早买早保障，但一定要看懂条款`}
+                  className="min-h-[200px] border-violet-200 focus:ring-violet-500 focus:border-violet-500 bg-white/70"
+                />
+                <div className="flex justify-between text-xs text-slate-400">
+                  <span>大纲越详细，生成文章越符合预期</span>
+                  <span>{providedOutline.length}/5000</span>
+                </div>
+              </div>
+
+              {/* 选择发布账号 */}
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-slate-700 flex items-center gap-2">
+                  <Users className="w-4 h-4 text-violet-500" />
+                  选择发布账号
+                  <span className="text-xs text-slate-400 font-normal">（必选1个，最多3个）</span>
+                </label>
+                <div className="grid grid-cols-2 gap-2">
+              {loadingAccounts ? (
+                <div className="text-sm text-slate-400 py-2">加载账号中...</div>
+              ) : accountConfigs.length === 0 ? (
+                <div className="text-sm text-slate-400 py-2">暂无账号，请先在账号管理中创建</div>
+              ) : accountConfigs.map((config) => {
+                const account = config.account;
+                const isSelected = selectedAccountIds.includes(account.id);
+                const isDisabled = !isSelected && selectedAccountIds.length >= 3;
+                const platformLabel = PLATFORM_LABELS[account.platform as keyof typeof PLATFORM_LABELS] || account.platform;
+                const boundTemplate = config.template;
+                return (
+                  <button
+                    key={account.id}
+                    onClick={() => {
+                      if (isSelected) {
+                        setSelectedAccountIds(prev => prev.filter(id => id !== account.id));
+                      } else if (!isDisabled) {
+                        setSelectedAccountIds(prev => [...prev, account.id]);
+                      }
+                    }}
+                    disabled={isDisabled}
+                    className={`flex items-center gap-2 p-2.5 rounded-lg border text-sm transition-all ${
+                      isSelected
+                        ? 'border-violet-300 bg-violet-50 text-violet-700 shadow-sm'
+                        : isDisabled
+                          ? 'border-slate-100 bg-slate-50 text-slate-300 cursor-not-allowed'
+                          : 'border-slate-200 bg-white text-slate-600 hover:border-violet-200 hover:bg-violet-50/30'
+                    }`}
+                  >
+                    <div className={`w-2 h-2 rounded-full ${isSelected ? 'bg-violet-500' : 'bg-slate-300'}`} />
+                    <span className="font-medium">{account.accountName}</span>
+                    <span className="text-xs px-1.5 py-0.5 bg-slate-100 rounded">{platformLabel}</span>
+                    {boundTemplate && (
+                      <span className="text-xs text-slate-400 truncate">· {boundTemplate.name}</span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+              </div>
+
+              {/* 提交按钮 */}
+              <div className="flex items-center gap-3 pt-2">
+                <Button
+                  onClick={handleOutlineCreationSubmit}
+                  disabled={!taskTitle.trim() || providedOutline.trim().length < 20 || selectedAccountIds.length === 0 || isSubmitting}
+                  className="bg-gradient-to-r from-violet-500 to-purple-500 hover:from-violet-600 hover:to-purple-600 text-white shadow-md shadow-violet-200/50"
+                >
+                  {isSubmitting ? (
+                    <>
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      提交中...
+                    </>
+                  ) : (
+                    <>
+                      <Send className="w-4 h-4 mr-2" />
+                      开始创作
+                    </>
+                  )}
+                </Button>
+                <span className="text-xs text-slate-400">AI将根据您的大纲按思路生成文章，支持预览修改和AI评审</span>
               </div>
             </div>
           )}
@@ -4706,73 +4912,79 @@ export default function HomePage() {
                               </Button>
                             </div>
 
-                            {/* 筛选器 */}
+                            {/* 筛选器（多选） */}
                             <div className="flex items-center gap-2 flex-wrap">
-                              <Select value={caseFilterProduct} onValueChange={(v) => {
-                                setCaseFilterProduct(v);
-                                const apiValue = v === 'all' ? '' : v;
-                                if (apiValue || caseSearchKeyword || (caseFilterCrowd !== 'all' ? caseFilterCrowd : '') || (caseFilterType !== 'all' ? caseFilterType : '')) {
-                                  setTimeout(() => handleSearchIndustryMaterials(undefined, { productTag: apiValue }), 100);
-                                }
-                              }}>
-                                <SelectTrigger className="h-8 w-[120px] text-xs">
-                                  <SelectValue placeholder="险种筛选" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  <SelectItem value="all">全部险种</SelectItem>
-                                  <SelectItem value="意外险">意外险</SelectItem>
-                                  <SelectItem value="重疾险">重疾险</SelectItem>
-                                  <SelectItem value="医疗险">医疗险</SelectItem>
-                                  <SelectItem value="寿险">寿险</SelectItem>
-                                  <SelectItem value="年金险">年金险</SelectItem>
-                                  <SelectItem value="增额终身寿险">增额终身寿险</SelectItem>
-                                  <SelectItem value="雇主责任险">雇主责任险</SelectItem>
-                                  <SelectItem value="财产险">财产险</SelectItem>
-                                </SelectContent>
-                              </Select>
+                              <MultiSelectDropdown
+                                options={[
+                                  { value: '意外险', label: '意外险' },
+                                  { value: '重疾险', label: '重疾险' },
+                                  { value: '医疗险', label: '医疗险' },
+                                  { value: '寿险', label: '寿险' },
+                                  { value: '年金险', label: '年金险' },
+                                  { value: '增额终身寿险', label: '增额终身寿险' },
+                                  { value: '雇主责任险', label: '雇主责任险' },
+                                  { value: '财产险', label: '财产险' },
+                                ]}
+                                selected={caseFilterProduct === 'all' ? [] : caseFilterProduct.split(',').filter(Boolean)}
+                                onChange={(vals) => {
+                                  const newVal = vals.length === 0 ? 'all' : vals.join(',');
+                                  setCaseFilterProduct(newVal);
+                                  const apiValue = vals.join(',');
+                                  if (apiValue || caseSearchKeyword || (caseFilterCrowd !== 'all' ? caseFilterCrowd : '') || (caseFilterType !== 'all' ? caseFilterType : '')) {
+                                    setTimeout(() => handleSearchIndustryMaterials(undefined, { productTag: apiValue }), 100);
+                                  }
+                                }}
+                                placeholder="险种筛选"
+                                allLabel="全部险种"
+                                className="w-[140px]"
+                              />
 
-                              <Select value={caseFilterCrowd} onValueChange={(v) => {
-                                setCaseFilterCrowd(v);
-                                const apiValue = v === 'all' ? '' : v;
-                                if (apiValue || caseSearchKeyword || (caseFilterProduct !== 'all' ? caseFilterProduct : '') || (caseFilterType !== 'all' ? caseFilterType : '')) {
-                                  setTimeout(() => handleSearchIndustryMaterials(undefined, { crowdTag: apiValue }), 100);
-                                }
-                              }}>
-                                <SelectTrigger className="h-8 w-[120px] text-xs">
-                                  <SelectValue placeholder="人群筛选" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  <SelectItem value="all">全部人群</SelectItem>
-                                  <SelectItem value="上班族">上班族</SelectItem>
-                                  <SelectItem value="企业主">企业主</SelectItem>
-                                  <SelectItem value="老年人">老年人</SelectItem>
-                                  <SelectItem value="儿童">儿童</SelectItem>
-                                  <SelectItem value="家庭">家庭</SelectItem>
-                                  <SelectItem value="高净值">高净值</SelectItem>
-                                </SelectContent>
-                              </Select>
+                              <MultiSelectDropdown
+                                options={[
+                                  { value: '上班族', label: '上班族' },
+                                  { value: '企业主', label: '企业主' },
+                                  { value: '老年人', label: '老年人' },
+                                  { value: '儿童', label: '儿童' },
+                                  { value: '家庭', label: '家庭' },
+                                  { value: '高净值', label: '高净值' },
+                                ]}
+                                selected={caseFilterCrowd === 'all' ? [] : caseFilterCrowd.split(',').filter(Boolean)}
+                                onChange={(vals) => {
+                                  const newVal = vals.length === 0 ? 'all' : vals.join(',');
+                                  setCaseFilterCrowd(newVal);
+                                  const apiValue = vals.join(',');
+                                  if (apiValue || caseSearchKeyword || (caseFilterProduct !== 'all' ? caseFilterProduct : '') || (caseFilterType !== 'all' ? caseFilterType : '')) {
+                                    setTimeout(() => handleSearchIndustryMaterials(undefined, { crowdTag: apiValue }), 100);
+                                  }
+                                }}
+                                placeholder="人群筛选"
+                                allLabel="全部人群"
+                                className="w-[140px]"
+                              />
 
-                              <Select value={caseFilterType} onValueChange={(v) => {
-                                setCaseFilterType(v);
-                                const apiValue = v === 'all' ? '' : v;
-                                if (apiValue || caseSearchKeyword || (caseFilterProduct !== 'all' ? caseFilterProduct : '') || (caseFilterCrowd !== 'all' ? caseFilterCrowd : '')) {
-                                  setTimeout(() => handleSearchIndustryMaterials(undefined, { caseType: apiValue }), 100);
-                                }
-                              }}>
-                                <SelectTrigger className="h-8 w-[100px] text-xs">
-                                  <SelectValue placeholder="类型" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  <SelectItem value="all">全部类型</SelectItem>
-                                  <SelectItem value="misconception">错误认知</SelectItem>
-                                  <SelectItem value="analogy">生活类比</SelectItem>
-                                  <SelectItem value="case">真实案例</SelectItem>
-                                  <SelectItem value="data">权威数据</SelectItem>
-                                  <SelectItem value="golden_sentence">金句</SelectItem>
-                                  <SelectItem value="fixed_phrase">固定句式</SelectItem>
-                                  <SelectItem value="personal_fragment">个人碎片</SelectItem>
-                                </SelectContent>
-                              </Select>
+                              <MultiSelectDropdown
+                                options={[
+                                  { value: 'misconception', label: '错误认知' },
+                                  { value: 'analogy', label: '生活类比' },
+                                  { value: 'case', label: '真实案例' },
+                                  { value: 'data', label: '权威数据' },
+                                  { value: 'golden_sentence', label: '金句' },
+                                  { value: 'fixed_phrase', label: '固定句式' },
+                                  { value: 'personal_fragment', label: '个人碎片' },
+                                ]}
+                                selected={caseFilterType === 'all' ? [] : caseFilterType.split(',').filter(Boolean)}
+                                onChange={(vals) => {
+                                  const newVal = vals.length === 0 ? 'all' : vals.join(',');
+                                  setCaseFilterType(newVal);
+                                  const apiValue = vals.join(',');
+                                  if (apiValue || caseSearchKeyword || (caseFilterProduct !== 'all' ? caseFilterProduct : '') || (caseFilterCrowd !== 'all' ? caseFilterCrowd : '')) {
+                                    setTimeout(() => handleSearchIndustryMaterials(undefined, { caseType: apiValue }), 100);
+                                  }
+                                }}
+                                placeholder="类型筛选"
+                                allLabel="全部类型"
+                                className="w-[130px]"
+                              />
 
                               <Button
                                 size="sm"

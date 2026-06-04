@@ -6,7 +6,7 @@
 /**
  * Agent ID 类型
  */
-export type AgentId = 'A' | 'B' | 'C' | 'D' | 'insurance-c' | 'insurance-d' | 'insurance-xiaohongshu' | 'insurance-zhihu' | 'insurance-toutiao' | 'deai-optimizer';
+export type AgentId = 'A' | 'B' | 'C' | 'D' | 'insurance-c' | 'insurance-d' | 'insurance-xiaohongshu' | 'insurance-zhihu' | 'insurance-toutiao' | 'deai-optimizer' | 'outline-writer';
 
 /**
  * 任务优先级

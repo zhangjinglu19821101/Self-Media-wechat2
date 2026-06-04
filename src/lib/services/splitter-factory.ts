@@ -18,6 +18,7 @@ const splitterRegistry: Record<string, new () => BaseSplitter> = {
   'insurance-xiaohongshu': AgentBUnifiedSplitter, // 🔥 小红书创作 Agent，同样使用统一拆分器
   'insurance-c': AgentBUnifiedSplitter, // 🔥 兼容旧代码，仍然指向统一拆分器
   'insurance-a': AgentBUnifiedSplitter, // 🔥 兼容旧代码，仍然指向统一拆分器
+  'outline-writer': AgentBUnifiedSplitter, // 🔥 大纲创作 Agent，同样使用统一拆分器
 };
 
 /**

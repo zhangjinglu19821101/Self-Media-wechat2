@@ -25,7 +25,8 @@ import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { 
   Eye, Pencil, CheckCircle2, SkipForward, Save, X, 
-  Loader2, FileText, ChevronLeft, ChevronRight
+  Loader2, FileText, ChevronLeft, ChevronRight,
+  BookmarkPlus, Search
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { getCurrentBeijingTime } from '@/lib/utils/date-time';
@@ -45,6 +46,18 @@ import { WechatArticleRenderer } from '@/components/wechat-article-renderer';
 
 // 🔥 微信公众号结构化段落编辑器
 import { WechatBlockEditor } from '@/components/wechat-block-editor';
+
+// 🔥 素材替换公共方法
+import {
+  searchMaterials,
+  recommendMaterials,
+  replaceMaterial,
+  replaceInXhsContent,
+  inferMaterialTypeFromSelection,
+  getMaterialTypeLabel,
+  type MaterialItem,
+  type MaterialType,
+} from '@/lib/material-replacer';
 
 // ============ 类型定义 ============
 
@@ -121,6 +134,13 @@ export function ArticlePreviewEditor({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isLoading, setIsLoading] = useState(!initialContent);
   const [activeTab, setActiveTab] = useState<'preview' | 'edit'>('preview');
+
+  // 🔥 素材替换状态
+  const [selectedText, setSelectedText] = useState('');
+  const [materialSearchQuery, setMaterialSearchQuery] = useState('');
+  const [materialSearchResults, setMaterialSearchResults] = useState<MaterialItem[]>([]);
+  const [isSearchingMaterials, setIsSearchingMaterials] = useState(false);
+  const [showMaterialPanel, setShowMaterialPanel] = useState(false);
 
   // 🔥 公众号编辑器回调：同步更新 content 和 platformRenderData.htmlContent
   // 使用函数式更新，避免依赖 platformRenderData 导致无限循环
@@ -230,6 +250,76 @@ export function ArticlePreviewEditor({
       setIsSubmitting(false);
     }
   }, [content, title, onComplete]);
+
+  // 🔥 素材替换：搜索素材
+  const handleSearchMaterials = useCallback(async (query?: string) => {
+    const searchQuery = query || materialSearchQuery;
+    if (!searchQuery.trim()) return;
+    setIsSearchingMaterials(true);
+    try {
+      const inferredType = inferMaterialTypeFromSelection(selectedText || searchQuery);
+      const results = await searchMaterials({
+        query: searchQuery,
+        type: inferredType,
+        limit: 10,
+      });
+      setMaterialSearchResults(results);
+    } catch (err) {
+      console.error('[ArticlePreviewEditor] 搜索素材失败:', err);
+    } finally {
+      setIsSearchingMaterials(false);
+    }
+  }, [materialSearchQuery, selectedText]);
+
+  // 🔥 素材替换：执行替换
+  const handleReplaceWithMaterial = useCallback((material: MaterialItem) => {
+    if (!selectedText && !materialSearchQuery) {
+      toast.error('请先选中文章中需要替换的内容');
+      return;
+    }
+
+    const result = replaceMaterial({
+      originalText: selectedText || materialSearchQuery,
+      replacementText: material.content,
+      fullContent: content,
+      platform: platform as 'wechat_official' | 'xiaohongshu' | 'zhihu' | 'douyin' | 'weibo',
+      mode: 'exact',
+    });
+
+    if (result.success) {
+      setContent(result.newContent);
+      // 同步 platformRenderData
+      setPlatformRenderData(prev => {
+        if (prev && typeof prev === 'object' && 'htmlContent' in prev) {
+          return { ...prev, htmlContent: result.newContent };
+        }
+        return prev;
+      });
+      toast.success(`替换成功：${result.description}`);
+      setSelectedText('');
+      setShowMaterialPanel(false);
+      setMaterialSearchResults([]);
+    } else {
+      toast.error(result.description);
+    }
+  }, [selectedText, materialSearchQuery, content, platform]);
+
+  // 🔥 素材替换：AI推荐素材
+  const handleRecommendMaterials = useCallback(async () => {
+    setIsSearchingMaterials(true);
+    try {
+      const inferredType = inferMaterialTypeFromSelection(selectedText || title);
+      const results = await recommendMaterials(title || selectedText, {
+        limit: 8,
+        type: inferredType,
+      });
+      setMaterialSearchResults(results);
+    } catch (err) {
+      console.error('[ArticlePreviewEditor] 推荐素材失败:', err);
+    } finally {
+      setIsSearchingMaterials(false);
+    }
+  }, [selectedText, title]);
 
   // 🔴 新增：保存草稿（只保存到后端，不改变状态）
   const [isSavingDraft, setIsSavingDraft] = useState(false);
@@ -396,11 +486,133 @@ export function ArticlePreviewEditor({
         )}
       </Tabs>
 
+      {/* 🔥 素材替换面板 */}
+      {showMaterialPanel && (
+        <div className="border rounded-lg p-3 bg-amber-50/50 space-y-3">
+          <div className="flex items-center justify-between">
+            <h4 className="text-sm font-medium text-amber-800">素材替换</h4>
+            <Button variant="ghost" size="sm" onClick={() => setShowMaterialPanel(false)}>
+              <X className="h-4 w-4" />
+            </Button>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            选中文章中的案例、数据、观点等素材，从素材库搜索替换，或使用AI推荐
+          </p>
+          
+          {/* 选中文本提示 */}
+          {selectedText && (
+            <div className="bg-white rounded p-2 border border-amber-200">
+              <span className="text-xs text-amber-700 font-medium">当前选中：</span>
+              <span className="text-xs text-gray-700 ml-1">
+                {selectedText.length > 80 ? selectedText.substring(0, 80) + '...' : selectedText}
+              </span>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="ml-2 h-5 text-xs"
+                onClick={() => setSelectedText('')}
+              >
+                清除
+              </Button>
+            </div>
+          )}
+
+          {/* 搜索框 */}
+          <div className="flex gap-2">
+            <Input
+              value={materialSearchQuery}
+              onChange={(e) => setMaterialSearchQuery(e.target.value)}
+              placeholder="搜索素材（关键词、类型...）"
+              className="flex-1 h-8 text-sm"
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') handleSearchMaterials();
+              }}
+            />
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => handleSearchMaterials()}
+              disabled={isSearchingMaterials}
+            >
+              {isSearchingMaterials ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={handleRecommendMaterials}
+              disabled={isSearchingMaterials}
+              className="text-amber-700 border-amber-300"
+            >
+              AI推荐
+            </Button>
+          </div>
+
+          {/* 搜索结果 */}
+          {materialSearchResults.length > 0 && (
+            <div className="space-y-2 max-h-[240px] overflow-y-auto">
+              {materialSearchResults.map((material) => (
+                <div
+                  key={material.id}
+                  className="bg-white rounded p-2 border border-gray-200 hover:border-amber-300 cursor-pointer transition-colors"
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-1 mb-1">
+                        <span className="text-xs bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded">
+                          {getMaterialTypeLabel(material.type)}
+                        </span>
+                        <span className="text-sm font-medium truncate">{material.title}</span>
+                      </div>
+                      <p className="text-xs text-muted-foreground line-clamp-2">
+                        {material.content.substring(0, 120)}{material.content.length > 120 ? '...' : ''}
+                      </p>
+                    </div>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="shrink-0 text-amber-700 border-amber-300 hover:bg-amber-50"
+                      onClick={() => handleReplaceWithMaterial(material)}
+                    >
+                      替换
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {materialSearchResults.length === 0 && !isSearchingMaterials && (
+            <p className="text-xs text-muted-foreground text-center py-2">
+              暂无匹配素材，请尝试其他关键词或点击AI推荐
+            </p>
+          )}
+        </div>
+      )}
+
       {/* 底部操作栏 */}
       <div className="flex items-center justify-between pt-4 border-t">
-        <div className="text-sm text-muted-foreground">
-          {content.length > 0 && (
-            <span>共 {content.length} 字</span>
+        <div className="flex items-center gap-3">
+          <div className="text-sm text-muted-foreground">
+            {content.length > 0 && (
+              <span>共 {content.length} 字</span>
+            )}
+          </div>
+          {/* 🔥 素材替换按钮 */}
+          {canEdit && !isEditing && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setShowMaterialPanel(!showMaterialPanel);
+                if (!showMaterialPanel) {
+                  handleRecommendMaterials();
+                }
+              }}
+              className="text-amber-700 border-amber-300 hover:bg-amber-50"
+            >
+              <BookmarkPlus className="h-4 w-4 mr-1" />
+              素材替换
+            </Button>
           )}
         </div>
         <div className="flex items-center gap-2">

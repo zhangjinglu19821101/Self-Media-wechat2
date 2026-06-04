@@ -74,6 +74,15 @@ const NODE_STYLES = {
   dp_zhihu_preview: { icon: '👁️', color: 'from-purple-500 to-indigo-600' },
   dp_toutiao_format: { icon: '📝', color: 'from-orange-500 to-red-600' },
   dp_toutiao_preview: { icon: '👁️', color: 'from-purple-500 to-orange-600' },
+
+  // 大纲创作模式样式
+  ow_write: { icon: '✍️', color: 'from-violet-500 to-indigo-600' },
+  ow_preview: { icon: '👁️', color: 'from-purple-500 to-violet-600' },
+  ow_review: { icon: '🔍', color: 'from-amber-500 to-yellow-600' },
+  ow_revise: { icon: '🔧', color: 'from-sky-500 to-blue-600' },
+  ow_check: { icon: '✅', color: 'from-emerald-500 to-green-600' },
+  ow_fix: { icon: '🛠️', color: 'from-orange-500 to-amber-600' },
+  ow_upload: { icon: '📤', color: 'from-teal-500 to-cyan-600' },
 } as const;
 
 // ============ 平台默认流程模板定义 ============
@@ -234,11 +243,194 @@ export const TOUTIAO_FLOW_TEMPLATE = createFlowTemplate(
 export const USER_PREVIEW_EDIT_EXECUTOR = 'user_preview_edit';
 
 /**
+ * AI评审节点的执行器标识
+ * 
+ * 该节点是真实 Agent（outline-writer），但以"评审者"角色调用。
+ * 执行引擎遇到此标识时，将文章内容 + 评审指令发给 outline-writer，
+ * 让它以通用大模型视角评审文章质量，给出修改建议或确认通过。
+ */
+export const AI_REVIEW_EXECUTOR = 'ai_review';
+
+/**
  * 判断执行器是否为用户交互节点（虚拟执行器）
  */
 export function isVirtualExecutor(executor: string | undefined | null): boolean {
   if (!executor) return false;
-  return executor === USER_PREVIEW_EDIT_EXECUTOR;
+  return executor === USER_PREVIEW_EDIT_EXECUTOR || executor === AI_REVIEW_EXECUTOR;
+}
+
+/**
+ * 判断执行器是否为AI评审节点
+ */
+export function isAiReviewExecutor(executor: string | undefined | null): boolean {
+  if (!executor) return false;
+  return executor === AI_REVIEW_EXECUTOR;
+}
+
+// ============ 大纲创作模式流程模板 ============
+
+/**
+ * 大纲创作模式：用户提供文章大纲，outline-writer（通用大模型）按大纲创作高质量文章
+ *
+ * 🔥 核心设计原则：
+ * 1. 模拟"豆包"式交互体验——用户给大纲+选专家，就能得到符合心意的文章
+ * 2. outline-writer 严格按照用户大纲结构创作，不擅自改变思路和方向
+ * 3. 预览修改环节支持素材替换（案例/数据/观点可从素材库选取替换）
+ * 4. AI评审环节：由 outline-writer 以通用大模型视角评审文章质量
+ * 5. 评审发现问题 → outline-writer 修改 → 回到预览 → 再次评审（循环）
+ * 6. 用户确认通过 → 合规校验 → 上传
+ *
+ * 与AI创作模式对比：
+ * - AI创作：  分析→撰写→去AI化→预览修改→合规校验→合规整改→上传（7步）
+ * - 大纲创作：写作→预览修改(素材替换)→AI评审→预览修改→合规校验→合规整改→上传（7步）
+ *
+ * 区别：
+ * 1. 大纲创作不需要Agent B分析需求（用户已给出大纲，需求已明确）
+ * 2. 不需要去AI化（outline-writer 模拟通用大模型自然写作风格）
+ * 3. 增加AI评审环节（通用大模型评审→修改，提升文章质量）
+ * 4. 预览修改环节支持素材替换
+ */
+
+/**
+ * 微信公众号大纲创作流程（7步）
+ * 写作(outline-writer) → 预览修改(素材替换) → AI评审 → 预览修改 → 合规校验 → 合规整改 → 上传
+ */
+export const WECHAT_OUTLINE_CREATION_TEMPLATE = createFlowTemplate(
+  'wechat-outline-creation',
+  'wechat_official',
+  '微信公众号',
+  '公众号大纲创作流程',
+  [
+    { id: 'node-ow-wechat-1', executor: 'outline-writer', title: '依据大纲创作文章', description: '严格按照用户提供的大纲结构和思路，创作完整的公众号文章（HTML格式）', styleKey: 'ow_write' },
+    { id: 'node-ow-wechat-2', executor: 'user_preview_edit', title: '用户预览修改初稿', description: '用户预览初稿，可修改调整、替换素材（案例/数据/观点），或直接确认继续', styleKey: 'ow_preview' },
+    { id: 'node-ow-wechat-3', executor: 'ai_review', title: 'AI评审文章', description: '通用大模型以读者视角评审文章质量，检查逻辑/结构/表达，给出修改建议或确认通过', styleKey: 'ow_review' },
+    { id: 'node-ow-wechat-4', executor: 'user_preview_edit', title: '用户确认修改稿', description: '用户审阅AI评审修改后的文章，可继续修改或确认通过', styleKey: 'ow_preview' },
+    { id: 'node-ow-wechat-5', executor: 'T', title: '合规校验', description: '对文章进行合规性校验，检查是否包含绝对化用语、虚假承诺、违规营销等内容', styleKey: 'ow_check' },
+    { id: 'node-ow-wechat-6', executor: 'outline-writer', title: '完成合规整改', description: '依据合规校验结果，完成文章整改（修改违规内容、调整表述）', styleKey: 'ow_fix' },
+    { id: 'node-ow-wechat-7', executor: 'T', title: '上传公众号草稿箱', description: '将文章上传至公众号草稿箱，配置原创声明、赞赏等设置', styleKey: 'ow_upload' },
+  ]
+);
+
+/**
+ * 小红书大纲创作流程（7步）
+ * 写作(outline-writer) → 预览修改(素材替换) → AI评审 → 预览修改 → 合规校验 → 合规整改 → 预览终稿
+ */
+export const XIAOHONGSHU_OUTLINE_CREATION_TEMPLATE = createFlowTemplate(
+  'xiaohongshu-outline-creation',
+  'xiaohongshu',
+  '小红书',
+  '小红书大纲创作流程',
+  [
+    { id: 'node-ow-xhs-1', executor: 'outline-writer', title: '依据大纲创作图文', description: '严格按照用户提供的大纲结构和思路，创作小红书图文内容（JSON格式）', styleKey: 'ow_write' },
+    { id: 'node-ow-xhs-2', executor: 'user_preview_edit', title: '用户预览修改图文', description: '用户预览小红书图文初稿，可修改标题/要点/正文/标签、替换素材，或直接确认继续', styleKey: 'ow_preview' },
+    { id: 'node-ow-xhs-3', executor: 'ai_review', title: 'AI评审图文', description: '通用大模型以读者视角评审图文质量，给出修改建议或确认通过', styleKey: 'ow_review' },
+    { id: 'node-ow-xhs-4', executor: 'user_preview_edit', title: '用户确认修改稿', description: '用户审阅AI评审修改后的图文，可继续修改或确认通过', styleKey: 'ow_preview' },
+    { id: 'node-ow-xhs-5', executor: 'T', title: '合规校验', description: '对小红书图文进行合规性校验', styleKey: 'ow_check' },
+    { id: 'node-ow-xhs-6', executor: 'outline-writer', title: '完成合规整改', description: '依据合规校验结果，完成小红书图文整改', styleKey: 'ow_fix' },
+    { id: 'node-ow-xhs-7', executor: 'user_preview_edit', title: '用户预览终稿', description: '合规整改后的终稿确认，用户审阅最终图文内容', styleKey: 'ow_preview' },
+  ]
+);
+
+/**
+ * 知乎大纲创作流程（7步）
+ */
+export const ZHIHU_OUTLINE_CREATION_TEMPLATE = createFlowTemplate(
+  'zhihu-outline-creation',
+  'zhihu',
+  '知乎',
+  '知乎大纲创作流程',
+  [
+    { id: 'node-ow-zhihu-1', executor: 'outline-writer', title: '依据大纲创作文章', description: '严格按照用户提供的大纲结构和思路，创作知乎深度长文', styleKey: 'ow_write' },
+    { id: 'node-ow-zhihu-2', executor: 'user_preview_edit', title: '用户预览修改初稿', description: '用户预览初稿，可修改调整、替换素材，或直接确认继续', styleKey: 'ow_preview' },
+    { id: 'node-ow-zhihu-3', executor: 'ai_review', title: 'AI评审文章', description: '通用大模型以读者视角评审文章质量，给出修改建议或确认通过', styleKey: 'ow_review' },
+    { id: 'node-ow-zhihu-4', executor: 'user_preview_edit', title: '用户确认修改稿', description: '用户审阅AI评审修改后的文章，可继续修改或确认通过', styleKey: 'ow_preview' },
+    { id: 'node-ow-zhihu-5', executor: 'T', title: '合规校验', description: '对文章进行合规性校验', styleKey: 'ow_check' },
+    { id: 'node-ow-zhihu-6', executor: 'outline-writer', title: '完成合规整改', description: '依据合规校验结果，完成文章整改', styleKey: 'ow_fix' },
+    { id: 'node-ow-zhihu-7', executor: 'T', title: '生成预览图', description: '生成知乎文章预览图，供用户手动发布使用', styleKey: 'ow_upload' },
+  ]
+);
+
+/**
+ * 头条/抖音大纲创作流程（7步）
+ */
+export const TOUTIAO_OUTLINE_CREATION_TEMPLATE = createFlowTemplate(
+  'toutiao-outline-creation',
+  'douyin',
+  '今日头条/抖音',
+  '头条大纲创作流程',
+  [
+    { id: 'node-ow-toutiao-1', executor: 'outline-writer', title: '依据大纲创作文章', description: '严格按照用户提供的大纲结构和思路，创作头条信息流文章', styleKey: 'ow_write' },
+    { id: 'node-ow-toutiao-2', executor: 'user_preview_edit', title: '用户预览修改初稿', description: '用户预览初稿，可修改调整、替换素材，或直接确认继续', styleKey: 'ow_preview' },
+    { id: 'node-ow-toutiao-3', executor: 'ai_review', title: 'AI评审文章', description: '通用大模型以读者视角评审文章质量，给出修改建议或确认通过', styleKey: 'ow_review' },
+    { id: 'node-ow-toutiao-4', executor: 'user_preview_edit', title: '用户确认修改稿', description: '用户审阅AI评审修改后的文章，可继续修改或确认通过', styleKey: 'ow_preview' },
+    { id: 'node-ow-toutiao-5', executor: 'T', title: '合规校验', description: '对文章进行合规性校验', styleKey: 'ow_check' },
+    { id: 'node-ow-toutiao-6', executor: 'outline-writer', title: '完成合规整改', description: '依据合规校验结果，完成文章整改', styleKey: 'ow_fix' },
+    { id: 'node-ow-toutiao-7', executor: 'T', title: '生成预览图', description: '生成头条文章预览图，供用户手动发布使用', styleKey: 'ow_upload' },
+  ]
+);
+
+/**
+ * 大纲创作模式 - 平台流程映射
+ */
+export const OUTLINE_CREATION_FLOW_MAP: Record<string, FlowTemplate> = {
+  wechat_official: WECHAT_OUTLINE_CREATION_TEMPLATE,
+  xiaohongshu: XIAOHONGSHU_OUTLINE_CREATION_TEMPLATE,
+  zhihu: ZHIHU_OUTLINE_CREATION_TEMPLATE,
+  douyin: TOUTIAO_OUTLINE_CREATION_TEMPLATE,
+  weibo: TOUTIAO_OUTLINE_CREATION_TEMPLATE, // 微博复用头条模板
+};
+
+/**
+ * 根据平台获取大纲创作流程模板
+ */
+export function getOutlineCreationTemplate(platform: string): FlowTemplate {
+  return OUTLINE_CREATION_FLOW_MAP[platform] || WECHAT_OUTLINE_CREATION_TEMPLATE;
+}
+
+/**
+ * 获取大纲创作模式的适配步骤（4步）
+ * 步骤：适配改写 → 预览修改 → AI评审 → 预览修改
+ * 与AI创作的适配步骤不同：包含AI评审环节，不含去AI化
+ */
+export function getOutlineCreationAdaptationSteps(platform: string): Array<{
+  executor: string;
+  title: string;
+  description: string;
+  styleKey: keyof typeof ADAPTATION_NODE_STYLES | 'ow_review' | 'ow_preview';
+}> {
+  const platformLabel = {
+    xiaohongshu: '小红书',
+    zhihu: '知乎',
+    douyin: '头条/抖音',
+    weibo: '微博',
+  }[platform] || platform;
+
+  return [
+    {
+      executor: 'outline-writer',
+      title: `适配${platformLabel}版本`,
+      description: `基于基础文章内容，适配改写为${platformLabel}平台风格和格式`,
+      styleKey: 'adapt_write',
+    },
+    {
+      executor: 'user_preview_edit',
+      title: `预览修改${platformLabel}版本`,
+      description: `用户预览${platformLabel}版本，可修改或直接确认`,
+      styleKey: 'adapt_preview',
+    },
+    {
+      executor: 'ai_review',
+      title: `AI评审${platformLabel}版本`,
+      description: `通用大模型评审${platformLabel}版本质量，给出修改建议或确认通过`,
+      styleKey: 'ow_review',
+    },
+    {
+      executor: 'user_preview_edit',
+      title: `确认${platformLabel}版本`,
+      description: `用户审阅AI评审修改后的${platformLabel}版本，可继续修改或确认通过`,
+      styleKey: 'adapt_preview',
+    },
+  ];
 }
 
 // ============ 直接发文模式流程模板 ============

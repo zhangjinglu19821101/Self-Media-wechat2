@@ -23,7 +23,7 @@ const promptCache = new Map<string, string>();
  * 
  * 注意：此列表 ≠ WRITING_AGENTS，还包含 insurance-c 等非写作执行 Agent
  */
-const EXECUTOR_AGENTS = ['insurance-d', 'insurance-c', 'insurance-xiaohongshu', 'insurance-zhihu', 'insurance-toutiao', 'deai-optimizer'];
+const EXECUTOR_AGENTS = ['insurance-d', 'insurance-c', 'insurance-xiaohongshu', 'insurance-zhihu', 'insurance-toutiao', 'deai-optimizer', 'outline-writer'];
 
 /**
  * 传统 Agent ID 到文件名的映射（向后兼容）
@@ -46,6 +46,8 @@ const legacyAgentPromptFiles: Record<string, string> = {
   'insurance-toutiao': 'insurance-toutiao.md',
   // 🔴 deai-optimizer 去AI化优化专家（使用周二成功版本）
   'deai-optimizer': 'deai-optimizer.md',
+  // 🔴 outline-writer 大纲创作专家（通用写作模型）
+  'outline-writer': 'outline-writer.md',
   
   // 功能提示词
   'executor-standard-result': 'executor-standard-result.md',

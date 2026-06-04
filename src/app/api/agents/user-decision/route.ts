@@ -110,6 +110,18 @@ const EXECUTOR_CONFIG = [
     description: '对文章进行去AI化优化，消除AI痕迹',
     capabilities: ['去AI化', '文风自然化', '句式改写', '词汇替换'],
   },
+  {
+    id: 'outline-writer',
+    name: '大纲创作专家',
+    description: '依据用户大纲创作高质量文章',
+    capabilities: ['大纲创作', '文章生成', '思路扩展', '内容打磨'],
+  },
+  {
+    id: 'ai_review',
+    name: 'AI评审',
+    description: 'AI评审文章质量并给出修改建议',
+    capabilities: ['文章评审', '质量评估', '修改建议', '风格一致性'],
+  },
 ];
 
 /**

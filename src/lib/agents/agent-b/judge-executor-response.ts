@@ -49,6 +49,7 @@ export function getAgentName(agentId: string): string {
     'insurance-zhihu': '知乎创作（insurance-zhihu）',
     'insurance-toutiao': '头条创作（insurance-toutiao）',
     'deai-optimizer': '去AI化优化（deai-optimizer）',
+    'outline-writer': '大纲创作（outline-writer）',
     'insurance-a': '保险总裁（insurance-a）',
     'agent-t': '技术负责人（Agent T）',
     'agent-b': '流程协调者（Agent B）',

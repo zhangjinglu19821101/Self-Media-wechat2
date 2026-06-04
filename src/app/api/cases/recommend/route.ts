@@ -29,7 +29,7 @@ export async function GET(request: NextRequest) {
     const crowdTags = searchParams.get('crowdTags')?.split(',').filter(Boolean);
     const sceneTags = searchParams.get('sceneTags')?.split(',').filter(Boolean);
     const keywords = searchParams.get('keywords') || undefined;
-    const caseType = searchParams.get('caseType') || undefined;
+    const caseType = searchParams.get('caseType')?.split(',').filter(Boolean) || undefined;
     const industry = searchParams.get('industry') || undefined; // 🔥 行业过滤参数
     const limit = parseInt(searchParams.get('limit') || '10');
     const offset = parseInt(searchParams.get('offset') || '0');
@@ -78,8 +78,8 @@ export async function GET(request: NextRequest) {
       conditions.push(or(...tagConditions)!);
     }
 
-    // 素材类型筛选（caseType 参数映射到 type 字段）
-    if (caseType) {
+    // 素材类型筛选（caseType 参数映射到 type 字段，支持逗号分隔多值）
+    if (caseType && caseType.length > 0) {
       // 前端传来的 caseType 可能是 warning/positive/milestone（旧格式）
       // 或者 misconception/analogy/data 等（新7维格式）
       const caseTypeToDbType: Record<string, string[]> = {
@@ -102,9 +102,11 @@ export async function GET(request: NextRequest) {
         opening: ['opening'],
         ending: ['ending'],
       };
-      const dbTypes = caseTypeToDbType[caseType];
-      if (dbTypes) {
-        conditions.push(inArray(materialLibrary.type, dbTypes));
+      // 收集所有选中的类型对应的 dbTypes
+      const allDbTypes = caseType.flatMap(ct => caseTypeToDbType[ct] || []);
+      const uniqueDbTypes = [...new Set(allDbTypes)];
+      if (uniqueDbTypes.length > 0) {
+        conditions.push(inArray(materialLibrary.type, uniqueDbTypes));
       }
     }
 

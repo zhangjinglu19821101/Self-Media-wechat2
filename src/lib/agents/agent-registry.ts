@@ -29,6 +29,7 @@ export const WRITING_AGENTS = [
   'insurance-xiaohongshu',    // 小红书图文笔记
   'insurance-zhihu',          // 知乎回答/文章
   'insurance-toutiao',        // 今日头条文章
+  'outline-writer',           // 大纲创作专家（通用写作模型，按大纲创作）
 ] as const;
 
 /** 写作 Agent ID 类型（从 WRITING_AGENTS 派生） */
@@ -97,6 +98,11 @@ export const PLATFORM_CONTENT_FIELDS: Record<string, {
     contentField: 'content',
     format: 'text',
     description: '去AI化优化后的正文（纯文本格式）',
+  },
+  'outline-writer': {
+    contentField: 'content',
+    format: 'text',
+    description: '大纲创作专家输出的正文内容',
   },
 };
 
@@ -207,6 +213,11 @@ export const WRITING_AGENT_INFO: Record<WritingAgentId, { name: string; platform
     name: '头条创作专家',
     platform: 'douyin',
     description: '擅长信息流文章，标题党+短段落+强节奏',
+  },
+  'outline-writer': {
+    name: '大纲创作专家',
+    platform: 'wechat_official',
+    description: '通用写作模型，依据用户大纲创作高质量文章',
   },
 };
 

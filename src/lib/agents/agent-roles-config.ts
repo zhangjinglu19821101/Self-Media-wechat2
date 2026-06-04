@@ -17,6 +17,7 @@ export type AgentRole =
   | 'insurance-zhihu'
   | 'insurance-toutiao'
   | 'deai-optimizer'
+  | 'outline-writer'
   | 'A' 
   | 'B' 
   | 'C' 
@@ -1032,6 +1033,102 @@ export const AGENT_ROLE_CONFIGS: Record<AgentRole, AgentRoleConfig> = {
       '  - 内容创作 → 交给写作Agent（insurance-d/insurance-xiaohongshu/insurance-zhihu/insurance-toutiao）',
       '  - 合规校验、MCP工具操作 → 交给 Agent T',
       '收到非优化任务时，返回 isCompleted: false',
+    ],
+  },
+  // 大纲创作 Agent 配置
+  'outline-writer': {
+    id: 'outline-writer',
+    name: '大纲创作专家',
+    description: '依据用户提供的文章大纲，创作高质量文章。类似通用大模型的写作能力——用户给大纲，你出文章',
+    version: '1.0.0',
+    responseType: 'custom',
+    customResponseConfig: {
+      formatDescription: `返回信封格式的 JSON 对象，包含根据大纲创作的完整文章。
+
+### 情况1：创作成功
+\`\`\`json
+{
+  "isCompleted": true,
+  "briefResponse": "已按照大纲完成文章创作",
+  "selfEvaluation": "严格遵循大纲结构，每个要点均有充分展开",
+  "result": {
+    "content": "完整的文章正文（公众号为HTML，其他平台为纯文本）",
+    "articleTitle": "文章标题（≤15字）",
+    "platformData": {
+      "platform": "wechat_official|xiaohongshu|zhihu|toutiao|weibo"
+    }
+  },
+  "articleTitle": "文章标题"
+}
+\`\`\`
+
+### 情况2：创作失败
+\`\`\`json
+{
+  "isCompleted": false,
+  "result": {
+    "error": "【无法执行】原因说明"
+  }
+}
+\`\`\``,
+      validationRules: [
+        'isCompleted 为 true 时，result 必须是包含 content 和 articleTitle 的对象',
+        'content 必须严格遵循用户大纲的结构和顺序',
+        '每个大纲要点必须充分扩展，不能只有一两句话',
+        '文章必须包含具体案例、数据或类比，不能只有空话',
+      ],
+      examples: [
+        `{
+  "isCompleted": true,
+  "briefResponse": "已按照大纲完成文章创作",
+  "selfEvaluation": "严格遵循大纲4个部分，每个要点扩展为2-3段，包含真实案例",
+  "result": {
+    "content": "<p>很多人以为买了重疾险就万事大吉...</p>",
+    "articleTitle": "重疾险的5个认知误区",
+    "platformData": { "platform": "wechat_official" }
+  },
+  "articleTitle": "重疾险的5个认知误区"
+}`,
+      ],
+    },
+    tasks: [
+      {
+        id: 'outline-creation',
+        name: '依据大纲创作文章',
+        description: '根据用户提供的文章大纲，创作完整的高质量文章',
+        responseDescription: '返回信封格式的完整文章，严格遵循大纲结构',
+        outputConstraints: [
+          '输出信封格式：result.content（完整正文）+ result.articleTitle',
+          '严格遵循大纲结构和顺序，不改变框架',
+          '每个要点至少扩展为2-3个段落',
+          '必须包含具体案例、数据或类比论据',
+          '按目标平台格式输出（公众号HTML/小红书JSON/其他纯文本）',
+        ],
+        responseExamples: [
+          { content: '<p>很多人以为买了重疾险就万事大吉...</p>', articleTitle: '重疾险的5个认知误区' },
+        ],
+      },
+      {
+        id: 'outline-revision',
+        name: '依据评审修改文章',
+        description: '根据AI评审意见，修改文章中的问题，保持大纲结构不变',
+        responseDescription: '返回修改后的完整文章',
+        outputConstraints: [
+          '评审指出的每个问题都必须修改',
+          '修改时保持大纲结构不变',
+          '修改后整体质量必须高于修改前',
+        ],
+        responseExamples: [
+          { content: '<p>修改后的文章正文...</p>', articleTitle: '修改后的文章标题' },
+        ],
+      },
+    ],
+    additionalInstructions: [
+      '🔴 【强制规则：专注大纲创作和评审修改】',
+      '你的核心能力是依据大纲创作文章，以及根据评审意见修改文章',
+      '  - 大纲创作：用户给大纲 → 你出文章',
+      '  - 评审修改：评审指出问题 → 你按意见修改',
+      '收到无关任务时，返回 isCompleted: false',
     ],
   },
 };
