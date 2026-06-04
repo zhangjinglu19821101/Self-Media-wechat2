@@ -1052,7 +1052,7 @@ export default function HomePage() {
       platformSubTaskGroups,
       savedAt: Date.now(),
     });
-  }, [mainInstruction, coreOpinion, emotionTone, selectedAccountIds, selectedContentTemplate, selectedParadigm?.id, selectedParadigm?.paradigmCode, paradigmMaterialBindings, hasSplitResult, subTasks, recommendedMaterials, selectedMaterialsV2List, taskTitle, executionDate, platformSubTaskGroups]);
+  }, [mainInstruction, coreOpinion, emotionTone, selectedAccountIds, selectedContentTemplate, selectedParadigm?.id, selectedParadigm?.paradigmCode, paradigmMaterialBindings, hasSplitResult, subTasks, recommendedMaterials, selectedMaterialsV2List, taskTitle, executionDate, articleOutline, platformSubTaskGroups]);
 
   // 🔥 获取账号列表（创作引导区域可见时自动加载）
   useEffect(() => {
