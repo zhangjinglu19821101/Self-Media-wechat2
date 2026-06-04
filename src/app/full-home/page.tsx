@@ -465,7 +465,10 @@ function extractArticleTopic(instruction: string): string {
 export default function HomePage() {
   const [taskTitle, setTaskTitle] = useState('');
   const [taskDescription, setTaskDescription] = useState('');
-  const [executionDate, setExecutionDate] = useState('');
+  const [executionDate, setExecutionDate] = useState(() => {
+    // 初始化为当前日期
+    return new Date().toISOString().split('T')[0];
+  });
   const [urlTemplateId, setUrlTemplateId] = useState<string | null>(null);
 
   // 🔥 客户端读取 URL 参数（避免 SSR/Client hydration 不一致）
