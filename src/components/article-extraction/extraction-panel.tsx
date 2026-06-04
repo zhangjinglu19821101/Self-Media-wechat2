@@ -1184,14 +1184,32 @@ export default function ArticleExtractionPanel() {
                 )}
               </Button>
             </div>
-            {MATERIAL_DIMENSIONS.map((dim) => (
-              <MaterialDimensionCard
-                key={dim.key}
-                dimension={dim}
-                materials={extraction.groupedMaterials[dim.key] ?? []}
-                onMaterialChange={handleMaterialChange}
-              />
-            ))}
+            {MATERIAL_DIMENSIONS.map((dim) => {
+              // 合并编辑后的内容到原始素材，让用户立即看到修改效果
+              const originalMaterials = extraction.groupedMaterials[dim.key] ?? [];
+              const mergedMaterials = originalMaterials.map((m, i) => {
+                const key = `${dim.key}:${i}`;
+                const edited = editedMaterialContents[key];
+                if (edited) {
+                  return {
+                    ...m,
+                    content: edited.content ?? m.content,
+                    contextBefore: edited.contextBefore ?? m.contextBefore,
+                    contextAfter: edited.contextAfter ?? m.contextAfter,
+                    emotion: edited.emotion ?? m.emotion,
+                  };
+                }
+                return m;
+              });
+              return (
+                <MaterialDimensionCard
+                  key={dim.key}
+                  dimension={dim}
+                  materials={mergedMaterials}
+                  onMaterialChange={handleMaterialChange}
+                />
+              );
+            })}
           </div>
 
           {/* 资产复用提示 */}
