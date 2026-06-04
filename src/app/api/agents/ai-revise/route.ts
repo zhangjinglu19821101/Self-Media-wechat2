@@ -328,7 +328,7 @@ export async function POST(request: NextRequest) {
           { role: 'system', content: AI_REVISE_SYSTEM_PROMPT_V3 },
           { role: 'user', content: userPrompt },
         ],
-        { model: 'doubao-seed-1-6-lite' }
+        { model: 'doubao-seed-2-0-mini-260215' }
       ),
       new Promise<never>((_, reject) =>
         setTimeout(() => reject(new Error('AI 响应超时，请稍后重试')), LLM_TIMEOUT_MS)
