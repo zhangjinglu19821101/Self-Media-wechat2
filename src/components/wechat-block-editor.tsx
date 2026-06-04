@@ -375,6 +375,7 @@ const BlockEditorItem = memo(function BlockEditorItem({ block, originalText, rea
             articleTitle={articleTitle}
             onApplyRevision={handleApplyRevision}
             onClose={handleCloseAiPanel}
+            inline={true}
           />
         </div>
       )}
