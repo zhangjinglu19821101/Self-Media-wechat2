@@ -6,7 +6,7 @@
  * 2. 用户只修改纯文本，看不到任何 HTML 标签
  * 3. 保存时回写：只替换标签内文本，标签属性原封不动（格式零损失）
  * 4. 每种段落类型有独特的视觉标识（颜色、图标）
- * 5. AI 共创面板：选中段落文字后，AI 提供2个改写版本，用户可采纳或手动调整
+ * 5. AI 多版本改写：选中文本/整段 → 3 个差异化版本 → 一键替换
  *
  * 数据流：
  *   HTML → parseHtmlToBlocks() → 段落列表（纯文本可编辑）
@@ -22,14 +22,14 @@ import { Button } from '@/components/ui/button';
 import {
   Heading1, Heading2, Type, AlertTriangle, MessageCircle,
   Shield, Minus, List, Quote, ChevronDown, ChevronUp,
-  RotateCcw, FileText, Sparkles, Check, X, Loader2,
-  Wand2, ChevronRight, RefreshCw
+  RotateCcw, FileText, Sparkles
 } from 'lucide-react';
 import {
   parseHtmlToBlocks,
   rebuildHtmlFromBlocks,
   type HtmlBlock,
 } from '@/lib/html-block-parser';
+import { AiMultiRewritePanel } from '@/components/ai-multi-rewrite-panel';
 
 // ============ 类型定义 ============
 
@@ -51,13 +51,6 @@ interface BlockStyleConfig {
   borderClass: string;
   bgClass: string;
   minHeight: string;
-}
-
-/** AI 改写方案 */
-interface ReviseScheme {
-  label: string;
-  content: string;
-  description: string;
 }
 
 // ============ 段落类型样式配置 ============
@@ -161,15 +154,6 @@ const BLOCK_STYLES: Record<string, BlockStyleConfig> = {
   },
 };
 
-/** 快捷修改方向 */
-const PRESET_REVISIONS = [
-  { label: '更生动', description: '增加比喻、场景描写，让段落更鲜活' },
-  { label: '更专业', description: '使用行业术语、权威数据，增强可信度' },
-  { label: '更简洁', description: '精简冗余表达，保留核心信息' },
-  { label: '更共情', description: '站在读者角度，引发情感共鸣' },
-  { label: '更严谨', description: '修正表述漏洞，增强逻辑严密性' },
-] as const;
-
 /**
  * 获取段落块的样式配置 key
  */
@@ -184,322 +168,6 @@ function getBlockStyleKey(block: HtmlBlock): string {
     return 'p_normal';
   }
   return block.type;
-}
-
-// ============ API 调用封装 ============
-
-async function callAiReviseAPI(params: {
-  paragraph: string;
-  selectedText?: string;
-  articleTitle?: string;
-  contextBefore?: string;
-  contextAfter?: string;
-  requirement: string;
-  signal?: AbortSignal;
-}): Promise<ReviseScheme[]> {
-  const resp = await fetch('/api/agents/ai-revise', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(params),
-    signal: params.signal,
-  });
-
-  if (!resp.ok) {
-    const data = await resp.json().catch(() => ({}));
-    throw new Error(data.error || `请求失败 (${resp.status})`);
-  }
-
-  const data = await resp.json();
-  if (data.schemes && Array.isArray(data.schemes) && data.schemes.length > 0) {
-    return data.schemes.map((s: { label?: string; description?: string; content?: string }) => ({
-      label: s.label || '方案',
-      content: s.content || '',
-      description: s.description || '',
-    }));
-  }
-  throw new Error('AI 未返回有效的修改方案，请重试');
-}
-
-// ============ AI 共创面板（内嵌） ============
-
-interface InlineAiPanelProps {
-  /** 要改写的原文（可能是选中片段或整段） */
-  originalText: string;
-  /** 整段原文（当 originalText 是选中片段时，提供完整段落作为上下文） */
-  blockText: string;
-  /** 选中的片段文本（如果用户选中了段落中的部分文字） */
-  selectedSnippet?: string;
-  /** 文章标题 */
-  articleTitle?: string;
-  /** 前文段落 */
-  contextBefore?: string;
-  /** 后文段落 */
-  contextAfter?: string;
-  /** 采纳改写后回调 */
-  onApplyRevision: (revisedText: string) => void;
-  /** 关闭面板 */
-  onClose: () => void;
-}
-
-function InlineAiPanel({
-  originalText,
-  blockText,
-  selectedSnippet,
-  articleTitle,
-  contextBefore,
-  contextAfter,
-  onApplyRevision,
-  onClose,
-}: InlineAiPanelProps) {
-  const [step, setStep] = useState<'input' | 'loading' | 'results'>('input');
-  const [userRequirement, setUserRequirement] = useState('');
-  const [selectedPreset, setSelectedPreset] = useState<string | null>(null);
-  const [results, setResults] = useState<ReviseScheme[]>([]);
-  const [error, setError] = useState<string | null>(null);
-  const [appliedIndex, setAppliedIndex] = useState<number | null>(null);
-  const abortRef = useRef<AbortController | null>(null);
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
-
-  useEffect(() => {
-    return () => { abortRef.current?.abort(); };
-  }, []);
-
-  useEffect(() => {
-    if (step === 'input' && textareaRef.current) {
-      textareaRef.current.focus();
-    }
-  }, [step]);
-
-  const submitRequest = useCallback(async (requirement: string) => {
-    if (!requirement) return;
-    abortRef.current?.abort();
-    const controller = new AbortController();
-    abortRef.current = controller;
-    setStep('loading');
-    setError(null);
-    try {
-      const schemes = await callAiReviseAPI({
-        paragraph: blockText,
-        selectedText: selectedSnippet || undefined,
-        articleTitle,
-        contextBefore,
-        contextAfter,
-        requirement,
-        signal: controller.signal,
-      });
-      setResults(schemes);
-      setStep('results');
-    } catch (err: unknown) {
-      if (err instanceof DOMException && err.name === 'AbortError') return;
-      const message = err instanceof Error ? err.message : '未知错误';
-      setError(message);
-      setStep('input');
-    }
-  }, [originalText, articleTitle, contextBefore, contextAfter]);
-
-  const handleSubmit = useCallback(() => {
-    const requirement = selectedPreset
-      ? PRESET_REVISIONS.find(p => p.label === selectedPreset)?.description || selectedPreset
-      : userRequirement.trim();
-    submitRequest(requirement);
-  }, [selectedPreset, userRequirement, submitRequest]);
-
-  const handlePresetClick = useCallback((preset: typeof PRESET_REVISIONS[number]) => {
-    setSelectedPreset(preset.label);
-    setUserRequirement('');
-    submitRequest(preset.description);
-  }, [submitRequest]);
-
-  const handleApply = useCallback((index: number) => {
-    setAppliedIndex(index);
-    setTimeout(() => {
-      onApplyRevision(results[index].content);
-      onClose();
-    }, 400);
-  }, [results, onApplyRevision, onClose]);
-
-  return (
-    <div className="mt-2 rounded-lg border border-violet-200/80 bg-gradient-to-b from-violet-50/60 to-indigo-50/30 overflow-hidden animate-in slide-in-from-top-2 duration-200">
-      {/* 标题栏 */}
-      <div className="flex items-center justify-between px-3 py-2 bg-violet-100/40 border-b border-violet-200/50">
-        <div className="flex items-center gap-1.5">
-          <Sparkles className="h-3.5 w-3.5 text-violet-600" />
-          <span className="text-xs font-medium text-violet-800">AI 共创改写</span>
-        </div>
-        <Button variant="ghost" size="sm" className="h-5 w-5 p-0 text-gray-400 hover:text-gray-600" onClick={onClose}>
-          <X className="h-3 w-3" />
-        </Button>
-      </div>
-
-      <div className="max-h-[360px] overflow-y-auto">
-        {step === 'input' && (
-          <div className="p-3 space-y-3">
-            {/* 原文预览 */}
-            <div className="rounded-md bg-white/70 border border-violet-100 px-2.5 py-1.5">
-              <p className="text-[10px] text-gray-400 mb-0.5">原文</p>
-              <p className="text-xs text-gray-600 line-clamp-3 leading-relaxed">
-                {originalText}
-              </p>
-            </div>
-
-            {/* 快捷标签 */}
-            <div>
-              <p className="text-[10px] text-gray-500 mb-1.5">快捷方向</p>
-              <div className="flex flex-wrap gap-1">
-                {PRESET_REVISIONS.map((preset) => (
-                  <button
-                    key={preset.label}
-                    onClick={() => handlePresetClick(preset)}
-                    className={`inline-flex items-center gap-0.5 px-2 py-0.5 rounded-full text-[10px] font-medium transition-all ${
-                      selectedPreset === preset.label
-                        ? 'bg-violet-200 text-violet-800 ring-1 ring-violet-300'
-                        : 'bg-white/80 text-gray-600 hover:bg-violet-100 hover:text-violet-700 border border-gray-200'
-                    }`}
-                  >
-                    <Wand2 className="h-2.5 w-2.5" />
-                    {preset.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* 自定义输入 */}
-            <div>
-              <p className="text-[10px] text-gray-500 mb-1">自定义要求</p>
-              <Textarea
-                ref={textareaRef}
-                value={userRequirement}
-                onChange={(e) => {
-                  setUserRequirement(e.target.value);
-                  setSelectedPreset(null);
-                }}
-                placeholder="如：加入一个生活化的比喻... 或 让这段更具说服力..."
-                className="text-xs resize-none border-violet-200/60 focus-visible:ring-violet-300 bg-white/70"
-                rows={2}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && !e.shiftKey) {
-                    e.preventDefault();
-                    handleSubmit();
-                  }
-                }}
-              />
-            </div>
-
-            {error && (
-              <div className="rounded-md bg-red-50 border border-red-100 px-2.5 py-1.5">
-                <p className="text-[10px] text-red-600">{error}</p>
-              </div>
-            )}
-
-            <Button
-              onClick={handleSubmit}
-              disabled={!selectedPreset && !userRequirement.trim()}
-              className="w-full bg-violet-600 hover:bg-violet-700 text-white text-xs h-8"
-            >
-              <Sparkles className="h-3.5 w-3.5 mr-1" />
-              AI 生成 2 个改写方案
-            </Button>
-          </div>
-        )}
-
-        {step === 'loading' && (
-          <div className="flex flex-col items-center justify-center py-8 px-4">
-            <div className="relative">
-              <div className="w-10 h-10 rounded-full bg-violet-100 flex items-center justify-center">
-                <Loader2 className="h-5 w-5 text-violet-600 animate-spin" />
-              </div>
-              <div className="absolute -inset-1.5 rounded-full border-2 border-violet-200 border-t-transparent animate-spin" style={{ animationDuration: '2s' }} />
-            </div>
-            <p className="text-xs text-gray-600 mt-3">AI 正在构思改写方案...</p>
-            <p className="text-[10px] text-gray-400 mt-1">通常需要 5-15 秒</p>
-          </div>
-        )}
-
-        {step === 'results' && results.length > 0 && (
-          <div className="p-3 space-y-2">
-            <p className="text-[10px] text-gray-500 flex items-center gap-1">
-              <Sparkles className="h-3 w-3 text-violet-500" />
-              为您生成了 {results.length} 个改写方案，点击「采纳」应用
-            </p>
-
-            {results.map((result, idx) => (
-              <div
-                key={idx}
-                className={`rounded-md border transition-all duration-300 ${
-                  appliedIndex === idx
-                    ? 'border-green-300 bg-green-50/50 ring-1 ring-green-300'
-                    : 'border-gray-200 bg-white/70 hover:border-violet-200 hover:shadow-sm'
-                }`}
-              >
-                {/* 方案头部 */}
-                <div className="flex items-center justify-between px-2.5 py-1.5 border-b border-gray-100/50">
-                  <div className="flex items-center gap-1.5">
-                    <span className="flex items-center justify-center w-4 h-4 rounded-full bg-violet-100 text-violet-700 text-[10px] font-bold">
-                      {idx + 1}
-                    </span>
-                    <span className="text-xs font-medium text-gray-800">{result.label}</span>
-                  </div>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className={`h-6 text-[10px] font-medium transition-all ${
-                      appliedIndex === idx
-                        ? 'text-green-600'
-                        : 'text-violet-600 hover:text-violet-700 hover:bg-violet-50'
-                    }`}
-                    onClick={() => handleApply(idx)}
-                    disabled={appliedIndex !== null}
-                  >
-                    {appliedIndex === idx ? (
-                      <><Check className="h-3 w-3 mr-0.5" />已采纳</>
-                    ) : (
-                      <>采纳<ChevronRight className="h-3 w-3 ml-0.5" /></>
-                    )}
-                  </Button>
-                </div>
-                {/* 方案内容 */}
-                <div className="px-2.5 py-1.5">
-                  <p className="text-xs text-gray-700 leading-relaxed whitespace-pre-wrap">
-                    {result.content}
-                  </p>
-                </div>
-                {result.description && (
-                  <div className="px-2.5 pb-1.5">
-                    <p className="text-[10px] text-gray-400 italic">{result.description}</p>
-                  </div>
-                )}
-              </div>
-            ))}
-
-            {/* 底部操作 */}
-            <div className="flex items-center justify-between pt-1.5 border-t border-gray-100">
-              <Button
-                variant="ghost"
-                size="sm"
-                className="text-[10px] text-gray-500 h-6"
-                onClick={() => {
-                  setStep('input');
-                  setResults([]);
-                  setAppliedIndex(null);
-                }}
-              >
-                <RefreshCw className="h-2.5 w-2.5 mr-0.5" />
-                重新生成
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="text-[10px] text-gray-500 h-6"
-                onClick={onClose}
-              >
-                取消
-              </Button>
-            </div>
-          </div>
-        )}
-      </div>
-    </div>
-  );
 }
 
 // ============ 单个段落块组件 ============
@@ -697,16 +365,14 @@ const BlockEditorItem = memo(function BlockEditorItem({ block, originalText, rea
         </div>
       )}
 
-      {/* AI 共创面板（内嵌在段落下方） */}
+      {/* AI 多版本改写面板（内嵌在段落下方） */}
       {aiPanelOpen && !readOnly && (
         <div className="px-3 pb-2">
-          <InlineAiPanel
+          <AiMultiRewritePanel
             originalText={aiReviseText}
-            blockText={block.text}
-            selectedSnippet={selectedSnippet}
-            articleTitle={articleTitle}
             contextBefore={contextBefore}
             contextAfter={contextAfter}
+            articleTitle={articleTitle}
             onApplyRevision={handleApplyRevision}
             onClose={handleCloseAiPanel}
           />

@@ -26,7 +26,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { 
   Eye, Pencil, CheckCircle2, SkipForward, Save, X, 
   Loader2, FileText, ChevronLeft, ChevronRight,
-  BookmarkPlus, Search
+  BookmarkPlus, Search, Sparkles
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { getCurrentBeijingTime } from '@/lib/utils/date-time';
@@ -46,6 +46,9 @@ import { WechatArticleRenderer } from '@/components/wechat-article-renderer';
 
 // 🔥 微信公众号结构化段落编辑器
 import { WechatBlockEditor } from '@/components/wechat-block-editor';
+
+// 🔥 AI 多版本改写面板（模态框模式）
+import { AiMultiRewritePanel } from '@/components/ai-multi-rewrite-panel';
 
 // 🔥 素材替换公共方法
 import {
@@ -141,6 +144,11 @@ export function ArticlePreviewEditor({
   const [materialSearchResults, setMaterialSearchResults] = useState<MaterialItem[]>([]);
   const [isSearchingMaterials, setIsSearchingMaterials] = useState(false);
   const [showMaterialPanel, setShowMaterialPanel] = useState(false);
+
+  // 🔥 AI 多版本改写状态（非微信平台使用）
+  const [showAiRewriteModal, setShowAiRewriteModal] = useState(false);
+  const [aiRewriteSelectedText, setAiRewriteSelectedText] = useState('');
+  const [plainTextareaRef, setPlainTextareaRef] = useState<HTMLTextAreaElement | null>(null);
 
   // 🔥 公众号编辑器回调：同步更新 content 和 platformRenderData.htmlContent
   // 使用函数式更新，避免依赖 platformRenderData 导致无限循环
@@ -475,12 +483,39 @@ export function ArticlePreviewEditor({
                 onChange={setContent} 
               />
             ) : (
-              <Textarea
-                value={content}
-                onChange={(e) => setContent(e.target.value)}
-                className="min-h-[400px] font-mono text-sm"
-                placeholder="编辑文章内容..."
-              />
+              <div className="relative">
+                <Textarea
+                  ref={setPlainTextareaRef}
+                  value={content}
+                  onChange={(e) => setContent(e.target.value)}
+                  className="min-h-[400px] font-mono text-sm"
+                  placeholder="编辑文章内容..."
+                />
+                {/* AI 改写按钮 - 选中文本后出现 */}
+                <div className="mt-1 flex items-center gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="text-xs text-violet-600 border-violet-200 hover:bg-violet-50"
+                    onClick={() => {
+                      const textarea = plainTextareaRef;
+                      if (textarea) {
+                        const sel = textarea.value.substring(textarea.selectionStart, textarea.selectionEnd).trim();
+                        if (sel.length >= 2) {
+                          setAiRewriteSelectedText(sel);
+                        } else {
+                          setAiRewriteSelectedText('');
+                        }
+                      }
+                      setShowAiRewriteModal(true);
+                    }}
+                  >
+                    <Sparkles className="h-3.5 w-3.5 mr-1" />
+                    AI 改写
+                  </Button>
+                  <span className="text-[10px] text-gray-400">选中文字后点击，可对选中部分进行AI改写；未选中则改写全文</span>
+                </div>
+              </div>
             )}
           </TabsContent>
         )}
@@ -675,6 +710,35 @@ export function ArticlePreviewEditor({
           )}
         </div>
       </div>
+
+      {/* 🔥 AI 多版本改写模态框（非微信平台使用） */}
+      {showAiRewriteModal && platform !== 'wechat_official' && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-3xl max-h-[85vh] overflow-y-auto m-4">
+            <AiMultiRewritePanel
+              originalText={aiRewriteSelectedText || content}
+              contextBefore={''}
+              contextAfter={''}
+              articleTitle={title}
+              onApplyRevision={(revisedText: string) => {
+                if (aiRewriteSelectedText) {
+                  // 替换选中片段
+                  setContent(prev => prev.replace(aiRewriteSelectedText, revisedText));
+                } else {
+                  // 替换全文
+                  setContent(revisedText);
+                }
+                setShowAiRewriteModal(false);
+                setAiRewriteSelectedText('');
+              }}
+              onClose={() => {
+                setShowAiRewriteModal(false);
+                setAiRewriteSelectedText('');
+              }}
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 }
