@@ -1900,3 +1900,31 @@
      - Coze API 本质上是 SSE 接口，必须使用流式模式才能正确解析响应
      - 写作 Agent（insurance-d/insurance-xiaohongshu/deai-optimizer）与 SDK 路径（Agent B/T）行为统一
      - 业务错误（余额不足、模型不存在）不应重试，只有技术性错误（超时、网络、5xx、429）才重试
+88. **AI评审循环机制 + 标题污染修复**:
+   - **问题1（标题污染）**: 用户确认节点（order_index=2）的标题从"确认文章内容"变成了"《境外旅行险避坑指南》- 微信公众号"
+     - **根因**: `syncArticleTitleToGroupV2` 在写作任务完成后，将带平台后缀的标题同步到同组所有子任务，包括 `user_preview_edit` 等非写作节点
+     - **修复**: 删除 `markTaskCompleted` 中对 `syncArticleTitleToGroupV2` 的调用，不再自动同步标题到同组子任务；`extractArticleTitle` 不再给标题添加 `《》- 平台名称` 前缀
+   - **问题2（AI评审循环）**: AI评审文章后，用户确认环节应支持反复循环，直至用户完全确认版本
+     - **根因**: `executeAiReviewTask` 执行完后直接将状态设为 `completed`，没有停下来等用户确认
+     - **修复**: AI评审完成后将状态设为 `waiting_user`，用户可选择"确认通过"或"重新评审"
+     - 新增用户决策 API 处理：`ai_review_confirm`（确认通过→completed）和 `ai_review_retry`（重新评审→pending+注入重审意见）
+     - 重新评审时从 `metadata.aiReviewRetryInstruction` 读取用户意见，注入到 AI 评审提示词
+     - 新增 `AiReviewConfirmSection` 前端组件：展示AI评审建议、修改后文章预览、确认/重审按钮、重审意见输入
+   - **问题3（AI评审提示词固定）**: 使用用户指定的评审提示词
+     - **修复**: `buildAiReviewPrompt` 替换为用户指定的固定提示词："请评审下文章质量如何？有没有更好的表达上的优化建议？距离公众号爆款，还有什么可以调整。在不影响文章框架与大意的条件下给下你做为资深公众号作者的建议。"
+   - **修改文件**:
+     - `src/lib/services/subtask-execution-engine.ts`:
+       - `markTaskCompleted`: 删除 `syncArticleTitleToGroupV2` 调用
+       - `extractArticleTitle`: 不再添加 `《》- 平台名称` 前缀
+       - `executeAiReviewTask`: 完成后设为 `waiting_user` 而非 `completed`；支持 `metadata.aiReviewRetryInstruction` 和 `metadata.aiReviewRound`
+       - `buildAiReviewPrompt`: 替换为用户指定的固定评审提示词；支持 `retryInstruction` 参数
+     - `src/app/api/agents/user-decision/route.ts`:
+       - 新增 `ai_review_confirm` 决策类型：确认通过，将修改后文章内容写入 `result_text`
+       - 新增 `ai_review_retry` 决策类型：重新评审，保存重审意见到 `metadata.aiReviewRetryInstruction`，状态改回 `pending`
+     - `src/components/agent-task-list-normal.tsx`:
+       - 新增 `isAiReviewTask` 判断函数
+       - 新增 `AiReviewConfirmSection` 组件（AI评审结果展示+确认/重审按钮+重审意见输入）
+       - 新增 `submitAiReviewDecision` 函数
+       - `ai_review` 任务 `waiting_user` 状态下渲染 `AiReviewConfirmSection`
+       - `ai_review` 任务 `completed` 状态下显示"已确认评审结果"
+       - `Task` 接口新增 `resultData` 字段

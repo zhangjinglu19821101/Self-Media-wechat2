@@ -12,7 +12,7 @@ import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Textarea } from '@/components/ui/textarea';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { CheckCircle2, Clock, AlertTriangle, ChevronRight, ChevronDown, ChevronUp, Calendar, ListTodo, UserCheck, MessageSquare, Terminal, Send, Loader2, RefreshCw, Filter, XCircle, Users, Eye, Rocket, Folder, FileText, PenTool, ShieldCheck, Cpu, Sparkles, ChevronDownIcon, Bot, BookOpen, Lock, Layers, AlertCircle, PenLine, MessageSquareText } from 'lucide-react';
+import { CheckCircle2, CheckCircle, Clock, AlertTriangle, ChevronRight, ChevronDown, ChevronUp, Calendar, ListTodo, UserCheck, MessageSquare, Terminal, Send, Loader2, RefreshCw, Filter, XCircle, Users, Eye, Rocket, Folder, FileText, PenTool, ShieldCheck, Cpu, Sparkles, ChevronDownIcon, Bot, BookOpen, Lock, Layers, AlertCircle, PenLine, MessageSquareText } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toast } from 'sonner';
 import Link from 'next/link';
@@ -43,6 +43,7 @@ interface Task {
   progress: number;
   executionResult?: string;
   statusProof?: string;
+  resultData?: any;
   articleMetadata?: any;
   userOpinion?: string;
   originalInstruction?: string;  // 🔥 【Step4 新增】用户原始指令
@@ -403,12 +404,19 @@ type StatusFilter = 'all' | 'pending' | 'in_progress' | 'completed' | 'failed' |
  * 导致用户点击后跳转到错误的发布页面（内容是确认信息而非完整文章）。
  */
 function isPreviewEditTask(task: Task): boolean {
-  // 🔴 调试日志
   const result = task.executor === 'user_preview_edit' || 
     task.taskTitle?.includes('预览修改') || 
     task.taskTitle?.includes('预览终稿');
-  console.log(`[isPreviewEditTask] taskId=${task.id}, executor=${task.executor}, taskTitle=${task.taskTitle}, result=${result}`);
   return result;
+}
+
+/**
+ * 判断任务是否为 AI 评审节点
+ */
+function isAiReviewTask(task: Task): boolean {
+  return task.executor === 'ai_review' || 
+    task.taskTitle?.includes('AI评审') || 
+    task.taskTitle?.includes('AI 评审');
 }
 
 /**
@@ -499,6 +507,91 @@ function PreviewEditSection({
         articleTitle={articleTitle}
         onComplete={onComplete}
       />
+    </div>
+  );
+}
+
+/**
+ * AI 评审确认组件
+ * 支持用户确认通过或要求重新评审（循环机制）
+ */
+function AiReviewConfirmSection({
+  taskId,
+  commandResultId,
+  reviewContent,
+  reviewRound,
+  onConfirm,
+}: {
+  taskId: string;
+  commandResultId: string;
+  reviewContent: string;
+  reviewRound: number;
+  onConfirm: (action: 'confirm' | 'retry', retryInstruction?: string) => void;
+}) {
+  const [retryInstruction, setRetryInstruction] = useState('');
+  const [showRetryInput, setShowRetryInput] = useState(false);
+
+  return (
+    <div className="space-y-4">
+      <h4 className="font-semibold mb-4 flex items-center gap-2 text-amber-900">
+        <MessageSquare className="w-5 h-5" />
+        AI 评审建议
+        {reviewRound > 1 && (
+          <span className="text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full">
+            第 {reviewRound} 轮评审
+          </span>
+        )}
+      </h4>
+
+      {/* 评审结果展示 */}
+      <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 max-h-[400px] overflow-y-auto">
+        <div className="text-sm text-amber-900 whitespace-pre-wrap leading-relaxed">
+          {reviewContent || 'AI评审结果为空'}
+        </div>
+      </div>
+
+      {/* 操作按钮区域 */}
+      <div className="flex flex-col gap-3">
+        <div className="flex gap-3">
+          <Button
+            onClick={() => onConfirm('confirm')}
+            className="flex-1 bg-green-600 hover:bg-green-700 text-white"
+          >
+            <CheckCircle className="w-4 h-4 mr-2" />
+            确认通过，继续执行
+          </Button>
+          <Button
+            variant="outline"
+            onClick={() => setShowRetryInput(!showRetryInput)}
+            className="flex-1 border-amber-300 text-amber-700 hover:bg-amber-50"
+          >
+            <RefreshCw className="w-4 h-4 mr-2" />
+            重新评审
+          </Button>
+        </div>
+
+        {/* 重新评审输入区域 */}
+        {showRetryInput && (
+          <div className="space-y-3 p-4 bg-amber-50 border border-amber-200 rounded-lg">
+            <p className="text-sm text-amber-800 font-medium">
+              请输入您的修改意见（可选），AI 将根据意见重新评审文章：
+            </p>
+            <Textarea
+              value={retryInstruction}
+              onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setRetryInstruction(e.target.value)}
+              placeholder="例如：建议增加更多实际案例、语气可以更亲切一些、结尾需要更强的号召力..."
+              className="min-h-[80px] bg-white"
+            />
+            <Button
+              onClick={() => onConfirm('retry', retryInstruction)}
+              className="w-full bg-amber-600 hover:bg-amber-700 text-white"
+            >
+              <RefreshCw className="w-4 h-4 mr-2" />
+              提交重新评审
+            </Button>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -1420,6 +1513,61 @@ export function AgentTaskListNormal({ agentId, showPanel, onTogglePanel, refresh
     }
   };
 
+  /**
+   * 提交 AI 评审决策
+   * - confirm: 用户确认通过，任务完成
+   * - retry: 用户要求重新评审，任务重新执行
+   */
+  const submitAiReviewDecision = async (
+    taskId: string,
+    commandResultId: string,
+    action: 'confirm' | 'retry',
+    retryInstruction?: string
+  ) => {
+    setSubmittingDecision(true);
+    try {
+      if (!commandResultId) {
+        toast.error('缺少任务关联信息');
+        return;
+      }
+
+      console.log('[AiReview] 提交AI评审决策:', { taskId, commandResultId, action, retryInstruction });
+
+      const response = await fetch('/api/agents/user-decision', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          subTaskId: taskId,
+          commandResultId: commandResultId,
+          userDecision: action === 'confirm'
+            ? '用户确认AI评审结果，继续执行'
+            : `用户要求重新评审${retryInstruction ? '：' + retryInstruction : ''}`,
+          decisionType: action === 'confirm' ? 'ai_review_confirm' : 'ai_review_retry',
+          forcedExecutor: action === 'confirm' ? 'ai_review_confirm' : 'ai_review_retry',
+          aiReviewAction: action,
+          retryInstruction: retryInstruction || '',
+        }),
+      });
+
+      const data = await response.json();
+
+      if (data.success) {
+        toast.success(action === 'confirm' ? '已确认评审结果，继续执行' : '已提交重新评审请求');
+        setShowTaskDetail(false);
+        setSelectedTask(null);
+        setTaskDetail(null);
+        loadTasks();
+      } else {
+        toast.error('提交失败: ' + (data.error || '未知错误'));
+      }
+    } catch (error) {
+      console.error('[AiReview] 提交AI评审决策失败:', error);
+      toast.error('提交失败，请重试');
+    } finally {
+      setSubmittingDecision(false);
+    }
+  };
+
   // 🔥 优化：使用页面可见性 API 替代定时轮询（业界标准做法）
   useEffect(() => {
     loadTasks();
@@ -2108,7 +2256,20 @@ export function AgentTaskListNormal({ agentId, showPanel, onTogglePanel, refresh
                         <div className="border-t border-gray-200 pt-4 mt-4">
                           {/* 🔴 P0修复：isPreviewEditTask 必须在写作 Agent 检查之前，
                               否则旧数据（executor=写作Agent + 标题含"预览修改"）会匹配到写作Agent的按钮分支 */}
-                          {isPreviewEditTask(displayTask) ? (
+                          {isAiReviewTask(displayTask) ? (
+                            /* AI评审节点：已确认评审结果 */
+                            <div className="space-y-3">
+                              <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-4 text-center">
+                                <CheckCircle2 className="w-8 h-8 mx-auto text-emerald-600 mb-2" />
+                                <p className="text-sm text-emerald-800 font-medium">
+                                  已确认AI评审结果
+                                </p>
+                                <p className="text-xs text-emerald-600 mt-1">
+                                  文章已通过AI评审确认，继续执行后续流程
+                                </p>
+                              </div>
+                            </div>
+                          ) : isPreviewEditTask(displayTask) ? (
                             /* 预览修改节点：已确认状态 + 预览按钮 */
                             <div className="space-y-3">
                               <div className="bg-purple-50 border border-purple-200 rounded-lg p-4 text-center">
@@ -2429,8 +2590,7 @@ export function AgentTaskListNormal({ agentId, showPanel, onTogglePanel, refresh
                       {(() => {
                         const isWaitingOrFailed = displayTask.status === 'waiting_user' || displayTask.status === 'failed';
                         const isPreview = isPreviewEditTask(displayTask);
-                        console.log(`[用户处理输入框] displayTask.status=${displayTask.status}, isWaitingOrFailed=${isWaitingOrFailed}, isPreview=${isPreview}`);
-                        console.log(`[用户处理输入框] displayTask=`, JSON.stringify({ id: displayTask.id, status: displayTask.status, executor: displayTask.executor, taskTitle: displayTask.taskTitle }));
+                        const isAiReview = isAiReviewTask(displayTask);
                         return isWaitingOrFailed && (
                           <div className="border-t border-gray-200 pt-6 mt-6">
                             {/* 🔴 虚拟执行器：预览修改节点使用专用编辑器 */}
@@ -2442,12 +2602,54 @@ export function AgentTaskListNormal({ agentId, showPanel, onTogglePanel, refresh
                                 commandResultId={displayTask.commandResultId}
                                 articleTitle={displayTask.metadata?.articleTitle || displayTask.taskTitle?.replace(/^《|》.*$/g, '')}
                                 onComplete={async (result) => {
-                                  // 🔴 P0-1 修复：显式传入 commandResultId
                                   await submitPreviewEditDecision(
                                     displayTask.id, 
                                     displayTask.commandResultId, 
                                     result
                                   );
+                                }}
+                              />
+                            ) : isAiReview ? (
+                              <AiReviewConfirmSection
+                                taskId={displayTask.id}
+                                commandResultId={displayTask.commandResultId}
+                                reviewContent={(() => {
+                                  // 从 resultData 或 stepHistory 提取评审内容
+                                  const rd = displayTask.resultData as Record<string, any> | undefined;
+                                  if (rd?.aiReviewResult) return rd.aiReviewResult;
+                                  if (rd?.executorOutput?.structuredResult?.resultContent) {
+                                    const rc = rd.executorOutput.structuredResult.resultContent;
+                                    return typeof rc === 'string' ? rc : JSON.stringify(rc, null, 2);
+                                  }
+                                  // 从 stepHistory 中提取最近一条 AI 评审的输出
+                                  const aiReviewHistory = taskDetail?.stepHistory
+                                    ?.filter(h => {
+                                      const user = h.interactUser || '';
+                                      return user.includes('ai_review') || user.includes('AI评审');
+                                    });
+                                  const latestReview = aiReviewHistory?.[aiReviewHistory.length - 1];
+                                  if (latestReview) {
+                                    let content = latestReview.interactContent;
+                                    if (typeof content === 'string') {
+                                      try { content = JSON.parse(content); } catch {}
+                                    }
+                                    if (typeof content === 'object' && content !== null) {
+                                      return content?.responseContent?.briefResponse
+                                        || content?.responseContent?.result
+                                        || content?.briefResponse
+                                        || content?.result
+                                        || JSON.stringify(content, null, 2);
+                                    }
+                                    return String(content || '');
+                                  }
+                                  return 'AI评审结果加载中...';
+                                })()}
+                                reviewRound={(() => {
+                                  const rd = displayTask.resultData as Record<string, any> | undefined;
+                                  return rd?.aiReviewRound || 1;
+                                })()}
+                                onConfirm={(action, retryInstruction) => {
+                                  submitAiReviewDecision(displayTask.id, displayTask.commandResultId, action, retryInstruction);
                                 }}
                               />
                             ) : (

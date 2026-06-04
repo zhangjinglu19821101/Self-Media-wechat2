@@ -331,6 +331,9 @@ export async function POST(request: NextRequest) {
       // Phase 3: 大纲确认相关字段
       confirmedOutline,   // 用户确认后的大纲文本（可能被修改过）
       outlineFeedback,    // 用户的修改意见
+      // AI评审相关字段
+      aiReviewAction,         // confirm | retry
+      retryInstruction,       // 用户重新评审的意见
     } = body;
 
     console.log('[User Decision] ========== 收到用户决策 ==========');
@@ -984,6 +987,151 @@ export async function POST(request: NextRequest) {
           finalContentLength: finalContent.length,
         },
       });
+    }
+
+    // 🔴🔴🔴 AI评审确认/循环决策处理
+    if (decisionType === 'ai_review_confirm' || decisionType === 'ai_review_retry') {
+      console.log('[User Decision] 📝 AI评审决策:', decisionType);
+
+      const taskMetadata = (subTask.metadata as any) || {};
+
+      if (decisionType === 'ai_review_confirm') {
+        // 用户确认AI评审结果 → 标记任务完成
+        console.log('[User Decision] 📝 用户确认AI评审结果，标记任务完成');
+
+        // 记录用户交互到 step_history
+        const interactionHistoryForAiReview = await db
+          .select()
+          .from(agentSubTasksStepHistory)
+          .where(
+            and(
+              eq(agentSubTasksStepHistory.commandResultId, subTask.commandResultId),
+              eq(agentSubTasksStepHistory.stepNo, subTask.orderIndex),
+              ne(agentSubTasksStepHistory.interactUser, 'auto')
+            )
+          )
+          .orderBy(agentSubTasksStepHistory.interactTime);
+
+        const nextInteractNumForAiReview = interactionHistoryForAiReview.length > 0
+          ? Math.max(...interactionHistoryForAiReview.map(h => h.interactNum || 1)) + 1
+          : 1;
+
+        await db.insert(agentSubTasksStepHistory).values({
+          commandResultId: subTask.commandResultId,
+          stepNo: subTask.orderIndex,
+          interactType: 'response',
+          interactContent: {
+            type: 'user_decision',
+            decisionType: 'ai_review_confirm',
+            userDecision: userDecision || '用户确认AI评审结果',
+            timestamp: new Date().toISOString(),
+          },
+          interactUser: 'human',
+          interactTime: new Date(),
+          interactNum: nextInteractNumForAiReview,
+        });
+
+        // 标记任务完成
+        const { SubtaskExecutionEngine } = await import('@/lib/services/subtask-execution-engine');
+        const engine = new SubtaskExecutionEngine();
+
+        await engine.markTaskCompleted(subTask, {
+          isNeedMcp: false,
+          isTaskDown: true,
+          resultData: {
+            ...(typeof subTask.resultData === 'object' && subTask.resultData ? subTask.resultData as Record<string, unknown> : {}),
+            isCompleted: true,
+            aiReviewConfirmed: true,
+            confirmedAt: new Date().toISOString(),
+            userConfirmation: userDecision || '用户确认AI评审结果',
+          }
+        });
+
+        console.log('[User Decision] 📝 ✅ AI评审已确认，任务标记为完成');
+
+        return NextResponse.json({
+          success: true,
+          message: 'AI评审结果已确认，任务已完成',
+        });
+      }
+
+      if (decisionType === 'ai_review_retry') {
+        // 用户要求重新评审 → 将任务重置为 pending，触发重新执行
+        console.log('[User Decision] 📝 用户要求重新评审，重置任务为pending');
+
+        const retryInstruction = userDecision || '';
+        const currentMetadata = (subTask.metadata as any) || {};
+
+        // 记录用户交互到 step_history
+        const interactionHistoryForRetry = await db
+          .select()
+          .from(agentSubTasksStepHistory)
+          .where(
+            and(
+              eq(agentSubTasksStepHistory.commandResultId, subTask.commandResultId),
+              eq(agentSubTasksStepHistory.stepNo, subTask.orderIndex),
+              ne(agentSubTasksStepHistory.interactUser, 'auto')
+            )
+          )
+          .orderBy(agentSubTasksStepHistory.interactTime);
+
+        const nextInteractNumForRetry = interactionHistoryForRetry.length > 0
+          ? Math.max(...interactionHistoryForRetry.map(h => h.interactNum || 1)) + 1
+          : 1;
+
+        await db.insert(agentSubTasksStepHistory).values({
+          commandResultId: subTask.commandResultId,
+          stepNo: subTask.orderIndex,
+          interactType: 'response',
+          interactContent: {
+            type: 'user_decision',
+            decisionType: 'ai_review_retry',
+            userDecision: retryInstruction,
+            retryCount: (currentMetadata.aiReviewRetryCount || 0) + 1,
+            timestamp: new Date().toISOString(),
+          },
+          interactUser: 'human',
+          interactTime: new Date(),
+          interactNum: nextInteractNumForRetry,
+        });
+
+        // 重置任务为 pending，重新执行
+        await db
+          .update(agentSubTasks)
+          .set({
+            status: 'pending',
+            statusProof: null,
+            startedAt: null,
+            resultText: null,
+            metadata: {
+              ...currentMetadata,
+              aiReviewRetryCount: (currentMetadata.aiReviewRetryCount || 0) + 1,
+              aiReviewRetryInstruction: retryInstruction || '',
+              aiReviewRetryAt: new Date().toISOString(),
+            } as any,
+            updatedAt: new Date(),
+          })
+          .where(eq(agentSubTasks.id, subTaskId));
+
+        // 异步触发引擎执行
+        try {
+          const { SubtaskExecutionEngine } = await import('@/lib/services/subtask-execution-engine');
+          const engine = new SubtaskExecutionEngine();
+          engine.execute().catch((e: Error) => console.error('[User Decision] 引擎执行失败:', e.message));
+        } catch (e) {
+          console.error('[User Decision] 引擎实例化失败:', e);
+        }
+
+        console.log('[User Decision] 📝 ✅ AI评审任务已重置为pending，将重新执行');
+
+        return NextResponse.json({
+          success: true,
+          message: 'AI评审任务已重新触发',
+          data: {
+            retryCount: (currentMetadata.aiReviewRetryCount || 0) + 1,
+          },
+        });
+      }
     }
 
     // 使用子任务中的 commandResultId

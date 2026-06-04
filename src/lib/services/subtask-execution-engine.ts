@@ -1956,9 +1956,23 @@ export class SubtaskExecutionEngine {
       )
       .orderBy(desc(agentSubTasks.orderIndex));
 
-    // 查找最近的文章内容来源（写作Agent或用户预览修改节点）
     let articleContent = '';
     let articleTitle = '';
+
+    // 🔴🔴🔴 【修复】支持重新评审循环
+    // 读取 metadata 中的重审信息（用户确认时提交的修改意见）
+    const taskMetadata = task.metadata as Record<string, unknown> | null;
+    const retryInstruction = (taskMetadata?.aiReviewRetryInstruction as string) || '';
+    const retryCount = (taskMetadata?.aiReviewRetryCount as number) || 0;
+
+    if (retryCount > 0) {
+      console.log('[SubtaskEngine] 🔍 AI评审重新评审', {
+        retryCount,
+        hasInstruction: !!retryInstruction,
+      });
+    }
+
+    // 查找最近的文章内容来源（写作Agent或用户预览修改节点）
     for (const t of previousTasks) {
       if (t.status !== 'completed') continue;
       
@@ -2005,16 +2019,22 @@ export class SubtaskExecutionEngine {
     let reviewPassed = false;
     let reviewSuggestions = '';
     try {
-      const prompt = this.buildAiReviewPrompt(articleContent, articleTitle);
+      // 🔴🔴🔴 【修复】使用固定的评审提示词 + 用户重审意见
+      const prompt = this.buildAiReviewPrompt(articleContent, articleTitle, retryInstruction);
       
       // 使用 callLLM 调用 outline-writer 进行评审
       const { callLLM } = await import('@/lib/agent-llm');
-      const reviewSystemPrompt = `你是一位专业的文章评审专家。请对以下文章进行全面评审，指出优缺点，并给出具体的修改建议。`;
+      const reviewSystemPrompt = retryInstruction
+        ? `你是一位资深公众号作者。用户对上一次的评审结果不满意，请重新评审。${retryInstruction}`
+        : `你是一位资深公众号作者。请对文章进行专业评审，给出具体可操作的优化建议。`;
+      const userPrompt = retryInstruction
+        ? `请重新对以下文章进行评审。用户特别要求关注：${retryInstruction}\n\n${prompt}`
+        : prompt;
       const llmResponse = await callLLM(
         'outline-writer',
         articleContent,
         reviewSystemPrompt,
-        `请对以下文章进行全面评审，从内容质量、逻辑结构、表达方式、说服力等维度给出详细的评审意见和修改建议。`,
+        userPrompt,
         { timeout: 90000, workspaceId: task.workspaceId || undefined } // 90秒超时，评审任务可能较长
       );
 
@@ -2060,54 +2080,71 @@ export class SubtaskExecutionEngine {
       }
     }
 
-    // 5. 存储评审结果
-    const resultData = {
-      isCompleted: true,
+    // 5. 存储评审结果，设为 waiting_user 等待用户确认
+    // 🔴🔴🔴 【修复】AI评审完成后不直接completed，而是waiting_user
+    // 用户可以选择"确认通过"或"重新评审"，形成循环直到用户满意
+    const resultData: Record<string, unknown> = {
+      isCompleted: false, // 用户确认后才算完成
       reviewPassed,
       reviewResult,
       reviewSuggestions,
       revisedContent, // 修改后的文章（如果有）
       originalContentLength: articleContent.length,
+      // 存储原文和标题，供用户确认后传递给下游
+      articleContent,
+      articleTitle,
     };
 
-    // result_text 存储评审结论，供下游任务获取
+    // result_text 存储评审结论，供前端展示
     const resultText = reviewPassed
-      ? `AI评审通过。文章整体质量良好，可以继续后续流程。`
-      : `AI评审发现需改进：${reviewSuggestions.substring(0, 500)}${revisedContent ? `\n\n已自动修改文章（修改后${revisedContent.length}字）` : ''}`;
+      ? `AI评审通过。${reviewResult.substring(0, 200)}`
+      : `AI评审发现可改进之处：${reviewSuggestions.substring(0, 500)}${revisedContent ? `\n\n已根据建议自动修改文章（修改后${revisedContent.length}字）` : ''}`;
 
     await db.update(agentSubTasks)
       .set({
-        status: 'completed',
+        status: 'waiting_user',
         resultText,
         resultData,
         updatedAt: new Date(),
       })
       .where(eq(agentSubTasks.id, task.id));
 
-    console.log('[SubtaskEngine] 🔍 AI评审节点已完成:', {
+    console.log('[SubtaskEngine] 🔍 AI评审节点等待用户确认:', {
       taskId: task.id,
       reviewPassed,
       hasRevisedContent: !!revisedContent,
+      status: 'waiting_user',
     });
   }
 
   /**
    * 构建AI评审提示词
+   * 🔴🔴🔴 【修复】使用固定的评审提示词，用户指定：
+   * "请评审下文章质量如何？有没有更好的表达上的优化建议？
+   *  距离公众号爆款，还有什么可以调整。
+   *  在不影响文章框架与大意的条件下给下你做为资深公众号作者的建议。"
+   * @param articleContent 文章内容
+   * @param articleTitle 文章标题
+   * @param retryInstruction 用户重新评审时的额外要求（可选）
    */
-  private buildAiReviewPrompt(articleContent: string, articleTitle: string): string {
+  private buildAiReviewPrompt(articleContent: string, articleTitle: string, retryInstruction?: string): string {
     // 截取前3000字进行评审，避免超长
     const contentForReview = articleContent.length > 3000
       ? articleContent.substring(0, 3000) + '\n...(内容过长，仅评审前3000字)'
       : articleContent;
 
-    return `你是一位专业的内容评审专家。请从以下维度对文章进行评审：
+    const retrySection = retryInstruction
+      ? `\n\n🔴 用户的额外评审要求（请重点关注）：\n${retryInstruction}`
+      : '';
 
-1. **逻辑连贯性**：段落之间逻辑是否顺畅，论点是否有充分支撑
-2. **表达自然度**：是否像真人写作，有没有AI生成的痕迹（如套话、模板化表达）
-3. **内容充实度**：案例、数据是否具体可信，论证是否充分
-4. **读者体验**：开头是否吸引人，结尾是否自然，整体阅读体验如何
-5. **专业准确性**：保险相关内容是否专业准确
+    return `你是一位资深公众号作者。请对以下文章进行专业评审。
 
+评审要求：
+1. 请评审下文章质量如何？
+2. 有没有更好的表达上的优化建议？
+3. 距离公众号爆款，还有什么可以调整。
+4. 在不影响文章框架与大意的条件下给出你做为资深公众号作者的建议。
+${retrySection}
 文章标题：${articleTitle || '(无标题)'}
 
 文章内容：
@@ -11156,11 +11193,11 @@ ${agentBDecision ?
             newTitle: extractedTitle,
           });
         }
+        // 🔴🔴🔴 【修复】只更新写作Agent自身任务的标题，不同步到同组其他节点
+        // 原因：syncArticleTitleToGroupV2 会将《标题》- 平台名称 前缀同步到
+        // user_preview_edit / ai_review / T 等非写作节点，导致标题从"用户预览修改图文"
+        // 被覆盖为"《境外旅行险避坑指南》- 微信公众号 | 用户预览修改图文"
         updateData.taskTitle = extractedTitle;
-        // 🔴🔴🔴 【新增】同步《文章标题》+平台名称到同组其他子任务
-        this.syncArticleTitleToGroupV2(task, extractedTitle).catch(err => {
-          console.error('[SubtaskEngine] ❌ 同步标题到同组失败:', err instanceof Error ? err.message : String(err));
-        });
       }
     } catch (titleErr) {
       console.error('[SubtaskEngine] ❌ 提取文章标题失败:', {
@@ -13767,8 +13804,11 @@ ${resultData.executionSummary}
   private extractArticleTitle(result: any, task: typeof agentSubTasks.$inferSelect): string | null {
     if (!result || typeof result !== 'object') return null;
 
-    // 🔴🔴🔴 【修复】支持所有写作 Agent 和预览修改节点，不再硬编码
-    if (!isWritingAgent(task.fromParentsExecutor) && task.fromParentsExecutor !== USER_PREVIEW_EDIT_EXECUTOR) return null;
+    // 🔴🔴🔴 【修复】仅允许写作 Agent 更新标题
+    // user_preview_edit / ai_review / T 等虚拟执行器不应修改标题
+    // 原因：这些节点的标题是功能性描述（如"确认文章内容"、"AI评审"），
+    // 加上《标题》- 平台名称 前缀会污染标题，如"《境外旅行险避坑指南》- 微信公众号 | 确认文章内容"
+    if (!isWritingAgent(task.fromParentsExecutor)) return null;
 
     let articleTitle = result.articleTitle;
     // 兼容 executorOutput 内的结构
