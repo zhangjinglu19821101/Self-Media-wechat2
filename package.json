@@ -118,6 +118,7 @@
     "@types/jsonwebtoken": "^9.0.10",
     "@types/pg": "^8.16.0",
     "@types/ws": "^8.18.1",
+    "bcrypt": "^6.0.0",
     "eslint": "^9",
     "only-allow": "^1.2.2",
     "shadcn": "latest",
