@@ -56,11 +56,19 @@ export function sanitizeWechatHtml(html: string): string {
   // 匹配：<p>空内容</p>、<p>&nbsp;</p>、<p>  </p>、<p><br></p> 等
   processed = processed.replace(/<p[^>]*>([\s]*(&nbsp;)*[\s]*(<br\s*\/?>)*[\s]*(&nbsp;)*[\s]*)<\/p>/gi, '');
   
+  // 🔥 移除带空span的段落（分割线被删除内容后变成空段落）
+  // 匹配：<p><span style="..."></span></p> 或 <p><span>空白</span></p>
+  processed = processed.replace(/<p[^>]*><span[^>]*>([\s]*(&nbsp;)*[\s]*)<\/span>\s*<\/p>/gi, '');
+  
   // 🔥 移除连续的空段落（多次清理确保彻底）
   processed = processed.replace(/<p[^>]*>\s*<\/p>/gi, '');
   
   // 🔥 移除多余的连续换行和空白（编辑过程中可能产生）
   processed = processed.replace(/\n\s*\n\s*\n/g, '\n\n');
+  
+  // 🔥 移除分割线段落中只有空白的情况（60px宽的分割线如果内容为空则移除整个段落）
+  // 匹配分割线模板特征：text-align:center + 内含空span或极小内容
+  processed = processed.replace(/<p[^>]*text-align:center[^>]*>\s*(<span[^>]*(width:\s*60px|height:\s*2px|background-color:#eee)[^>]*>\s*<\/span>)?\s*<\/p>/gi, '');
   
   // 如果内容为空，返回占位
   if (!processed.trim()) {
