@@ -375,13 +375,11 @@ function findMatchingCloseTag(
  *
  * @param parseResult 原始解析结果
  * @param editedBlocks 编辑后的段落块列表
- * @param deletedBlockIndices 已删除的块索引列表（可选）
  * @returns 重建后的 HTML
  */
 export function rebuildHtmlFromBlocks(
   parseResult: ParseResult, 
-  editedBlocks: HtmlBlock[], 
-  deletedBlockIndices?: Set<number>
+  editedBlocks: HtmlBlock[]
 ): string {
   const { originalHtml, prefix } = parseResult;
 
@@ -389,7 +387,7 @@ export function rebuildHtmlFromBlocks(
     return originalHtml;
   }
 
-  // 收集需要处理的块：替换文本修改的块 + 删除被删除的块
+  // 收集需要处理的块
   const replacements: Array<{ start: number; end: number; newHtml: string }> = [];
 
   for (const block of editedBlocks) {
@@ -399,16 +397,7 @@ export function rebuildHtmlFromBlocks(
     const originalBlock = parseResult.blocks.find(b => b.index === block.index);
     if (!originalBlock) continue;
 
-    // 检查是否被删除
-    if (deletedBlockIndices?.has(block.index)) {
-      // 删除块：替换为空字符串
-      const prefixLen = prefix.length;
-      replacements.push({
-        start: prefixLen + originalBlock.startPos,
-        end: prefixLen + originalBlock.endPos,
-        newHtml: '',
-      });
-    } else if (originalBlock.text !== block.text) {
+    if (originalBlock.text !== block.text) {
       // 文本修改：重建该块的 HTML
       const newInnerHtml = replaceTextInInnerHtml(
         getInnerHtml(originalBlock.rawHtml, originalBlock.openTag, originalBlock.closeTag),
