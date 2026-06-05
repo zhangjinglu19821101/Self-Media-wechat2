@@ -26,7 +26,6 @@ import {
 } from 'lucide-react';
 import {
   parseHtmlToBlocks,
-  rebuildHtmlFromBlocks,
   type HtmlBlock,
 } from '@/lib/html-block-parser';
 import { AiMultiRewritePanel } from '@/components/ai-multi-rewrite-panel';
@@ -423,10 +422,46 @@ export function WechatBlockEditor({ html, onChange, readOnly = false, articleTit
     }));
   }, [parseResult.blocks, editedTexts]);
 
-  // 处理文本变更
+  // 文本变更去抖 ref
+  const textChangeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingTextChangesRef = useRef<Record<number, string>>({});
+
+  // 处理文本变更：本地立即更新 + 去抖后回写父组件
   const handleTextChange = useCallback((index: number, newText: string) => {
-    setEditedTexts(prev => ({ ...prev, [index]: newText }));
-  }, []);
+    // 立即更新本地状态（保证输入流畅）
+    setEditedTexts(prev => {
+      const next = { ...prev, [index]: newText };
+      pendingTextChangesRef.current = next;
+      return next;
+    });
+
+    // 清除上一次定时器
+    if (textChangeTimerRef.current) {
+      clearTimeout(textChangeTimerRef.current);
+    }
+
+    // 500ms 去抖后回写父组件
+    textChangeTimerRef.current = setTimeout(() => {
+      const latestTexts = pendingTextChangesRef.current;
+      // 构建当前各块的 HTML（考虑编辑过的块）
+      const blockHtmlMap = parseResult.blocks.map(b => {
+        const edited = latestTexts[b.index];
+        if (edited !== undefined && b.type !== 'hr') {
+          if (!b.closeTag) return b.rawHtml;
+          return `${b.openTag}${edited.replace(/</g, '&lt;').replace(/>/g, '&gt;')}${b.closeTag}`;
+        }
+        return b.rawHtml;
+      });
+
+      const { prefix, suffix } = parseResult;
+      const newHtml = prefix + blockHtmlMap.join('') + suffix;
+
+      if (onChange && newHtml !== lastHtmlRef.current) {
+        lastHtmlRef.current = newHtml;
+        onChange(newHtml);
+      }
+    }, 500);
+  }, [parseResult, onChange]);
 
   // 处理删除块：使用精确位置移除
   const handleDeleteBlock = useCallback((index: number) => {
@@ -475,15 +510,14 @@ export function WechatBlockEditor({ html, onChange, readOnly = false, articleTit
     lastHtmlRef.current = html;
   }, [html]);
 
-  // 当编辑状态变化时，回写到父组件（仅当内容真正变化时）
+  // 组件卸载时清理去抖定时器
   useEffect(() => {
-    const newHtml = rebuildHtmlFromBlocks(parseResult, currentBlocks);
-    // 只有当 HTML 真正变化时才触发 onChange，避免循环
-    if (newHtml !== lastHtmlRef.current) {
-      lastHtmlRef.current = newHtml;
-      onChange(newHtml);
-    }
-  }, [currentBlocks, onChange, parseResult]);
+    return () => {
+      if (textChangeTimerRef.current) {
+        clearTimeout(textChangeTimerRef.current);
+      }
+    };
+  }, []);
 
   // 计算每个段落的前后上下文（仅传前后各1段，而非整篇文章，减少 Token 消耗）
   const blockContexts = useMemo(() => {
