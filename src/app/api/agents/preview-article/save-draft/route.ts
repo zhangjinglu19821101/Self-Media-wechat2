@@ -101,13 +101,39 @@ export async function POST(request: NextRequest) {
     };
 
     // 6. 只更新 resultData，不改变状态
-    await db
+    const updateResult = await db
       .update(agentSubTasks)
       .set({
         resultData: updatedResultData,
         updatedAt: new Date(),
       })
       .where(eq(agentSubTasks.id, taskId));
+
+    // 7. 验证保存是否成功 — 回读数据库确认 articleContent 已更新
+    const verifyTask = await db.query.agentSubTasks.findFirst({
+      where: and(
+        eq(agentSubTasks.id, taskId),
+        eq(agentSubTasks.workspaceId, workspaceId)
+      ),
+      columns: { resultData: true },
+    });
+    let verifyArticleContent = '';
+    if (verifyTask?.resultData) {
+      const verifyData = typeof verifyTask.resultData === 'string'
+        ? JSON.parse(verifyTask.resultData)
+        : verifyTask.resultData;
+      verifyArticleContent = verifyData?.articleContent || '';
+    }
+    const saveVerified = verifyArticleContent === content;
+
+    if (!saveVerified) {
+      console.error('[Save Draft] ❌ 保存验证失败！', {
+        taskId,
+        expectedLength: content?.length || 0,
+        actualLength: verifyArticleContent?.length || 0,
+        first20Chars: verifyArticleContent?.substring(0, 20),
+      });
+    }
 
     // 注意：不再每次保存都记录 step_history，只在用户确认提交时记录一次
     // step_history 的记录逻辑在 /api/agents/user-decision 的 preview_edit_article 决策类型中处理
@@ -116,6 +142,7 @@ export async function POST(request: NextRequest) {
       taskId,
       contentLength: content?.length || 0,
       platform: previewPlatform,
+      saveVerified,
     });
 
     return NextResponse.json({

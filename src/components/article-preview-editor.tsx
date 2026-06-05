@@ -138,7 +138,7 @@ export function ArticlePreviewEditor({
   const [isLoading, setIsLoading] = useState(!initialContent);
   const [activeTab, setActiveTab] = useState<'preview' | 'edit'>('preview');
   // 🔥🔥🔥 【草稿优先】草稿状态标记（用户编辑保存过）
-  const [isDraft, setIsDraft] = useState(false);
+
 
   // 🔥 素材替换状态
   const [selectedText, setSelectedText] = useState('');
@@ -204,25 +204,15 @@ export function ArticlePreviewEditor({
           const apiPlatform = data.data.platform as string;
           const apiPlatformRenderData = data.data.platformRenderData;
           
-          // 🔥🔥🔥 【简化】API 已确保 platformRenderData.htmlContent 与 articleContent 同步
-          // 草稿模式下 htmlContent 会被同步为用户编辑后的内容
-          // 非草稿模式下 htmlContent 是格式化的 HTML（比 articleContent 更完整）
-          let finalContent = data.data.articleContent || '';
-          if (apiPlatform === 'wechat_official' && 
-              apiPlatformRenderData && 
-              typeof apiPlatformRenderData === 'object' && 
-              'htmlContent' in apiPlatformRenderData) {
-            const htmlContent = (apiPlatformRenderData as { htmlContent: string }).htmlContent || '';
-            // htmlContent 比 articleContent 更长或相当时使用（含完整排版样式）
-            if (htmlContent && htmlContent.length >= (finalContent.length * 0.5)) {
-              finalContent = htmlContent;
-            }
-          }
+          // 🔥🔥🔥 【单一数据源原则】articleContent 是唯一真相来源
+          // API 层已保证：草稿模式下 articleContent = 用户编辑后的内容（htmlContent 已同步）
+              // 非草稿模式下 articleContent = LLM 生成的完整内容（可能来自 htmlContent）
+              // 前端不再做 content vs htmlContent 的选择，完全信任 API 返回的 articleContent
+          const finalContent = data.data.articleContent || '';
           
           setContent(finalContent);
           setTitle(data.data.articleTitle || '');
           setPlatformRenderData(apiPlatformRenderData || null);
-          setIsDraft(data.data.isDraft === true);
         } else if (!cancelled && !data.success) {
           toast.error('加载文章内容失败: ' + (data.error || '未知错误'));
         }

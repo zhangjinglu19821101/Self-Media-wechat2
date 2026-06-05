@@ -695,43 +695,55 @@ export async function POST(request: NextRequest) {
         ? modifiedTitle
         : articleTitle;
       
-      // 🔴 新增：构建更新后的 platformRenderData
-      // 原则：从哪个字段展示就保存回哪个字段
-      let updatedPlatformRenderData = originalPlatformRenderData;
-      
-      // 🔥🔥🔥 【关键修复】用户修改内容后需要重新进行 HTML 格式化
-      // 问题根因：用户修改的是纯文本，直接存入 htmlContent 会丢失 HTML 格式
-      // 解决方案：调用 formatDirectPublishArticle 重新生成 HTML
+      // 🔥🔥🔥 【关键修复】用户修改内容后的保存策略
+      // 核心原则：用户编辑后的内容是最终版本，不应该被 LLM 重新改写
+      let updatedPlatformRenderData: WechatPlatformRenderData | Record<string, unknown> | null = originalPlatformRenderData;
+      // 
+      // 历史根因：之前调用 formatDirectPublishArticle（LLM 重新格式化），
+      // LLM 会"补全"用户删除的段落，导致"清空保存后，还有"的 BUG
+      //
+      // 新策略：根据内容格式判断
+      // 1. 如果用户修改的内容已经是 HTML 格式（来自 WechatBlockEditor），
+      //    直接保存，不调用 LLM（避免内容被改写）
+      // 2. 如果用户修改的是纯文本（直接发文模式），才调用 LLM 格式化
       if (previewAction === 'save' && modifiedContent) {
+        const isHtmlContent = /<[a-z][\s\S]*>/i.test(finalContent);
+        
         if (previewPlatform === 'wechat_official') {
-          // 公众号：重新调用 LLM 格式化生成 HTML
-          console.log('[User Decision] 🔄 用户修改了内容，重新进行公众号 HTML 格式化...');
-          try {
-            const { formatDirectPublishArticle } = await import('@/lib/services/direct-publish-formatter-service');
-            const newPlatformRenderData = await formatDirectPublishArticle({
-              textContent: finalContent,
-              platform: 'wechat_official',
-              articleTitle: finalTitle || '用户提供的文章',
-              workspaceId: subTask.workspaceId,
-            });
-            // 类型断言：formatDirectPublishArticle 返回公众号渲染数据
-            const wechatRenderData = newPlatformRenderData as WechatPlatformRenderData | null;
-            // 类型断言：明确告诉 TypeScript 这是公众号渲染数据
-            updatedPlatformRenderData = {
-              ...(originalPlatformRenderData || {}),
-              htmlContent: wechatRenderData?.htmlContent || finalContent,
-            } as WechatPlatformRenderData;
-            console.log('[User Decision] ✅ 公众号 HTML 格式化完成:', {
-              htmlLength: (updatedPlatformRenderData as WechatPlatformRenderData).htmlContent?.length || 0,
-              isHtml: (updatedPlatformRenderData as WechatPlatformRenderData).htmlContent?.includes('<section') || (updatedPlatformRenderData as WechatPlatformRenderData).htmlContent?.includes('<p'),
-            });
-          } catch (formatError) {
-            console.error('[User Decision] ❌ HTML 格式化失败，降级为纯文本:', formatError);
-            // 降级：使用纯文本（至少保证内容正确，只是没有样式）
+          if (isHtmlContent) {
+            // 用户修改的内容已经是 HTML 格式（来自 WechatBlockEditor）
+            // 直接保存，不调用 LLM，避免内容被改写
+            console.log('[User Decision] ✅ 用户修改内容已是 HTML 格式，直接保存（不调用 LLM 重新格式化）');
             updatedPlatformRenderData = {
               ...(originalPlatformRenderData || {}),
               htmlContent: finalContent,
             } as WechatPlatformRenderData;
+          } else {
+            // 直接发文模式：用户提供的是纯文本，需要 LLM 格式化为公众号 HTML
+            console.log('[User Decision] 🔄 用户修改内容为纯文本，调用 LLM 进行公众号 HTML 格式化...');
+            try {
+              const { formatDirectPublishArticle } = await import('@/lib/services/direct-publish-formatter-service');
+              const newPlatformRenderData = await formatDirectPublishArticle({
+                textContent: finalContent,
+                platform: 'wechat_official',
+                articleTitle: finalTitle || '用户提供的文章',
+                workspaceId: subTask.workspaceId,
+              });
+              const wechatRenderData = newPlatformRenderData as WechatPlatformRenderData | null;
+              updatedPlatformRenderData = {
+                ...(originalPlatformRenderData || {}),
+                htmlContent: wechatRenderData?.htmlContent || finalContent,
+              } as WechatPlatformRenderData;
+              console.log('[User Decision] ✅ 公众号 HTML 格式化完成:', {
+                htmlLength: (updatedPlatformRenderData as WechatPlatformRenderData).htmlContent?.length || 0,
+              });
+            } catch (formatError) {
+              console.error('[User Decision] ❌ HTML 格式化失败，降级为直接保存:', formatError);
+              updatedPlatformRenderData = {
+                ...(originalPlatformRenderData || {}),
+                htmlContent: finalContent,
+              } as WechatPlatformRenderData;
+            }
           }
         } else if (previewPlatform === 'xiaohongshu') {
           // 小红书：尝试解析 JSON 更新 platformRenderData
