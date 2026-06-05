@@ -5,6 +5,7 @@
 
 'use client';
 
+import { apiGet, apiPost } from '@/lib/api/client';
 import { useState, useEffect, useMemo } from 'react';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -1235,8 +1236,11 @@ export function AgentTaskListNormal({ agentId, showPanel, onTogglePanel, refresh
     try {
       setLoading(true);
       // 始终加载所有任务，筛选在前端进行
-      const response = await fetch(`/api/agents/${agentId}/tasks`);
-      const data = await response.json();
+      const data = await apiGet<{
+        success: boolean;
+        data: { tasks: Task[]; stats: TaskStats };
+        error?: string;
+      }>(`/api/agents/${agentId}/tasks`);
 
       if (data.success) {
         setTasks(data.data.tasks);
@@ -1257,8 +1261,15 @@ export function AgentTaskListNormal({ agentId, showPanel, onTogglePanel, refresh
     try {
       setLoadingDetail(true);
       console.log(`🔍 开始加载任务详情，任务ID: ${taskId}`);
-      const response = await fetch(`/api/agents/tasks/${taskId}/detail`);
-      const data = await response.json();
+      const data = await apiGet<{
+        success: boolean;
+        data: {
+          task: Task;
+          stepHistory: StepHistory[];
+          mcpExecutions: McpExecution[];
+        };
+        error?: string;
+      }>(`/api/agents/tasks/${taskId}/detail`);
 
       if (data.success) {
         setTaskDetail(data.data);
@@ -1290,8 +1301,11 @@ export function AgentTaskListNormal({ agentId, showPanel, onTogglePanel, refresh
   const loadExecutorOptions = async (taskId: string) => {
     try {
       setLoadingExecutorOptions(true);
-      const response = await fetch(`/api/agents/user-decision?subTaskId=${taskId}`);
-      const data = await response.json();
+      const data = await apiGet<{
+        success: boolean;
+        data?: { executorOptions?: ExecutorOption[] };
+        error?: string;
+      }>(`/api/agents/user-decision?subTaskId=${taskId}`);
       
       if (data.success && data.data?.executorOptions) {
         setExecutorOptions(data.data.executorOptions);
@@ -1366,19 +1380,13 @@ export function AgentTaskListNormal({ agentId, showPanel, onTogglePanel, refresh
         userDecision: userDecision.substring(0, 50) + '...'
       });
 
-      const response = await fetch('/api/agents/user-decision', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          subTaskId: currentTask.id,
-          commandResultId: commandResultId,
-          userDecision: userDecision,
-          decisionType: currentTask.status === 'failed' ? 'retry_failed' : 'waiting_user',
-          forcedExecutor: selectedExecutor || undefined, // 🔥 新增：强制指定执行者
-        }),
+      const data = await apiPost('/api/agents/user-decision', {
+        subTaskId: currentTask.id,
+        commandResultId: commandResultId,
+        userDecision: userDecision,
+        decisionType: currentTask.status === 'failed' ? 'retry_failed' : 'waiting_user',
+        forcedExecutor: selectedExecutor || undefined, // 🔥 新增：强制指定执行者
       });
-
-      const data = await response.json();
       console.log('🔘 提交响应:', data);
 
       if (data.success) {
@@ -1420,16 +1428,10 @@ export function AgentTaskListNormal({ agentId, showPanel, onTogglePanel, refresh
 
     setManualUnblockSubmitting(true);
     try {
-      const response = await fetch(`/api/subtasks/${displayTask.id}/manual-unblock`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          articleContent: manualArticleContent.trim(),
-          articleTitle: manualArticleTitle.trim() || undefined,
-        }),
+      const data = await apiPost(`/api/subtasks/${displayTask.id}/manual-unblock`, {
+        articleContent: manualArticleContent.trim(),
+        articleTitle: manualArticleTitle.trim() || undefined,
       });
-
-      const data = await response.json();
 
       if (data.success) {
         toast.success('任务已解锁，开始执行');
@@ -1477,24 +1479,18 @@ export function AgentTaskListNormal({ agentId, showPanel, onTogglePanel, refresh
         contentLength: result.modifiedContent.length,
       });
 
-      const response = await fetch('/api/agents/user-decision', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          subTaskId: taskId,
-          commandResultId: commandResultId,
-          userDecision: result.wasModified
-            ? `用户修改了文章内容（${result.modifiedContent.length}字）`
-            : '用户确认使用原稿，无需修改',
-          decisionType: 'preview_edit_article',
-          forcedExecutor: 'preview_edit_article',
-          previewAction: result.action,
-          modifiedContent: result.modifiedContent,
-          modifiedTitle: result.modifiedTitle,
-        }),
+      const data = await apiPost('/api/agents/user-decision', {
+        subTaskId: taskId,
+        commandResultId: commandResultId,
+        userDecision: result.wasModified
+          ? `用户修改了文章内容（${result.modifiedContent.length}字）`
+          : '用户确认使用原稿，无需修改',
+        decisionType: 'preview_edit_article',
+        forcedExecutor: 'preview_edit_article',
+        previewAction: result.action,
+        modifiedContent: result.modifiedContent,
+        modifiedTitle: result.modifiedTitle,
       });
-
-      const data = await response.json();
 
       if (data.success) {
         toast.success(result.wasModified ? '已保存修改，继续执行' : '已确认使用原稿，继续执行');
@@ -1533,23 +1529,17 @@ export function AgentTaskListNormal({ agentId, showPanel, onTogglePanel, refresh
 
       console.log('[AiReview] 提交AI评审决策:', { taskId, commandResultId, action, retryInstruction });
 
-      const response = await fetch('/api/agents/user-decision', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          subTaskId: taskId,
-          commandResultId: commandResultId,
-          userDecision: action === 'confirm'
-            ? '用户确认AI评审结果，继续执行'
-            : `用户要求重新评审${retryInstruction ? '：' + retryInstruction : ''}`,
-          decisionType: action === 'confirm' ? 'ai_review_confirm' : 'ai_review_retry',
-          forcedExecutor: action === 'confirm' ? 'ai_review_confirm' : 'ai_review_retry',
-          aiReviewAction: action,
-          retryInstruction: retryInstruction || '',
-        }),
+      const data = await apiPost('/api/agents/user-decision', {
+        subTaskId: taskId,
+        commandResultId: commandResultId,
+        userDecision: action === 'confirm'
+          ? '用户确认AI评审结果，继续执行'
+          : `用户要求重新评审${retryInstruction ? '：' + retryInstruction : ''}`,
+        decisionType: action === 'confirm' ? 'ai_review_confirm' : 'ai_review_retry',
+        forcedExecutor: action === 'confirm' ? 'ai_review_confirm' : 'ai_review_retry',
+        aiReviewAction: action,
+        retryInstruction: retryInstruction || '',
       });
-
-      const data = await response.json();
 
       if (data.success) {
         toast.success(action === 'confirm' ? '已确认评审结果，继续执行' : '已提交重新评审请求');
