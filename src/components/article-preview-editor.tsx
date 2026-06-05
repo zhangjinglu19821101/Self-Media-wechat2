@@ -16,7 +16,7 @@
 
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -332,12 +332,27 @@ export function ArticlePreviewEditor({
   // 🔴 新增：保存草稿（只保存到后端，不改变状态）
   const [isSavingDraft, setIsSavingDraft] = useState(false);
 
+  // 🔴 自动保存：记录上次保存的内容，仅在有变更时触发
+  const [lastSavedContent, setLastSavedContent] = useState(content);
+  const [lastSavedTitle, setLastSavedTitle] = useState(title);
+  const [autoSaveStatus, setAutoSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+  const [lastAutoSaveTime, setLastAutoSaveTime] = useState<Date | null>(null);
+
   const handleSaveDraft = useCallback(async () => {
     setIsSavingDraft(true);
     try {
+      // 🔴 修复：携带 workspaceId 认证信息
+      const workspaceId = localStorage.getItem('current_workspace_id') || '';
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+      };
+      if (workspaceId) {
+        headers['x-workspace-id'] = workspaceId;
+      }
+
       const res = await fetch('/api/agents/preview-article/save-draft', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify({
           taskId,
           content,
@@ -350,6 +365,8 @@ export function ArticlePreviewEditor({
 
       if (data.success) {
         toast.success('草稿已保存');
+        setLastSavedContent(content);
+        setLastSavedTitle(title);
       } else {
         toast.error('保存失败: ' + (data.error || '未知错误'));
       }
@@ -360,6 +377,80 @@ export function ArticlePreviewEditor({
       setIsSavingDraft(false);
     }
   }, [taskId, content, title, platform]);
+
+  // 🔴 自动保存：使用 ref 追踪最新内容，避免闭包陈旧引用 + 避免依赖 content/title 导致定时器频繁重建
+  const contentRef = useRef(content);
+  const titleRef = useRef(title);
+  const lastSavedContentRef = useRef(lastSavedContent);
+  const lastSavedTitleRef = useRef(lastSavedTitle);
+
+  useEffect(() => {
+    contentRef.current = content;
+    titleRef.current = title;
+  }, [content, title]);
+
+  useEffect(() => {
+    lastSavedContentRef.current = lastSavedContent;
+    lastSavedTitleRef.current = lastSavedTitle;
+  }, [lastSavedContent, lastSavedTitle]);
+
+  // 🔴 自动保存：30秒定时器，仅编辑模式下且内容有变更时触发
+  useEffect(() => {
+    if (!isEditing) return;
+
+    const timer = setInterval(async () => {
+      const currentContent = contentRef.current;
+      const currentTitle = titleRef.current;
+      const savedContent = lastSavedContentRef.current;
+      const savedTitle = lastSavedTitleRef.current;
+
+      // 内容没有变化，跳过保存
+      if (currentContent === savedContent && currentTitle === savedTitle) return;
+
+      setAutoSaveStatus('saving');
+      try {
+        const workspaceId = localStorage.getItem('current_workspace_id') || '';
+        const autoSaveHeaders: Record<string, string> = {
+          'Content-Type': 'application/json',
+        };
+        if (workspaceId) {
+          autoSaveHeaders['x-workspace-id'] = workspaceId;
+        }
+
+        const res = await fetch('/api/agents/preview-article/save-draft', {
+          method: 'POST',
+          headers: autoSaveHeaders,
+          body: JSON.stringify({
+            taskId,
+            content: currentContent,
+            title: currentTitle,
+            platform,
+          }),
+        });
+
+        const data = await res.json();
+
+        if (data.success) {
+          setLastSavedContent(currentContent);
+          setLastSavedTitle(currentTitle);
+          setLastAutoSaveTime(new Date());
+          setAutoSaveStatus('saved');
+          // 3秒后恢复 idle 状态
+          setTimeout(() => setAutoSaveStatus(prev => prev === 'saved' ? 'idle' : prev), 3000);
+        } else {
+          setAutoSaveStatus('error');
+          console.error('[AutoSave] 保存失败:', data.error);
+        }
+      } catch (err) {
+        setAutoSaveStatus('error');
+        console.error('[AutoSave] 保存失败:', err);
+        // 5秒后恢复 idle 状态
+        setTimeout(() => setAutoSaveStatus(prev => prev === 'error' ? 'idle' : prev), 5000);
+      }
+    }, 30000); // 30秒
+
+    return () => clearInterval(timer);
+  }, [isEditing, taskId, platform]);
 
   // 处理确认并继续（提交到下一步）
   const handleConfirm = useCallback(async () => {
@@ -627,11 +718,36 @@ export function ArticlePreviewEditor({
       {/* 底部操作栏 */}
       <div className="flex items-center justify-between pt-4 border-t">
         <div className="flex items-center gap-3">
-          <div className="text-sm text-muted-foreground">
-            {content.length > 0 && (
-              <span>共 {content.length} 字</span>
-            )}
-          </div>
+          {/* 自动保存状态指示器 */}
+          {isEditing && (
+            <div className="flex items-center gap-1 text-xs">
+              {autoSaveStatus === 'saving' && (
+                <span className="text-amber-600 flex items-center gap-1">
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                  自动保存中...
+                </span>
+              )}
+              {autoSaveStatus === 'saved' && lastAutoSaveTime && (
+                <span className="text-green-600 flex items-center gap-1">
+                  <CheckCircle2 className="h-3 w-3" />
+                  已自动保存 {lastAutoSaveTime.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                </span>
+              )}
+              {autoSaveStatus === 'error' && (
+                <span className="text-red-500 flex items-center gap-1">
+                  自动保存失败，请手动保存
+                </span>
+              )}
+              {autoSaveStatus === 'idle' && (content !== lastSavedContent || title !== lastSavedTitle) && (
+                <span className="text-muted-foreground">
+                  有未保存的修改，30秒后自动保存
+                </span>
+              )}
+            </div>
+          )}
+          {content.length > 0 && (
+            <span className="text-sm text-muted-foreground">共 {content.length} 字</span>
+          )}
           {/* 🔥 素材替换按钮 */}
           {canEdit && !isEditing && (
             <Button
