@@ -137,6 +137,8 @@ export function ArticlePreviewEditor({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isLoading, setIsLoading] = useState(!initialContent);
   const [activeTab, setActiveTab] = useState<'preview' | 'edit'>('preview');
+  // 🔥🔥🔥 【草稿优先】草稿状态标记（用户编辑保存过）
+  const [isDraft, setIsDraft] = useState(false);
 
   // 🔥 素材替换状态
   const [selectedText, setSelectedText] = useState('');
@@ -204,9 +206,14 @@ export function ArticlePreviewEditor({
           const apiPlatformRenderData = data.data.platformRenderData;
           
           let finalContent = data.data.articleContent || '';
+          // 🔥🔥🔥 【修复用户编辑被覆盖】检查是否为草稿（用户编辑保存过）
+          // 草稿状态下，articleContent 是用户编辑后的内容，应优先使用，不被 htmlContent 覆盖
+          const isDraft = data.data.isDraft === true;
+          
           // 🔥🔥🔥 【修复公众号预览】公众号优先使用 platformRenderData.htmlContent
-          // 但需要检查有效性：如果 htmlContent 比 articleContent 短得多，说明是 briefResponse，不应覆盖
-          if (apiPlatform === 'wechat_official' && 
+          // 但需要检查有效性：如果是草稿，优先使用用户编辑的 articleContent
+          // 如果不是草稿，htmlContent 比 articleContent 短得多时，说明是 briefResponse，不应覆盖
+          if (!isDraft && apiPlatform === 'wechat_official' && 
               apiPlatformRenderData && 
               typeof apiPlatformRenderData === 'object' && 
               'htmlContent' in apiPlatformRenderData) {
@@ -216,10 +223,21 @@ export function ArticlePreviewEditor({
               finalContent = htmlContent;
             }
           }
+          // 🔥🔥🔥 【草稿优先】如果是草稿，确保使用用户编辑后的内容
+          // 同时同步 platformRenderData.htmlContent 为用户编辑后的内容
+          if (isDraft && finalContent) {
+            // 草稿状态下，用户编辑后的内容优先
+            console.log('[ArticlePreviewEditor] 草稿模式：使用用户编辑后的 articleContent');
+          }
           
           setContent(finalContent);
           setTitle(data.data.articleTitle || '');
           setPlatformRenderData(apiPlatformRenderData || null);
+          // 🔥🔥🔥 【草稿优先】设置草稿状态标记
+          setIsDraft(data.data.isDraft === true);
+          if (data.data.isDraft) {
+            console.log('[ArticlePreviewEditor] 草稿模式：使用用户编辑后的内容，草稿保存时间:', data.data.draftSavedAt);
+          }
         } else if (!cancelled && !data.success) {
           toast.error('加载文章内容失败: ' + (data.error || '未知错误'));
         }
@@ -540,9 +558,13 @@ export function ArticlePreviewEditor({
           {platform === 'wechat_official' ? (
             <WechatHtmlPreview 
               html={
-                (platformRenderData && typeof platformRenderData === 'object' && 'htmlContent' in platformRenderData)
-                  ? (platformRenderData as { htmlContent?: string }).htmlContent || content
-                  : content
+                // 🔥🔥🔥 【草稿优先】草稿模式下使用用户编辑后的 content
+                // 非草稿模式下优先使用 platformRenderData.htmlContent（格式化的 HTML）
+                isDraft 
+                  ? content 
+                  : ((platformRenderData && typeof platformRenderData === 'object' && 'htmlContent' in platformRenderData)
+                      ? (platformRenderData as { htmlContent?: string }).htmlContent || content
+                      : content)
               } 
             />
           ) : platform === 'xiaohongshu' ? (
@@ -560,9 +582,13 @@ export function ArticlePreviewEditor({
             {platform === 'wechat_official' ? (
               <WechatBlockEditor
                 html={
-                  (platformRenderData && typeof platformRenderData === 'object' && 'htmlContent' in platformRenderData)
-                    ? (platformRenderData as { htmlContent?: string }).htmlContent || content
-                    : content
+                  // 🔥🔥🔥 【草稿优先】草稿模式下使用用户编辑后的 content
+                  // 非草稿模式下优先使用 platformRenderData.htmlContent（格式化的 HTML）
+                  isDraft 
+                    ? content 
+                    : ((platformRenderData && typeof platformRenderData === 'object' && 'htmlContent' in platformRenderData)
+                        ? (platformRenderData as { htmlContent?: string }).htmlContent || content
+                        : content)
                 }
                 onChange={handleWechatBlockEditorChange}
                 articleTitle={title}

@@ -260,6 +260,10 @@ export async function GET(request: NextRequest) {
         // 前端组件根据此字段渲染平台专属UI（如小红书卡片）
         // articleContent 保持纯文本，platformRenderData 提供结构化数据
         platformRenderData,
+        // 🔥🔥🔥 【草稿优先】返回草稿状态标记
+        // 前端根据此标记优先使用 articleContent（用户编辑后的内容），不被旧 htmlContent 覆盖
+        isDraft: resultData.isDraft === true,
+        draftSavedAt: resultData.draftSavedAt || null,
       },
     });
   } catch (error) {
