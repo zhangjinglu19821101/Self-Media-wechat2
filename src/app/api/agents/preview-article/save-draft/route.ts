@@ -109,37 +109,8 @@ export async function POST(request: NextRequest) {
       })
       .where(eq(agentSubTasks.id, taskId));
 
-    // 7. 记录到 step_history
-    const historyRecords = await db
-      .select()
-      .from(agentSubTasksStepHistory)
-      .where(
-        and(
-          eq(agentSubTasksStepHistory.commandResultId, commandResultId || task.commandResultId),
-          eq(agentSubTasksStepHistory.stepNo, task.orderIndex)
-        )
-      )
-      .orderBy(agentSubTasksStepHistory.interactTime);
-
-    const nextInteractNum = historyRecords.length > 0
-      ? Math.max(...historyRecords.map(h => h.interactNum || 1)) + 1
-      : 1;
-
-    await db.insert(agentSubTasksStepHistory).values({
-      commandResultId: commandResultId || task.commandResultId,
-      stepNo: task.orderIndex,
-      interactType: 'response',
-      interactContent: {
-        type: 'save_draft',
-        action: 'save_draft',
-        contentLength: content?.length || 0,
-        title,
-        timestamp: new Date().toISOString(),
-      } as any,
-      interactUser: 'human',
-      interactTime: new Date(),
-      interactNum: nextInteractNum,
-    });
+    // 注意：不再每次保存都记录 step_history，只在用户确认提交时记录一次
+    // step_history 的记录逻辑在 /api/agents/user-decision 的 preview_edit_article 决策类型中处理
 
     console.log('[Save Draft] ✅ 草稿已保存:', {
       taskId,
