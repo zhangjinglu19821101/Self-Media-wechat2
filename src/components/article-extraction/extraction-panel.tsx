@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { toast } from 'sonner';
+import { ClientDate } from '@/components/client-date';
 import {
   Sparkles, Upload, Loader2, Layers, BookOpen, Target, Quote,
   TrendingUp, AlertTriangle, FileText, ChevronDown, ChevronRight,
@@ -766,11 +767,11 @@ function ParadigmStatusPanel({
                         <div className="flex items-center gap-3 text-xs text-slate-500">
                           <span className="flex items-center gap-1">
                             <Clock className="w-3 h-3" />
-                            初始化于 {p.initializedAt ? new Date(p.initializedAt).toLocaleDateString() : '-'}
+                            初始化于 {p.initializedAt ? <ClientDate date={p.initializedAt} format="date" /> : '-'}
                           </span>
                           <span className="flex items-center gap-1">
                             <Eye className="w-3 h-3" />
-                            最近提取 {p.lastExtractionAt ? new Date(p.lastExtractionAt).toLocaleDateString() : '-'}
+                            最近提取 {p.lastExtractionAt ? <ClientDate date={p.lastExtractionAt} format="date" /> : '-'}
                           </span>
                         </div>
                         <div>
@@ -1254,7 +1255,7 @@ export default function ArticleExtractionPanel() {
                   onClick={() => loadExtraction(h.id)}
                 >
                   <span className="text-sm font-medium text-slate-700">{h.title}</span>
-                  <span className="text-xs text-slate-400">{new Date(h.createdAt).toLocaleDateString()}</span>
+                  <span className="text-xs text-slate-400"><ClientDate date={h.createdAt} format="date" /></span>
                 </div>
               ))}
             </div>
