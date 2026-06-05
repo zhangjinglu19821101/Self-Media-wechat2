@@ -1621,13 +1621,6 @@ export class SubtaskExecutionEngine {
     const isDirectPublish = taskMetadata.creationMode === 'direct_publish';
     const hasProvidedArticle = !!taskMetadata.providedArticle;
 
-    if (isDirectPublish) {
-      console.log('[SubtaskEngine] 👁️ 直接发文模式：用户直接预览自己提供的文章（无需AI格式化）', {
-        taskId: task.id,
-        hasProvidedArticle,
-      });
-    }
-
     // ========== 统一逻辑：AI创作 / 直接发文 ==========
 
     // 2. 查找前序写作任务
@@ -1724,11 +1717,22 @@ export class SubtaskExecutionEngine {
       );
       
       if (hasCompletedFormattingStep) {
-        // 5步流程：格式化步骤已完成，优先使用格式化后的文章
-        console.log('[SubtaskEngine] 👁️ 直接发文5步流程：格式化步骤已完成，使用格式化后的文章', {
-          taskId: task.id,
-        });
-        // 不设置 articleContent，让后续 effectiveWritingTask 逻辑获取格式化结果
+        // 5步流程：格式化步骤已完成，从 effectiveWritingTask 提取格式化后的 HTML
+        // 🔥🔥🔥 与 AI创作模式共用同一套提取逻辑，确保格式一致
+        if (effectiveWritingTask) {
+          articleContent = effectiveWritingTask.resultText || '';
+          if (!articleContent && effectiveWritingTask.resultData) {
+            articleContent = this.extractResultTextFromResultData(effectiveWritingTask.resultData, effectiveWritingTask.fromParentsExecutor) || '';
+          }
+          articleTitle = this.extractArticleTitleFromResultData(effectiveWritingTask.resultData, effectiveWritingTask.taskTitle);
+          console.log('[SubtaskEngine] 👁️ 直接发文5步流程：从格式化步骤提取HTML', {
+            taskId: task.id,
+            contentLength: articleContent.length,
+            executor: effectiveWritingTask.fromParentsExecutor,
+          });
+        } else {
+          console.warn('[SubtaskEngine] ⚠️ 直接发文5步流程：格式化步骤已完成但未找到effectiveWritingTask');
+        }
       } else {
         // 4步流程（无格式化步骤）：直接使用 providedArticle
         articleContent = taskMetadata.providedArticle as string;

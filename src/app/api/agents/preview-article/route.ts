@@ -78,14 +78,41 @@ export async function GET(request: NextRequest) {
     const isDraft = resultData.isDraft === true;
 
     // 优先级2: 直接发文模式下用户提供的原文
+    // 🔥🔥🔥 【关键修复】5步流程（有格式化步骤）时，不使用 providedArticle 覆盖
+    // 因为前序格式化步骤（insurance-d 等）已经输出了 HTML，优先使用格式化结果
+    // 4步流程（无格式化步骤，如头条/微博）时，才使用 providedArticle
     const isDirectPublish = taskMetadata.creationMode === 'direct_publish';
     const providedArticle = typeof taskMetadata.providedArticle === 'string' ? taskMetadata.providedArticle : '';
     const providedArticleTitle = typeof taskMetadata.providedArticleTitle === 'string' ? taskMetadata.providedArticleTitle : '';
 
     if (isDirectPublish && providedArticle && (!articleContent || articleContent.length < providedArticle.length * 0.5)) {
-      articleContent = providedArticle;
-      if (providedArticleTitle && !articleTitle) {
-        articleTitle = providedArticleTitle;
+      // 5步流程检查：当前节点之前是否有已完成的写作Agent（格式化步骤）
+      // 如果有，说明格式化步骤已完成，不应使用纯文本的 providedArticle
+      const previousTasksForFormatCheck = await db
+        .select({ fromParentsExecutor: agentSubTasks.fromParentsExecutor, status: agentSubTasks.status })
+        .from(agentSubTasks)
+        .where(
+          and(
+            eq(agentSubTasks.commandResultId, task.commandResultId),
+            lt(agentSubTasks.orderIndex, task.orderIndex)
+          )
+        );
+      const hasCompletedFormattingStep = previousTasksForFormatCheck.some(t =>
+        isWritingAgent(t.fromParentsExecutor) && t.status === 'completed'
+      );
+
+      if (hasCompletedFormattingStep) {
+        // 5步流程：格式化步骤已完成，不用 providedArticle 覆盖，让优先级3从前序任务提取 HTML
+        console.log('[Preview Article] 直接发文5步流程：跳过 providedArticle，使用格式化结果');
+      } else {
+        // 4步流程（无格式化步骤）：使用用户提供的原文
+        articleContent = providedArticle;
+        if (providedArticleTitle && !articleTitle) {
+          articleTitle = providedArticleTitle;
+        }
+        console.log('[Preview Article] 直接发文4步流程：使用 providedArticle', {
+          providedContentLength: providedArticle.length,
+        });
       }
     }
 
