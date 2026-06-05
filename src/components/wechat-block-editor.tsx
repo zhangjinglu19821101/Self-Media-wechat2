@@ -22,7 +22,7 @@ import { Button } from '@/components/ui/button';
 import {
   Heading1, Heading2, Type, AlertTriangle, MessageCircle,
   Shield, Minus, List, Quote, ChevronDown, ChevronUp,
-  RotateCcw, FileText, Sparkles
+  RotateCcw, FileText, Sparkles, Trash2
 } from 'lucide-react';
 import {
   parseHtmlToBlocks,
@@ -177,6 +177,7 @@ interface BlockEditorProps {
   originalText: string;
   readOnly: boolean;
   onTextChange: (index: number, newText: string) => void;
+  onDelete?: (index: number) => void;
   contextBefore?: string;
   contextAfter?: string;
   articleTitle?: string;
@@ -184,7 +185,7 @@ interface BlockEditorProps {
 }
 
 /** 单个段落编辑器 — memo 防止无关段落重渲染 */
-const BlockEditorItem = memo(function BlockEditorItem({ block, originalText, readOnly, onTextChange, contextBefore, contextAfter, articleTitle }: BlockEditorProps) {
+const BlockEditorItem = memo(function BlockEditorItem({ block, originalText, readOnly, onTextChange, onDelete, contextBefore, contextAfter, articleTitle }: BlockEditorProps) {
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [hasChanged, setHasChanged] = useState(false);
   const [aiPanelOpen, setAiPanelOpen] = useState(false);
@@ -204,6 +205,17 @@ const BlockEditorItem = memo(function BlockEditorItem({ block, originalText, rea
             {style.badgeText}
           </Badge>
           <div className="flex-1 border-t border-gray-200" />
+          {!readOnly && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-6 w-6 p-0 text-gray-400 hover:text-red-500 hover:bg-red-50"
+              onClick={() => onDelete?.(block.index)}
+              title="删除此段落"
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+            </Button>
+          )}
         </div>
       </div>
     );
@@ -316,6 +328,17 @@ const BlockEditorItem = memo(function BlockEditorItem({ block, originalText, rea
             <RotateCcw className="h-3 w-3" />
           </Button>
         )}
+        {!readOnly && onDelete && (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-5 px-1.5 text-[10px] text-red-400 hover:text-red-600 hover:bg-red-50"
+            onClick={() => onDelete(block.index)}
+            title="删除此段落"
+          >
+            <Trash2 className="h-3 w-3" />
+          </Button>
+        )}
         <Button
           variant="ghost"
           size="sm"
@@ -391,18 +414,31 @@ export function WechatBlockEditor({ html, onChange, readOnly = false, articleTit
 
   // 编辑状态：维护每个块的文本
   const [editedTexts, setEditedTexts] = useState<Record<number, string>>({});
+  const [deletedBlockIndices, setDeletedBlockIndices] = useState<Set<number>>(new Set());
 
   // 构建当前编辑后的块列表
   const currentBlocks = useMemo(() => {
-    return parseResult.blocks.map(block => ({
-      ...block,
-      text: editedTexts[block.index] !== undefined ? editedTexts[block.index] : block.text,
-    }));
-  }, [parseResult.blocks, editedTexts]);
+    return parseResult.blocks
+      .filter(block => !deletedBlockIndices.has(block.index))
+      .map(block => ({
+        ...block,
+        text: editedTexts[block.index] !== undefined ? editedTexts[block.index] : block.text,
+      }));
+  }, [parseResult.blocks, editedTexts, deletedBlockIndices]);
 
   // 处理文本变更
   const handleTextChange = useCallback((index: number, newText: string) => {
     setEditedTexts(prev => ({ ...prev, [index]: newText }));
+  }, []);
+
+  // 处理删除块
+  const handleDeleteBlock = useCallback((index: number) => {
+    setDeletedBlockIndices(prev => new Set([...prev, index]));
+    setEditedTexts(prev => {
+      const newTexts = { ...prev };
+      delete newTexts[index];
+      return newTexts;
+    });
   }, []);
 
   // 🔥 修复无限循环：使用 ref 记录上次输出的 HTML，只有真正变化时才调用 onChange
@@ -487,6 +523,7 @@ export function WechatBlockEditor({ html, onChange, readOnly = false, articleTit
             originalText={parseResult.blocks.find(b => b.index === block.index)?.text || ''}
             readOnly={readOnly}
             onTextChange={handleTextChange}
+            onDelete={handleDeleteBlock}
             contextBefore={blockContexts.get(block.index)?.before}
             contextAfter={blockContexts.get(block.index)?.after}
             articleTitle={articleTitle}
