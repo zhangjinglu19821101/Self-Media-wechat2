@@ -452,13 +452,13 @@ export function WechatBlockEditor({ html, onChange, readOnly = false, articleTit
 
   // 当编辑状态变化时，回写到父组件（仅当内容真正变化时）
   useEffect(() => {
-    const newHtml = rebuildHtmlFromBlocks(parseResult, currentBlocks);
+    const newHtml = rebuildHtmlFromBlocks(parseResult, currentBlocks, deletedBlockIndices);
     // 只有当 HTML 真正变化时才触发 onChange，避免循环
     if (newHtml !== lastHtmlRef.current) {
       lastHtmlRef.current = newHtml;
       onChange(newHtml);
     }
-  }, [currentBlocks, onChange, parseResult]);
+  }, [currentBlocks, deletedBlockIndices, onChange, parseResult]);
 
   // 计算每个段落的前后上下文（仅传前后各1段，而非整篇文章，减少 Token 消耗）
   const blockContexts = useMemo(() => {
