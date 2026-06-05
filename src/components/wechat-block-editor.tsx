@@ -416,7 +416,15 @@ export function WechatBlockEditor({ html, onChange, readOnly = false, articleTit
   const [editedTexts, setEditedTexts] = useState<Record<number, string>>({});
   const [deletedBlockIndices, setDeletedBlockIndices] = useState<Set<number>>(new Set());
 
-  // 构建当前编辑后的块列表
+  // 构建当前编辑后的块列表（包括被删除的块，用于 rebuildHtmlFromBlocks）
+  const allBlocks = useMemo(() => {
+    return parseResult.blocks.map(block => ({
+      ...block,
+      text: editedTexts[block.index] !== undefined ? editedTexts[block.index] : block.text,
+    }));
+  }, [parseResult.blocks, editedTexts]);
+
+  // 构建当前显示的块列表（过滤掉被删除的块）
   const currentBlocks = useMemo(() => {
     return parseResult.blocks
       .filter(block => !deletedBlockIndices.has(block.index))
@@ -452,13 +460,13 @@ export function WechatBlockEditor({ html, onChange, readOnly = false, articleTit
 
   // 当编辑状态变化时，回写到父组件（仅当内容真正变化时）
   useEffect(() => {
-    const newHtml = rebuildHtmlFromBlocks(parseResult, currentBlocks, deletedBlockIndices);
+    const newHtml = rebuildHtmlFromBlocks(parseResult, allBlocks, deletedBlockIndices);
     // 只有当 HTML 真正变化时才触发 onChange，避免循环
     if (newHtml !== lastHtmlRef.current) {
       lastHtmlRef.current = newHtml;
       onChange(newHtml);
     }
-  }, [currentBlocks, deletedBlockIndices, onChange, parseResult]);
+  }, [allBlocks, deletedBlockIndices, onChange, parseResult]);
 
   // 计算每个段落的前后上下文（仅传前后各1段，而非整篇文章，减少 Token 消耗）
   const blockContexts = useMemo(() => {
