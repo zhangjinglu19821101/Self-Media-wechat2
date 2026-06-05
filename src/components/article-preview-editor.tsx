@@ -201,43 +201,28 @@ export function ArticlePreviewEditor({
         });
         
         if (!cancelled && data.success) {
-          // 🔥🔥🔥 【修复公众号预览】公众号优先使用 platformRenderData.htmlContent
           const apiPlatform = data.data.platform as string;
           const apiPlatformRenderData = data.data.platformRenderData;
           
+          // 🔥🔥🔥 【简化】API 已确保 platformRenderData.htmlContent 与 articleContent 同步
+          // 草稿模式下 htmlContent 会被同步为用户编辑后的内容
+          // 非草稿模式下 htmlContent 是格式化的 HTML（比 articleContent 更完整）
           let finalContent = data.data.articleContent || '';
-          // 🔥🔥🔥 【修复用户编辑被覆盖】检查是否为草稿（用户编辑保存过）
-          // 草稿状态下，articleContent 是用户编辑后的内容，应优先使用，不被 htmlContent 覆盖
-          const isDraft = data.data.isDraft === true;
-          
-          // 🔥🔥🔥 【修复公众号预览】公众号优先使用 platformRenderData.htmlContent
-          // 但需要检查有效性：如果是草稿，优先使用用户编辑的 articleContent
-          // 如果不是草稿，htmlContent 比 articleContent 短得多时，说明是 briefResponse，不应覆盖
-          if (!isDraft && apiPlatform === 'wechat_official' && 
+          if (apiPlatform === 'wechat_official' && 
               apiPlatformRenderData && 
               typeof apiPlatformRenderData === 'object' && 
               'htmlContent' in apiPlatformRenderData) {
             const htmlContent = (apiPlatformRenderData as { htmlContent: string }).htmlContent || '';
-            // htmlContent 必须比 articleContent 更长或相当才使用（防止 briefResponse 覆盖完整文章）
+            // htmlContent 比 articleContent 更长或相当时使用（含完整排版样式）
             if (htmlContent && htmlContent.length >= (finalContent.length * 0.5)) {
               finalContent = htmlContent;
             }
-          }
-          // 🔥🔥🔥 【草稿优先】如果是草稿，确保使用用户编辑后的内容
-          // 同时同步 platformRenderData.htmlContent 为用户编辑后的内容
-          if (isDraft && finalContent) {
-            // 草稿状态下，用户编辑后的内容优先
-            console.log('[ArticlePreviewEditor] 草稿模式：使用用户编辑后的 articleContent');
           }
           
           setContent(finalContent);
           setTitle(data.data.articleTitle || '');
           setPlatformRenderData(apiPlatformRenderData || null);
-          // 🔥🔥🔥 【草稿优先】设置草稿状态标记
           setIsDraft(data.data.isDraft === true);
-          if (data.data.isDraft) {
-            console.log('[ArticlePreviewEditor] 草稿模式：使用用户编辑后的内容，草稿保存时间:', data.data.draftSavedAt);
-          }
         } else if (!cancelled && !data.success) {
           toast.error('加载文章内容失败: ' + (data.error || '未知错误'));
         }
@@ -557,15 +542,7 @@ export function ArticlePreviewEditor({
         <TabsContent value="preview" className="mt-0">
           {platform === 'wechat_official' ? (
             <WechatHtmlPreview 
-              html={
-                // 🔥🔥🔥 【草稿优先】草稿模式下使用用户编辑后的 content
-                // 非草稿模式下优先使用 platformRenderData.htmlContent（格式化的 HTML）
-                isDraft 
-                  ? content 
-                  : ((platformRenderData && typeof platformRenderData === 'object' && 'htmlContent' in platformRenderData)
-                      ? (platformRenderData as { htmlContent?: string }).htmlContent || content
-                      : content)
-              } 
+              html={content}
             />
           ) : platform === 'xiaohongshu' ? (
             <XiaohongshuContentPreview 
@@ -581,15 +558,7 @@ export function ArticlePreviewEditor({
           <TabsContent value="edit" className="mt-0">
             {platform === 'wechat_official' ? (
               <WechatBlockEditor
-                html={
-                  // 🔥🔥🔥 【草稿优先】草稿模式下使用用户编辑后的 content
-                  // 非草稿模式下优先使用 platformRenderData.htmlContent（格式化的 HTML）
-                  isDraft 
-                    ? content 
-                    : ((platformRenderData && typeof platformRenderData === 'object' && 'htmlContent' in platformRenderData)
-                        ? (platformRenderData as { htmlContent?: string }).htmlContent || content
-                        : content)
-                }
+                html={content}
                 onChange={handleWechatBlockEditorChange}
                 articleTitle={title}
               />

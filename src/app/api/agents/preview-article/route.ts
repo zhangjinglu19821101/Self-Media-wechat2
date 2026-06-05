@@ -108,13 +108,20 @@ export async function GET(request: NextRequest) {
     // 3. 如果没有预存内容（兼容旧流程），从前序写作任务获取
     // 条件：articleContent 为空，或小红书平台缺少 platformRenderData（小红书必须有卡片数据）
     // 注意：公众号的 platformRenderData 为空时不需要重新提取，因为 LLM 格式化会生成
-    const needExtractFromWritingTask = !articleContent || 
-      (!platformRenderData && platform === 'xiaohongshu');
+    // 🔥🔥🔥 【关键修复】草稿状态下不从前序任务重新提取！
+    // 用户编辑保存过（isDraft=true），说明用户已经确认了内容，即使 articleContent 为空
+    // 也不应该从写作任务提取旧内容覆盖用户的编辑
+    const isDraft = resultData.isDraft === true;
+    const needExtractFromWritingTask = !isDraft && (
+      !articleContent || 
+      (!platformRenderData && platform === 'xiaohongshu')
+    );
     
     console.log('[Preview Article] needExtractFromWritingTask:', needExtractFromWritingTask, {
       articleContentEmpty: !articleContent,
       platformRenderDataEmpty: !platformRenderData,
       isXiaohongshu: platform === 'xiaohongshu',
+      isDraft,
     });
     
     if (needExtractFromWritingTask) {
@@ -242,6 +249,21 @@ export async function GET(request: NextRequest) {
         } catch (fallbackErr) {
           console.error('[Preview Article] 降级文本处理也失败:', fallbackErr);
         }
+      }
+    }
+
+    // 🔥🔥🔥 【关键修复】草稿状态下，同步 platformRenderData.htmlContent 为用户编辑后的内容
+    // 防止前端优先使用旧的 htmlContent 覆盖用户编辑
+    if (isDraft && articleContent && platformRenderData && 
+        typeof platformRenderData === 'object' && 'htmlContent' in platformRenderData) {
+      const htmlContent = (platformRenderData as Record<string, unknown>).htmlContent;
+      // 如果 htmlContent 与 articleContent 不同，说明 htmlContent 是旧内容
+      if (String(htmlContent) !== articleContent) {
+        console.log('[Preview Article] 草稿模式：同步 htmlContent 为用户编辑后的 articleContent', {
+          htmlContentLength: String(htmlContent).length,
+          articleContentLength: articleContent.length,
+        });
+        (platformRenderData as Record<string, unknown>).htmlContent = articleContent;
       }
     }
 
