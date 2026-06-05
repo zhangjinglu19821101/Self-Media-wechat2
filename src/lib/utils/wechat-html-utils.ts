@@ -52,6 +52,16 @@ export function sanitizeWechatHtml(html: string): string {
     return `font-size:${px}px`;
   });
   
+  // 🔥 移除空段落（空白/纯空白字符/&nbsp;/只有空白标签）
+  // 匹配：<p>空内容</p>、<p>&nbsp;</p>、<p>  </p>、<p><br></p> 等
+  processed = processed.replace(/<p[^>]*>([\s]*(&nbsp;)*[\s]*(<br\s*\/?>)*[\s]*(&nbsp;)*[\s]*)<\/p>/gi, '');
+  
+  // 🔥 移除连续的空段落（多次清理确保彻底）
+  processed = processed.replace(/<p[^>]*>\s*<\/p>/gi, '');
+  
+  // 🔥 移除多余的连续换行和空白（编辑过程中可能产生）
+  processed = processed.replace(/\n\s*\n\s*\n/g, '\n\n');
+  
   // 如果内容为空，返回占位
   if (!processed.trim()) {
     processed = '<p style="margin:0 0 16px 0; padding:0 12px; color:#3E3E3E; font-size:14px; line-height:1.6;">（内容为空）</p>';
