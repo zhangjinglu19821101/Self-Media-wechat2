@@ -206,17 +206,42 @@ function createDirectChatOpenAI(
  * 此函数将此类错误转换为更有意义的错误消息，
  * 并在可能的情况下使用 SDK LLMClient 获取真实错误信息。
  */
-function enhanceCozeApiError(error: any): Error {
-  // 如果已经是 APIError（SDK 抛出的有意义的错误），直接返回
-  if (error?.code === 'ErrBalanceOverdue' || error?.code === 'ErrNotFound') {
-    return error;
+function enhanceCozeApiError(error: any, keySource?: string): Error {
+  const sourceInfo = keySource ? ` [Key来源: ${keySource}]` : '';
+  
+  // 如果已经是 APIError（SDK 抛出的有意义的错误），增强错误消息
+  if (error?.code === 'ErrBalanceOverdue') {
+    const enhancedError = new Error(
+      `${error.message}${sourceInfo}` +
+      `\n\n诊断信息：` +
+      `\n- 如果 Key来源: user_key，请检查您在"设置 > API Keys"中配置的豆包 API Key 余额` +
+      `\n- 如果 Key来源: platform_key，请检查平台账户余额或联系管理员`
+    );
+    (enhancedError as any).code = error.code;
+    return enhancedError;
   }
   
-  // 如果错误消息已经包含有意义的 Coze 错误信息，直接返回
+  if (error?.code === 'ErrNotFound') {
+    const enhancedError = new Error(`${error.message}${sourceInfo}`);
+    (enhancedError as any).code = error.code;
+    return enhancedError;
+  }
+  
+  // 如果错误消息已经包含有意义的 Coze 错误信息，增强并返回
   const msg = error?.message || '';
-  if (msg.includes('资源点不足') || msg.includes('ErrBalanceOverdue') || 
-      msg.includes('not found') || msg.includes('model not found')) {
-    return error;
+  if (msg.includes('资源点不足') || msg.includes('ErrBalanceOverdue')) {
+    const enhancedError = new Error(
+      `${msg}${sourceInfo}` +
+      `\n\n诊断信息：` +
+      `\n- 如果 Key来源: user_key，请检查您在"设置 > API Keys"中配置的豆包 API Key 余额` +
+      `\n- 如果 Key来源: platform_key，请检查平台账户余额或联系管理员`
+    );
+    return enhancedError;
+  }
+  
+  if (msg.includes('not found') || msg.includes('model not found')) {
+    const enhancedError = new Error(`${msg}${sourceInfo}`);
+    return enhancedError;
   }
   
   // TypeError: Cannot read properties of undefined — Coze API SSE 格式错误
@@ -622,7 +647,7 @@ async function callLLMInternal(
           // 🔴 修复：Coze API 错误增强
           // ChatOpenAI 可能抛出 TypeError（无法解析 SSE 格式的错误响应），
           // 需要将此类错误转换为更有意义的错误消息
-          const enhancedError = enhanceCozeApiError(error);
+          const enhancedError = enhanceCozeApiError(error, credentials.source);
           console.error(`🤖 [LLM调用] LLM 调用失败:`, enhancedError.message);
           throw enhancedError;
         }
@@ -668,8 +693,10 @@ async function callLLMInternal(
         return res;
       }).catch((error) => {
         responsePromiseResolved = true;
-        console.error(`🤖 [LLM调用] LLM 调用失败:`, error);
-        throw error;
+        // 🔴 修复：SDK 路径也添加错误增强，在余额不足等错误中显示 Key 来源
+        const enhancedError = enhanceCozeApiError(error, llmSource);
+        console.error(`🤖 [LLM调用] LLM 调用失败:`, enhancedError.message);
+        throw enhancedError;
       });
 
       const timeoutPromise = new Promise<never>((_, reject) => {
