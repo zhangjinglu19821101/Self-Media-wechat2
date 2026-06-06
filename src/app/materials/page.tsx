@@ -52,6 +52,8 @@ interface Material {
   analysisText: string | null;
   /** 关联原始文章ID */
   sourceArticleId: string | null;
+  /** 关联原始文章标题 */
+  sourceArticleTitle: string | null;
 }
 
 /** 素材类型 - 对齐范式 materialTypes（与 paradigm-seed-data.ts 严格一致） */
@@ -151,6 +153,10 @@ export default function MaterialsPage() {
   const [filterStatus, setFilterStatus] = useState<string>('active');
   const [searchKeyword, setSearchKeyword] = useState('');
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
+  const [filterSourceArticleId, setFilterSourceArticleId] = useState<string>('all');
+
+  // 来源文章列表（用于筛选下拉）
+  const [sourceArticles, setSourceArticles] = useState<{ sourceArticleId: string; sourceArticleTitle: string; materialCount: number }[]>([]);
 
   // 标签云数据
   const [tagCloud, setTagCloud] = useState<{ tag: string; count: number }[]>([]);
@@ -219,6 +225,9 @@ export default function MaterialsPage() {
         params.append('tags', selectedTags.join(','));
         params.append('tagType', tagType);
       }
+      if (filterSourceArticleId && filterSourceArticleId !== 'all') {
+        params.append('sourceArticleId', filterSourceArticleId);
+      }
       params.append('page', pagination.page.toString());
       params.append('pageSize', pagination.pageSize.toString());
 
@@ -235,7 +244,7 @@ export default function MaterialsPage() {
     } finally {
       setLoading(false);
     }
-  }, [ownerTab, filterType, filterStatus, searchKeyword, selectedTags, tagType, pagination.page, pagination.pageSize]);
+  }, [ownerTab, filterType, filterStatus, searchKeyword, selectedTags, tagType, filterSourceArticleId, pagination.page, pagination.pageSize]);
 
   const fetchTagCloud = useCallback(async () => {
     try {
@@ -261,6 +270,19 @@ export default function MaterialsPage() {
     fetchTagCloud();
   }, [fetchTagCloud]);
 
+  // 加载来源文章列表
+  useEffect(() => {
+    const loadSourceArticles = async () => {
+      try {
+        const data = await apiGet<{ sourceArticleId: string; sourceArticleTitle: string; materialCount: number }[]>('/api/materials/source-articles');
+        setSourceArticles(data || []);
+      } catch (e) {
+        console.error('加载来源文章列表失败:', e);
+      }
+    };
+    loadSourceArticles();
+  }, []);
+
   // ==================== 事件处理 ====================
   const handleSearch = () => {
     setPagination(prev => ({ ...prev, page: 1 }));
@@ -273,6 +295,7 @@ export default function MaterialsPage() {
     setFilterStatus('active');
     setSearchKeyword('');
     setSelectedTags([]);
+    setFilterSourceArticleId('all');
     setPagination(prev => ({ ...prev, page: 1 }));
   };
 
@@ -559,6 +582,23 @@ export default function MaterialsPage() {
               </SelectContent>
             </Select>
 
+            {/* 来源文章筛选 */}
+            {sourceArticles.length > 0 && (
+              <Select value={filterSourceArticleId} onValueChange={setFilterSourceArticleId}>
+                <SelectTrigger className="w-[220px]">
+                  <SelectValue placeholder="来源文章" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">全部来源</SelectItem>
+                  {sourceArticles.map(sa => (
+                    <SelectItem key={sa.sourceArticleId} value={sa.sourceArticleId}>
+                      {sa.sourceArticleTitle} ({sa.materialCount})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+
             {/* 搜索 */}
             <div className="flex gap-2 flex-1 min-w-[200px]">
               <Input
@@ -730,6 +770,12 @@ export default function MaterialsPage() {
                                   {SCENE_TYPE_MAP[material.sceneType] || material.sceneType}
                                 </Badge>
                               )}
+                              {material.sourceArticleTitle && (
+                                <Badge variant="secondary" className="bg-indigo-50 text-indigo-700 border-indigo-200 text-xs max-w-[200px] truncate" title={material.sourceArticleTitle}>
+                                  <FileText className="w-3 h-3 mr-1 flex-shrink-0" />
+                                  {material.sourceArticleTitle}
+                                </Badge>
+                              )}
                               <span 
                                 className={`font-medium truncate ${canEdit(material) ? 'cursor-pointer hover:text-blue-600 hover:underline underline-offset-2' : ''}`}
                                 onClick={() => canEdit(material) && startInlineEdit(material)}
@@ -873,7 +919,12 @@ export default function MaterialsPage() {
                   </div>
                   <div>
                     <Label className="text-muted-foreground">关联原始文章</Label>
-                    <p>{selectedMaterial.sourceArticleId ? '已关联' : '-'}</p>
+                    <p>{selectedMaterial.sourceArticleId ? (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-indigo-50 text-indigo-700 text-xs font-medium border border-indigo-100">
+                        <FileText className="w-3 h-3" />
+                        {selectedMaterial.sourceArticleTitle || '已关联'}
+                      </span>
+                    ) : '-'}</p>
                   </div>
                 </div>
                 <div className="grid grid-cols-2 gap-4">

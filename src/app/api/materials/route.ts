@@ -11,6 +11,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { materialLibrary, materialBookmarks } from '@/lib/db/schema/material-library';
+import { articleContent } from '@/lib/db/schema';
 import { desc, eq, ilike, or, sql, and, isNull, inArray } from 'drizzle-orm';
 import { getWorkspaceId, isSuperAdmin, getAuthContext } from '@/lib/auth/context';
 import { expandKeywordsWithSynonyms } from '@/lib/utils/synonym-dictionary';
@@ -126,6 +127,7 @@ export async function GET(request: NextRequest) {
     const tagType = searchParams.get('tagType');
     const paradigmId = searchParams.get('paradigmId');
     const slotId = searchParams.get('slotId');
+    const sourceArticleId = searchParams.get('sourceArticleId');
 
     // 校验归属筛选参数
     if (!VALID_OWNER_FILTERS.includes(ownerFilter)) {
@@ -179,6 +181,11 @@ export async function GET(request: NextRequest) {
     // 🔥 位置ID三重绑定：slotId筛选（最高优先级精确匹配）
     if (slotId) {
       conditions.push(eq(materialLibrary.slotId, slotId));
+    }
+
+    // 来源文章筛选
+    if (sourceArticleId) {
+      conditions.push(eq(materialLibrary.sourceArticleId, sourceArticleId));
     }
 
     // 标签筛选
@@ -253,10 +260,33 @@ export async function GET(request: NextRequest) {
       isBookmarked: bookmarkedIds.includes(m.id),
     }));
 
+    // 附加来源文章标题
+    const sourceArticleIds = [...new Set(
+      materialsWithBookmark
+        .map(m => m.sourceArticleId)
+        .filter((id): id is string => !!id)
+    )];
+    let sourceArticleTitleMap: Record<string, string> = {};
+    if (sourceArticleIds.length > 0) {
+      const articles = await db
+        .select({ articleId: articleContent.articleId, articleTitle: articleContent.articleTitle })
+        .from(articleContent)
+        .where(inArray(articleContent.articleId, sourceArticleIds));
+      sourceArticleTitleMap = Object.fromEntries(
+        articles.map(a => [a.articleId, a.articleTitle || '未知文章'])
+      );
+    }
+    const materialsWithSourceTitle = materialsWithBookmark.map(m => ({
+      ...m,
+      sourceArticleTitle: m.sourceArticleId
+        ? (sourceArticleTitleMap[m.sourceArticleId] || '未知文章')
+        : null,
+    }));
+
     return NextResponse.json({
       success: true,
       data: {
-        list: materialsWithBookmark,
+        list: materialsWithSourceTitle,
         pagination: {
           page,
           pageSize,
