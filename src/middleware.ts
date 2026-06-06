@@ -33,6 +33,7 @@ const PUBLIC_PATHS = [
   '/api/cases/recommend', // 案例推荐（内部调用）
   '/api/xiaohongshu-preview', // 小红书预览数据 API（Playwright 截图用）
   '/api/test',          // 测试 API（开发调试用）
+  '/api/debug',         // 调试 API（开发诊断用）
   '/xiaohongshu-preview', // 小红书预览页面（Agent T MCP 截图用）
 ];
 

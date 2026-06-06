@@ -3,7 +3,6 @@
  * 帮助用户诊断"余额不足"错误是来自哪个 Key
  */
 import { NextRequest, NextResponse } from 'next/server';
-import { getWorkspaceId } from '@/lib/auth/context';
 import { db } from '@/lib/db/index';
 import { workspaces } from '@/lib/db/schema/auth';
 import { userApiKeys } from '@/lib/db/schema/user-api-keys';
@@ -11,9 +10,53 @@ import { eq } from 'drizzle-orm';
 
 export async function GET(request: NextRequest) {
   try {
-    const workspaceId = await getWorkspaceId(request);
+    const url = new URL(request.url);
+    const workspaceId = url.searchParams.get('workspaceId');
+    const listAll = url.searchParams.get('all') === 'true';
+
+    // 如果请求列出所有 workspace
+    if (listAll) {
+      const allWorkspaces = await db
+        .select({
+          id: workspaces.id,
+          name: workspaces.name,
+          llmKeySource: workspaces.llmKeySource,
+        })
+        .from(workspaces)
+        .limit(20);
+
+      const allKeys = await db
+        .select({
+          id: userApiKeys.id,
+          workspaceId: userApiKeys.workspaceId,
+          provider: userApiKeys.provider,
+          isActive: userApiKeys.isActive,
+        })
+        .from(userApiKeys)
+        .where(eq(userApiKeys.isActive, true))
+        .limit(20);
+
+      const hasPlatformKey = !!process.env.COZE_API_KEY;
+
+      return NextResponse.json({
+        success: true,
+        timestamp: new Date().toISOString(),
+        platformKeyConfigured: hasPlatformKey,
+        workspaces: allWorkspaces,
+        userApiKeys: allKeys,
+        summary: {
+          workspacesCount: allWorkspaces.length,
+          userApiKeysCount: allKeys.length,
+        },
+      });
+    }
+
+    // 必须提供 workspaceId
     if (!workspaceId) {
-      return NextResponse.json({ error: '未找到 workspace' }, { status: 400 });
+      return NextResponse.json({
+        error: '请提供 workspaceId 参数，或使用 ?all=true 列出所有 workspace',
+        usage: '/api/debug/llm-key-status?workspaceId=xxx 或 /api/debug/llm-key-status?all=true',
+      }, { status: 400 });
     }
 
     // 1. 查询 workspace 配置
@@ -24,7 +67,7 @@ export async function GET(request: NextRequest) {
       .limit(1);
 
     if (!workspace[0]) {
-      return NextResponse.json({ error: '未找到 workspace' }, { status: 404 });
+      return NextResponse.json({ error: '未找到 workspace', workspaceId }, { status: 404 });
     }
 
     const ws = workspace[0];
@@ -44,7 +87,7 @@ export async function GET(request: NextRequest) {
 
     // 3. 判断实际使用的 Key 来源
     let actualKeySource: string;
-    let keyDetails: any = {};
+    let keyDetails: Record<string, unknown> = {};
 
     if (llmKeySource === 'user_key') {
       const activeKey = userKeys.find(k => k.isActive && k.provider === 'doubao');
